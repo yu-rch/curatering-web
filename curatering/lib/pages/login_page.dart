@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({Key? key}) : super(key: key);
+  const LoginPage({super.key});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -33,7 +33,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Widget _buildRightPanel() {
     return Container(
-      color: Colors.white,
+      color: const Color(0xFFF4F4F6),
       child: Stack( 
         children: [
           // subtle background accent
