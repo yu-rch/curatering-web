@@ -1,9 +1,5 @@
 import 'package:flutter/material.dart';
 
-/// A reusable layout containing the sidebar and top header used throughout
-/// the application. Pass the desired page content as [child]. If you need a
-/// search field in the header, provide a [searchController]; otherwise the
-/// space will be left blank.
 class AppScaffold extends StatelessWidget {
   final Widget child;
   final TextEditingController? searchController;
@@ -11,12 +7,12 @@ class AppScaffold extends StatelessWidget {
   final ValueChanged<String>? onSearchChanged;
 
   const AppScaffold({
-    Key? key,
+    super.key,
     required this.child,
     this.searchController,
     this.showSearch = false,
     this.onSearchChanged,
-  }) : super(key: key);
+  });
 
   static const _sidebarItems = <_SidebarItemData>[
     _SidebarItemData(
@@ -45,7 +41,7 @@ class AppScaffold extends StatelessWidget {
       label: 'Transactions',
       route: '/transactions',
     ),
-    _SidebarItemData(icon: Icons.archive, label: 'Archive', route: '/archive'),
+    // _SidebarItemData(icon: Icons.archive, label: 'Archive', route: '/archive'),
     _SidebarItemData(icon: Icons.public, label: 'Website', route: '/website'),
   ];
 
@@ -232,15 +228,7 @@ class AppScaffold extends StatelessWidget {
                     ),
                   );
 
-                  Widget mainContent = SingleChildScrollView(
-                    padding: const EdgeInsets.only(bottom: 24),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: constraints.maxHeight,
-                      ),
-                      child: child,
-                    ),
-                  );
+                  Widget mainContent = child;
 
                   if (isNarrow) {
                     return Column(

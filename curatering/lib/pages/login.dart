@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
+import 'forgot_password.dart';
 
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+class Login extends StatefulWidget {
+  const Login({super.key});
 
   @override
-  State<LoginPage> createState() => _LoginPageState();
+  State<Login> createState() => _LoginState();
 }
 
-class _LoginPageState extends State<LoginPage> {
+class _LoginState extends State<Login> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
   void _onLogin() {
-    // In a real app you'd validate credentials and talk to a backend
     Navigator.of(context).pushReplacementNamed('/dashboard');
   }
 
@@ -22,10 +22,7 @@ class _LoginPageState extends State<LoginPage> {
       child: Center(
         child: Padding(
           padding: const EdgeInsets.all(32.0),
-          child: Image.asset(
-            'lib/assets/login-1.png',
-            fit: BoxFit.contain,
-          ),
+          child: Image.asset('lib/assets/login-1.png', fit: BoxFit.contain),
         ),
       ),
     );
@@ -34,25 +31,16 @@ class _LoginPageState extends State<LoginPage> {
   Widget _buildRightPanel() {
     return Container(
       color: const Color(0xFFF4F4F6),
-      child: Stack( 
+      child: Stack(
         children: [
-          // subtle background accent
-          // Positioned.fill(
-          //   child: Opacity(
-          //     opacity: 0.08,
-          //     child: Image.asset(
-          //       'lib/assets/login-2.png',
-          //       fit: BoxFit.cover,
-          //     ),
-          //   ),
-          // ),
           Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: Card(
                 elevation: 3,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(28.0),
                   child: Column(
@@ -73,19 +61,23 @@ class _LoginPageState extends State<LoginPage> {
                         child: RichText(
                           text: const TextSpan(
                             style: TextStyle(
-                                fontSize: 38,
-                                fontWeight: FontWeight.bold,
-                                fontFamily: 'Inter'),
+                              fontSize: 38,
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'Inter',
+                            ),
                             children: [
                               TextSpan(
-                                  text: 'CURA',
-                                  style: TextStyle(color: Color(0xFFFFB300))),
+                                text: 'CURA',
+                                style: TextStyle(color: Color(0xFFFFB300)),
+                              ),
                               TextSpan(
-                                  text: 'TE',
-                                  style: TextStyle(color: Colors.black87)),
+                                text: 'TE',
+                                style: TextStyle(color: Colors.black87),
+                              ),
                               TextSpan(
-                                  text: 'RING',
-                                  style: TextStyle(color: Color(0xFFF4511E))),
+                                text: 'RING',
+                                style: TextStyle(color: Color(0xFFF4511E)),
+                              ),
                             ],
                           ),
                         ),
@@ -126,10 +118,12 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      GestureDetector(
-                        onTap: () {
-                          // handle forgot password
-                        },
+                      TextButton(
+                        onPressed: () => showDialog<String>(
+                          context: context,
+                          builder: (BuildContext context) =>
+                              const ForgotPassword(),
+                        ),
                         child: const Text(
                           'Forgot Password?',
                           style: TextStyle(
@@ -137,15 +131,6 @@ class _LoginPageState extends State<LoginPage> {
                             decoration: TextDecoration.underline,
                           ),
                           textAlign: TextAlign.center,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Center(
-                        child: TextButton(
-                          onPressed: () {
-                            // handle sign up
-                          },
-                          child: const Text('Create an account'),
                         ),
                       ),
                     ],
@@ -164,25 +149,27 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F4F6),
       body: SafeArea(
-        child: LayoutBuilder(builder: (context, constraints) {
-          final isNarrow = constraints.maxWidth < 800;
-          if (isNarrow) {
-            return Column(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isNarrow = constraints.maxWidth < 800;
+            if (isNarrow) {
+              return Column(
+                children: [
+                  Expanded(child: _buildLeftPanel()),
+                  const Divider(height: 1),
+                  Expanded(child: _buildRightPanel()),
+                ],
+              );
+            }
+            return Row(
               children: [
                 Expanded(child: _buildLeftPanel()),
-                const Divider(height: 1),
+                const VerticalDivider(width: 1, thickness: 1),
                 Expanded(child: _buildRightPanel()),
               ],
             );
-          }
-          return Row(
-            children: [
-              Expanded(child: _buildLeftPanel()),
-              const VerticalDivider(width: 1, thickness: 1),
-              Expanded(child: _buildRightPanel()),
-            ],
-          );
-        }),
+          },
+        ),
       ),
     );
   }

@@ -1,17 +1,17 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Placeholder;
 import 'package:google_fonts/google_fonts.dart';
-import 'pages/login_page.dart';
-import 'pages/dashboard_page.dart';
-import 'pages/manage_accounts_page.dart';
-import 'pages/catering_page.dart';
-import 'pages/live_performance_page.dart';
-import 'pages/loyalty_rewards_page.dart';
-import 'pages/archive_page.dart';
-import 'pages/menu_page.dart';
-import 'pages/reports_page.dart';
-import 'pages/transactions_page.dart';
-import 'pages/settings_page.dart';
-import 'pages/placeholder_page.dart';
+import 'pages/login.dart';
+import 'pages/dashboard.dart';
+import 'pages/manage_accounts.dart';
+import 'pages/catering.dart';
+import 'pages/live_performance.dart';
+import 'pages/loyalty_rewards.dart';
+import 'pages/archive.dart';
+import 'pages/menu.dart';
+import 'pages/reports.dart';
+import 'pages/transactions.dart';
+import 'pages/settings.dart';
+import 'pages/placeholder.dart';
 import 'data_store.dart';
 
 void main() {
@@ -37,18 +37,18 @@ class MyApp extends StatelessWidget {
           ),
           initialRoute: '/login',
           routes: {
-            '/login': (context) => const LoginPage(),
-            '/dashboard': (context) => const DashboardPage(),
-            '/manage-events': (context) => const ManageEventsPage(),
-            '/live-performance': (context) => const LivePerformancePage(),
-            '/manage-accounts': (context) => const ManageAccountsPage(),
-            '/loyalty': (context) => const LoyaltyRewardsPage(),
-            '/menu': (context) => const MenuPage(),
-            '/reports': (context) => const ReportsPage(),
-            '/transactions': (context) => const TransactionsPage(),
-            '/archive': (context) => ArchivePage(),
-            '/': (context) => const PlaceholderPage(title: 'Curatering'),
-            '/settings': (context) => const SettingsPage(),
+            '/login': (context) => const Login(),
+            '/dashboard': (context) => const Dashboard(),
+            '/manage-events': (context) => const ManageEvents(),
+            '/live-performance': (context) => const LivePerformance(),
+            '/manage-accounts': (context) => const ManageAccounts(),
+            '/loyalty': (context) => const LoyaltyRewards(),
+            '/menu': (context) => const Menu(),
+            '/reports': (context) => const Reports(),
+            '/transactions': (context) => const Transactions(),
+            '/archive': (context) => Archive(),
+            '/': (context) => const Placeholder(title: 'Curatering'),
+            '/settings': (context) => const Settings(),
           },
         );
       },

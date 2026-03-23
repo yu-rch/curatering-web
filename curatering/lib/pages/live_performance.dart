@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../widgets/app_scaffold.dart';
 
-class LivePerformancePage extends StatelessWidget {
-  const LivePerformancePage({Key? key}) : super(key: key);
+class LivePerformance extends StatelessWidget {
+  const LivePerformance({super.key});
 
   Widget _buildPlaceholderSection(String title) {
     return Card(

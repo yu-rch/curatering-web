@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../widgets/app_scaffold.dart';
 
-class DashboardPage extends StatelessWidget {
-  const DashboardPage({super.key});
+class Dashboard extends StatelessWidget {
+  const Dashboard({super.key});
 
   Widget _buildStatCard(String title, String value, Color color) {
     return Expanded(
