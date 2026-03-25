@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../widgets/app_scaffold.dart';
+import '../services/user_api.dart';
+import '../auth/auth_session.dart';
+import '../auth/roles.dart';
 
 class Settings extends StatefulWidget {
   const Settings({super.key});
@@ -21,6 +24,7 @@ class _SettingsState extends State<Settings> {
 
   @override
   Widget build(BuildContext context) {
+    final role = AuthSession.instance.currentUser.value?.role;
     return AppScaffold(
       showSearch: true,
       child: Padding(
@@ -62,62 +66,95 @@ class _SettingsState extends State<Settings> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Card(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Request Help',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  initialValue: _selectedIssue,
-                                  items: [
-                                    const DropdownMenuItem(value: 'Select problem', child: Text('select problem')),
-                                    ..._issues.map(
-                                      (issue) => DropdownMenuItem(
-                                        value: issue,
-                                        child: Text(issue),
+                  if (role == Role.superAdmin)
+                    Card(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Request Help',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: DropdownButtonFormField<String>(
+                                    initialValue: _selectedIssue,
+                                    items: [
+                                      const DropdownMenuItem(
+                                        value: 'Select problem',
+                                        child: Text('select problem'),
+                                      ),
+                                      ..._issues.map(
+                                        (issue) => DropdownMenuItem(
+                                          value: issue,
+                                          child: Text(issue),
+                                        ),
+                                      ),
+                                    ],
+                                    onChanged: (value) {
+                                      if (value != null) {
+                                        setState(() {
+                                          _selectedIssue = value;
+                                        });
+                                      }
+                                    },
+                                    decoration: InputDecoration(
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
                                       ),
                                     ),
-                                  ],
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      setState(() {
-                                        _selectedIssue = value;
-                                      });
-                                    }
-                                  },
-                                  decoration: InputDecoration(
-                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              ElevatedButton(
-                                onPressed: () {},
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFFF4511E),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
+                                const SizedBox(width: 12),
+                                ElevatedButton(
+                                  onPressed: _selectedIssue == 'Select problem'
+                                      ? null
+                                      : () async {
+                                          final messenger = ScaffoldMessenger.of(context);
+                                          try {
+                                            await UserApi.instance.requestHelp(issue: _selectedIssue);
+                                            if (!mounted) return;
+                                            messenger.showSnackBar(
+                                              const SnackBar(content: Text('Help request sent.')),
+                                            );
+                                          } catch (e) {
+                                            if (!mounted) return;
+                                            messenger.showSnackBar(
+                                              const SnackBar(content: Text('Failed to send request.')),
+                                            );
+                                          }
+                                        },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFF4511E),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
                                   ),
-                                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                                  child: const Text('send'),
                                 ),
-                                child: const Text('send'),
-                              ),
-                            ],
-                          ),
-                        ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    Card(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      child: const Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Text(
+                          'Content Management (prototype)',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),

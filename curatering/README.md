@@ -1,17 +1,30 @@
-# curatering
+# Curatering
 
-A new Flutter project.
+Flutter app + Postgres backend for authentication and Super Admin features.
 
-## Getting Started
+## Backend (Postgres + API)
 
-This project is a starting point for a Flutter application.
+1. Open the `server/` folder.
+2. Copy `server/.env.example` to `server/.env` and set:
+   - `DATABASE_URL` (your Postgres connection string)
+   - `JWT_SECRET`
+   - `SEED_SUPER_ADMIN_EMAIL` and `SEED_SUPER_ADMIN_PASSWORD` (for first-time login)
+3. Install dependencies:
+   - `npm install`
+4. Start the API:
+   - `npm run start`
 
-A few resources to get you started if this is your first Flutter project:
+On startup, the server creates the required tables (`users`, `help_requests`, `notifications`, `action_logs`) if they don't exist yet.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Flutter configuration
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The app calls the backend at `http://localhost:3000` by default.
+
+If your backend runs on a different URL/port, start the app with:
+
+- `flutter run --dart-define=API_BASE_URL=http://localhost:3000`
+
+Then login using your seeded Super Admin credentials to access:
+- `Manage Accounts`
+- `Help Requests`
+- `Action Logs`

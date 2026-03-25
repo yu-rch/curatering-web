@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import '../auth/auth_session.dart';
+import '../auth/roles.dart';
+import '../models/event_order.dart';
+import '../services/events_api.dart';
 import '../widgets/app_scaffold.dart';
+import '../utils/order_calculations.dart';
 
 class TransactionItem {
   final String transactionNo;
@@ -27,18 +32,64 @@ class Transactions extends StatefulWidget {
 }
 
 class _TransactionsState extends State<Transactions> {
-  DateTime _selectedDate = DateTime(2026, 1, 10);
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
-  final List<TransactionItem> _transactions = [
-    TransactionItem(
-      transactionNo: 'T000003',
-      customerName: 'Jacklyn Perez',
-      eventTitle: "Queenie's 18th Birthday",
-      eventType: 'Birthday',
-      totalCost: '₱25000',
-      loyaltyRewards: '+122 pts',
-    ),
-  ];
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  List<EventOrderDto> _completedOrders = const <EventOrderDto>[];
+  List<DateTime> _availableDates = const <DateTime>[];
+  late DateTime _selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCompletedOrders();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCompletedOrders() async {
+    final role = AuthSession.instance.currentRole;
+    final roleType = role == Role.supervisor ? 'supervisor' : 'manager';
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final orders =
+          await EventsApi.instance.listOrders(status: 'completed', roleType: roleType);
+
+      final dates = <DateTime>{};
+      for (final o in orders) {
+        if (o.scheduleSlots.isEmpty) continue;
+        final d = DateTime.parse(o.scheduleSlots.first.date);
+        dates.add(DateTime(d.year, d.month, d.day));
+      }
+      final sortedDates = dates.toList()..sort((a, b) => b.compareTo(a));
+
+      setState(() {
+        _completedOrders = orders;
+        _availableDates = sortedDates;
+        if (sortedDates.isNotEmpty) {
+          _selectedDate = sortedDates.first;
+        } else {
+          _selectedDate = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+        }
+      });
+    } catch (e) {
+      setState(() => _errorMessage = 'Failed to load transactions.');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   Widget _dateTile(DateTime date) {
     final isSelected = date == _selectedDate;
@@ -80,8 +131,45 @@ class _TransactionsState extends State<Transactions> {
 
   @override
   Widget build(BuildContext context) {
+    final selectedKey = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+    );
+
+    final ordersForSelectedDate = _completedOrders.where((o) {
+      if (o.scheduleSlots.isEmpty) return false;
+      final d = DateTime.parse(o.scheduleSlots.first.date);
+      final key = DateTime(d.year, d.month, d.day);
+      return key == selectedKey;
+    }).toList();
+
+    final filteredOrders = _searchQuery.isEmpty
+        ? ordersForSelectedDate
+        : ordersForSelectedDate.where((o) {
+            final haystack =
+                '${o.eventTitle} ${o.customerName} ${o.eventType}'.toLowerCase();
+            return haystack.contains(_searchQuery);
+          }).toList();
+
+    final transactions = filteredOrders.map((o) {
+      final totalCost = computeOrderTotalCost(o);
+      final points = computeLoyaltyPointsFromCost(totalCost);
+      return TransactionItem(
+        transactionNo: o.id,
+        customerName: o.customerName,
+        eventTitle: o.eventTitle,
+        eventType: o.eventType,
+        totalCost: formatPesos(totalCost),
+        loyaltyRewards: '+$points pts',
+      );
+    }).toList();
+
     return AppScaffold(
       showSearch: true,
+      searchController: _searchController,
+      onSearchChanged: (v) =>
+          setState(() => _searchQuery = v.trim().toLowerCase()),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -100,13 +188,24 @@ class _TransactionsState extends State<Transactions> {
                     flex: 2,
                     child: Column(
                       children: [
-                        _dateTile(_selectedDate),
-                        const SizedBox(height: 12),
-                        _dateTile(DateTime(2026, 1, 9)),
-                        const SizedBox(height: 12),
-                        _dateTile(DateTime(2026, 1, 8)),
-                        const SizedBox(height: 12),
-                        _dateTile(DateTime(2026, 1, 7)),
+                        if (_availableDates.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 40),
+                            child: Center(
+                              child: Text(
+                                _isLoading
+                                    ? 'Loading...'
+                                    : (_errorMessage ?? 'No transactions yet.'),
+                                style: TextStyle(color: Colors.grey.shade600),
+                              ),
+                            ),
+                          )
+                        else
+                          for (final d in _availableDates.take(4))
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: _dateTile(d),
+                            ),
                       ],
                     ),
                   ),
@@ -125,12 +224,19 @@ class _TransactionsState extends State<Transactions> {
                               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                             ),
                             const SizedBox(height: 16),
-                            if (_transactions.isEmpty)
+                            if (_isLoading)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 40),
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              )
+                            else if (transactions.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.symmetric(vertical: 40),
                                 child: Center(
                                   child: Text(
-                                    'No transactions available yet.',
+                                    'No transactions available for this date.',
                                     style: TextStyle(color: Colors.grey.shade600),
                                   ),
                                 ),
@@ -147,7 +253,7 @@ class _TransactionsState extends State<Transactions> {
                                     DataColumn(label: Text('Total Cost')),
                                     DataColumn(label: Text('Loyalty Rewards')),
                                   ],
-                                  rows: _transactions.map((tx) {
+                                  rows: transactions.map((tx) {
                                     return DataRow(cells: [
                                       DataCell(Text(tx.transactionNo)),
                                       DataCell(Text(tx.customerName)),

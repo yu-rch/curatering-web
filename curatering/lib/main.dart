@@ -13,6 +13,10 @@ import 'pages/transactions.dart';
 import 'pages/settings.dart';
 import 'pages/placeholder.dart';
 import 'data_store.dart';
+import 'auth/role_guard.dart';
+import 'auth/roles.dart';
+import 'pages/help_requests.dart';
+import 'pages/action_logs.dart';
 
 void main() {
   runApp(const MyApp());
@@ -39,16 +43,55 @@ class MyApp extends StatelessWidget {
           routes: {
             '/login': (context) => const Login(),
             '/dashboard': (context) => const Dashboard(),
-            '/manage-events': (context) => const ManageEvents(),
             '/live-performance': (context) => const LivePerformance(),
-            '/manage-accounts': (context) => const ManageAccounts(),
-            '/loyalty': (context) => const LoyaltyRewards(),
-            '/menu': (context) => const Menu(),
-            '/reports': (context) => const Reports(),
-            '/transactions': (context) => const Transactions(),
-            '/archive': (context) => Archive(),
+            '/manage-accounts': (context) => const RoleGuard(
+                  requiredRole: Role.superAdmin,
+                  child: ManageAccounts(),
+                ),
+            '/help-requests': (context) => const RoleGuard(
+                  requiredRole: Role.superAdmin,
+                  child: HelpRequestsPage(),
+                ),
+            '/action-logs': (context) => const RoleGuard(
+                  requiredRole: Role.superAdmin,
+                  child: ActionLogsPage(),
+                ),
+            '/manage-events': (context) => const RoleGuard(
+                  requiredRole: Role.manager,
+                  allowedRoles: {Role.manager, Role.supervisor},
+                  child: ManageEvents(),
+                ),
+            '/loyalty': (context) => const RoleGuard(
+                  requiredRole: Role.manager,
+                  allowedRoles: {Role.manager, Role.supervisor},
+                  child: LoyaltyRewards(),
+                ),
+            '/menu': (context) => const RoleGuard(
+                  requiredRole: Role.manager,
+                  allowedRoles: {Role.manager},
+                  child: Menu(),
+                ),
+            '/reports': (context) => const RoleGuard(
+                  requiredRole: Role.manager,
+                  allowedRoles: {Role.manager},
+                  child: Reports(),
+                ),
+            '/transactions': (context) => const RoleGuard(
+                  requiredRole: Role.manager,
+                  allowedRoles: {Role.manager, Role.supervisor},
+                  child: Transactions(),
+                ),
+            '/archive': (context) => RoleGuard(
+                  requiredRole: Role.manager,
+                  allowedRoles: {Role.manager},
+                  child: Archive(),
+                ),
             '/': (context) => const Placeholder(title: 'Curatering'),
-            '/settings': (context) => const Settings(),
+            '/settings': (context) => const RoleGuard(
+                  requiredRole: Role.manager,
+                  allowedRoles: {Role.manager},
+                  child: Settings(),
+                ),
           },
         );
       },

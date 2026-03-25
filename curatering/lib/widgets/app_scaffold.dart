@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../auth/auth_session.dart';
+import '../auth/roles.dart';
+
 class AppScaffold extends StatelessWidget {
   final Widget child;
   final TextEditingController? searchController;
@@ -14,7 +17,7 @@ class AppScaffold extends StatelessWidget {
     this.onSearchChanged,
   });
 
-  static const _sidebarItems = <_SidebarItemData>[
+  static const _commonSidebarItems = <_SidebarItemData>[
     _SidebarItemData(
       icon: Icons.dashboard,
       label: 'Liveboards',
@@ -43,6 +46,24 @@ class AppScaffold extends StatelessWidget {
     ),
     // _SidebarItemData(icon: Icons.archive, label: 'Archive', route: '/archive'),
     _SidebarItemData(icon: Icons.public, label: 'Website', route: '/website'),
+  ];
+
+  static const _superAdminSidebarItems = <_SidebarItemData>[
+    _SidebarItemData(
+      icon: Icons.people_alt,
+      label: 'Manage Accounts',
+      route: '/manage-accounts',
+    ),
+    _SidebarItemData(
+      icon: Icons.help_outline,
+      label: 'Help Requests',
+      route: '/help-requests',
+    ),
+    _SidebarItemData(
+      icon: Icons.history,
+      label: 'Action Logs',
+      route: '/action-logs',
+    ),
   ];
 
   static Widget _buildSidebarItem(
@@ -105,6 +126,15 @@ class AppScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user = AuthSession.instance.currentUser.value;
+    final userName = user?.fullName ?? 'Guest';
+    final role = user?.role;
+
+    final sidebarItems = <_SidebarItemData>[
+      if (role == Role.superAdmin) ..._superAdminSidebarItems,
+      ..._commonSidebarItems,
+    ];
+
     return Scaffold(
       backgroundColor: const Color(0xFFF3F3F3),
       body: Column(
@@ -172,8 +202,8 @@ class AppScaffold extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Text(
-                  'HANNAH DREX',
+                Text(
+                  userName,
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
@@ -205,7 +235,7 @@ class AppScaffold extends StatelessWidget {
                           child: SingleChildScrollView(
                             child: Column(
                               children: [
-                                ..._sidebarItems.map((item) {
+                                ...sidebarItems.map((item) {
                                   return _buildSidebarItem(
                                     context,
                                     item.icon,

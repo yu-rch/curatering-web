@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'forgot_password.dart';
+import '../auth/auth_session.dart';
+import '../auth/roles.dart';
+import '../services/auth_api.dart';
+import '../services/api_client.dart';
 
 class Login extends StatefulWidget {
   const Login({super.key});
@@ -11,9 +15,52 @@ class Login extends StatefulWidget {
 class _LoginState extends State<Login> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  bool _isLoading = false;
+  String? _errorMessage;
 
-  void _onLogin() {
-    Navigator.of(context).pushReplacementNamed('/dashboard');
+  Future<void> _onLogin() async {
+    if (_isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final email = _emailController.text.trim();
+      final password = _passwordController.text;
+
+      final resp = await AuthApi.instance.login(email: email, password: password);
+
+      AuthSession.instance.setSession(
+        token: resp.token,
+        user: UserProfile(
+          id: resp.user.id,
+          email: resp.user.email,
+          fullName: resp.user.fullName,
+          role: resp.user.role,
+        ),
+      );
+
+      final role = resp.user.role;
+      final targetRoute = switch (role) {
+        Role.superAdmin => '/manage-accounts',
+        Role.supervisor => '/live-performance',
+        Role.manager => '/manage-events',
+        Role.admin => '/dashboard',
+      };
+
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed(targetRoute);
+    } on ApiError catch (e) {
+      setState(() => _errorMessage = e.message);
+    } catch (_) {
+      setState(() => _errorMessage = 'Login failed. Please try again.');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   Widget _buildLeftPanel() {
@@ -107,16 +154,30 @@ class _LoginState extends State<Login> {
                       SizedBox(
                         height: 48,
                         child: ElevatedButton(
-                          onPressed: _onLogin,
+                          onPressed: _isLoading ? null : _onLogin,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFF4511E),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-                          child: const Text('Log in'),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Log in'),
                         ),
                       ),
+                      if (_errorMessage != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          _errorMessage!,
+                          style: const TextStyle(color: Colors.redAccent),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       TextButton(
                         onPressed: () => showDialog<String>(
