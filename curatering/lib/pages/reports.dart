@@ -130,7 +130,7 @@ class _ReportsState extends State<Reports> {
             const SizedBox(height: 12),
             Text(
               value,
-              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
             ),
           ],
         ),
@@ -244,7 +244,7 @@ class _ReportsState extends State<Reports> {
           children: [
             const Text(
               'Reports',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             if (_isLoading)

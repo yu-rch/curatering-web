@@ -23,7 +23,7 @@ Role roleFromString(String raw) {
     'manager' => Role.manager,
     'supervisor' => Role.supervisor,
     'super_admin' || 'superadmin' || 'super-admin' => Role.superAdmin,
-    _ => Role.supervisor, // safe default for unknown roles
+    _ => Role.supervisor,
   };
 }
 

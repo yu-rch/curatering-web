@@ -23,7 +23,7 @@ class Placeholder extends StatelessWidget {
             Text(
               title,
               style: const TextStyle(
-                fontSize: 28,
+                fontSize: 21,
                 fontWeight: FontWeight.bold,
                 color: Colors.black87,
               ),

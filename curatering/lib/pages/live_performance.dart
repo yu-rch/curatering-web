@@ -48,7 +48,7 @@ class LivePerformance extends StatelessWidget {
           children: [
             const Text(
               'Live Performance',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             const Text(

@@ -6,12 +6,15 @@ class UserProfile {
   final String email;
   final String fullName;
   final Role role;
+  /// When empty or null, all sidebar pages are allowed (for manager/supervisor).
+  final Map<String, dynamic>? pagePermissions;
 
   const UserProfile({
     required this.id,
     required this.email,
     required this.fullName,
     required this.role,
+    this.pagePermissions,
   });
 }
 

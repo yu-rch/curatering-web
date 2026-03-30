@@ -1,4 +1,4 @@
-name: Curatering
+name: curatering
 description: "Curatering website for Macrina's Kitchen and Catering by Team Rocket."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -42,6 +42,7 @@ dependencies:
   file_picker: ^10.3.10
   pin_code_fields: ^9.1.0
   postgres: ^3.5.9
+  shared_preferences: ^2.5.5
 
 
 dev_dependencies:

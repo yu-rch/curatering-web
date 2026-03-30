@@ -39,7 +39,7 @@ class ArchivedDish {
 }
 
 class Archive extends StatelessWidget {
-  Archive({super.key});
+  const Archive({super.key});
 
   List<ArchivedDish> _archivedDishesFromStore() {
     return MenuStore.instance.archivedDishes.map((d) {
@@ -88,7 +88,7 @@ class Archive extends StatelessWidget {
               children: [
                 const Text(
                   'Archive',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 16),
                 Expanded(

@@ -8,7 +8,8 @@ import { initDb, pool } from './db.js';
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ limit: "25mb", extended: true }));
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-change-me';
@@ -79,7 +80,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT id, email, full_name, role, archived, password_hash
+      `SELECT id, email, full_name, role, archived, password_hash, page_permissions
        FROM users
        WHERE email = $1
        LIMIT 1;`,
@@ -109,6 +110,7 @@ app.post('/api/auth/login', async (req, res) => {
         fullName: user.full_name,
         role: user.role,
         archived: user.archived,
+        pagePermissions: user.page_permissions || {},
       },
     });
   } catch (e) {
@@ -119,7 +121,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', authRequired, async (req, res) => {
   const { id } = req.user;
   const result = await pool.query(
-    `SELECT id, email, full_name, role, archived
+    `SELECT id, email, full_name, role, archived, page_permissions
      FROM users
      WHERE id = $1
      LIMIT 1;`,
@@ -135,6 +137,7 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
       fullName: u.full_name,
       role: u.role,
       archived: u.archived,
+      pagePermissions: u.page_permissions || {},
     },
   });
 });
@@ -197,7 +200,7 @@ app.get('/api/super-admin/users', authRequired, requireSuperAdmin, async (req, r
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
   const result = await pool.query(
-    `SELECT id, email, full_name, role, archived
+    `SELECT id, email, full_name, role, archived, page_permissions
      FROM users
      ${whereSql}
      ORDER BY created_at DESC
@@ -212,6 +215,7 @@ app.get('/api/super-admin/users', authRequired, requireSuperAdmin, async (req, r
       fullName: u.full_name,
       role: u.role,
       archived: u.archived,
+      pagePermissions: u.page_permissions || {},
     })),
   });
 });
@@ -277,6 +281,32 @@ app.post('/api/super-admin/users/:userId', authRequired, requireSuperAdmin, asyn
     return res.json({ ok: true });
   } catch (e) {
     return res.status(500).json({ message: 'Failed to update user' });
+  }
+});
+
+app.post('/api/super-admin/users/:userId/page-permissions', authRequired, requireSuperAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { pagePermissions } = req.body || {};
+    if (!pagePermissions || typeof pagePermissions !== 'object') {
+      return res.status(400).json({ message: 'pagePermissions object is required' });
+    }
+
+    await pool.query(`UPDATE users SET page_permissions = $1::jsonb WHERE id = $2;`, [
+      JSON.stringify(pagePermissions),
+      userId,
+    ]);
+
+    await logAction({
+      userId: req.user.id,
+      feature: '',
+      action: 'updated page permissions',
+      other: { userId },
+    });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ message: 'Failed to update page permissions' });
   }
 });
 
@@ -570,7 +600,8 @@ app.get(
         address,
         guest_count AS "guestCount",
         menu,
-        theme_design AS "themeDesign"
+        theme_design AS "themeDesign",
+        post_analysis AS "postAnalysis"
        FROM event_orders
        WHERE status = $1
        ORDER BY created_at DESC
@@ -688,7 +719,8 @@ app.get(
         address,
         guest_count AS "guestCount",
         menu,
-        theme_design AS "themeDesign"
+        theme_design AS "themeDesign",
+        post_analysis AS "postAnalysis"
        FROM event_orders
        WHERE status = $1
        ORDER BY created_at DESC
@@ -697,6 +729,53 @@ app.get(
     );
 
     return res.json({ orders: result.rows });
+  },
+);
+
+app.post(
+  '/api/events/orders/:orderId/complete-post-analysis',
+  authRequired,
+  (req, res, next) => requireRoles(req, res, next, new Set(['manager', 'supervisor', 'admin'])),
+  async (req, res) => {
+    try {
+      const { orderId } = req.params;
+      const { businessCardsGivenAway, onTheSpotInquiries, complaints } = req.body || {};
+
+      const postAnalysis = {
+        businessCardsGivenAway: Number(businessCardsGivenAway) || 0,
+        onTheSpotInquiries: Number(onTheSpotInquiries) || 0,
+        complaints: Number(complaints) || 0,
+      };
+
+      const result = await pool.query(
+        `UPDATE event_orders
+         SET
+           status = 'completed',
+           post_analysis = $1::jsonb,
+           updated_by = $2,
+           updated_at = now()
+         WHERE id = $3
+           AND status = 'for_post_analysis'
+         RETURNING id;`,
+        [JSON.stringify(postAnalysis), req.user.id, orderId],
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({ message: 'Post-analysis order not found or already completed' });
+      }
+
+      await logAction({
+        userId: req.user.id,
+        feature: 'Events',
+        action: 'completed post-event analysis',
+        other: { orderId, postAnalysis },
+      });
+
+      return res.json({ ok: true, id: result.rows[0].id });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ message: 'Failed to complete post-analysis' });
+    }
   },
 );
 

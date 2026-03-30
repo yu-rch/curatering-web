@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../auth/auth_session.dart';
+import '../auth/page_permissions.dart';
 import '../auth/roles.dart';
 
 class AppScaffold extends StatelessWidget {
@@ -130,9 +131,10 @@ class AppScaffold extends StatelessWidget {
     final userName = user?.fullName ?? 'Guest';
     final role = user?.role;
 
+    final perms = user?.pagePermissions;
     final sidebarItems = <_SidebarItemData>[
       if (role == Role.superAdmin) ..._superAdminSidebarItems,
-      ..._commonSidebarItems,
+      ..._commonSidebarItems.where((item) => pageRouteAllowed(item.route, perms)),
     ];
 
     return Scaffold(
@@ -248,12 +250,14 @@ class AppScaffold extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        _buildSidebarItem(
-                          context,
-                          Icons.settings,
-                          'Settings',
-                          '/settings',
-                        ),
+                        if (role == Role.superAdmin ||
+                            pageRouteAllowed(PagePermissionRoutes.settings, perms))
+                          _buildSidebarItem(
+                            context,
+                            Icons.settings,
+                            'Settings',
+                            '/settings',
+                          ),
                       ],
                     ),
                   );

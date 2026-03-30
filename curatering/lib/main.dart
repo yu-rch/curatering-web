@@ -4,7 +4,6 @@ import 'pages/login.dart';
 import 'pages/dashboard.dart';
 import 'pages/manage_accounts.dart';
 import 'pages/catering.dart';
-import 'pages/live_performance.dart';
 import 'pages/loyalty_rewards.dart';
 import 'pages/archive.dart';
 import 'pages/menu.dart';
@@ -12,9 +11,13 @@ import 'pages/reports.dart';
 import 'pages/transactions.dart';
 import 'pages/settings.dart';
 import 'pages/placeholder.dart';
+import 'pages/customer_website.dart';
+import 'auth/auth_session.dart';
 import 'data_store.dart';
+import 'auth/page_permissions.dart';
 import 'auth/role_guard.dart';
 import 'auth/roles.dart';
+import 'widgets/page_permission_guard.dart';
 import 'pages/help_requests.dart';
 import 'pages/action_logs.dart';
 
@@ -42,8 +45,26 @@ class MyApp extends StatelessWidget {
           initialRoute: '/login',
           routes: {
             '/login': (context) => const Login(),
-            '/dashboard': (context) => const Dashboard(),
-            '/live-performance': (context) => const LivePerformance(),
+            '/public': (context) => const CustomerWebsiteScreen(
+                  contentEditable: false,
+                  showStaffChrome: false,
+                ),
+            '/dashboard': (context) => RoleGuard(
+                  requiredRole: Role.manager,
+                  allowedRoles: {Role.manager, Role.supervisor, Role.admin},
+                  child: PagePermissionGuard(
+                    route: PagePermissionRoutes.dashboard,
+                    child: const Dashboard(),
+                  ),
+                ),
+            // '/live-performance': (context) => RoleGuard(
+            //       requiredRole: Role.manager,
+            //       allowedRoles: {Role.manager, Role.supervisor, Role.admin},
+            //       child: PagePermissionGuard(
+            //         route: PagePermissionRoutes.livePerformance,
+            //         child: const LivePerformance(),
+            //       ),
+            //     ),
             '/manage-accounts': (context) => const RoleGuard(
                   requiredRole: Role.superAdmin,
                   child: ManageAccounts(),
@@ -56,41 +77,85 @@ class MyApp extends StatelessWidget {
                   requiredRole: Role.superAdmin,
                   child: ActionLogsPage(),
                 ),
-            '/manage-events': (context) => const RoleGuard(
+            '/manage-events': (context) => RoleGuard(
                   requiredRole: Role.manager,
                   allowedRoles: {Role.manager, Role.supervisor},
-                  child: ManageEvents(),
+                  child: PagePermissionGuard(
+                    route: PagePermissionRoutes.manageEvents,
+                    child: const ManageEvents(),
+                  ),
                 ),
-            '/loyalty': (context) => const RoleGuard(
+            '/loyalty': (context) => RoleGuard(
                   requiredRole: Role.manager,
                   allowedRoles: {Role.manager, Role.supervisor},
-                  child: LoyaltyRewards(),
+                  child: PagePermissionGuard(
+                    route: PagePermissionRoutes.loyalty,
+                    child: const LoyaltyRewards(),
+                  ),
                 ),
-            '/menu': (context) => const RoleGuard(
+            '/menu': (context) => RoleGuard(
                   requiredRole: Role.manager,
                   allowedRoles: {Role.manager},
-                  child: Menu(),
+                  child: PagePermissionGuard(
+                    route: PagePermissionRoutes.menu,
+                    child: const Menu(),
+                  ),
                 ),
-            '/reports': (context) => const RoleGuard(
+            '/reports': (context) => RoleGuard(
                   requiredRole: Role.manager,
                   allowedRoles: {Role.manager},
-                  child: Reports(),
+                  child: PagePermissionGuard(
+                    route: PagePermissionRoutes.reports,
+                    child: const Reports(),
+                  ),
                 ),
-            '/transactions': (context) => const RoleGuard(
+            '/transactions': (context) => RoleGuard(
                   requiredRole: Role.manager,
                   allowedRoles: {Role.manager, Role.supervisor},
-                  child: Transactions(),
+                  child: PagePermissionGuard(
+                    route: PagePermissionRoutes.transactions,
+                    child: const Transactions(),
+                  ),
                 ),
             '/archive': (context) => RoleGuard(
                   requiredRole: Role.manager,
                   allowedRoles: {Role.manager},
-                  child: Archive(),
+                  child: PagePermissionGuard(
+                    route: PagePermissionRoutes.archive,
+                    child: Archive(),
+                  ),
+                ),
+            '/website': (context) => RoleGuard(
+                  requiredRole: Role.manager,
+                  allowedRoles: {
+                    Role.manager,
+                    Role.supervisor,
+                    Role.superAdmin,
+                    Role.admin,
+                  },
+                  child: PagePermissionGuard(
+                    route: PagePermissionRoutes.website,
+                    child: Builder(
+                      builder: (context) {
+                        final role = AuthSession.instance.currentUser.value?.role;
+                        final canEdit =
+                            role == Role.manager || role == Role.superAdmin;
+                        return CustomerWebsiteScreen(
+                          contentEditable: canEdit,
+                          showStaffChrome: true,
+                        );
+                      },
+                    ),
+                  ),
                 ),
             '/': (context) => const Placeholder(title: 'Curatering'),
-            '/settings': (context) => const RoleGuard(
+            '/settings': (context) => RoleGuard(
                   requiredRole: Role.manager,
-                  allowedRoles: {Role.manager},
-                  child: Settings(),
+                  allowedRoles: {Role.manager, Role.supervisor},
+                  child: PagePermissionGuard(
+                    route: PagePermissionRoutes.settings,
+                    child: const Settings(),
+                  ),
                 ),
           },
         );

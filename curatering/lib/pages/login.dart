@@ -39,6 +39,7 @@ class _LoginState extends State<Login> {
           email: resp.user.email,
           fullName: resp.user.fullName,
           role: resp.user.role,
+          pagePermissions: resp.user.pagePermissions,
         ),
       );
 
@@ -192,6 +193,17 @@ class _LoginState extends State<Login> {
                             decoration: TextDecoration.underline,
                           ),
                           textAlign: TextAlign.center,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            Navigator.of(context).pushNamed('/public'),
+                        child: const Text(
+                          'View customer website',
+                          style: TextStyle(
+                            color: Colors.black87,
+                            decoration: TextDecoration.underline,
+                          ),
                         ),
                       ),
                     ],

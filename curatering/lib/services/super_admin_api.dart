@@ -24,14 +24,33 @@ class SuperAdminApi {
     if (usersRaw is! List) return const <UserDto>[];
 
     return usersRaw.map((u) {
+      final um = u as Map<String, dynamic>;
+      final permRaw = um['pagePermissions'];
       return UserDto(
-        id: u['id'].toString(),
-        email: u['email'] as String,
-        fullName: u['fullName'] as String,
-        role: roleFromString(u['role'] as String),
-        archived: (u['archived'] ?? false) as bool,
+        id: um['id'].toString(),
+        email: um['email'] as String,
+        fullName: um['fullName'] as String,
+        role: roleFromString(um['role'] as String),
+        archived: (um['archived'] ?? false) as bool,
+        pagePermissions: permRaw is Map<String, dynamic>
+            ? Map<String, dynamic>.from(permRaw)
+            : (permRaw is Map
+                ? Map<String, dynamic>.from(
+                    permRaw.map((k, v) => MapEntry(k.toString(), v)),
+                  )
+                : null),
       );
     }).toList();
+  }
+
+  Future<void> updateUserPagePermissions({
+    required String userId,
+    required Map<String, dynamic> pagePermissions,
+  }) async {
+    await ApiClient.instance.postJson(
+      '/api/super-admin/users/$userId/page-permissions',
+      body: {'pagePermissions': pagePermissions},
+    );
   }
 
   Future<void> createUser({

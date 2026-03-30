@@ -54,6 +54,31 @@ class EventsApi {
     );
   }
 
+  Future<void> acceptOrder({
+    required String orderId,
+  }) async {
+    await ApiClient.instance.postJson(
+      '/api/events/orders/$orderId/accept',
+      body: {},
+    );
+  }
+
+  Future<void> completePostAnalysis({
+    required String orderId,
+    required int businessCardsGivenAway,
+    required int onTheSpotInquiries,
+    required int complaints,
+  }) async {
+    await ApiClient.instance.postJson(
+      '/api/events/orders/$orderId/complete-post-analysis',
+      body: {
+        'businessCardsGivenAway': businessCardsGivenAway,
+        'onTheSpotInquiries': onTheSpotInquiries,
+        'complaints': complaints,
+      },
+    );
+  }
+
   EventOrderDto _orderFromJson(dynamic raw) {
     final map = raw as Map<String, dynamic>;
     final scheduleRaw = map['scheduleSlots'];
@@ -94,6 +119,17 @@ class EventsApi {
       colorPrompt: themeRaw['colorPrompt'] as String?,
     );
 
+    PostAnalysisDto? postAnalysis;
+    final paRaw = map['postAnalysis'];
+    if (paRaw != null && paRaw is Map) {
+      final pm = Map<String, dynamic>.from(paRaw);
+      postAnalysis = PostAnalysisDto(
+        businessCardsGivenAway: (pm['businessCardsGivenAway'] as num?)?.toInt() ?? 0,
+        onTheSpotInquiries: (pm['onTheSpotInquiries'] as num?)?.toInt() ?? 0,
+        complaints: (pm['complaints'] as num?)?.toInt() ?? 0,
+      );
+    }
+
     return EventOrderDto(
       id: map['id'].toString(),
       source: map['source'] as String,
@@ -110,6 +146,7 @@ class EventsApi {
       guestCount: (map['guestCount'] as num).toInt(),
       menu: menu,
       themeDesign: themeDesign,
+      postAnalysis: postAnalysis,
     );
   }
 }

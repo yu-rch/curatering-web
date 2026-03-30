@@ -36,6 +36,18 @@ class EventThemeDesignDto {
   });
 }
 
+class PostAnalysisDto {
+  final int businessCardsGivenAway;
+  final int onTheSpotInquiries;
+  final int complaints;
+
+  const PostAnalysisDto({
+    required this.businessCardsGivenAway,
+    required this.onTheSpotInquiries,
+    required this.complaints,
+  });
+}
+
 class EventOrderDto {
   final String id;
   final String source; // new_event | online_inquiry
@@ -56,6 +68,7 @@ class EventOrderDto {
 
   final List<EventMenuItemDto> menu;
   final EventThemeDesignDto themeDesign;
+  final PostAnalysisDto? postAnalysis;
 
   const EventOrderDto({
     required this.id,
@@ -73,6 +86,7 @@ class EventOrderDto {
     required this.guestCount,
     required this.menu,
     required this.themeDesign,
+    this.postAnalysis,
   });
 }
 

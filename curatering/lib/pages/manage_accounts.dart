@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../auth/page_permissions.dart';
 import '../auth/roles.dart';
 import '../models/user.dart';
 import '../services/super_admin_api.dart';
@@ -26,6 +27,11 @@ class _ManageAccountsState extends State<ManageAccounts> {
   bool? _archivedFilter; // null = all
 
   List<UserDto> _users = const <UserDto>[];
+  UserDto? _selectedUser;
+
+  /// Working copy for toggles; keys are routes from [PagePermissionRoutes.togglesForStaff].
+  Map<String, dynamic> _pagePermissionDraft = {};
+  bool _savingPermissions = false;
 
   @override
   void initState() {
@@ -42,6 +48,20 @@ class _ManageAccountsState extends State<ManageAccounts> {
 
   Role? _apiRoleFilter() => _roleFilter;
 
+  void _initPermissionDraft(UserDto user) {
+    final m = <String, dynamic>{};
+    final existing = user.pagePermissions;
+    for (final entry in PagePermissionRoutes.togglesForStaff) {
+      final route = entry.$2;
+      if (existing != null && existing.containsKey(route)) {
+        m[route] = existing[route] == true;
+      } else {
+        m[route] = true;
+      }
+    }
+    _pagePermissionDraft = m;
+  }
+
   Future<void> _fetch() async {
     setState(() {
       _loading = true;
@@ -53,7 +73,15 @@ class _ManageAccountsState extends State<ManageAccounts> {
         role: _apiRoleFilter() == null ? null : roleToString(_apiRoleFilter()!),
         archived: _archivedFilter,
       );
-      setState(() => _users = users);
+      setState(() {
+        _users = users;
+        if (_selectedUser != null) {
+          final id = _selectedUser!.id;
+          final still = users.where((u) => u.id == id).toList();
+          _selectedUser = still.isEmpty ? null : still.first;
+          if (_selectedUser != null) _initPermissionDraft(_selectedUser!);
+        }
+      });
     } catch (e) {
       setState(() => _error = 'Failed to load users.');
     } finally {
@@ -187,6 +215,122 @@ class _ManageAccountsState extends State<ManageAccounts> {
     }
   }
 
+  Future<void> _persistPagePermissions() async {
+    final u = _selectedUser;
+    if (u == null || u.role == Role.superAdmin) return;
+    setState(() => _savingPermissions = true);
+    try {
+      await SuperAdminApi.instance.updateUserPagePermissions(
+        userId: u.id,
+        pagePermissions: Map<String, dynamic>.from(_pagePermissionDraft),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Page access updated.')),
+      );
+      await _fetch();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to save page access.')),
+      );
+    } finally {
+      if (mounted) setState(() => _savingPermissions = false);
+    }
+  }
+
+  Widget _buildUserAccessPanel() {
+    final u = _selectedUser;
+    if (u == null) {
+      return Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: const Padding(
+          padding: EdgeInsets.all(24.0),
+          child: Center(child: Text('Select an account to view details and page access.')),
+        ),
+      );
+    }
+
+    if (u.role == Role.superAdmin) {
+      return Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(u.fullName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text(u.email, style: TextStyle(color: Colors.grey.shade700)),
+              const SizedBox(height: 16),
+              const Text(
+                'Super Admin accounts always have full access to all areas.',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(u.fullName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text(u.email, style: TextStyle(color: Colors.grey.shade700)),
+            const SizedBox(height: 4),
+            Text('Role: ${u.role.displayName}', style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            const Text('USER ACCESS', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            const Text(
+              'Turn pages on or off for this user. They must sign out and back in for changes to apply everywhere.',
+              style: TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            ...PagePermissionRoutes.togglesForStaff.map((e) {
+              final label = e.$1;
+              final route = e.$2;
+              final allowed = (_pagePermissionDraft[route] as bool?) ?? true;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(label)),
+                    Text(
+                      allowed ? 'Allowed' : 'Blocked',
+                      style: TextStyle(
+                        color: allowed ? Colors.green.shade800 : Colors.red.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: _savingPermissions
+                          ? null
+                          : () {
+                              setState(() {
+                                _pagePermissionDraft[route] = !allowed;
+                              });
+                              _persistPagePermissions();
+                            },
+                      child: Text(allowed ? 'Don\'t allow' : 'Allow'),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
@@ -206,7 +350,7 @@ class _ManageAccountsState extends State<ManageAccounts> {
           children: [
             const Text(
               'Manage Accounts',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             Row(
@@ -256,49 +400,83 @@ class _ManageAccountsState extends State<ManageAccounts> {
                   ? const Center(child: CircularProgressIndicator())
                   : _users.isEmpty
                       ? Center(child: Text('No users found.', style: TextStyle(color: Colors.grey.shade600)))
-                      : SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: DataTable(
-                            columns: const [
-                              DataColumn(label: Text('Name')),
-                              DataColumn(label: Text('Email')),
-                              DataColumn(label: Text('Role')),
-                              DataColumn(label: Text('Status')),
-                              DataColumn(label: Text('Actions')),
-                            ],
-                            rows: _users.map((u) {
-                              return DataRow(cells: [
-                                DataCell(Text(u.fullName)),
-                                DataCell(Text(u.email)),
-                                DataCell(Text(u.role.displayName)),
-                                DataCell(
-                                  Text(
-                                    u.archived ? 'Archived' : 'Active',
-                                    style: TextStyle(
-                                      color: u.archived ? Colors.grey : Colors.green,
-                                      fontWeight: FontWeight.w600,
+                      : LayoutBuilder(
+                          builder: (context, c) {
+                            final wide = c.maxWidth >= 900;
+                            final list = Card(
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const Padding(
+                                    padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                                    child: Text('USER ACCOUNTS', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  ),
+                                  const Divider(height: 1),
+                                  Expanded(
+                                    child: ListView.builder(
+                                      itemCount: _users.length,
+                                      itemBuilder: (context, i) {
+                                        final u = _users[i];
+                                        final sel = _selectedUser?.id == u.id;
+                                        return ListTile(
+                                          selected: sel,
+                                          selectedTileColor: Colors.grey.shade300,
+                                          title: Text(u.fullName),
+                                          subtitle: Text('${u.role.displayName} · ${u.email}'),
+                                          trailing: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              IconButton(
+                                                tooltip: 'Edit',
+                                                icon: const Icon(Icons.edit, size: 20),
+                                                onPressed: () => _editUser(u),
+                                              ),
+                                              IconButton(
+                                                tooltip: u.archived ? 'Unarchive' : 'Archive',
+                                                icon: Icon(u.archived ? Icons.restore : Icons.archive, size: 20),
+                                                onPressed: () => _toggleArchived(u, !u.archived),
+                                              ),
+                                            ],
+                                          ),
+                                          onTap: () {
+                                            setState(() {
+                                              _selectedUser = u;
+                                              _initPermissionDraft(u);
+                                            });
+                                          },
+                                        );
+                                      },
                                     ),
                                   ),
+                                ],
+                              ),
+                            );
+
+                            final detail = _buildUserAccessPanel();
+
+                            if (!wide) {
+                              return SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    SizedBox(height: 400, child: list),
+                                    const SizedBox(height: 16),
+                                    detail,
+                                  ],
                                 ),
-                                DataCell(
-                                  Row(
-                                    children: [
-                                      IconButton(
-                                        tooltip: 'Edit',
-                                        icon: const Icon(Icons.edit, size: 18),
-                                        onPressed: () => _editUser(u),
-                                      ),
-                                      IconButton(
-                                        tooltip: u.archived ? 'Unarchive' : 'Archive',
-                                        icon: Icon(u.archived ? Icons.restore : Icons.archive, size: 18),
-                                        onPressed: () => _toggleArchived(u, !u.archived),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ]);
-                            }).toList(),
-                          ),
+                              );
+                            }
+
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(flex: 5, child: list),
+                                const SizedBox(width: 20),
+                                Expanded(flex: 6, child: SingleChildScrollView(child: detail)),
+                              ],
+                            );
+                          },
                         ),
             ),
           ],

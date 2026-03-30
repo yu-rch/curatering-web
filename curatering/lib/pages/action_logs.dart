@@ -98,7 +98,7 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
           children: [
             const Text(
               'Action Logs',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             Row(

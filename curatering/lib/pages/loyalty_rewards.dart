@@ -4,6 +4,8 @@ import '../auth/auth_session.dart';
 import '../auth/roles.dart';
 import '../models/event_order.dart';
 import '../services/events_api.dart';
+import '../services/loyalty_reward_rules_store.dart';
+import '../services/menu_store.dart';
 import '../utils/order_calculations.dart';
 
 class LoyaltyCustomer {
@@ -63,13 +65,180 @@ class _LoyaltyRewardsState extends State<LoyaltyRewards> {
   @override
   void initState() {
     super.initState();
+    LoyaltyRewardRulesStore.instance.addListener(_onRewardsOrMenuChanged);
+    MenuStore.instance.addListener(_onRewardsOrMenuChanged);
     _loadCompletedOrders();
+  }
+
+  void _onRewardsOrMenuChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    LoyaltyRewardRulesStore.instance.removeListener(_onRewardsOrMenuChanged);
+    MenuStore.instance.removeListener(_onRewardsOrMenuChanged);
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _openAddRewardDialog() async {
+    final dishes = MenuStore.instance.activeDishes;
+    if (dishes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add dishes on the Menu page first.')),
+      );
+      return;
+    }
+
+    String? dishId = dishes.first.id;
+    final minPtsCtrl = TextEditingController(text: '1000');
+    final sizeCtrl = TextEditingController(text: '50 pcs');
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Add reward'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: dishId,
+                      decoration: const InputDecoration(labelText: 'Dish'),
+                      items: dishes
+                          .map(
+                            (d) => DropdownMenuItem(value: d.id, child: Text(d.name)),
+                          )
+                          .toList(),
+                      onChanged: (v) => setDialogState(() => dishId = v),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: minPtsCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Minimum points'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: sizeCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Size (e.g. 50 pcs)',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () {
+                    final minPts = int.tryParse(minPtsCtrl.text.trim()) ?? 0;
+                    if (dishId == null || minPts <= 0 || sizeCtrl.text.trim().isEmpty) {
+                      return;
+                    }
+                    Navigator.of(context).pop(true);
+                  },
+                  child: const Text('Add'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (ok == true && dishId != null) {
+      final minPts = int.tryParse(minPtsCtrl.text.trim()) ?? 0;
+      LoyaltyRewardRulesStore.instance.addRule(
+        dishId: dishId!,
+        minPoints: minPts,
+        sizeLabel: sizeCtrl.text.trim(),
+      );
+    }
+  }
+
+  Widget _buildRewardsManagementSection() {
+    final rules = LoyaltyRewardRulesStore.instance.rules;
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'REWARDS MANAGEMENT',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: _openAddRewardDialog,
+                  icon: const Icon(Icons.add, size: 20),
+                  label: const Text('Add'),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC024)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (rules.isEmpty)
+              Text(
+                'No reward rows yet. Add a dish-based reward; archiving here also archives the dish on the Menu page.',
+                style: TextStyle(color: Colors.grey.shade600),
+              )
+            else
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  headingRowColor: WidgetStateProperty.all(Colors.grey.shade200),
+                  columns: const [
+                    DataColumn(label: Text('Minimum Points')),
+                    DataColumn(label: Text('Reward (dish)')),
+                    DataColumn(label: Text('Size')),
+                    DataColumn(label: Text('Actions')),
+                  ],
+                  rows: rules.map((r) {
+                    String dishName = r.dishId;
+                    for (final d in MenuStore.instance.allDishes) {
+                      if (d.id == r.dishId) {
+                        dishName = d.name;
+                        break;
+                      }
+                    }
+                    return DataRow(
+                      cells: [
+                        DataCell(Text('${r.minPoints} pts')),
+                        DataCell(Text(dishName)),
+                        DataCell(Text(r.sizeLabel)),
+                        DataCell(
+                          IconButton(
+                            tooltip: 'Archive dish & remove reward',
+                            icon: const Icon(Icons.archive, color: Colors.orange),
+                            onPressed: () {
+                              LoyaltyRewardRulesStore.instance.archiveRuleAndDish(r.id);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Dish archived on Menu and reward removed.'),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadCompletedOrders() async {
@@ -205,7 +374,7 @@ class _LoyaltyRewardsState extends State<LoyaltyRewards> {
               children: [
                 const Text(
                   'Loyalty Rewards',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 16),
                 Expanded(
@@ -226,33 +395,44 @@ class _LoyaltyRewardsState extends State<LoyaltyRewards> {
                               ),
                               const SizedBox(height: 20),
                               _buildTransactionInfoSection(selectedTransaction),
+                              const SizedBox(height: 20),
+                              _buildRewardsManagementSection(),
                             ],
                           ),
                         )
-                      : Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             Expanded(
-                              flex: 3,
-                              child: _buildCustomersSection(
-                                customersFiltered,
-                                selectedCustomerStillVisible,
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    flex: 3,
+                                    child: _buildCustomersSection(
+                                      customersFiltered,
+                                      selectedCustomerStillVisible,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 20),
+                                  Expanded(
+                                    flex: 3,
+                                    child: _buildTransactionsSection(
+                                      transactions,
+                                      selectedCustomerStillVisible,
+                                      _selectedTransactionNo,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 20),
+                                  Expanded(
+                                    flex: 4,
+                                    child: _buildTransactionInfoSection(selectedTransaction),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(width: 20),
-                            Expanded(
-                              flex: 3,
-                              child: _buildTransactionsSection(
-                                transactions,
-                                selectedCustomerStillVisible,
-                                _selectedTransactionNo,
-                              ),
-                            ),
-                            const SizedBox(width: 20),
-                            Expanded(
-                              flex: 4,
-                              child: _buildTransactionInfoSection(selectedTransaction),
-                            ),
+                            const SizedBox(height: 16),
+                            _buildRewardsManagementSection(),
                           ],
                         ),
                 ),

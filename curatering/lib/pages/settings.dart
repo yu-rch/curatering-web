@@ -3,6 +3,7 @@ import '../widgets/app_scaffold.dart';
 import '../services/user_api.dart';
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
+import '../data_store.dart';
 
 class Settings extends StatefulWidget {
   const Settings({super.key});
@@ -12,7 +13,7 @@ class Settings extends StatefulWidget {
 }
 
 class _SettingsState extends State<Settings> {
-  bool _isDarkMode = false;
+  late bool _isDarkMode;
   String _selectedIssue = 'Select problem';
 
   final List<String> _issues = [
@@ -21,6 +22,17 @@ class _SettingsState extends State<Settings> {
     'Missing transactions',
     'Other',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _isDarkMode = DataStore.isDarkMode.value;
+  }
+
+  void _onLogout() {
+    AuthSession.instance.clear();
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +46,7 @@ class _SettingsState extends State<Settings> {
           children: [
             const Text(
               'Settings',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             Expanded(
@@ -48,20 +60,38 @@ class _SettingsState extends State<Settings> {
                       child: Row(
                         children: [
                           const Expanded(
+                            flex: 1,
                             child: Text(
-                              'Theme',
+                              'Dark mode',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ),
                           Switch(
                             value: _isDarkMode,
                             onChanged: (value) {
-                              setState(() {
-                                _isDarkMode = value;
-                              });
+                              setState(() => _isDarkMode = value);
+                              DataStore.isDarkMode.value = value;
                             },
                           ),
                         ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Card(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _onLogout,
+                          icon: const Icon(Icons.logout),
+                          label: const Text('Log out'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -82,6 +112,7 @@ class _SettingsState extends State<Settings> {
                             Row(
                               children: [
                                 Expanded(
+                                  flex: 1,
                                   child: DropdownButtonFormField<String>(
                                     initialValue: _selectedIssue,
                                     items: [

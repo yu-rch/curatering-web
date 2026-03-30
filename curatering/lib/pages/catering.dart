@@ -13,6 +13,7 @@ import '../models/menu_dish.dart';
 import '../services/events_api.dart';
 import '../services/menu_store.dart';
 import '../widgets/app_scaffold.dart';
+import '../utils/order_calculations.dart';
 import '../utils/web_html.dart' as html;
 
 enum EventStatus {
@@ -116,6 +117,14 @@ class _ManageEventsState extends State<ManageEvents>
   final TextEditingController _eventAddressController = TextEditingController();
   final TextEditingController _guestCountController = TextEditingController();
 
+  final TextEditingController _postCardsController = TextEditingController();
+  final TextEditingController _postInquiriesController =
+      TextEditingController();
+  final TextEditingController _postComplaintsController =
+      TextEditingController();
+
+  bool _postAnalysisSaving = false;
+
   EventStatus _selectedStatus = EventStatus.newEvent;
   String? _eventType;
   EventFormalityLevel? _formalityLevel;
@@ -146,13 +155,13 @@ class _ManageEventsState extends State<ManageEvents>
           setState(() {
             _selectedStatus = newStatus;
             if (newStatus != EventStatus.forProcessing) {
-              _selectedProcessingOrder = null;
+              _selectedProcessingOrderDto = null;
             }
             if (newStatus != EventStatus.forPostAnalysis) {
-              _selectedPostAnalysisOrder = null;
+              _selectedPostAnalysisOrderDto = null;
             }
             if (newStatus != EventStatus.completed) {
-              _selectedCompletedOrder = null;
+              _selectedCompletedOrderDto = null;
             }
           });
         });
@@ -175,6 +184,9 @@ class _ManageEventsState extends State<ManageEvents>
     _emailController.dispose();
     _eventAddressController.dispose();
     _guestCountController.dispose();
+    _postCardsController.dispose();
+    _postInquiriesController.dispose();
+    _postComplaintsController.dispose();
     _themeColorPromptController.dispose();
     super.dispose();
   }
@@ -186,76 +198,13 @@ class _ManageEventsState extends State<ManageEvents>
     });
   }
 
-  ProcessingOrder? _selectedProcessingOrder;
+  EventOrderDto? _selectedProcessingOrderDto;
 
-  ProcessingOrder? _selectedPostAnalysisOrder;
-  // final List<ProcessingOrder> _mockPostAnalysisOrders = [
-  //   ProcessingOrder(
-  //     company: 'Guess Inc.',
-  //     contactName: 'Mary Joyce Reyes',
-  //     contactNumber: '09878845690',
-  //     date: DateTime(2026, 2, 24),
-  //     time: '1:00 - 3:00 PM',
-  //   ),
-  //   ProcessingOrder(
-  //     company: 'Acme Events',
-  //     contactName: 'Juan Dela Cruz',
-  //     contactNumber: '09171234567',
-  //     date: DateTime(2026, 2, 25),
-  //     time: '2:00 - 4:00 PM',
-  //   ),
-  //   ProcessingOrder(
-  //     company: 'Global Corp',
-  //     contactName: 'Alice Johnson',
-  //     contactNumber: '09234567890',
-  //     date: DateTime(2026, 2, 27),
-  //     time: '11:00 AM - 1:00 PM',
-  //   ),
-  // ];
+  EventOrderDto? _selectedPostAnalysisOrderDto;
 
-  ProcessingOrder? _selectedCompletedOrder;
-  // final List<ProcessingOrder> _mockCompletedOrders = [
-  //   ProcessingOrder(
-  //     company: 'Guess Inc.',
-  //     contactName: 'Mary Joyce Reyes',
-  //     contactNumber: '09878845690',
-  //     date: DateTime(2026, 2, 24),
-  //     time: '1:00 - 3:00 PM',
-  //   ),
-  //   ProcessingOrder(
-  //     company: 'Acme Events',
-  //     contactName: 'Juan Dela Cruz',
-  //     contactNumber: '09171234567',
-  //     date: DateTime(2026, 2, 25),
-  //     time: '2:00 - 4:00 PM',
-  //   ),
-  //   ProcessingOrder(
-  //     company: 'Innovate Ltd',
-  //     contactName: 'Bob Wilson',
-  //     contactNumber: '09345678901',
-  //     date: DateTime(2026, 2, 28),
-  //     time: '3:00 - 6:00 PM',
-  //   ),
-  // ];
+  EventOrderDto? _selectedCompletedOrderDto;
 
-  // final List<ProcessingOrder> _mockNewEvents = [
-  //   ProcessingOrder(
-  //     company: 'Wedding Celebration',
-  //     contactName: 'Anna Garcia',
-  //     contactNumber: '09123456789',
-  //     date: DateTime(2026, 3, 15),
-  //     time: '4:00 - 8:00 PM',
-  //   ),
-  //   ProcessingOrder(
-  //     company: 'Birthday Party',
-  //     contactName: 'Carlos Reyes',
-  //     contactNumber: '09987654321',
-  //     date: DateTime(2026, 3, 18),
-  //     time: '6:00 - 9:00 PM',
-  //   ),
-  // ];
-
-  List<Uint8List> _themeDesignImages = [];
+  final List<Uint8List> _themeDesignImages = [];
   List<_ThemeTemplate> _themeTemplates = const [];
   final List<Uint8List> _themePicks = [];
   final Set<int> _themePickHashes = <int>{};
@@ -277,7 +226,6 @@ class _ManageEventsState extends State<ManageEvents>
     'Private Party',
     'Other',
   ];
-
 
   List<MenuDish> get _filteredDishes {
     final query = _foodSearchController.text.trim().toLowerCase();
@@ -301,9 +249,9 @@ class _ManageEventsState extends State<ManageEvents>
       _eventScheduleSlots.clear();
       _menuItems.clear();
       _selectedPaxPerDish.clear();
-      _selectedProcessingOrder = null;
-      _selectedPostAnalysisOrder = null;
-      _selectedCompletedOrder = null;
+      _selectedProcessingOrderDto = null;
+      _selectedPostAnalysisOrderDto = null;
+      _selectedCompletedOrderDto = null;
       _themeDesignImages.clear();
       _themePicks.clear();
       _themePickHashes.clear();
@@ -452,6 +400,12 @@ class _ManageEventsState extends State<ManageEvents>
           status: 'for_processing',
           roleType: 'supervisor',
         );
+        _newEventOrdersDto = await EventsApi.instance.listOrders(
+          status: 'new_event',
+          roleType: 'supervisor',
+        );
+        // Add new events to processing orders
+        _processingOrdersDto = [..._processingOrdersDto, ..._newEventOrdersDto];
         _onlineInquiryOrders = const <EventOrderDto>[];
         _selectedOnlineInquiryOrder = null;
 
@@ -476,6 +430,12 @@ class _ManageEventsState extends State<ManageEvents>
           status: 'for_processing',
           roleType: 'manager',
         );
+        _newEventOrdersDto = await EventsApi.instance.listOrders(
+          status: 'new_event',
+          roleType: 'manager',
+        );
+        // Add new events to processing orders
+        _processingOrdersDto = [..._processingOrdersDto, ..._newEventOrdersDto];
 
         _postAnalysisOrdersDto = await EventsApi.instance.listOrders(
           status: 'for_post_analysis',
@@ -565,6 +525,34 @@ class _ManageEventsState extends State<ManageEvents>
       date: date,
       time: timeLabel,
     );
+  }
+
+  void _syncPostAnalysisFields(EventOrderDto? dto) {
+    if (dto == null) {
+      _postCardsController.clear();
+      _postInquiriesController.clear();
+      _postComplaintsController.clear();
+      return;
+    }
+    final pa = dto.postAnalysis;
+    _postCardsController.text = pa == null
+        ? ''
+        : '${pa.businessCardsGivenAway}';
+    _postInquiriesController.text = pa == null
+        ? ''
+        : '${pa.onTheSpotInquiries}';
+    _postComplaintsController.text = pa == null ? '' : '${pa.complaints}';
+  }
+
+  List<EventOrderDto> _filterEventOrdersBySearch(List<EventOrderDto> orders) {
+    final q = _eventSearchController.text.trim().toLowerCase();
+    if (q.isEmpty) return orders;
+    return orders.where((o) {
+      final hay =
+          '${o.customerName} ${o.contactPerson} ${o.contactNumber} ${o.eventTitle}'
+              .toLowerCase();
+      return hay.contains(q);
+    }).toList();
   }
 
   void _applyOrderToForm(EventOrderDto order) {
@@ -755,6 +743,7 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
+  // Theme Design Image Pick
   int _themeImageKey(Uint8List bytes) {
     var hash = 0;
     for (final b in bytes) {
@@ -809,8 +798,7 @@ class _ManageEventsState extends State<ManageEvents>
       _themeTintColor = nextColor;
     });
 
-    // Stub: this is where you would call an AI service to recolor/swap
-    // the theme images (e.g. ChatGPT / DeepSeek / your image pipeline).
+    // Stub: plug AI API here
     await Future<void>.delayed(const Duration(seconds: 1));
 
     if (!mounted) return;
@@ -834,6 +822,7 @@ class _ManageEventsState extends State<ManageEvents>
     }
   }
 
+  //Online Inquiries View
   Widget _buildOnlineInquiriesView(bool isNarrow) {
     final query = _inquirySearchController.text.trim().toLowerCase();
     final filteredOrders = _onlineInquiryOrders.where((o) {
@@ -1016,7 +1005,12 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
-  Widget _buildProcessingOrderCard(ProcessingOrder order, bool isSelected) {
+  Widget _buildSelectableOrderCard(
+    EventOrderDto dto,
+    bool isSelected,
+    void Function(EventOrderDto) onSelect,
+  ) {
+    final order = _orderToProcessingOrderSummary(dto);
     final bgColor = isSelected ? Colors.blue.shade50 : Colors.white;
     final borderColor = isSelected
         ? const Color(0xFF1976D2)
@@ -1025,7 +1019,7 @@ class _ManageEventsState extends State<ManageEvents>
     return InkWell(
       onTap: () {
         setState(() {
-          _selectedProcessingOrder = order;
+          onSelect(dto);
         });
       },
       borderRadius: BorderRadius.circular(8),
@@ -1081,116 +1075,82 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Widget _buildForProcessingView(bool isNarrow) {
-    final orders = _processingOrdersDto
-        .map(_orderToProcessingOrderSummary)
-        .toList();
-
-    final listSection = Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Orders for Processing',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _eventSearchController,
-              decoration: InputDecoration(
-                hintText: 'Search orders',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: Colors.grey.shade100,
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 16),
-            if (orders.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 40),
-                child: Center(
-                  child: Text(
-                    'No orders are ready for processing.',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-                ),
-              )
-            else
-              Column(
-                children: orders
-                    .map(
-                      (order) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _buildProcessingOrderCard(
-                          order,
-                          _selectedProcessingOrder == order,
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-          ],
-        ),
-      ),
-    );
-
-    final menuSection = Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Menu',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            if (_selectedProcessingOrder == null)
-              Text(
-                'Select an order to view the menu.',
-                style: TextStyle(color: Colors.grey.shade600),
-              )
-            else
-              Text(
-                'Menu for ${_selectedProcessingOrder!.company} will appear here.',
-                style: TextStyle(color: Colors.grey.shade600),
-              ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {},
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFF4511E),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                child: const Text('Update menu'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    final orderDtos = _filterEventOrdersBySearch(_processingOrdersDto);
 
     if (isNarrow) {
       return SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            listSection,
+            // Orders List Section
+            Card(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSectionTitle('ORDERS FOR PROCESSING'),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _eventSearchController,
+                      decoration: InputDecoration(
+                        hintText: 'Search orders',
+                        prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
+                        filled: true,
+                        fillColor: Colors.grey.shade100,
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 16),
+                    if (orderDtos.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 40),
+                        child: Center(
+                          child: Text(
+                            'No orders are ready for processing.',
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                        ),
+                      )
+                    else
+                      Column(
+                        children: orderDtos.map((dto) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _buildSelectableOrderCard(
+                              dto,
+                              _selectedProcessingOrderDto?.id == dto.id,
+                              (d) => setState(() {
+                                _selectedProcessingOrderDto = d;
+                              }),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 20),
-            menuSection,
-            const SizedBox(height: 20),
+            
+            // Event Information Section
+            if (_selectedProcessingOrderDto != null) ...[
+              _buildEventInformationSection(),
+              const SizedBox(height: 20),
+            ],
+            
+            // Menu Section
+            if (_selectedProcessingOrderDto != null) ...[
+              _buildProcessingMenuSection(),
+              const SizedBox(height: 20),
+            ],
+            
+            // Food Browser Section
             _buildFoodBrowser(),
           ],
         ),
@@ -1200,20 +1160,282 @@ class _ManageEventsState extends State<ManageEvents>
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(flex: 3, child: SingleChildScrollView(child: listSection)),
-        const SizedBox(width: 20),
-        Expanded(flex: 3, child: SingleChildScrollView(child: menuSection)),
-        const SizedBox(width: 20),
+        // Left: Orders List
         Expanded(
-          flex: 4,
-          child: SingleChildScrollView(child: _buildFoodBrowser()),
+          flex: 2,
+          child: Card(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionTitle('ORDERS FOR PROCESSING'),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _eventSearchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search orders',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 16),
+                  if (orderDtos.isEmpty)
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          'No orders are ready for processing.',
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: ListView(
+                        children: orderDtos.map((dto) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _buildSelectableOrderCard(
+                              dto,
+                              _selectedProcessingOrderDto?.id == dto.id,
+                              (d) => setState(() {
+                                _selectedProcessingOrderDto = d;
+                              }),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 20),
+        
+        // Middle: Event Information and Menu
+        Expanded(
+          flex: 2,
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                if (_selectedProcessingOrderDto != null) ...[
+                  _buildEventInformationSection(),
+                  const SizedBox(height: 20),
+                  _buildProcessingMenuSection(),
+                ] else ...[
+                  Card(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Center(
+                        child: Text(
+                          'Select an order to view details.',
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 20),
+        
+        // Right: Food Browser
+        Expanded(
+          flex: 2,
+          child: _buildFoodBrowser(),
         ),
       ],
     );
   }
 
+  Widget _buildEventInformationSection() {
+    final selectedOrder = _selectedProcessingOrderDto!;
+    final totalCost = computeOrderTotalCost(selectedOrder);
+    
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _buildSectionTitle('EVENT INFORMATION'),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade100,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'in progress',
+                    style: TextStyle(
+                      color: Colors.orange.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildEventInfoRow('EVENT TITLE', selectedOrder.eventTitle),
+            _buildEventInfoRow('EVENT TYPE', selectedOrder.eventType),
+            _buildEventInfoRow('CUSTOMER', selectedOrder.customerName),
+            _buildEventInfoRow('CONTACT PERSON', selectedOrder.contactPerson),
+            _buildEventInfoRow('CONTACT NUMBER', selectedOrder.contactNumber),
+            _buildEventInfoRow('EMAIL ADDRESS', selectedOrder.emailAddress),
+            if (selectedOrder.scheduleSlots.isNotEmpty)
+              _buildEventInfoRow(
+                'DATE OF EVENT',
+                selectedOrder.scheduleSlots.first.date,
+              ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _showThemeDesignDialog,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFF4511E),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: const Text('VIEW EVENTS THEME DESIGN'),
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildCostBlock('COST ESTIMATION', formatPesos(totalCost), Colors.orange),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => _acceptOrder(selectedOrder),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1DB954),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: const Text('ACCEPT ORDER'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProcessingMenuSection() {
+    final selectedOrder = _selectedProcessingOrderDto!;
+    
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionTitle('MENU'),
+            const SizedBox(height: 16),
+            if (selectedOrder.menu.isEmpty)
+              Text(
+                'No menu items available.',
+                style: TextStyle(color: Colors.grey.shade600),
+              )
+            else
+              Column(
+                children: selectedOrder.menu.map((m) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.fastfood, color: Colors.grey),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                m.dishName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${m.price} ${m.paxOption}',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _acceptOrder(EventOrderDto order) async {
+    try {
+      await EventsApi.instance.acceptOrder(orderId: order.id);
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Order accepted successfully.'),
+          backgroundColor: Color(0xFF1DB954),
+        ),
+      );
+      
+      // Refresh orders and move to post-analysis
+      await _refreshOrders();
+      setState(() {
+        _selectedProcessingOrderDto = null;
+      });
+      _tabController.animateTo(EventStatus.forPostAnalysis.index);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to accept order.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _showThemeDesignDialog() async {
-    // Snapshot the theme state so “Cancel” can revert any picks/tints/collage ordering.
     final picksBefore = _themePicks.toList();
     final pickHashesBefore = _themePickHashes.toSet();
     final collageBefore = _collageOrder.toList();
@@ -1563,9 +1785,7 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Widget _buildPostAnalysisView(bool isNarrow) {
-    final orders = _postAnalysisOrdersDto
-        .map(_orderToProcessingOrderSummary)
-        .toList(growable: false);
+    final orderDtos = _filterEventOrdersBySearch(_postAnalysisOrdersDto);
 
     final listSection = Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1594,7 +1814,7 @@ class _ManageEventsState extends State<ManageEvents>
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 16),
-            if (orders.isEmpty)
+            if (orderDtos.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 40),
                 child: Center(
@@ -1606,13 +1826,17 @@ class _ManageEventsState extends State<ManageEvents>
               )
             else
               Column(
-                children: orders
+                children: orderDtos
                     .map(
-                      (order) => Padding(
+                      (dto) => Padding(
                         padding: const EdgeInsets.only(bottom: 12),
-                        child: _buildProcessingOrderCard(
-                          order,
-                          _selectedPostAnalysisOrder == order,
+                        child: _buildSelectableOrderCard(
+                          dto,
+                          _selectedPostAnalysisOrderDto?.id == dto.id,
+                          (d) {
+                            _selectedPostAnalysisOrderDto = d;
+                            _syncPostAnalysisFields(d);
+                          },
                         ),
                       ),
                     )
@@ -1635,14 +1859,14 @@ class _ManageEventsState extends State<ManageEvents>
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            if (_selectedPostAnalysisOrder == null)
+            if (_selectedPostAnalysisOrderDto == null)
               Text(
                 'Select an order to view the menu.',
                 style: TextStyle(color: Colors.grey.shade600),
               )
             else
               Column(
-                children: _allDishes.take(4).map((dish) {
+                children: _selectedPostAnalysisOrderDto!.menu.map((m) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Row(
@@ -1662,31 +1886,17 @@ class _ManageEventsState extends State<ManageEvents>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                dish.name,
+                                m.dishName,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                dish.price,
+                                '${m.price} · ${m.paxOption}',
                                 style: TextStyle(color: Colors.grey.shade600),
                               ),
                             ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade200,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'Most Popular Dish',
-                            style: TextStyle(color: Colors.grey.shade700),
                           ),
                         ),
                       ],
@@ -1698,6 +1908,10 @@ class _ManageEventsState extends State<ManageEvents>
         ),
       ),
     );
+
+    final selPost = _selectedPostAnalysisOrderDto;
+    final postTotal = selPost == null ? 0.0 : computeOrderTotalCost(selPost);
+    final postDown = postTotal > 0 ? postTotal / 2 : 0.0;
 
     final infoSection = Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1711,15 +1925,128 @@ class _ManageEventsState extends State<ManageEvents>
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            _buildInfoRow('Business cards given away', 'N/A'),
-            _buildInfoRow('On-the-spot inquiries', 'N/A'),
-            _buildInfoRow('No. of Complaints', 'N/A'),
+            if (selPost == null)
+              Text(
+                'Select an order to enter post-event details.',
+                style: TextStyle(color: Colors.grey.shade600),
+              )
+            else ...[
+              TextField(
+                controller: _postCardsController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Business cards given away',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _postInquiriesController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'On-the-spot inquiries',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _postComplaintsController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'No. of complaints',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _postAnalysisSaving
+                      ? null
+                      : () async {
+                          setState(() => _postAnalysisSaving = true);
+                          try {
+                            await EventsApi.instance.completePostAnalysis(
+                              orderId: selPost.id,
+                              businessCardsGivenAway:
+                                  int.tryParse(
+                                    _postCardsController.text.trim(),
+                                  ) ??
+                                  0,
+                              onTheSpotInquiries:
+                                  int.tryParse(
+                                    _postInquiriesController.text.trim(),
+                                  ) ??
+                                  0,
+                              complaints:
+                                  int.tryParse(
+                                    _postComplaintsController.text.trim(),
+                                  ) ??
+                                  0,
+                            );
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Post-event analysis saved. Event moved to Completed.',
+                                ),
+                              ),
+                            );
+                            setState(() {
+                              _selectedPostAnalysisOrderDto = null;
+                              _syncPostAnalysisFields(null);
+                            });
+                            await _refreshOrders();
+                          } catch (_) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Could not save post-event analysis.',
+                                ),
+                              ),
+                            );
+                          } finally {
+                            if (mounted) {
+                              setState(() => _postAnalysisSaving = false);
+                            }
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1DB954),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: _postAnalysisSaving
+                      ? const SizedBox(
+                          height: 22,
+                          width: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Done'),
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
-            _buildCostBlock('Cost Estimation', 'N/A', Colors.orange),
+            _buildCostBlock(
+              'Cost Estimation',
+              selPost == null ? 'N/A' : formatPesos(postTotal),
+              Colors.orange,
+            ),
             const SizedBox(height: 8),
-            _buildCostBlock('Downpayment', 'N/A', Colors.blue),
+            _buildCostBlock(
+              'Downpayment',
+              selPost == null ? 'N/A' : formatPesos(postDown),
+              Colors.blue,
+            ),
             const SizedBox(height: 8),
-            _buildCostBlock('Total Cost', 'N/A', Colors.green),
+            _buildCostBlock(
+              'Total Cost',
+              selPost == null ? 'N/A' : formatPesos(postTotal),
+              Colors.green,
+            ),
           ],
         ),
       ),
@@ -1753,9 +2080,7 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Widget _buildCompletedEventsView(bool isNarrow) {
-    final orders = _completedOrdersDto
-        .map(_orderToProcessingOrderSummary)
-        .toList(growable: false);
+    final orderDtos = _completedOrdersDto;
 
     final listSection = Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1769,7 +2094,7 @@ class _ManageEventsState extends State<ManageEvents>
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            if (orders.isEmpty)
+            if (orderDtos.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 40),
                 child: Center(
@@ -1781,13 +2106,14 @@ class _ManageEventsState extends State<ManageEvents>
               )
             else
               Column(
-                children: orders
+                children: orderDtos
                     .map(
-                      (order) => Padding(
+                      (dto) => Padding(
                         padding: const EdgeInsets.only(bottom: 12),
-                        child: _buildProcessingOrderCard(
-                          order,
-                          _selectedCompletedOrder == order,
+                        child: _buildSelectableOrderCard(
+                          dto,
+                          _selectedCompletedOrderDto?.id == dto.id,
+                          (d) => _selectedCompletedOrderDto = d,
                         ),
                       ),
                     )
@@ -1810,14 +2136,14 @@ class _ManageEventsState extends State<ManageEvents>
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            if (_selectedCompletedOrder == null)
+            if (_selectedCompletedOrderDto == null)
               Text(
                 'Select an event to view the menu.',
                 style: TextStyle(color: Colors.grey.shade600),
               )
             else
               Column(
-                children: _allDishes.take(4).map((dish) {
+                children: _selectedCompletedOrderDto!.menu.map((m) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Row(
@@ -1837,31 +2163,17 @@ class _ManageEventsState extends State<ManageEvents>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                dish.name,
+                                m.dishName,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                dish.price,
+                                '${m.price} · ${m.paxOption}',
                                 style: TextStyle(color: Colors.grey.shade600),
                               ),
                             ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade200,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'Most Popular Dish',
-                            style: TextStyle(color: Colors.grey.shade700),
                           ),
                         ),
                       ],
@@ -1873,6 +2185,13 @@ class _ManageEventsState extends State<ManageEvents>
         ),
       ),
     );
+
+    final selCompleted = _selectedCompletedOrderDto;
+    final pa = selCompleted?.postAnalysis;
+    final compTotal = selCompleted == null
+        ? 0.0
+        : computeOrderTotalCost(selCompleted);
+    final compDown = compTotal > 0 ? compTotal / 2 : 0.0;
 
     final infoSection = Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1886,15 +2205,36 @@ class _ManageEventsState extends State<ManageEvents>
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            _buildInfoRow('Business cards given away', 'N/A'),
-            _buildInfoRow('On-the-spot inquiries', 'N/A'),
-            _buildInfoRow('No. of Complaints', 'N/A'),
+            _buildInfoRow(
+              'Business cards given away',
+              pa == null ? '—' : '${pa.businessCardsGivenAway}',
+            ),
+            _buildInfoRow(
+              'On-the-spot inquiries',
+              pa == null ? '—' : '${pa.onTheSpotInquiries}',
+            ),
+            _buildInfoRow(
+              'No. of Complaints',
+              pa == null ? '—' : '${pa.complaints}',
+            ),
             const SizedBox(height: 16),
-            _buildCostBlock('Cost Estimation', 'N/A', Colors.orange),
+            _buildCostBlock(
+              'Cost Estimation',
+              selCompleted == null ? 'N/A' : formatPesos(compTotal),
+              Colors.orange,
+            ),
             const SizedBox(height: 8),
-            _buildCostBlock('Downpayment', 'N/A', Colors.blue),
+            _buildCostBlock(
+              'Downpayment',
+              selCompleted == null ? 'N/A' : formatPesos(compDown),
+              Colors.blue,
+            ),
             const SizedBox(height: 8),
-            _buildCostBlock('Total Cost', 'N/A', Colors.green),
+            _buildCostBlock(
+              'Total Cost',
+              selCompleted == null ? 'N/A' : formatPesos(compTotal),
+              Colors.green,
+            ),
           ],
         ),
       ),
@@ -1940,6 +2280,49 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.bold,
+        color: Color(0xFF2E2E2E),
+      ),
+    );
+  }
+
+  Widget _buildEventInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCostBlock(String title, String value, Color color) {
     return Container(
       width: double.infinity,
@@ -1959,49 +2342,6 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
-  Widget _buildNewEventsList() {
-    final orders = _newEventOrdersDto
-        .map(_orderToProcessingOrderSummary)
-        .toList(growable: false);
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'New Events',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            if (orders.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 40),
-                child: Center(
-                  child: Text(
-                    'No new events.',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-                ),
-              )
-            else
-              Column(
-                children: orders
-                    .map(
-                      (order) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _buildProcessingOrderCard(order, false),
-                      ),
-                    )
-                    .toList(),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildBodyContent(EventStatus status, bool isNarrow) {
     switch (status) {
       case EventStatus.onlineInquiries:
@@ -2017,8 +2357,6 @@ class _ManageEventsState extends State<ManageEvents>
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildNewEventsList(),
-                  const SizedBox(height: 20),
                   _buildEventForm(),
                   const SizedBox(height: 20),
                   _buildMenuSection(),
@@ -2037,8 +2375,6 @@ class _ManageEventsState extends State<ManageEvents>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildNewEventsList(),
-                          const SizedBox(height: 20),
                           _buildEventForm(),
                           const SizedBox(height: 20),
                           _buildMenuSection(),
@@ -2065,8 +2401,50 @@ class _ManageEventsState extends State<ManageEvents>
     }
   }
 
+  Widget _buildNewEventsList() {
+    final orderDtos = _newEventOrdersDto;
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'New Events',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            if (orderDtos.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 40),
+                child: Center(
+                  child: Text(
+                    'No new events.',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                ),
+              )
+            else
+              Column(
+                children: orderDtos
+                    .map(
+                      (dto) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _buildSelectableOrderCard(dto, false, (_) {}),
+                      ),
+                    )
+                    .toList(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildNewEventSubmissionBar() {
     final themePicksCount = _themePicks.length;
+
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
@@ -2083,6 +2461,8 @@ class _ManageEventsState extends State<ManageEvents>
               ),
             ),
             const SizedBox(width: 12),
+
+            /// SAVE DRAFT
             ElevatedButton(
               onPressed: () {
                 ScaffoldMessenger.of(
@@ -2095,32 +2475,48 @@ class _ManageEventsState extends State<ManageEvents>
               ),
               child: const Text('SAVE DRAFT'),
             ),
+
             const SizedBox(width: 12),
+
+            /// SUBMIT
             ElevatedButton(
               onPressed: () async {
                 final missing = <String>[];
-                if (_eventTitleController.text.trim().isEmpty)
+
+                if (_eventTitleController.text.trim().isEmpty) {
                   missing.add('Event title');
+                }
                 if (_eventType == null) missing.add('Event type');
                 if (_formalityLevel == null) missing.add('Formality level');
-                if (_customerController.text.trim().isEmpty)
+                if (_customerController.text.trim().isEmpty) {
                   missing.add('Customer name');
-                if (_contactPersonController.text.trim().isEmpty)
+                }
+                if (_contactPersonController.text.trim().isEmpty) {
                   missing.add('Contact person');
-                if (_contactNumberController.text.trim().isEmpty)
+                }
+                if (_contactNumberController.text.trim().isEmpty) {
                   missing.add('Contact number');
-                if (_emailController.text.trim().isEmpty)
+                }
+                if (_emailController.text.trim().isEmpty) {
                   missing.add('Email address');
-                if (_eventScheduleSlots.isEmpty) missing.add('Date & time');
-                if (_eventAddressController.text.trim().isEmpty)
+                }
+                if (_eventScheduleSlots.isEmpty) {
+                  missing.add('Date & time');
+                }
+                if (_eventAddressController.text.trim().isEmpty) {
                   missing.add('Event address');
-                if (_guestCountController.text.trim().isEmpty)
-                  missing.add('No. of guests');
+                }
+
                 final guestCount = int.tryParse(
                   _guestCountController.text.trim(),
                 );
-                if (guestCount == null || guestCount <= 0)
+
+                if (_guestCountController.text.trim().isEmpty) {
+                  missing.add('No. of guests');
+                } else if (guestCount == null || guestCount <= 0) {
                   missing.add('No. of guests (valid)');
+                }
+
                 if (_menuItems.isEmpty) missing.add('Menu');
                 if (_themePicks.isEmpty) missing.add('Theme picks');
 
@@ -2135,19 +2531,27 @@ class _ManageEventsState extends State<ManageEvents>
 
                 try {
                   final payload = _buildPayloadFromForm();
+
+                  // backend commit
                   await EventsApi.instance.managerSubmitNewEventToProcessing(
                     payload: payload,
                   );
 
+                  // refresh orders
+                  await _refreshOrders();
+
+                  // success indicator
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Order submitted successfully.'),
                     ),
                   );
 
+                  // reset form if success
                   _resetForm();
+
+                  // switch tab
                   _tabController.animateTo(EventStatus.forProcessing.index);
-                  await _refreshOrders();
                 } catch (e) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Failed to submit order.')),
@@ -2165,6 +2569,7 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
+  // Event Management Page
   Widget _buildEventForm() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2174,10 +2579,10 @@ class _ManageEventsState extends State<ManageEvents>
             Expanded(
               child: ElevatedButton.icon(
                 onPressed: _resetForm,
-                icon: const Icon(Icons.add),
-                label: const Text('New Event'),
+                icon: const Icon(Icons.clear),
+                label: const Text('Clear Form'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFF4511E),
+                  backgroundColor: const Color(0xFFED8845),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -2219,7 +2624,7 @@ class _ManageEventsState extends State<ManageEvents>
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: const Color(0xFFF5F7F9),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: Colors.grey.shade300),
           ),
@@ -2229,6 +2634,7 @@ class _ManageEventsState extends State<ManageEvents>
                 controller: _eventTitleController,
                 decoration: InputDecoration(
                   labelText: 'Event Title',
+                  labelStyle: const TextStyle(fontSize: 14),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -2250,6 +2656,7 @@ class _ManageEventsState extends State<ManageEvents>
                           .toList(),
                       decoration: InputDecoration(
                         labelText: 'Event Type',
+                        labelStyle: const TextStyle(fontSize: 14),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -2267,6 +2674,7 @@ class _ManageEventsState extends State<ManageEvents>
                       controller: _customerController,
                       decoration: InputDecoration(
                         labelText: 'Customer',
+                        labelStyle: const TextStyle(fontSize: 14),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -2288,6 +2696,7 @@ class _ManageEventsState extends State<ManageEvents>
                     .toList(),
                 decoration: InputDecoration(
                   labelText: 'Formality Level',
+                  labelStyle: const TextStyle(fontSize: 14),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -2304,6 +2713,7 @@ class _ManageEventsState extends State<ManageEvents>
                       controller: _contactPersonController,
                       decoration: InputDecoration(
                         labelText: 'Contact Person',
+                        labelStyle: const TextStyle(fontSize: 14),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -2316,6 +2726,7 @@ class _ManageEventsState extends State<ManageEvents>
                       controller: _contactNumberController,
                       decoration: InputDecoration(
                         labelText: 'Contact Number',
+                        labelStyle: const TextStyle(fontSize: 14),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -2333,6 +2744,7 @@ class _ManageEventsState extends State<ManageEvents>
                       controller: _emailController,
                       decoration: InputDecoration(
                         labelText: 'Email Address',
+                        labelStyle: const TextStyle(fontSize: 14),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -2347,7 +2759,10 @@ class _ManageEventsState extends State<ManageEvents>
                       children: [
                         const Text(
                           'Date & Time',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         SizedBox(
@@ -2368,7 +2783,10 @@ class _ManageEventsState extends State<ManageEvents>
                         if (_eventScheduleSlots.isEmpty)
                           Text(
                             'No schedules yet.',
-                            style: TextStyle(color: Colors.grey.shade600),
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 14,
+                            ),
                           )
                         else
                           Wrap(
@@ -2402,6 +2820,7 @@ class _ManageEventsState extends State<ManageEvents>
                       controller: _eventAddressController,
                       decoration: InputDecoration(
                         labelText: 'Address of Event',
+                        labelStyle: const TextStyle(fontSize: 14),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -2414,6 +2833,7 @@ class _ManageEventsState extends State<ManageEvents>
                       controller: _guestCountController,
                       decoration: InputDecoration(
                         labelText: 'No. of Guests',
+                        labelStyle: const TextStyle(fontSize: 14),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -2430,6 +2850,7 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
+  // Menu View
   Widget _buildMenuSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2456,7 +2877,7 @@ class _ManageEventsState extends State<ManageEvents>
                   children: const [
                     Text('You don’t have anything on the menu right now...'),
                     SizedBox(height: 20),
-                    SizedBox(height: 40),
+                    SizedBox(height: 30),
                   ],
                 )
               : Column(
@@ -2507,6 +2928,7 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
+  // Selected Dish View
   Widget _buildDishCard(MenuDish dish) {
     final selectedPax = _selectedPaxPerDish[dish.name] ?? dish.paxOptions.first;
 
@@ -2529,7 +2951,7 @@ class _ManageEventsState extends State<ManageEvents>
                   ),
                   child: const Icon(
                     Icons.fastfood,
-                    size: 28,
+                    size: 21,
                     color: Colors.grey,
                   ),
                 ),
@@ -2598,16 +3020,17 @@ class _ManageEventsState extends State<ManageEvents>
               children: [
                 const Text(
                   'Manage Events',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 16),
                 TabBar(
+                  padding: EdgeInsets.zero,
                   controller: _tabController,
                   isScrollable: true,
                   labelColor: Colors.white,
                   unselectedLabelColor: Colors.black87,
                   indicator: BoxDecoration(
-                    color: const Color(0xFF1976D2),
+                    color: const Color(0xFFED8845),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   tabs: EventStatus.values

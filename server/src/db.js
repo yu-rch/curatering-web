@@ -67,6 +67,11 @@ export async function initDb() {
   `);
 
   await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS page_permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS event_orders (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       source TEXT NOT NULL CHECK (source IN ('new_event','online_inquiry')),
@@ -95,6 +100,11 @@ export async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE event_orders
+    ADD COLUMN IF NOT EXISTS post_analysis JSONB NOT NULL DEFAULT '{}'::jsonb;
   `);
 }
 

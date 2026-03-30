@@ -177,7 +177,7 @@ class _TransactionsState extends State<Transactions> {
           children: [
             const Text(
               'Transactions',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             Expanded(

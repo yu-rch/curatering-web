@@ -30,12 +30,20 @@ class AuthApi {
     final token = decoded['token'] as String;
     final userMap = decoded['user'] as Map<String, dynamic>;
 
+    final permRaw = userMap['pagePermissions'];
     final user = UserDto(
       id: userMap['id'].toString(),
       email: userMap['email'] as String,
       fullName: userMap['fullName'] as String,
       role: roleFromString(userMap['role'] as String),
       archived: (userMap['archived'] ?? false) as bool,
+      pagePermissions: permRaw is Map<String, dynamic>
+          ? Map<String, dynamic>.from(permRaw)
+          : (permRaw is Map
+              ? Map<String, dynamic>.from(
+                  permRaw.map((k, v) => MapEntry(k.toString(), v)),
+                )
+              : null),
     );
 
     return LoginResponse(token: token, user: user);
@@ -44,12 +52,20 @@ class AuthApi {
   Future<UserProfile> me() async {
     final decoded = await ApiClient.instance.getJson('/api/auth/me');
     final userMap = decoded['user'] as Map<String, dynamic>;
+    final permRaw = userMap['pagePermissions'];
 
     return UserProfile(
       id: userMap['id'].toString(),
       email: userMap['email'] as String,
       fullName: userMap['fullName'] as String,
       role: roleFromString(userMap['role'] as String),
+      pagePermissions: permRaw is Map<String, dynamic>
+          ? Map<String, dynamic>.from(permRaw)
+          : (permRaw is Map
+              ? Map<String, dynamic>.from(
+                  permRaw.map((k, v) => MapEntry(k.toString(), v)),
+                )
+              : null),
     );
   }
 }
