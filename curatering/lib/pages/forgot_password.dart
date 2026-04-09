@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math';
 
 class ForgotPassword extends StatefulWidget {
   const ForgotPassword({super.key});
@@ -15,12 +16,19 @@ class _ForgotPasswordState extends State<ForgotPassword> {
   final List<TextEditingController> _otpFields =
       List.generate(6, (_) => TextEditingController());
 
-  String _maskedPhone = '';
+  String _maskedEmail = '';
   bool _isLoading = false;
+  String _generatedOtp = '';
 
   // Countdown timer for resend
   int _resendCountdown = 0;
   late final Duration _resendDelay = const Duration(seconds: 30);
+
+  // Generate 6-digit random code
+  String _generateOtp() {
+    final random = Random();
+    return List.generate(6, (_) => random.nextInt(10)).join();
+  }
 
   @override
   void dispose() {
@@ -33,7 +41,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
     super.dispose();
   }
 
-  /// Step 1: Verify email and send OTP
+  // Step 1: Verify email and send OTP
   Future<void> _verifyEmail() async {
     if (_emailController.text.isEmpty) {
       _showErrorSnackbar('Please enter your email');
@@ -45,17 +53,35 @@ class _ForgotPasswordState extends State<ForgotPassword> {
     try {
       await Future.delayed(const Duration(seconds: 2));
 
-      String maskedPhone = '092*****45'; // Example masked phone
+      // Generate 6-digit random code
+      _generatedOtp = _generateOtp();
+      
+      // Mask email for display
+      final email = _emailController.text;
+      String maskedEmail = '';
+      if (email.contains('@')) {
+        final parts = email.split('@');
+        final username = parts[0];
+        final domain = parts[1];
+        if (username.length > 2) {
+          maskedEmail = '${username.substring(0, 2)}***@${domain}';
+        } else {
+          maskedEmail = '${username.substring(0, 1)}***@${domain}';
+        }
+      } else {
+        maskedEmail = email;
+      }
 
       setState(() {
-        _maskedPhone = maskedPhone;
+        _maskedEmail = maskedEmail;
         _currentStep = 2;
         _isLoading = false;
         _startResendCountdown();
       });
 
       if (mounted) {
-        _showSuccessSnackbar('OTP sent to $maskedPhone');
+        _showSuccessSnackbar('6-digit code sent to $maskedEmail');
+        print('Generated OTP: $_generatedOtp'); // For debugging
       }
     } catch (e) {
       if (mounted) {
@@ -65,7 +91,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
     }
   }
 
-  /// Step 2: Verify OTP code
+  // Step 2: Verify OTP code
   Future<void> _verifyOtp() async {
     final otp = _otpFields.map((c) => c.text).join();
     _otpController.text = otp;
@@ -80,25 +106,30 @@ class _ForgotPasswordState extends State<ForgotPassword> {
     try {
       await Future.delayed(const Duration(seconds: 2));
 
+      // Verify against the generated OTP
+      if (otp != _generatedOtp) {
+        throw Exception('Invalid code');
+      }
+
       setState(() {
         _currentStep = 3;
         _isLoading = false;
       });
 
       if (mounted) {
-        _showSuccessSnackbar('OTP verified successfully');
+        _showSuccessSnackbar('Code verified successfully');
       }
     } catch (e) {
       if (mounted) {
-        _showErrorSnackbar('Invalid OTP. Please try again.');
+        _showErrorSnackbar('Invalid code. Please try again.');
       }
       setState(() => _isLoading = false);
     }
   }
 
-  /// Step 2: Resend OTP code
+  // Step 2: Resend OTP code
   Future<void> _resendOtp() async {
-    if (_resendCountdown > 0) return; // prevent spam
+    if (_resendCountdown > 0) return;
 
     setState(() {
       _isLoading = true;
@@ -108,14 +139,18 @@ class _ForgotPasswordState extends State<ForgotPassword> {
     try {
       await Future.delayed(const Duration(seconds: 2));
 
+      // Generate new OTP
+      _generatedOtp = _generateOtp();
+
       setState(() => _isLoading = false);
 
       if (mounted) {
-        _showSuccessSnackbar('OTP resent to $_maskedPhone');
+        _showSuccessSnackbar('6-digit code resent to $_maskedEmail');
+        print('New Generated OTP: $_generatedOtp'); // remove after debugging
       }
     } catch (e) {
       if (mounted) {
-        _showErrorSnackbar('Error resending OTP: ${e.toString()}');
+        _showErrorSnackbar('Error resending code: ${e.toString()}');
       }
       setState(() => _isLoading = false);
     }
@@ -237,7 +272,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
               ],
               if (_currentStep == 2) ...[
                 Text(
-                  "We've sent a code to your mobile number\n$_maskedPhone",
+                  "We've sent a 6-digit code to your email\n$_maskedEmail",
                   style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,

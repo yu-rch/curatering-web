@@ -6,6 +6,7 @@ class UserDto {
   final String fullName;
   final Role role;
   final bool archived;
+  final bool isVerified;
   final Map<String, dynamic>? pagePermissions;
 
   const UserDto({
@@ -14,6 +15,7 @@ class UserDto {
     required this.fullName,
     required this.role,
     required this.archived,
+    this.isVerified = false,
     this.pagePermissions,
   });
 }

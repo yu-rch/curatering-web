@@ -6,6 +6,7 @@ class UserProfile {
   final String email;
   final String fullName;
   final Role role;
+  final bool isVerified;
   /// When empty or null, all sidebar pages are allowed (for manager/supervisor).
   final Map<String, dynamic>? pagePermissions;
 
@@ -14,6 +15,7 @@ class UserProfile {
     required this.email,
     required this.fullName,
     required this.role,
+    this.isVerified = false,
     this.pagePermissions,
   });
 }

@@ -16,6 +16,36 @@ import '../widgets/app_scaffold.dart';
 import '../utils/order_calculations.dart';
 import '../utils/web_html.dart' as html;
 
+// SAM Integration imports (would be added when SAM is integrated)
+// import 'package:segment_anything/segment_anything.dart';
+
+// Data structures for SAM integration
+class SegmentedObject {
+  final String id;
+  final Uint8List mask;
+  final String label;
+  final Rect boundingBox;
+  final Color? currentColor;
+
+  SegmentedObject({
+    required this.id,
+    required this.mask,
+    required this.label,
+    required this.boundingBox,
+    this.currentColor,
+  });
+}
+
+class SamSegmentationResult {
+  final List<SegmentedObject> objects;
+  final Uint8List originalImage;
+
+  SamSegmentationResult({
+    required this.objects,
+    required this.originalImage,
+  });
+}
+
 enum EventStatus {
   newEvent,
   onlineInquiries,
@@ -214,6 +244,12 @@ class _ManageEventsState extends State<ManageEvents>
   bool _isAiProcessingTheme = false;
   final TextEditingController _themeColorPromptController =
       TextEditingController();
+
+  // SAM Integration variables
+  SamSegmentationResult? _currentSegmentationResult;
+  Set<String> _selectedObjectIds = <String>{};
+  bool _isSegmenting = false;
+  bool _showSegmentationOverlay = false;
 
   final List<MenuItem> _menuItems = [];
   final Map<String, String> _selectedPaxPerDish = {};
@@ -805,6 +841,322 @@ class _ManageEventsState extends State<ManageEvents>
     setState(() {
       _isAiProcessingTheme = false;
     });
+  }
+
+  // SAM Integration Methods
+  Future<void> _segmentImageWithSAM(Uint8List imageBytes) async {
+    if (_themePicks.isEmpty) return;
+    
+    setState(() {
+      _isSegmenting = true;
+      _showSegmentationOverlay = true;
+    });
+
+    try {
+      // In a real implementation, this would call the SAM API
+      // For now, we'll simulate the segmentation
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Mock segmentation result (replace with actual SAM integration)
+      final mockObjects = <SegmentedObject>[
+        SegmentedObject(
+          id: 'obj_1',
+          mask: Uint8List(100), // Mock mask data
+          label: 'Background',
+          boundingBox: const Rect.fromLTWH(0, 0, 100, 100),
+        ),
+        SegmentedObject(
+          id: 'obj_2',
+          mask: Uint8List(100), // Mock mask data
+          label: 'Main Object',
+          boundingBox: const Rect.fromLTWH(50, 50, 100, 100),
+        ),
+      ];
+
+      setState(() {
+        _currentSegmentationResult = SamSegmentationResult(
+          objects: mockObjects,
+          originalImage: imageBytes,
+        );
+        _isSegmenting = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isSegmenting = false;
+        _showSegmentationOverlay = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Segmentation failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _toggleObjectSelection(String objectId) {
+    setState(() {
+      if (_selectedObjectIds.contains(objectId)) {
+        _selectedObjectIds.remove(objectId);
+      } else {
+        _selectedObjectIds.add(objectId);
+      }
+    });
+  }
+
+  Future<void> _applyColorToSelectedObjects() async {
+    if (_currentSegmentationResult == null || _selectedObjectIds.isEmpty) return;
+    
+    final prompt = _themeColorPromptController.text;
+    final targetColor = _colorFromThemePrompt(prompt);
+
+    setState(() {
+      _isAiProcessingTheme = true;
+      _themeTintEnabled = true;
+      _themeTintColor = targetColor;
+    });
+
+    try {
+      // In a real implementation, this would apply the color to selected objects
+      // For now, we'll simulate the color application
+      await Future.delayed(const Duration(seconds: 1));
+      
+      // Update the currentColor for selected objects
+      final updatedObjects = _currentSegmentationResult!.objects.map((obj) {
+        if (_selectedObjectIds.contains(obj.id)) {
+          return SegmentedObject(
+            id: obj.id,
+            mask: obj.mask,
+            label: obj.label,
+            boundingBox: obj.boundingBox,
+            currentColor: targetColor,
+          );
+        }
+        return obj;
+      }).toList();
+
+      setState(() {
+        _currentSegmentationResult = SamSegmentationResult(
+          objects: updatedObjects,
+          originalImage: _currentSegmentationResult!.originalImage,
+        );
+        _isAiProcessingTheme = false;
+        _selectedObjectIds.clear();
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Colors applied to selected objects'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isAiProcessingTheme = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to apply colors: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _closeSegmentationOverlay() {
+    setState(() {
+      _showSegmentationOverlay = false;
+      _currentSegmentationResult = null;
+      _selectedObjectIds.clear();
+    });
+  }
+
+  // Widget for SAM segmentation overlay
+  Widget _buildSegmentationOverlay() {
+    if (!_showSegmentationOverlay || _currentSegmentationResult == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Dialog(
+      child: Container(
+        width: 800,
+        height: 600,
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Object Selection',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                IconButton(
+                  onPressed: _closeSegmentationOverlay,
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Image with segmentation overlay
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Stack(
+                  children: [
+                    // Original image
+                    Image.memory(
+                      _currentSegmentationResult!.originalImage,
+                      fit: BoxFit.contain,
+                    ),
+                    
+                    // Segmentation overlays
+                    if (_isSegmenting)
+                      const Center(
+                        child: CircularProgressIndicator(),
+                      )
+                    else
+                      ..._currentSegmentationResult!.objects.map((obj) {
+                        final isSelected = _selectedObjectIds.contains(obj.id);
+                        return Positioned(
+                          left: obj.boundingBox.left,
+                          top: obj.boundingBox.top,
+                          width: obj.boundingBox.width,
+                          height: obj.boundingBox.height,
+                          child: GestureDetector(
+                            onTap: () => _toggleObjectSelection(obj.id),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: isSelected ? Colors.blue : Colors.red,
+                                  width: 2,
+                                ),
+                                color: isSelected
+                                    ? Colors.blue.withOpacity(0.2)
+                                    : Colors.transparent,
+                              ),
+                              child: Center(
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: isSelected ? Colors.blue : Colors.red,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    obj.label,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                  ],
+                ),
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // Object list
+            Container(
+              height: 120,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Detected Objects:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: _currentSegmentationResult!.objects.map((obj) {
+                        final isSelected = _selectedObjectIds.contains(obj.id);
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: FilterChip(
+                            label: Text(obj.label),
+                            selected: isSelected,
+                            onSelected: (selected) => _toggleObjectSelection(obj.id),
+                            backgroundColor: Colors.grey.shade200,
+                            selectedColor: Colors.blue.withOpacity(0.3),
+                            checkmarkColor: Colors.blue,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // Action buttons
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _selectedObjectIds.isEmpty
+                        ? null
+                        : _applyColorToSelectedObjects,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1DB954),
+                    ),
+                    child: _isAiProcessingTheme
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Text('Apply Colors to Selected'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _closeSegmentationOverlay,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.grey.shade400,
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _statusLabel(EventStatus status) {
@@ -1718,6 +2070,40 @@ class _ManageEventsState extends State<ManageEvents>
                               const SizedBox(width: 12),
                               Expanded(
                                 child: ElevatedButton(
+                                  onPressed: _themePicks.isEmpty ||
+                                          _isAiProcessingTheme ||
+                                          _isSegmenting
+                                      ? null
+                                      : () async {
+                                          // Use the first selected image for SAM segmentation
+                                          if (_themePicks.isNotEmpty) {
+                                            await _segmentImageWithSAM(_themePicks.first);
+                                          }
+                                        },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blue,
+                                  ),
+                                  child: _isSegmenting
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                          ),
+                                        )
+                                      : const Text('SEGMENT OBJECTS'),
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 8),
+
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
                                   onPressed: _themePicks.isEmpty
                                       ? null
                                       : () {
@@ -1725,6 +2111,24 @@ class _ManageEventsState extends State<ManageEvents>
                                           setStateDialog(() {});
                                         },
                                   child: const Text('AUTO COLLAGE'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _currentSegmentationResult != null
+                                      ? () {
+                                          Navigator.of(context).pop();
+                                          showDialog(
+                                            context: context,
+                                            builder: (context) => _buildSegmentationOverlay(),
+                                          );
+                                        }
+                                      : null,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                  child: const Text('EDIT OBJECTS'),
                                 ),
                               ),
                             ],

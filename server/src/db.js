@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool } from "pg";
 
 const pool = new Pool(
   process.env.DATABASE_URL
@@ -8,8 +8,8 @@ const pool = new Pool(
         port: process.env.PGPORT
           ? Number(process.env.PGPORT)
           : process.env.DB_PORT
-              ? Number(process.env.DB_PORT)
-              : undefined,
+            ? Number(process.env.DB_PORT)
+            : undefined,
         user: process.env.PGUSER || process.env.DB_USER,
         password: process.env.PGPASSWORD || process.env.DB_PASSWORD,
         database: process.env.PGDATABASE || process.env.DB_NAME,
@@ -26,6 +26,9 @@ export async function initDb() {
       password_hash TEXT NOT NULL,
       full_name TEXT NOT NULL,
       role TEXT NOT NULL CHECK (role IN ('admin','manager','supervisor','super_admin')),
+      is_verified BOOLEAN DEFAULT FALSE,
+      otp_code VARCHAR(6),
+      otp_expiry TIMESTAMP,
       archived BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
@@ -109,4 +112,3 @@ export async function initDb() {
 }
 
 export { pool };
-

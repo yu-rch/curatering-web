@@ -43,6 +43,7 @@ dependencies:
   pin_code_fields: ^9.1.0
   postgres: ^3.5.9
   shared_preferences: ^2.5.5
+  mailer: ^7.1.0
 
 
 dev_dependencies:

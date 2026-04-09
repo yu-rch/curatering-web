@@ -1,10 +1,12 @@
-import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
-import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+import nodemailer from "nodemailer";
 
-import { initDb, pool } from './db.js';
+
+import { initDb, pool } from "./db.js";
 
 const app = express();
 app.use(cors());
@@ -12,27 +14,45 @@ app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ limit: "25mb", extended: true }));
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-change-me';
+const JWT_SECRET = process.env.JWT_SECRET || "dev-change-me";
 
-const allowedRoles = new Set(['admin', 'manager', 'supervisor', 'super_admin']);
-const allowedHelpStatuses = new Set(['unresolved', 'resolved']);
+const allowedRoles = new Set(["admin", "manager", "supervisor", "super_admin"]);
+const allowedHelpStatuses = new Set(["unresolved", "resolved"]);
 
 function signToken({ userId, role }) {
-  return jwt.sign(
-    { role },
-    JWT_SECRET,
-    {
-      subject: userId,
-      expiresIn: '8h',
-    },
-  );
+  return jwt.sign({ role }, JWT_SECRET, {
+    subject: userId,
+    expiresIn: "30m",
+  });
+}
+// OTP generation
+function generateOTP() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+//Email Transporter
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.TRANSPORTER_EMAIL,
+    pass: process.env.TRANSPORTER_PASSWORD,
+  },
+});
+// Send OTP function
+async function sendOtpEmail(email, otp) {
+  await transporter.sendMail({
+    from: process.env.TRANSPORTER_EMAIL,
+    to: email,
+    subject: "Verify your Curatering account.",
+    text: `Welcome to Curatering! \n If you did not request this email, please ignore this message. \n Your OTP is ${otp}. \n This OTP will expire in 10 minutes`,
+  });
 }
 
 function authRequired(req, res, next) {
-  const header = req.headers.authorization || '';
-  const [scheme, token] = header.split(' ');
-  if (scheme !== 'Bearer' || !token) {
-    return res.status(401).json({ message: 'Missing bearer token' });
+  const header = req.headers.authorization || "";
+  const [scheme, token] = header.split(" ");
+  if (scheme !== "Bearer" || !token) {
+    return res.status(401).json({ message: "Missing bearer token" });
   }
 
   try {
@@ -43,27 +63,33 @@ function authRequired(req, res, next) {
     };
     return next();
   } catch (e) {
-    return res.status(401).json({ message: 'Invalid token' });
+    return res.status(401).json({ message: "Invalid token" });
   }
 }
 
 function requireSuperAdmin(req, res, next) {
-  if (req.user?.role !== 'super_admin') {
-    return res.status(403).json({ message: 'Super Admin only' });
+  if (req.user?.role !== "super_admin") {
+    return res.status(403).json({ message: "Super Admin only" });
   }
   return next();
 }
 
 function requireRoles(req, res, next, allowed) {
   const role = req.user?.role;
-  if (role === 'super_admin') return next();
+  if (role === "super_admin") return next();
   if (!allowed.has(role)) {
-    return res.status(403).json({ message: 'Not allowed' });
+    return res.status(403).json({ message: "Not allowed" });
   }
   return next();
 }
 
-async function logAction({ client, userId, feature = '', action, other = null }) {
+async function logAction({
+  client,
+  userId,
+  feature = "",
+  action,
+  other = null,
+}) {
   const q = client ?? pool;
   await q.query(
     `INSERT INTO action_logs (user_id, feature, action, other)
@@ -72,36 +98,62 @@ async function logAction({ client, userId, feature = '', action, other = null })
   );
 }
 
-app.post('/api/auth/login', async (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body || {};
+    console.log("Login attempt:", { email, passwordLength: password?.length });
+    
     if (!email || !password) {
-      return res.status(400).json({ message: 'email and password are required' });
+      console.log("Missing email or password");
+      return res
+        .status(400)
+        .json({ message: "email and password are required" });
     }
 
     const result = await pool.query(
-      `SELECT id, email, full_name, role, archived, password_hash, page_permissions
+      `SELECT id, email, full_name, role, archived, password_hash, page_permissions, is_verified
        FROM users
        WHERE email = $1
        LIMIT 1;`,
       [email],
     );
 
+    console.log("User query result:", {
+      rowCount: result.rowCount,
+      userFound: result.rowCount > 0,
+      email: email
+    });
+
     if (result.rowCount === 0) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      console.log("User not found for email:", email);
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
     const user = result.rows[0];
+    console.log("User data:", {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      archived: user.archived,
+      is_verified: user.is_verified
+    });
+    
     if (user.archived) {
-      return res.status(401).json({ message: 'Account archived' });
+      console.log("Account is archived");
+      return res.status(401).json({ message: "Account archived" });
     }
 
     const ok = await bcrypt.compare(password, user.password_hash);
+    console.log("Password comparison result:", ok);
+    
     if (!ok) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      console.log("Password mismatch for email:", email);
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
     const token = signToken({ userId: user.id, role: user.role });
+    console.log("Login successful for:", email);
+    
     return res.json({
       token,
       user: {
@@ -110,15 +162,17 @@ app.post('/api/auth/login', async (req, res) => {
         fullName: user.full_name,
         role: user.role,
         archived: user.archived,
+        isVerified: user.is_verified,
         pagePermissions: user.page_permissions || {},
       },
     });
   } catch (e) {
-    return res.status(500).json({ message: 'Login failed' });
+    console.error("Login error:", e);
+    return res.status(500).json({ message: "Login failed" });
   }
 });
 
-app.get('/api/auth/me', authRequired, async (req, res) => {
+app.get("/api/auth/me", authRequired, async (req, res) => {
   const { id } = req.user;
   const result = await pool.query(
     `SELECT id, email, full_name, role, archived, page_permissions
@@ -128,7 +182,8 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
     [id],
   );
 
-  if (result.rowCount === 0) return res.status(404).json({ message: 'User not found' });
+  if (result.rowCount === 0)
+    return res.status(404).json({ message: "User not found" });
   const u = result.rows[0];
   return res.json({
     user: {
@@ -142,12 +197,14 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
   });
 });
 
-// User request help (from Settings module)
-app.post('/api/help-requests', authRequired, async (req, res) => {
+//Help request
+app.post("/api/help-requests", authRequired, async (req, res) => {
   try {
     const { feature, problem, request } = req.body || {};
     if (!feature || !problem || !request) {
-      return res.status(400).json({ message: 'feature, problem, request are required' });
+      return res
+        .status(400)
+        .json({ message: "feature, problem, request are required" });
     }
 
     const result = await pool.query(
@@ -160,211 +217,301 @@ app.post('/api/help-requests', authRequired, async (req, res) => {
     await logAction({
       userId: req.user.id,
       feature,
-      action: 'sent help request',
+      action: "sent help request",
       other: { helpRequestId: result.rows[0].id },
     });
 
     return res.json({ ok: true, id: result.rows[0].id });
   } catch (e) {
-    return res.status(500).json({ message: 'Failed to send help request' });
+    return res.status(500).json({ message: "Failed to send help request" });
   }
 });
 
 // Super Admin: Users
-app.get('/api/super-admin/users', authRequired, requireSuperAdmin, async (req, res) => {
-  const { search, role, archived } = req.query || {};
+app.get(
+  "/api/super-admin/users",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    const { search, role, archived } = req.query || {};
 
-  const where = [];
-  const params = [];
-  let i = 1;
+    const where = [];
+    const params = [];
+    let i = 1;
 
-  if (search) {
-    where.push(`(email ILIKE $${i} OR full_name ILIKE $${i})`);
-    params.push(`%${search}%`);
-    i++;
-  }
+    if (search) {
+      where.push(`(email ILIKE $${i} OR full_name ILIKE $${i})`);
+      params.push(`%${search}%`);
+      i++;
+    }
 
-  if (role) {
-    where.push(`role = $${i}`);
-    params.push(role);
-    i++;
-  }
+    if (role) {
+      where.push(`role = $${i}`);
+      params.push(role);
+      i++;
+    }
 
-  if (archived !== undefined) {
-    const archivedBool = archived === 'true';
-    where.push(`archived = $${i}`);
-    params.push(archivedBool);
-    i++;
-  }
+    if (archived !== undefined) {
+      const archivedBool = archived === "true";
+      where.push(`archived = $${i}`);
+      params.push(archivedBool);
+      i++;
+    }
 
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-  const result = await pool.query(
-    `SELECT id, email, full_name, role, archived, page_permissions
+    const result = await pool.query(
+      `SELECT id, email, full_name, role, archived, page_permissions
      FROM users
      ${whereSql}
      ORDER BY created_at DESC
      LIMIT 200;`,
-    params,
-  );
-
-  return res.json({
-    users: result.rows.map((u) => ({
-      id: u.id,
-      email: u.email,
-      fullName: u.full_name,
-      role: u.role,
-      archived: u.archived,
-      pagePermissions: u.page_permissions || {},
-    })),
-  });
-});
-
-app.post('/api/super-admin/users', authRequired, requireSuperAdmin, async (req, res) => {
-  try {
-    const { email, password, fullName, role } = req.body || {};
-    if (!email || !password || !fullName || !role) {
-      return res.status(400).json({ message: 'email, password, fullName, role are required' });
-    }
-
-    if (!allowedRoles.has(role)) {
-      return res.status(400).json({ message: 'Invalid role' });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    await pool.query(
-      `INSERT INTO users (email, password_hash, full_name, role, archived)
-       VALUES ($1, $2, $3, $4, FALSE);`,
-      [email, passwordHash, fullName, role],
+      params,
     );
 
-    await logAction({
-      userId: req.user.id,
-      feature: '',
-      action: 'created account',
-      other: { email, role },
+    return res.json({
+      users: result.rows.map((u) => ({
+        id: u.id,
+        email: u.email,
+        fullName: u.full_name,
+        role: u.role,
+        archived: u.archived,
+        pagePermissions: u.page_permissions || {},
+      })),
     });
+  },
+);
 
-    return res.json({ ok: true });
-  } catch (e) {
-    return res.status(500).json({ message: 'Failed to create user' });
-  }
-});
+//create account
+app.post("/api/super-admin/users", authRequired, requireSuperAdmin, async (req, res) => {
+    try {
+      const { email, password, fullName, role } = req.body || {};
 
-app.post('/api/super-admin/users/:userId', authRequired, requireSuperAdmin, async (req, res) => {
+      if (!email || !password || !fullName || !role) {
+        return res
+          .status(400)
+          .json({ message: "email, password, fullName, role are required" });
+      }
+
+      if (!allowedRoles.has(role)) {
+        return res.status(400).json({ message: "Invalid role" });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      const otp = generateOTP();
+      const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+      const existing = await pool.query(
+        `SELECT id FROM users WHERE email = $1`,
+        [email]
+      );
+
+      if (existing.rows.length > 0) {
+        return res.status(400).json({ message: "Email already exists" });
+      }
+      
+      await pool.query(
+        `INSERT INTO users 
+        (email, password_hash, full_name, role, archived, is_verified, otp_code, otp_expiry)
+       VALUES ($1, $2, $3, $4, FALSE, FALSE, $5, $6);`,
+        [email, passwordHash, fullName, role, otp, expiry],
+      );
+
+      await sendOtpEmail(email, otp);
+
+      await logAction({
+        userId: req.user.id,
+        feature: "",
+        action: "created account (OTP sent)",
+        other: { email, role },
+      });
+
+      return res.json({
+        ok: true,
+        message: "User created. OTP sent to email.",
+      });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ message: "Failed to create user" });
+    }
+  },
+);
+
+//verify email
+app.post("/api/auth/verify-otp", async (req, res) => {
   try {
-    const { userId } = req.params;
-    const { fullName, role } = req.body || {};
-    if (!fullName || !role) {
-      return res.status(400).json({ message: 'fullName and role are required' });
-    }
+    const { email, otp } = req.body;
 
-    if (!allowedRoles.has(role)) {
-      return res.status(400).json({ message: 'Invalid role' });
-    }
-
-    await pool.query(
-      `UPDATE users
-       SET full_name = $1, role = $2
-       WHERE id = $3;`,
-      [fullName, role, userId],
-    );
-
-    await logAction({
-      userId: req.user.id,
-      feature: '',
-      action: 'updated account',
-      other: { userId, role },
-    });
-
-    return res.json({ ok: true });
-  } catch (e) {
-    return res.status(500).json({ message: 'Failed to update user' });
-  }
-});
-
-app.post('/api/super-admin/users/:userId/page-permissions', authRequired, requireSuperAdmin, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { pagePermissions } = req.body || {};
-    if (!pagePermissions || typeof pagePermissions !== 'object') {
-      return res.status(400).json({ message: 'pagePermissions object is required' });
-    }
-
-    await pool.query(`UPDATE users SET page_permissions = $1::jsonb WHERE id = $2;`, [
-      JSON.stringify(pagePermissions),
-      userId,
+    const result = await pool.query(`SELECT * FROM users WHERE email = $1`, [
+      email,
     ]);
 
-    await logAction({
-      userId: req.user.id,
-      feature: '',
-      action: 'updated page permissions',
-      other: { userId },
-    });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-    return res.json({ ok: true });
-  } catch (e) {
-    return res.status(500).json({ message: 'Failed to update page permissions' });
-  }
-});
+    const user = result.rows[0];
 
-app.post('/api/super-admin/users/:userId/archive', authRequired, requireSuperAdmin, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { archived } = req.body || {};
-    const nextArchived = archived === true;
+    if (user.otp_code !== otp) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    if (new Date() > user.otp_expiry) {
+      return res.status(400).json({ message: "OTP expired" });
+    }
 
     await pool.query(
-      `UPDATE users
-       SET archived = $1
-       WHERE id = $2;`,
-      [nextArchived, userId],
+      `UPDATE users 
+       SET is_verified = TRUE, otp_code = NULL, otp_expiry = NULL
+       WHERE email = $1`,
+      [email],
     );
 
-    await logAction({
-      userId: req.user.id,
-      feature: '',
-      action: nextArchived ? 'archived account' : 'unarchived account',
-      other: { userId, archived: nextArchived },
-    });
-
-    return res.json({ ok: true });
+    return res.json({ message: "Account verified successfully" });
   } catch (e) {
-    return res.status(500).json({ message: 'Failed to update archive status' });
+    return res.status(500).json({ message: "Verification failed" });
   }
 });
 
+app.post(
+  "/api/super-admin/users/:userId",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { fullName, role } = req.body || {};
+      if (!fullName || !role) {
+        return res
+          .status(400)
+          .json({ message: "fullName and role are required" });
+      }
+
+      if (!allowedRoles.has(role)) {
+        return res.status(400).json({ message: "Invalid role" });
+      }
+
+      await pool.query(
+        `UPDATE users
+       SET full_name = $1, role = $2
+       WHERE id = $3;`,
+        [fullName, role, userId],
+      );
+
+      await logAction({
+        userId: req.user.id,
+        feature: "",
+        action: "updated account",
+        other: { userId, role },
+      });
+
+      return res.json({ ok: true });
+    } catch (e) {
+      return res.status(500).json({ message: "Failed to update user" });
+    }
+  },
+);
+
+app.post(
+  "/api/super-admin/users/:userId/page-permissions",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { pagePermissions } = req.body || {};
+      if (!pagePermissions || typeof pagePermissions !== "object") {
+        return res
+          .status(400)
+          .json({ message: "pagePermissions object is required" });
+      }
+
+      await pool.query(
+        `UPDATE users SET page_permissions = $1::jsonb WHERE id = $2;`,
+        [JSON.stringify(pagePermissions), userId],
+      );
+
+      await logAction({
+        userId: req.user.id,
+        feature: "",
+        action: "updated page permissions",
+        other: { userId },
+      });
+
+      return res.json({ ok: true });
+    } catch (e) {
+      return res
+        .status(500)
+        .json({ message: "Failed to update page permissions" });
+    }
+  },
+);
+
+app.post(
+  "/api/super-admin/users/:userId/archive",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { archived } = req.body || {};
+      const nextArchived = archived === true;
+
+      await pool.query(
+        `UPDATE users
+       SET archived = $1
+       WHERE id = $2;`,
+        [nextArchived, userId],
+      );
+
+      await logAction({
+        userId: req.user.id,
+        feature: "",
+        action: nextArchived ? "archived account" : "unarchived account",
+        other: { userId, archived: nextArchived },
+      });
+
+      return res.json({ ok: true });
+    } catch (e) {
+      return res
+        .status(500)
+        .json({ message: "Failed to update archive status" });
+    }
+  },
+);
+
 // Super Admin: Help Requests
-app.get('/api/super-admin/help-requests', authRequired, requireSuperAdmin, async (req, res) => {
-  const { search, status } = req.query || {};
+app.get(
+  "/api/super-admin/help-requests",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    const { search, status } = req.query || {};
 
-  const where = [];
-  const params = [];
-  let i = 1;
+    const where = [];
+    const params = [];
+    let i = 1;
 
-  if (status && allowedHelpStatuses.has(status)) {
-    where.push(`hr.status = $${i}`);
-    params.push(status);
-    i++;
-  }
+    if (status && allowedHelpStatuses.has(status)) {
+      where.push(`hr.status = $${i}`);
+      params.push(status);
+      i++;
+    }
 
-  if (search) {
-    where.push(`(
+    if (search) {
+      where.push(`(
       u.full_name ILIKE $${i}
       OR hr.feature ILIKE $${i}
       OR hr.problem ILIKE $${i}
       OR hr.request ILIKE $${i}
     )`);
-    params.push(`%${search}%`);
-    i++;
-  }
+      params.push(`%${search}%`);
+      i++;
+    }
 
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-  const result = await pool.query(
-    `SELECT
+    const result = await pool.query(
+      `SELECT
       hr.id,
       hr.user_id,
       u.full_name AS "userName",
@@ -378,96 +525,108 @@ app.get('/api/super-admin/help-requests', authRequired, requireSuperAdmin, async
      ${whereSql}
      ORDER BY hr.created_at DESC
      LIMIT 500;`,
-    params,
-  );
-
-  return res.json({
-    helpRequests: result.rows.map((r) => ({
-      id: r.id,
-      userId: r.user_id,
-      userName: r.userName,
-      feature: r.feature,
-      problem: r.problem,
-      request: r.request,
-      status: r.status,
-      createdAt: r.createdAt.toISOString(),
-    })),
-  });
-});
-
-app.post('/api/super-admin/help-requests/:requestId/resolve', authRequired, requireSuperAdmin, async (req, res) => {
-  const { requestId } = req.params;
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN;');
-
-    const hrRes = await client.query(
-      `SELECT id, user_id, feature
-       FROM help_requests
-       WHERE id = $1;`,
-      [requestId],
+      params,
     );
 
-    if (hrRes.rowCount === 0) {
-      await client.query('ROLLBACK;');
-      return res.status(404).json({ message: 'Help request not found' });
-    }
+    return res.json({
+      helpRequests: result.rows.map((r) => ({
+        id: r.id,
+        userId: r.user_id,
+        userName: r.userName,
+        feature: r.feature,
+        problem: r.problem,
+        request: r.request,
+        status: r.status,
+        createdAt: r.createdAt.toISOString(),
+      })),
+    });
+  },
+);
 
-    const hr = hrRes.rows[0];
+app.post(
+  "/api/super-admin/help-requests/:requestId/resolve",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    const { requestId } = req.params;
 
-    await client.query(
-      `UPDATE help_requests
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN;");
+
+      const hrRes = await client.query(
+        `SELECT id, user_id, feature
+       FROM help_requests
+       WHERE id = $1;`,
+        [requestId],
+      );
+
+      if (hrRes.rowCount === 0) {
+        await client.query("ROLLBACK;");
+        return res.status(404).json({ message: "Help request not found" });
+      }
+
+      const hr = hrRes.rows[0];
+
+      await client.query(
+        `UPDATE help_requests
        SET status = 'resolved',
            resolved_at = now(),
            resolved_by = $1
        WHERE id = $2;`,
-      [req.user.id, requestId],
-    );
+        [req.user.id, requestId],
+      );
 
-    // Notification to the sender
-    await client.query(
-      `INSERT INTO notifications (user_id, message)
+      // Notification to the sender
+      await client.query(
+        `INSERT INTO notifications (user_id, message)
        VALUES ($1, $2);`,
-      [hr.user_id, 'Your concern has been resolved. Thank you!'],
-    );
+        [hr.user_id, "Your concern has been resolved. Thank you!"],
+      );
 
-    // Action log for the resolver
-    await logAction({
-      client,
-      userId: req.user.id,
-      feature: hr.feature,
-      action: 'resolved help request',
-      other: { helpRequestId: hr.id, resolvedUserId: hr.user_id },
-    });
+      // Action log for the resolver
+      await logAction({
+        client,
+        userId: req.user.id,
+        feature: hr.feature,
+        action: "resolved help request",
+        other: { helpRequestId: hr.id, resolvedUserId: hr.user_id },
+      });
 
-    await client.query('COMMIT;');
-    return res.json({ ok: true });
-  } catch (e) {
-    await client.query('ROLLBACK;');
-    return res.status(500).json({ message: 'Failed to resolve help request' });
-  } finally {
-    client.release();
-  }
-});
+      await client.query("COMMIT;");
+      return res.json({ ok: true });
+    } catch (e) {
+      await client.query("ROLLBACK;");
+      return res
+        .status(500)
+        .json({ message: "Failed to resolve help request" });
+    } finally {
+      client.release();
+    }
+  },
+);
 
 // Super Admin: Action Logs
-app.get('/api/super-admin/action-logs', authRequired, requireSuperAdmin, async (req, res) => {
-  const { search } = req.query || {};
+app.get(
+  "/api/super-admin/action-logs",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    const { search } = req.query || {};
 
-  const params = [];
-  let whereSql = '';
-  if (search) {
-    whereSql = `WHERE (
+    const params = [];
+    let whereSql = "";
+    if (search) {
+      whereSql = `WHERE (
       u.full_name ILIKE $1 OR
       al.feature ILIKE $1 OR
       al.action ILIKE $1
     )`;
-    params.push(`%${search}%`);
-  }
+      params.push(`%${search}%`);
+    }
 
-  const result = await pool.query(
-    `SELECT
+    const result = await pool.query(
+      `SELECT
       al.id,
       al.user_id,
       u.full_name AS "userName",
@@ -480,26 +639,28 @@ app.get('/api/super-admin/action-logs', authRequired, requireSuperAdmin, async (
      ${whereSql}
      ORDER BY al.created_at DESC
      LIMIT 500;`,
-    params,
-  );
+      params,
+    );
 
-  return res.json({
-    actionLogs: result.rows.map((r) => ({
-      id: r.id,
-      userName: r.userName,
-      feature: r.feature,
-      action: r.action,
-      other: r.other,
-      createdAt: r.createdAt.toISOString(),
-    })),
-  });
-});
+    return res.json({
+      actionLogs: result.rows.map((r) => ({
+        id: r.id,
+        userName: r.userName,
+        feature: r.feature,
+        action: r.action,
+        other: r.other,
+        createdAt: r.createdAt.toISOString(),
+      })),
+    });
+  },
+);
 
 // Manager: create/list/finalize event orders
 app.post(
-  '/api/manager/events/orders',
+  "/api/manager/events/orders",
   authRequired,
-  (req, res, next) => requireRoles(req, res, next, new Set(['manager', 'admin'])),
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "admin"])),
   async (req, res) => {
     try {
       const {
@@ -531,7 +692,7 @@ app.post(
         !Array.isArray(menu) ||
         !themeDesign
       ) {
-        return res.status(400).json({ message: 'Missing required fields' });
+        return res.status(400).json({ message: "Missing required fields" });
       }
 
       const result = await pool.query(
@@ -563,26 +724,30 @@ app.post(
 
       await logAction({
         userId: req.user.id,
-        feature: 'Events',
-        action: 'submitted new event',
+        feature: "Events",
+        action: "submitted new event",
         other: { orderId: result.rows[0].id },
       });
 
       return res.json({ ok: true, id: result.rows[0].id });
     } catch (e) {
       console.error(e);
-      return res.status(500).json({ message: 'Failed to create order' });
+      return res.status(500).json({ message: "Failed to create order" });
     }
   },
 );
 
 app.get(
-  '/api/manager/events/orders',
+  "/api/manager/events/orders",
   authRequired,
-  (req, res, next) => requireRoles(req, res, next, new Set(['manager', 'admin'])),
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "admin"])),
   async (req, res) => {
     const { status } = req.query || {};
-    if (!status) return res.status(400).json({ message: 'status query param is required' });
+    if (!status)
+      return res
+        .status(400)
+        .json({ message: "status query param is required" });
 
     const result = await pool.query(
       `SELECT
@@ -614,9 +779,10 @@ app.get(
 );
 
 app.post(
-  '/api/manager/events/orders/:orderId/finalize',
+  "/api/manager/events/orders/:orderId/finalize",
   authRequired,
-  (req, res, next) => requireRoles(req, res, next, new Set(['manager', 'admin'])),
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "admin"])),
   async (req, res) => {
     try {
       const { orderId } = req.params;
@@ -676,32 +842,38 @@ app.post(
       );
 
       if (result.rowCount === 0) {
-        return res.status(404).json({ message: 'Online inquiry not found or not finalizable' });
+        return res
+          .status(404)
+          .json({ message: "Online inquiry not found or not finalizable" });
       }
 
       await logAction({
         userId: req.user.id,
-        feature: 'Events',
-        action: 'finalized online inquiry',
+        feature: "Events",
+        action: "finalized online inquiry",
         other: { orderId },
       });
 
       return res.json({ ok: true, id: result.rows[0].id });
     } catch (e) {
       console.error(e);
-      return res.status(500).json({ message: 'Failed to finalize order' });
+      return res.status(500).json({ message: "Failed to finalize order" });
     }
   },
 );
 
 // Supervisor: list/update processing orders
 app.get(
-  '/api/supervisor/events/orders',
+  "/api/supervisor/events/orders",
   authRequired,
-  (req, res, next) => requireRoles(req, res, next, new Set(['supervisor', 'admin'])),
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["supervisor", "admin"])),
   async (req, res) => {
     const { status } = req.query || {};
-    if (!status) return res.status(400).json({ message: 'status query param is required' });
+    if (!status)
+      return res
+        .status(400)
+        .json({ message: "status query param is required" });
 
     const result = await pool.query(
       `SELECT
@@ -733,13 +905,15 @@ app.get(
 );
 
 app.post(
-  '/api/events/orders/:orderId/complete-post-analysis',
+  "/api/events/orders/:orderId/complete-post-analysis",
   authRequired,
-  (req, res, next) => requireRoles(req, res, next, new Set(['manager', 'supervisor', 'admin'])),
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin"])),
   async (req, res) => {
     try {
       const { orderId } = req.params;
-      const { businessCardsGivenAway, onTheSpotInquiries, complaints } = req.body || {};
+      const { businessCardsGivenAway, onTheSpotInquiries, complaints } =
+        req.body || {};
 
       const postAnalysis = {
         businessCardsGivenAway: Number(businessCardsGivenAway) || 0,
@@ -761,28 +935,35 @@ app.post(
       );
 
       if (result.rowCount === 0) {
-        return res.status(404).json({ message: 'Post-analysis order not found or already completed' });
+        return res
+          .status(404)
+          .json({
+            message: "Post-analysis order not found or already completed",
+          });
       }
 
       await logAction({
         userId: req.user.id,
-        feature: 'Events',
-        action: 'completed post-event analysis',
+        feature: "Events",
+        action: "completed post-event analysis",
         other: { orderId, postAnalysis },
       });
 
       return res.json({ ok: true, id: result.rows[0].id });
     } catch (e) {
       console.error(e);
-      return res.status(500).json({ message: 'Failed to complete post-analysis' });
+      return res
+        .status(500)
+        .json({ message: "Failed to complete post-analysis" });
     }
   },
 );
 
 app.post(
-  '/api/supervisor/events/orders/:orderId',
+  "/api/supervisor/events/orders/:orderId",
   authRequired,
-  (req, res, next) => requireRoles(req, res, next, new Set(['supervisor', 'admin'])),
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["supervisor", "admin"])),
   async (req, res) => {
     try {
       const { orderId } = req.params;
@@ -840,26 +1021,28 @@ app.post(
       );
 
       if (result.rowCount === 0) {
-        return res.status(404).json({ message: 'Processing order not found' });
+        return res.status(404).json({ message: "Processing order not found" });
       }
 
       await logAction({
         userId: req.user.id,
-        feature: 'Events',
-        action: 'updated for processing',
+        feature: "Events",
+        action: "updated for processing",
         other: { orderId },
       });
 
       return res.json({ ok: true, id: result.rows[0].id });
     } catch (e) {
       console.error(e);
-      return res.status(500).json({ message: 'Failed to update processing order' });
+      return res
+        .status(500)
+        .json({ message: "Failed to update processing order" });
     }
   },
 );
 
 // Public: customer submits online inquiries
-app.post('/api/public/online-inquiries', async (req, res) => {
+app.post("/api/public/online-inquiries", async (req, res) => {
   try {
     const {
       eventTitle,
@@ -890,7 +1073,7 @@ app.post('/api/public/online-inquiries', async (req, res) => {
       !Array.isArray(menu) ||
       !themeDesign
     ) {
-      return res.status(400).json({ message: 'Missing required fields' });
+      return res.status(400).json({ message: "Missing required fields" });
     }
 
     const result = await pool.query(
@@ -921,18 +1104,96 @@ app.post('/api/public/online-inquiries', async (req, res) => {
     return res.json({ ok: true, id: result.rows[0].id });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ message: 'Failed to create online inquiry' });
+    return res.status(500).json({ message: "Failed to create online inquiry" });
+  }
+});
+
+// Debug endpoint to check test account
+app.get("/api/debug/test-account", async (req, res) => {
+  try {
+    const testEmail = "admin@curatering.test";
+    const result = await pool.query(
+      `SELECT id, email, full_name, role, is_verified, archived
+       FROM users
+       WHERE email = $1`,
+      [testEmail]
+    );
+    
+    if (result.rowCount === 0) {
+      return res.json({ 
+        message: "Test account not found",
+        email: testEmail 
+      });
+    }
+    
+    const user = result.rows[0];
+    return res.json({ 
+      message: "Test account found",
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.full_name,
+        role: user.role,
+        isVerified: user.is_verified,
+        archived: user.archived
+      }
+    });
+  } catch (e) {
+    return res.status(500).json({ message: "Failed to check test account" });
+  }
+});
+
+// Debug endpoint to list users (development only)
+app.get("/api/debug/users", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, email, full_name, role, is_verified, archived
+       FROM users
+       ORDER BY created_at DESC
+       LIMIT 10;`
+    );
+    return res.json({ users: result.rows });
+  } catch (e) {
+    return res.status(500).json({ message: "Failed to fetch users" });
   }
 });
 
 async function seedSuperAdminIfNeeded() {
   const email = process.env.SEED_SUPER_ADMIN_EMAIL;
   const password = process.env.SEED_SUPER_ADMIN_PASSWORD;
-  const fullName = process.env.SEED_SUPER_ADMIN_FULL_NAME || 'Super Admin';
+  const fullName = process.env.SEED_SUPER_ADMIN_FULL_NAME || "Super Admin";
 
-  if (!email || !password) return;
+  if (!email || !password) {
+    // Create default test super admin for development
+    const testEmail = "admin@curatering.test";
+    const testPassword = "admin123";
+    const testFullName = "Test Super Admin";
 
-  const existing = await pool.query(`SELECT id FROM users WHERE email = $1 LIMIT 1;`, [email]);
+    console.log("Creating test super admin account...");
+    const existing = await pool.query(
+      `SELECT id FROM users WHERE email = $1 LIMIT 1;`,
+      [testEmail],
+    );
+    console.log("Test account exists:", existing.rowCount > 0);
+    
+    if (existing.rowCount === 0) {
+      const passwordHash = await bcrypt.hash(testPassword, 10);
+      await pool.query(
+        `INSERT INTO users (email, password_hash, full_name, role, archived, is_verified)
+         VALUES ($1, $2, $3, 'super_admin', FALSE, TRUE);`,
+        [testEmail, passwordHash, testFullName],
+      );
+      console.log(`✅ Created test super admin: ${testEmail} / ${testPassword}`);
+    } else {
+      console.log(`ℹ️ Test super admin already exists: ${testEmail}`);
+    }
+    return;
+  }
+
+  const existing = await pool.query(
+    `SELECT id FROM users WHERE email = $1 LIMIT 1;`,
+    [email],
+  );
   if (existing.rowCount > 0) return;
 
   const passwordHash = await bcrypt.hash(password, 10);
@@ -951,7 +1212,6 @@ initDb()
     });
   })
   .catch((err) => {
-    console.error('Failed to init DB/server:', err);
+    console.error("Failed to init DB/server:", err);
     process.exit(1);
   });
-

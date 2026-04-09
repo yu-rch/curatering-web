@@ -4,6 +4,7 @@ import '../auth/auth_session.dart';
 import '../auth/roles.dart';
 import '../services/auth_api.dart';
 import '../services/api_client.dart';
+import 'verify_otp.dart';
 
 class Login extends StatefulWidget {
   const Login({super.key});
@@ -30,8 +31,33 @@ class _LoginState extends State<Login> {
       final email = _emailController.text.trim();
       final password = _passwordController.text;
 
-      final resp = await AuthApi.instance.login(email: email, password: password);
+      final resp = await AuthApi.instance.login(
+        email: email,
+        password: password,
+      );
 
+      if (!mounted) return;
+
+      // Debug logging
+      print('Login response received:');
+      print('User isVerified: ${resp.user.isVerified}');
+      print('User role: ${resp.user.role}');
+      print('User email: ${resp.user.email}');
+
+      // Check if user is verified
+      if (resp.user.isVerified == false) {
+        print('User is not verified, redirecting to OTP');
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                VerifyOtp(email: _emailController.text.trim()),
+          ),
+        );
+        return;
+      }
+
+      print('User is verified, proceeding with login');
       AuthSession.instance.setSession(
         token: resp.token,
         user: UserProfile(
@@ -39,11 +65,16 @@ class _LoginState extends State<Login> {
           email: resp.user.email,
           fullName: resp.user.fullName,
           role: resp.user.role,
+          isVerified: resp.user.isVerified,
           pagePermissions: resp.user.pagePermissions,
         ),
       );
 
+      print('Session set successfully');
+      print('Current user after session: ${AuthSession.instance.currentUser.value}');
+
       final role = resp.user.role;
+      print('User role for navigation: $role');
       final targetRoute = switch (role) {
         Role.superAdmin => '/manage-accounts',
         Role.supervisor => '/live-performance',
@@ -51,11 +82,36 @@ class _LoginState extends State<Login> {
         Role.admin => '/dashboard',
       };
 
-      if (!mounted) return;
+      print('Target route: $targetRoute');
+      print('About to navigate...');
+      
+      if (!mounted) {
+        print('Widget not mounted, skipping navigation');
+        return;
+      }
+      
+      print('Navigating to: $targetRoute');
       Navigator.of(context).pushReplacementNamed(targetRoute);
+      print('Navigation completed');
     } on ApiError catch (e) {
+      print('ApiError caught: ${e.message}');
+      if (e.message.contains("not verified")) {
+        if (!mounted) return;
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                VerifyOtp(email: _emailController.text.trim()),
+          ),
+        );
+        return;
+      }
+
       setState(() => _errorMessage = e.message);
-    } catch (_) {
+    } catch (e, stackTrace) {
+      print('Unexpected error: $e');
+      print('Stack trace: $stackTrace');
       setState(() => _errorMessage = 'Login failed. Please try again.');
     } finally {
       if (mounted) {
@@ -166,7 +222,9 @@ class _LoginState extends State<Login> {
                               ? const SizedBox(
                                   width: 20,
                                   height: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Text('Log in'),
                         ),
