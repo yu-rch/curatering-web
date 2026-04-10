@@ -63,6 +63,15 @@ class EventsApi {
     );
   }
 
+  Future<void> cancelOrder({
+    required String orderId,
+  }) async {
+    await ApiClient.instance.postJson(
+      '/api/events/orders/$orderId/cancel',
+      body: {},
+    );
+  }
+
   Future<void> completePostAnalysis({
     required String orderId,
     required int businessCardsGivenAway,

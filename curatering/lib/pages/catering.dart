@@ -40,10 +40,23 @@ class SamSegmentationResult {
   final List<SegmentedObject> objects;
   final Uint8List originalImage;
 
-  SamSegmentationResult({
-    required this.objects,
-    required this.originalImage,
+  SamSegmentationResult({required this.objects, required this.originalImage});
+}
+
+class ChecklistItem {
+  ChecklistItem({
+    required this.item,
+    required this.description,
+    required this.quantity,
+    required this.cost,
+    this.isCompleted = false,
   });
+
+  final String item;
+  final String description;
+  final int quantity;
+  final double cost;
+  bool isCompleted;
 }
 
 enum EventStatus {
@@ -53,6 +66,8 @@ enum EventStatus {
   forPostAnalysis,
   completed,
 }
+
+enum PaymentConfirmationMode { downpayment, fullPayment }
 
 class MenuItem {
   final MenuDish dish;
@@ -218,6 +233,7 @@ class _ManageEventsState extends State<ManageEvents>
     _postInquiriesController.dispose();
     _postComplaintsController.dispose();
     _themeColorPromptController.dispose();
+    _paymentReferenceController.dispose();
     super.dispose();
   }
 
@@ -244,12 +260,18 @@ class _ManageEventsState extends State<ManageEvents>
   bool _isAiProcessingTheme = false;
   final TextEditingController _themeColorPromptController =
       TextEditingController();
+  final TextEditingController _paymentReferenceController =
+      TextEditingController();
+  bool _paymentDialogLoading = false;
+  PaymentConfirmationMode _selectedPaymentMode =
+      PaymentConfirmationMode.downpayment;
 
   // SAM Integration variables
   SamSegmentationResult? _currentSegmentationResult;
-  Set<String> _selectedObjectIds = <String>{};
+  final Set<String> _selectedObjectIds = <String>{};
   bool _isSegmenting = false;
   bool _showSegmentationOverlay = false;
+  bool _segmentationSuccess = false;
 
   final List<MenuItem> _menuItems = [];
   final Map<String, String> _selectedPaxPerDish = {};
@@ -846,28 +868,28 @@ class _ManageEventsState extends State<ManageEvents>
   // SAM Integration Methods
   Future<void> _segmentImageWithSAM(Uint8List imageBytes) async {
     if (_themePicks.isEmpty) return;
-    
+
     setState(() {
       _isSegmenting = true;
       _showSegmentationOverlay = true;
+      _segmentationSuccess = false;
     });
 
     try {
-      // In a real implementation, this would call the SAM API
-      // For now, we'll simulate the segmentation
-      await Future.delayed(const Duration(seconds: 2));
-      
+      // Simulate a faster segmentation response for UI responsiveness.
+      await Future.delayed(const Duration(milliseconds: 900));
+
       // Mock segmentation result (replace with actual SAM integration)
       final mockObjects = <SegmentedObject>[
         SegmentedObject(
           id: 'obj_1',
-          mask: Uint8List(100), // Mock mask data
+          mask: Uint8List(100),
           label: 'Background',
           boundingBox: const Rect.fromLTWH(0, 0, 100, 100),
         ),
         SegmentedObject(
           id: 'obj_2',
-          mask: Uint8List(100), // Mock mask data
+          mask: Uint8List(100),
           label: 'Main Object',
           boundingBox: const Rect.fromLTWH(50, 50, 100, 100),
         ),
@@ -879,11 +901,22 @@ class _ManageEventsState extends State<ManageEvents>
           originalImage: imageBytes,
         );
         _isSegmenting = false;
+        _segmentationSuccess = true;
       });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_segmentationSuccess ? 'Segmentation completed successfully!' : 'Segmentation failed'),
+            backgroundColor: _segmentationSuccess ? Colors.green : Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     } catch (e) {
       setState(() {
         _isSegmenting = false;
         _showSegmentationOverlay = false;
+        _segmentationSuccess = false;
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -907,8 +940,9 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Future<void> _applyColorToSelectedObjects() async {
-    if (_currentSegmentationResult == null || _selectedObjectIds.isEmpty) return;
-    
+    if (_currentSegmentationResult == null || _selectedObjectIds.isEmpty)
+      return;
+
     final prompt = _themeColorPromptController.text;
     final targetColor = _colorFromThemePrompt(prompt);
 
@@ -922,7 +956,7 @@ class _ManageEventsState extends State<ManageEvents>
       // In a real implementation, this would apply the color to selected objects
       // For now, we'll simulate the color application
       await Future.delayed(const Duration(seconds: 1));
-      
+
       // Update the currentColor for selected objects
       final updatedObjects = _currentSegmentationResult!.objects.map((obj) {
         if (_selectedObjectIds.contains(obj.id)) {
@@ -996,10 +1030,7 @@ class _ManageEventsState extends State<ManageEvents>
               children: [
                 const Text(
                   'Object Selection',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 IconButton(
                   onPressed: _closeSegmentationOverlay,
@@ -1008,7 +1039,7 @@ class _ManageEventsState extends State<ManageEvents>
               ],
             ),
             const SizedBox(height: 16),
-            
+
             // Image with segmentation overlay
             Expanded(
               child: Container(
@@ -1023,12 +1054,10 @@ class _ManageEventsState extends State<ManageEvents>
                       _currentSegmentationResult!.originalImage,
                       fit: BoxFit.contain,
                     ),
-                    
+
                     // Segmentation overlays
                     if (_isSegmenting)
-                      const Center(
-                        child: CircularProgressIndicator(),
-                      )
+                      const Center(child: CircularProgressIndicator())
                     else
                       ..._currentSegmentationResult!.objects.map((obj) {
                         final isSelected = _selectedObjectIds.contains(obj.id);
@@ -1053,7 +1082,9 @@ class _ManageEventsState extends State<ManageEvents>
                                 child: Container(
                                   padding: const EdgeInsets.all(4),
                                   decoration: BoxDecoration(
-                                    color: isSelected ? Colors.blue : Colors.red,
+                                    color: isSelected
+                                        ? Colors.blue
+                                        : Colors.red,
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
@@ -1074,9 +1105,9 @@ class _ManageEventsState extends State<ManageEvents>
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Object list
             Container(
               height: 120,
@@ -1103,7 +1134,8 @@ class _ManageEventsState extends State<ManageEvents>
                           child: FilterChip(
                             label: Text(obj.label),
                             selected: isSelected,
-                            onSelected: (selected) => _toggleObjectSelection(obj.id),
+                            onSelected: (selected) =>
+                                _toggleObjectSelection(obj.id),
                             backgroundColor: Colors.grey.shade200,
                             selectedColor: Colors.blue.withOpacity(0.3),
                             checkmarkColor: Colors.blue,
@@ -1115,9 +1147,9 @@ class _ManageEventsState extends State<ManageEvents>
                 ],
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Action buttons
             Row(
               children: [
@@ -1135,7 +1167,9 @@ class _ManageEventsState extends State<ManageEvents>
                             height: 20,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
                             ),
                           )
                         : const Text('Apply Colors to Selected'),
@@ -1418,6 +1452,19 @@ class _ManageEventsState extends State<ManageEvents>
                   order.time,
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
+                const SizedBox(height: 8),
+                if (dto.status == EventStatus.forProcessing)
+                  ElevatedButton(
+                    onPressed: () => _acceptOrder(dto),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1DB954),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    ),
+                    child: const Text(
+                      'Accept Order',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
               ],
             ),
           ],
@@ -1436,7 +1483,9 @@ class _ManageEventsState extends State<ManageEvents>
           children: [
             // Orders List Section
             Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -1489,19 +1538,19 @@ class _ManageEventsState extends State<ManageEvents>
               ),
             ),
             const SizedBox(height: 20),
-            
+
             // Event Information Section
             if (_selectedProcessingOrderDto != null) ...[
               _buildEventInformationSection(),
               const SizedBox(height: 20),
             ],
-            
+
             // Menu Section
             if (_selectedProcessingOrderDto != null) ...[
               _buildProcessingMenuSection(),
               const SizedBox(height: 20),
             ],
-            
+
             // Food Browser Section
             _buildFoodBrowser(),
           ],
@@ -1516,7 +1565,9 @@ class _ManageEventsState extends State<ManageEvents>
         Expanded(
           flex: 2,
           child: Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -1571,7 +1622,7 @@ class _ManageEventsState extends State<ManageEvents>
           ),
         ),
         const SizedBox(width: 20),
-        
+
         // Middle: Event Information and Menu
         Expanded(
           flex: 2,
@@ -1584,7 +1635,9 @@ class _ManageEventsState extends State<ManageEvents>
                   _buildProcessingMenuSection(),
                 ] else ...[
                   Card(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Center(
@@ -1601,12 +1654,9 @@ class _ManageEventsState extends State<ManageEvents>
           ),
         ),
         const SizedBox(width: 20),
-        
+
         // Right: Food Browser
-        Expanded(
-          flex: 2,
-          child: _buildFoodBrowser(),
-        ),
+        Expanded(flex: 2, child: _buildFoodBrowser()),
       ],
     );
   }
@@ -1614,7 +1664,7 @@ class _ManageEventsState extends State<ManageEvents>
   Widget _buildEventInformationSection() {
     final selectedOrder = _selectedProcessingOrderDto!;
     final totalCost = computeOrderTotalCost(selectedOrder);
-    
+
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
@@ -1627,7 +1677,10 @@ class _ManageEventsState extends State<ManageEvents>
               children: [
                 _buildSectionTitle('EVENT INFORMATION'),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.orange.shade100,
                     borderRadius: BorderRadius.circular(6),
@@ -1655,35 +1708,126 @@ class _ManageEventsState extends State<ManageEvents>
                 'DATE OF EVENT',
                 selectedOrder.scheduleSlots.first.date,
               ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _showThemeDesignDialog,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFF4511E),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                child: const Text('VIEW EVENTS THEME DESIGN'),
-              ),
+            _buildEventInfoRow(
+              'TRANSACTION NO',
+              _transactionNumberForOrder(selectedOrder),
             ),
             const SizedBox(height: 16),
-            _buildCostBlock('COST ESTIMATION', formatPesos(totalCost), Colors.orange),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => _acceptOrder(selectedOrder),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1DB954),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _showThemeDesignDialog,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFF4511E),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text('VIEW EVENTS THEME DESIGN'),
                   ),
                 ),
-                child: const Text('ACCEPT ORDER'),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _showChecklistDialog(selectedOrder),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF1DB954),
+                      side: const BorderSide(color: Color(0xFF1DB954)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text('VIEW CHECKLIST'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Text('Downpayment'),
+                    selected:
+                        _selectedPaymentMode ==
+                        PaymentConfirmationMode.downpayment,
+                    onSelected: (_) {
+                      setState(() {
+                        _selectedPaymentMode =
+                            PaymentConfirmationMode.downpayment;
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Text('Full Payment'),
+                    selected:
+                        _selectedPaymentMode ==
+                        PaymentConfirmationMode.fullPayment,
+                    onSelected: (_) {
+                      setState(() {
+                        _selectedPaymentMode =
+                            PaymentConfirmationMode.fullPayment;
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildCostBlock(
+              'COST ESTIMATION',
+              formatPesos(totalCost),
+              Colors.orange,
+            ),
+            const SizedBox(height: 8),
+            _buildCostBlock(
+              'Downpayment',
+              formatPesos(
+                _selectedPaymentMode == PaymentConfirmationMode.downpayment
+                    ? totalCost / 2
+                    : totalCost,
               ),
+              Colors.blue,
+            ),
+            const SizedBox(height: 8),
+            _buildCostBlock('Total Cost', formatPesos(totalCost), Colors.green),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _cancelProcessingOrder(selectedOrder),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text('CANCEL ORDER'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => _showPaymentConfirmationDialog(
+                      selectedOrder,
+                      _selectedPaymentMode,
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1DB954),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text('CONFIRM PAYMENT'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -1693,7 +1837,7 @@ class _ManageEventsState extends State<ManageEvents>
 
   Widget _buildProcessingMenuSection() {
     final selectedOrder = _selectedProcessingOrderDto!;
-    
+
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
@@ -1758,18 +1902,435 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
+  String _transactionNumberForOrder(EventOrderDto order) {
+    try {
+      final txn =
+          (order as dynamic).transactionNumber ??
+          (order as dynamic).transactionNo ??
+          (order as dynamic).transactionId;
+      if (txn is String && txn.trim().isNotEmpty) return txn;
+      if (txn is int) return txn.toString();
+    } catch (_) {}
+    return 'N/A';
+  }
+
+  bool _isValidPaymentReference(String raw) {
+    return RegExp(r'^\d{10}$').hasMatch(raw.trim());
+  }
+
+  Future<bool> _confirmOrderPayment(
+    EventOrderDto order,
+    PaymentConfirmationMode mode,
+    String reference,
+  ) async {
+    if (!_isValidPaymentReference(reference)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'A valid 10-digit payment reference number is required.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
+    }
+
+    try {
+      setState(() => _paymentDialogLoading = true);
+      await EventsApi.instance.acceptOrder(orderId: order.id);
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            mode == PaymentConfirmationMode.fullPayment
+                ? 'Full payment confirmed. Order moved to Post-Analysis.'
+                : 'Downpayment confirmed. Order moved to Post-Analysis.',
+          ),
+          backgroundColor: const Color(0xFF1DB954),
+        ),
+      );
+      await _refreshOrders();
+      setState(() {
+        _selectedProcessingOrderDto = null;
+      });
+      _tabController.animateTo(EventStatus.forPostAnalysis.index);
+      return true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to confirm payment.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
+    } finally {
+      if (mounted) {
+        setState(() => _paymentDialogLoading = false);
+      }
+    }
+  }
+
+  Future<void> _showPaymentConfirmationDialog(
+    EventOrderDto order,
+    PaymentConfirmationMode mode,
+  ) async {
+    _paymentReferenceController.clear();
+    var referenceText = '';
+    final title = mode == PaymentConfirmationMode.downpayment
+        ? 'Enter Downpayment'
+        : 'Confirm Full Payment';
+    final subtitle = mode == PaymentConfirmationMode.downpayment
+        ? 'Downpayment Amount Due (50%)'
+        : 'Total Amount Due';
+    final amount = mode == PaymentConfirmationMode.downpayment
+        ? computeOrderTotalCost(order) / 2
+        : computeOrderTotalCost(order);
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) {
+            final isReferenceValid = _isValidPaymentReference(referenceText);
+            return AlertDialog(
+              title: Text(title),
+              content: SizedBox(
+                width: 780,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(subtitle),
+                    const SizedBox(height: 12),
+                    Text(
+                      formatPesos(amount),
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFF4511E),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _paymentReferenceController,
+                      decoration: InputDecoration(
+                        labelText: 'Payment Reference Number',
+                        hintText: '10 digit reference number',
+                        errorText: referenceText.isNotEmpty && !isReferenceValid
+                            ? 'Reference must be exactly 10 digits'
+                            : null,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      keyboardType: TextInputType.number,
+                      maxLength: 10,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      onChanged: (value) {
+                        dialogSetState(() {
+                          referenceText = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Center(
+                      child: TextButton(
+                        onPressed: () => _showOrderSummaryDialog(order),
+                        child: const Text('view order summary'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: _paymentDialogLoading
+                      ? null
+                      : () => Navigator.of(context).pop(),
+                  child: const Text('cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: !isReferenceValid || _paymentDialogLoading
+                      ? null
+                      : () async {
+                          final confirmed = await _confirmOrderPayment(
+                            order,
+                            mode,
+                            referenceText,
+                          );
+                          if (confirmed && mounted) {
+                            Navigator.of(context).pop();
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1DB954),
+                  ),
+                  child: _paymentDialogLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                      : const Text('confirm'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showOrderSummaryDialog(EventOrderDto order) async {
+    final orderTotal = computeOrderTotalCost(order);
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Order Summary'),
+          content: SizedBox(
+            width: 900,
+            height: 520,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: DataTable(
+                      headingRowColor: MaterialStateProperty.all(
+                        Colors.grey.shade200,
+                      ),
+                      columns: const [
+                        DataColumn(label: Text('Item')),
+                        DataColumn(label: Text('Qty')),
+                        DataColumn(label: Text('Unit Cost')),
+                        DataColumn(label: Text('Total')),
+                      ],
+                      rows: order.menu.map((m) {
+                        final item = m as dynamic;
+                        final dishName = item.dishName ?? 'Item';
+                        final qty = item.paxOption ?? '1 pax';
+                        final price = item.price is num
+                            ? (item.price as num).toDouble()
+                            : 0.0;
+                        return DataRow(
+                          cells: [
+                            DataCell(Text(dishName)),
+                            DataCell(Text('$qty')),
+                            DataCell(Text(formatPesos(price))),
+                            DataCell(Text(formatPesos(price))),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _buildCostBlock(
+                  'Cost Estimation',
+                  formatPesos(orderTotal),
+                  Colors.orange,
+                ),
+                const SizedBox(height: 8),
+                _buildCostBlock(
+                  'Downpayment',
+                  formatPesos(orderTotal / 2),
+                  Colors.blue,
+                ),
+                const SizedBox(height: 8),
+                _buildCostBlock(
+                  'Total Cost',
+                  formatPesos(orderTotal),
+                  Colors.green,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _showChecklistDialog(EventOrderDto order) async {
+    final items = order.menu.map((m) {
+      final item = m as dynamic;
+      return ChecklistItem(
+        item: item.dishName ?? 'Item',
+        description: item.paxOption ?? '1 pax',
+        quantity: 1,
+        cost: item.price is num ? (item.price as num).toDouble() : 0.0,
+      );
+    }).toList();
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) {
+            return AlertDialog(
+              title: Text('Checklist for ${order.eventTitle}'),
+              content: SizedBox(
+                width: 900,
+                height: 520,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: DataTable(
+                          headingRowColor: MaterialStateProperty.all(
+                            Colors.grey.shade200,
+                          ),
+                          columns: const [
+                            DataColumn(label: Text('Item')),
+                            DataColumn(label: Text('Description')),
+                            DataColumn(label: Text('Quantity')),
+                            DataColumn(label: Text('Cost')),
+                            DataColumn(label: Text('Status')),
+                          ],
+                          rows: items.map((item) {
+                            return DataRow(
+                              cells: [
+                                DataCell(Text(item.item)),
+                                DataCell(Text(item.description)),
+                                DataCell(Text('${item.quantity}')),
+                                DataCell(Text(formatPesos(item.cost))),
+                                DataCell(
+                                  Text(
+                                    item.isCompleted ? 'completed' : 'not done',
+                                    style: TextStyle(
+                                      color: item.isCompleted
+                                          ? Colors.green
+                                          : Colors.red,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        ElevatedButton(
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Checklist exported as PDF.'),
+                              ),
+                            );
+                          },
+                          child: const Text('generate PDF'),
+                        ),
+                        const SizedBox(width: 12),
+                        ElevatedButton(
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Checklist saved.')),
+                            );
+                          },
+                          child: const Text('save'),
+                        ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('cancel'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _cancelProcessingOrder(EventOrderDto order) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel Order'),
+        content: Text(
+          'Are you sure you want to cancel the order for ${order.customerName}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Yes, Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      // Call API to cancel order
+      await EventsApi.instance.cancelOrder(orderId: order.id);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Order cancelled successfully.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+
+      // Refresh orders
+      await _refreshOrders();
+      setState(() {
+        _selectedProcessingOrderDto = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to cancel order.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _acceptOrder(EventOrderDto order) async {
     try {
       await EventsApi.instance.acceptOrder(orderId: order.id);
       if (!mounted) return;
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Order accepted successfully.'),
           backgroundColor: Color(0xFF1DB954),
         ),
       );
-      
+
       // Refresh orders and move to post-analysis
       await _refreshOrders();
       setState(() {
@@ -1875,22 +2436,35 @@ class _ManageEventsState extends State<ManageEvents>
                 );
               }
 
-              return GridView.count(
-                crossAxisCount: 3,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                children: collageImages.map((bytes) {
-                  final img = Image.memory(bytes, fit: BoxFit.cover);
-                  if (!_themeTintEnabled) return img;
-
-                  return ColorFiltered(
-                    colorFilter: ColorFilter.mode(
-                      _themeTintColor,
-                      BlendMode.modulate,
+              return PageView.builder(
+                itemCount: _themePicks.length,
+                controller: PageController(viewportFraction: 0.92),
+                itemBuilder: (context, index) {
+                  final bytes = _themePicks[index];
+                  final image = Image.memory(bytes, fit: BoxFit.cover);
+                  final display = !_themeTintEnabled
+                      ? image
+                      : ColorFiltered(
+                          colorFilter: ColorFilter.mode(
+                            _themeTintColor,
+                            BlendMode.modulate,
+                          ),
+                          child: image,
+                        );
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: display,
+                      ),
                     ),
-                    child: img,
                   );
-                }).toList(),
+                },
               );
             }
 
@@ -2070,14 +2644,16 @@ class _ManageEventsState extends State<ManageEvents>
                               const SizedBox(width: 12),
                               Expanded(
                                 child: ElevatedButton(
-                                  onPressed: _themePicks.isEmpty ||
+                                  onPressed:
+                                      _themePicks.isEmpty ||
                                           _isAiProcessingTheme ||
                                           _isSegmenting
                                       ? null
                                       : () async {
-                                          // Use the first selected image for SAM segmentation
                                           if (_themePicks.isNotEmpty) {
-                                            await _segmentImageWithSAM(_themePicks.first);
+                                            await _segmentImageWithSAM(
+                                              _themePicks.first,
+                                            );
                                           }
                                         },
                                   style: ElevatedButton.styleFrom(
@@ -2089,7 +2665,10 @@ class _ManageEventsState extends State<ManageEvents>
                                           height: 20,
                                           child: CircularProgressIndicator(
                                             strokeWidth: 2,
-                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                  Colors.white,
+                                                ),
                                           ),
                                         )
                                       : const Text('SEGMENT OBJECTS'),
@@ -2104,13 +2683,23 @@ class _ManageEventsState extends State<ManageEvents>
                             children: [
                               Expanded(
                                 child: ElevatedButton(
-                                  onPressed: _themePicks.isEmpty
+                                  onPressed: _themePicks.length <= 1
                                       ? null
                                       : () {
                                           _autoCollage();
                                           setStateDialog(() {});
                                         },
-                                  child: const Text('AUTO COLLAGE'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _themePicks.length <= 1 
+                                        ? Colors.grey.shade400 
+                                        : const Color(0xFF1DB954),
+                                  ),
+                                  child: Text(
+                                    _themePicks.length <= 1 
+                                        ? 'AUTO COLLAGE (Need 2+ photos)'
+                                        : 'AUTO COLLAGE',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -2121,7 +2710,8 @@ class _ManageEventsState extends State<ManageEvents>
                                           Navigator.of(context).pop();
                                           showDialog(
                                             context: context,
-                                            builder: (context) => _buildSegmentationOverlay(),
+                                            builder: (context) =>
+                                                _buildSegmentationOverlay(),
                                           );
                                         }
                                       : null,
@@ -2237,10 +2827,10 @@ class _ManageEventsState extends State<ManageEvents>
                         child: _buildSelectableOrderCard(
                           dto,
                           _selectedPostAnalysisOrderDto?.id == dto.id,
-                          (d) {
+                          (d) => setState(() {
                             _selectedPostAnalysisOrderDto = d;
                             _syncPostAnalysisFields(d);
-                          },
+                          }),
                         ),
                       ),
                     )
@@ -2259,7 +2849,7 @@ class _ManageEventsState extends State<ManageEvents>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Menu',
+              'MENU',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
@@ -2359,7 +2949,7 @@ class _ManageEventsState extends State<ManageEvents>
                 controller: _postComplaintsController,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
-                  labelText: 'No. of complaints',
+                  labelText: 'No. of Complaints',
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),
@@ -2517,7 +3107,9 @@ class _ManageEventsState extends State<ManageEvents>
                         child: _buildSelectableOrderCard(
                           dto,
                           _selectedCompletedOrderDto?.id == dto.id,
-                          (d) => _selectedCompletedOrderDto = d,
+                          (d) => setState(() {
+                            _selectedCompletedOrderDto = d;
+                          }),
                         ),
                       ),
                     )
@@ -2716,10 +3308,7 @@ class _ManageEventsState extends State<ManageEvents>
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -2803,47 +3392,6 @@ class _ManageEventsState extends State<ManageEvents>
                 ],
               );
     }
-  }
-
-  Widget _buildNewEventsList() {
-    final orderDtos = _newEventOrdersDto;
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'New Events',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            if (orderDtos.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 40),
-                child: Center(
-                  child: Text(
-                    'No new events.',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-                ),
-              )
-            else
-              Column(
-                children: orderDtos
-                    .map(
-                      (dto) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _buildSelectableOrderCard(dto, false, (_) {}),
-                      ),
-                    )
-                    .toList(),
-              ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildNewEventSubmissionBar() {

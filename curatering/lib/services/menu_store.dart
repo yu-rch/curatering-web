@@ -51,6 +51,8 @@ class MenuStore extends ChangeNotifier {
     required String price,
     required List<String> paxOptions,
     String? imageBase64,
+    String category = 'catering',
+    List<String> sauces = const [],
   }) {
     final id = DateTime.now().microsecondsSinceEpoch.toString();
     _items = [
@@ -61,6 +63,8 @@ class MenuStore extends ChangeNotifier {
         price: price.trim(),
         paxOptions: paxOptions,
         imageBase64: imageBase64,
+        category: category,
+        sauces: sauces,
       ),
     ];
     notifyListeners();
@@ -72,6 +76,8 @@ class MenuStore extends ChangeNotifier {
     required String price,
     required List<String> paxOptions,
     String? imageBase64,
+    String? category,
+    List<String>? sauces,
   }) {
     _items = _items
         .map(
@@ -81,6 +87,8 @@ class MenuStore extends ChangeNotifier {
                   price: price.trim(),
                   paxOptions: paxOptions,
                   imageBase64: imageBase64 ?? d.imageBase64,
+                  category: category ?? d.category,
+                  sauces: sauces ?? d.sauces,
                 )
               : d,
         )

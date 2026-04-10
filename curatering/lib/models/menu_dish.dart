@@ -4,6 +4,8 @@ class MenuDish {
   final String price;
   final List<String> paxOptions;
   final String? imageBase64;
+  final String category;
+  final List<String> sauces;
   final bool archived;
   final DateTime? archivedAt;
 
@@ -13,6 +15,8 @@ class MenuDish {
     required this.price,
     required this.paxOptions,
     this.imageBase64,
+    this.category = 'catering',
+    this.sauces = const [],
     this.archived = false,
     this.archivedAt,
   });
@@ -23,6 +27,8 @@ class MenuDish {
     String? price,
     List<String>? paxOptions,
     String? imageBase64,
+    String? category,
+    List<String>? sauces,
     bool? archived,
     DateTime? archivedAt,
   }) {
@@ -32,6 +38,8 @@ class MenuDish {
       price: price ?? this.price,
       paxOptions: paxOptions ?? this.paxOptions,
       imageBase64: imageBase64 ?? this.imageBase64,
+      category: category ?? this.category,
+      sauces: sauces ?? this.sauces,
       archived: archived ?? this.archived,
       archivedAt: archivedAt ?? this.archivedAt,
     );

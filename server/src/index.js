@@ -1158,6 +1158,92 @@ app.get("/api/debug/users", async (req, res) => {
   }
 });
 
+// Accept an order (move to post-analysis)
+app.post(
+  "/api/events/orders/:orderId/accept",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin"])),
+  async (req, res) => {
+    try {
+      const { orderId } = req.params;
+
+      const result = await pool.query(
+        `UPDATE event_orders
+         SET
+           status = 'for_post_analysis',
+           updated_by = $1,
+           updated_at = now()
+         WHERE id = $2
+           AND status = 'for_processing'
+         RETURNING id;`,
+        [req.user.id, orderId],
+      );
+
+      if (result.rowCount === 0) {
+        return res
+          .status(404)
+          .json({ message: "Processing order not found or already completed" });
+      }
+
+      await logAction({
+        userId: req.user.id,
+        feature: "Events",
+        action: "accepted order",
+        other: { orderId },
+      });
+
+      return res.json({ ok: true, id: result.rows[0].id });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ message: "Failed to accept order" });
+    }
+  },
+);
+
+// Cancel an order
+app.post(
+  "/api/events/orders/:orderId/cancel",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin"])),
+  async (req, res) => {
+    try {
+      const { orderId } = req.params;
+
+      const result = await pool.query(
+        `UPDATE event_orders
+         SET
+           status = 'cancelled',
+           updated_by = $1,
+           updated_at = now()
+         WHERE id = $2
+           AND status IN ('for_processing', 'online_inquiries', 'new_event')
+         RETURNING id;`,
+        [req.user.id, orderId],
+      );
+
+      if (result.rowCount === 0) {
+        return res
+          .status(404)
+          .json({ message: "Order not found or cannot be cancelled" });
+      }
+
+      await logAction({
+        userId: req.user.id,
+        feature: "Events",
+        action: "cancelled order",
+        other: { orderId },
+      });
+
+      return res.json({ ok: true, id: result.rows[0].id });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ message: "Failed to cancel order" });
+    }
+  },
+);
+
 async function seedSuperAdminIfNeeded() {
   const email = process.env.SEED_SUPER_ADMIN_EMAIL;
   const password = process.env.SEED_SUPER_ADMIN_PASSWORD;
