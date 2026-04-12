@@ -4,17 +4,18 @@ import cors from "cors";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
-
-
+import postgres from 'postgres'
 import { initDb, pool } from "./db.js";
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: "25mb" }));
-app.use(express.urlencoded({ limit: "25mb", extended: true }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-change-me";
+const connectionString = process.env.DATABASE_URL
+const sql = postgres(connectionString)
 
 const allowedRoles = new Set(["admin", "manager", "supervisor", "super_admin"]);
 const allowedHelpStatuses = new Set(["unresolved", "resolved"]);
@@ -665,6 +666,7 @@ app.post(
     try {
       const {
         eventTitle,
+        orderType,
         eventType,
         formalityLevel,
         customerName,
@@ -678,10 +680,11 @@ app.post(
         themeDesign,
       } = req.body || {};
 
+      // For catering-only orders, event-specific fields are optional
+      const isCateringOnly = orderType === 'catering';
+      
       if (
-        !eventTitle ||
-        !eventType ||
-        !formalityLevel ||
+        !orderType ||
         !customerName ||
         !contactPerson ||
         !contactNumber ||
@@ -695,32 +698,66 @@ app.post(
         return res.status(400).json({ message: "Missing required fields" });
       }
 
-      const result = await pool.query(
-        `INSERT INTO event_orders
-          (source, status, event_title, event_type, formality_level,
-           customer_name, contact_person, contact_number, email_address,
-           schedule_slots, address, guest_count, menu, theme_design,
-           created_by, updated_by)
-         VALUES
-          ('new_event', 'for_processing', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-         RETURNING id;`,
-        [
-          eventTitle,
-          eventType,
-          formalityLevel,
-          customerName,
-          contactPerson,
-          contactNumber,
-          emailAddress,
-          JSON.stringify(scheduleSlots),
-          address,
-          Number(guestCount),
-          JSON.stringify(menu),
-          JSON.stringify(themeDesign),
-          req.user.id,
-          req.user.id,
-        ],
-      );
+      // For catering+event orders, require event-specific fields
+      if (!isCateringOnly && (!eventTitle || !eventType || !formalityLevel)) {
+        return res.status(400).json({ message: "Missing required event fields" });
+      }
+
+      let result;
+      
+      if (isCateringOnly) {
+        // Use separate catering_orders table for catering-only orders
+        result = await pool.query(
+          `INSERT INTO catering_orders
+            (source, status, order_type, customer_name, contact_person, contact_number, email_address,
+             schedule_slots, address, guest_count, menu, theme_design, created_by, updated_by)
+          VALUES
+            ('new_event', 'for_processing', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+           RETURNING id;`,
+          [
+            customerName,
+            contactPerson,
+            contactNumber,
+            emailAddress,
+            JSON.stringify(scheduleSlots),
+            address,
+            Number(guestCount),
+            JSON.stringify(menu),
+            JSON.stringify(themeDesign),
+            req.user.id,
+            req.user.id,
+          ]
+        );
+      } else {
+        // Use event_orders table for catering+event orders
+        result = await pool.query(
+          `INSERT INTO event_orders
+            (source, status, event_title, order_type, event_type, formality_level,
+             customer_name, contact_person, contact_number, email_address,
+             schedule_slots, address, guest_count, menu, theme_design,
+             created_by, updated_by)
+           VALUES
+            ('new_event', 'for_processing', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+           RETURNING id;`,
+          [
+            eventTitle,
+            orderType,
+            eventType,
+            formalityLevel,
+            customerName,
+            contactPerson,
+            contactNumber,
+            emailAddress,
+            JSON.stringify(scheduleSlots),
+            address,
+            Number(guestCount),
+            JSON.stringify(menu),
+            JSON.stringify(themeDesign),
+            req.user.id,
+            req.user.id,
+          ]
+        );
+      }
 
       await logAction({
         userId: req.user.id,
@@ -754,6 +791,27 @@ app.get(
         id,
         source,
         status,
+        null AS "eventTitle",
+        'catering' AS "eventType",
+        null AS "formalityLevel",
+        customer_name AS "customerName",
+        contact_person AS "contactPerson",
+        contact_number AS "contactNumber",
+        email_address AS "emailAddress",
+        schedule_slots AS "scheduleSlots",
+        address,
+        guest_count AS "guestCount",
+        menu,
+        theme_design AS "themeDesign",
+        post_analysis AS "postAnalysis",
+        created_at
+       FROM catering_orders
+       WHERE status = $1 OR (status = 'cancelled' AND $1 = 'completed')
+       UNION ALL
+       SELECT
+        id,
+        source,
+        status,
         event_title AS "eventTitle",
         event_type AS "eventType",
         formality_level AS "formalityLevel",
@@ -766,9 +824,10 @@ app.get(
         guest_count AS "guestCount",
         menu,
         theme_design AS "themeDesign",
-        post_analysis AS "postAnalysis"
+        post_analysis AS "postAnalysis",
+        created_at
        FROM event_orders
-       WHERE status = $1
+       WHERE status = $1 OR (status = 'cancelled' AND $1 = 'completed')
        ORDER BY created_at DESC
        LIMIT 500;`,
       [status],
@@ -880,6 +939,27 @@ app.get(
         id,
         source,
         status,
+        null AS "eventTitle",
+        'catering' AS "eventType",
+        null AS "formalityLevel",
+        customer_name AS "customerName",
+        contact_person AS "contactPerson",
+        contact_number AS "contactNumber",
+        email_address AS "emailAddress",
+        schedule_slots AS "scheduleSlots",
+        address,
+        guest_count AS "guestCount",
+        menu,
+        theme_design AS "themeDesign",
+        post_analysis AS "postAnalysis",
+        created_at
+       FROM catering_orders
+       WHERE status = $1 OR (status = 'cancelled' AND $1 = 'completed')
+       UNION ALL
+       SELECT
+        id,
+        source,
+        status,
         event_title AS "eventTitle",
         event_type AS "eventType",
         formality_level AS "formalityLevel",
@@ -892,9 +972,10 @@ app.get(
         guest_count AS "guestCount",
         menu,
         theme_design AS "themeDesign",
-        post_analysis AS "postAnalysis"
+        post_analysis AS "postAnalysis",
+        created_at
        FROM event_orders
-       WHERE status = $1
+       WHERE status = $1 OR (status = 'cancelled' AND $1 = 'completed')
        ORDER BY created_at DESC
        LIMIT 500;`,
       [status],
@@ -1078,15 +1159,16 @@ app.post("/api/public/online-inquiries", async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO event_orders
-        (source, status, event_title, event_type, formality_level,
+        (source, status, event_title, order_type, event_type, formality_level,
          customer_name, contact_person, contact_number, email_address,
          schedule_slots, address, guest_count, menu, theme_design)
        VALUES
         ('online_inquiry', 'online_inquiries',
-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING id;`,
       [
         eventTitle,
+        'catering_event', // Default for online inquiries
         eventType,
         formalityLevel,
         customerName,
@@ -1211,7 +1293,8 @@ app.post(
     try {
       const { orderId } = req.params;
 
-      const result = await pool.query(
+      // First try event_orders table
+      let result = await pool.query(
         `UPDATE event_orders
          SET
            status = 'cancelled',
@@ -1222,6 +1305,21 @@ app.post(
          RETURNING id;`,
         [req.user.id, orderId],
       );
+
+      // If no rows affected, try catering_orders table
+      if (result.rowCount === 0) {
+        result = await pool.query(
+          `UPDATE catering_orders
+           SET
+             status = 'cancelled',
+             updated_by = $1,
+             updated_at = now()
+           WHERE id = $2
+             AND status IN ('for_processing', 'new_event')
+           RETURNING id;`,
+          [req.user.id, orderId],
+        );
+      }
 
       if (result.rowCount === 0) {
         return res
@@ -1293,6 +1391,251 @@ async function seedSuperAdminIfNeeded() {
 initDb()
   .then(() => seedSuperAdminIfNeeded())
   .then(() => {
+    // Checklist CRUD operations
+    app.put('/api/events/orders/:orderId/checklist/:itemId', authRequired, async (req, res) => {
+      try {
+        const { orderId, itemId } = req.params;
+        const { isCompleted, title, description, price, assignedTo } = req.body;
+        
+        // Determine which table to use
+        const orderResult = await pool.query(
+          'SELECT id FROM event_orders WHERE id = $1 UNION ALL SELECT id FROM catering_orders WHERE id = $1 LIMIT 1',
+          [orderId]
+        );
+        
+        if (orderResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Order not found' });
+        }
+        
+        // Update checklist item
+        const result = await pool.query(
+          `UPDATE event_orders 
+           SET checklist = jsonb_set(
+             checklist,
+             array(
+               (SELECT idx FROM jsonb_array_elements(checklist) WITH ORDINALITY arr(elem, idx) 
+                WHERE elem->>'id' = $2)::int - 1
+             ),
+             $3::jsonb,
+             true
+           )
+           WHERE id = $1
+           RETURNING checklist`,
+          [orderId, itemId, JSON.stringify({ id: itemId, title, description, price, assignedTo, isCompleted })]
+        );
+        
+        if (result.rows.length === 0) {
+          return res.status(404).json({ error: 'Checklist item not found' });
+        }
+        
+        res.json({ checklist: result.rows[0].checklist });
+      } catch (error) {
+        console.error('Error updating checklist item:', error);
+        res.status(500).json({ error: 'Failed to update checklist item' });
+      }
+    });
+
+    app.post('/api/events/orders/:orderId/checklist', authRequired, async (req, res) => {
+      try {
+        const { orderId } = req.params;
+        const item = req.body;
+        
+        // Determine which table to use
+        const orderResult = await pool.query(
+          'SELECT id FROM event_orders WHERE id = $1 UNION ALL SELECT id FROM catering_orders WHERE id = $1 LIMIT 1',
+          [orderId]
+        );
+        
+        if (orderResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Order not found' });
+        }
+        
+        // Add checklist item
+        const result = await pool.query(
+          'UPDATE event_orders SET checklist = checklist || $1::jsonb WHERE id = $2 RETURNING checklist',
+          [JSON.stringify(item), orderId]
+        );
+        
+        res.json({ checklist: result.rows[0].checklist });
+      } catch (error) {
+        console.error('Error adding checklist item:', error);
+        res.status(500).json({ error: 'Failed to add checklist item' });
+      }
+    });
+
+    app.delete('/api/events/orders/:orderId/checklist/:itemId', authRequired, async (req, res) => {
+      try {
+        const { orderId, itemId } = req.params;
+        
+        // Determine which table to use
+        const orderResult = await pool.query(
+          'SELECT id FROM event_orders WHERE id = $1 UNION ALL SELECT id FROM catering_orders WHERE id = $1 LIMIT 1',
+          [orderId]
+        );
+        
+        if (orderResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Order not found' });
+        }
+        
+        // Remove checklist item
+        const result = await pool.query(
+          `UPDATE event_orders 
+           SET checklist = (
+             SELECT jsonb_agg(elem) 
+             FROM jsonb_array_elements(checklist) elem 
+             WHERE elem->>'id' != $1
+           )
+           WHERE id = $2
+           RETURNING checklist`,
+          [itemId, orderId]
+        );
+        
+        res.json({ checklist: result.rows[0].checklist });
+      } catch (error) {
+        console.error('Error deleting checklist item:', error);
+        res.status(500).json({ error: 'Failed to delete checklist item' });
+      }
+    });
+
+    
+// Loyalty Rewards API endpoints
+    app.get('/api/loyalty/user-points', authRequired, async (req, res) => {
+      try {
+        const userId = req.user.id;
+        
+        // Calculate user points from completed orders
+        const ordersResult = await pool.query(
+          `SELECT 
+             COUNT(*) as total_orders,
+             COALESCE(SUM(total_cost), 0) as total_spent
+           FROM (
+             SELECT total_cost FROM event_orders 
+             WHERE customer_id = $1 AND final_status = 'successful'
+             UNION ALL
+             SELECT total_cost FROM catering_orders 
+             WHERE customer_id = $1 AND final_status = 'successful'
+           ) orders`,
+          [userId]
+        );
+        
+        const { total_orders, total_spent } = ordersResult.rows[0];
+        const points = Math.floor(total_spent * 0.1); // 10% of total spent
+        
+        // Get redeemed rewards
+        const redeemedResult = await pool.query(
+          'SELECT * FROM user_rewards WHERE user_id = $1 AND redeemed = true',
+          [userId]
+        );
+        
+        res.json({
+          userPoints: points,
+          totalOrders: parseInt(total_orders),
+          totalSpent: parseFloat(total_spent),
+          redeemedRewards: redeemedResult.rows,
+        });
+      } catch (error) {
+        console.error('Error fetching user points:', error);
+        res.status(500).json({ error: 'Failed to fetch user points' });
+      }
+    });
+
+    app.get('/api/loyalty/rewards', authRequired, async (req, res) => {
+      try {
+        const result = await pool.query(
+          'SELECT * FROM rewards WHERE active = true ORDER BY points_cost ASC'
+        );
+        
+        res.json({ rewards: result.rows });
+      } catch (error) {
+        console.error('Error fetching rewards:', error);
+        res.status(500).json({ error: 'Failed to fetch rewards' });
+      }
+    });
+
+    app.post('/api/loyalty/redeem', authRequired, async (req, res) => {
+      try {
+        const { rewardId } = req.body;
+        const userId = req.user.id;
+        
+        // Get reward details
+        const rewardResult = await pool.query(
+          'SELECT * FROM rewards WHERE id = $1 AND active = true',
+          [rewardId]
+        );
+        
+        if (rewardResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Reward not found' });
+        }
+        
+        const reward = rewardResult.rows[0];
+        
+        // Calculate user points
+        const pointsResult = await pool.query(
+          `SELECT COALESCE(SUM(total_cost), 0) as total_spent
+           FROM (
+             SELECT total_cost FROM event_orders 
+             WHERE customer_id = $1 AND final_status = 'successful'
+             UNION ALL
+             SELECT total_cost FROM catering_orders 
+             WHERE customer_id = $1 AND final_status = 'successful'
+           ) orders`,
+          [userId]
+        );
+        
+        const userPoints = Math.floor(pointsResult.rows[0].total_spent * 0.1);
+        
+        if (userPoints < reward.points_cost) {
+          return res.status(400).json({ error: 'Insufficient points' });
+        }
+        
+        // Check if already redeemed
+        const existingResult = await pool.query(
+          'SELECT * FROM user_rewards WHERE user_id = $1 AND reward_id = $2',
+          [userId, rewardId]
+        );
+        
+        if (existingResult.rows.length > 0) {
+          return res.status(400).json({ error: 'Reward already redeemed' });
+        }
+        
+        // Create redemption record
+        await pool.query(
+          `INSERT INTO user_rewards (user_id, reward_id, redeemed_at, points_used)
+           VALUES ($1, $2, NOW(), $3)`,
+          [userId, rewardId, reward.points_cost]
+        );
+        
+        res.json({ 
+          message: 'Reward redeemed successfully',
+          pointsUsed: reward.points_cost,
+          remainingPoints: userPoints - reward.points_cost
+        });
+      } catch (error) {
+        console.error('Error redeeming reward:', error);
+        res.status(500).json({ error: 'Failed to redeem reward' });
+      }
+    });
+
+    app.get('/api/loyalty/user-rewards', authRequired, async (req, res) => {
+      try {
+        const userId = req.user.id;
+        
+        const result = await pool.query(
+          `SELECT ur.*, r.title, r.description, r.category, r.points_cost
+           FROM user_rewards ur
+           JOIN rewards r ON ur.reward_id = r.id
+           WHERE ur.user_id = $1
+           ORDER BY ur.redeemed_at DESC`,
+          [userId]
+        );
+        
+        res.json({ rewards: result.rows });
+      } catch (error) {
+        console.error('Error fetching user rewards:', error);
+        res.status(500).json({ error: 'Failed to fetch user rewards' });
+      }
+    });
+
     app.listen(PORT, () => {
       console.log(`Curatering server listening on port ${PORT}`);
     });
@@ -1301,3 +1644,5 @@ initDb()
     console.error("Failed to init DB/server:", err);
     process.exit(1);
   });
+
+export default sql;

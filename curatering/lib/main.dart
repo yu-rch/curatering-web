@@ -4,7 +4,7 @@ import 'pages/login.dart';
 import 'pages/dashboard.dart';
 import 'pages/manage_accounts.dart';
 import 'pages/catering.dart';
-import 'pages/loyalty_rewards.dart';
+import 'pages/manage_loyalty_rewards.dart';
 import 'pages/archive.dart';
 import 'pages/menu.dart';
 import 'pages/reports.dart';
@@ -90,7 +90,7 @@ class MyApp extends StatelessWidget {
                   allowedRoles: {Role.manager, Role.supervisor},
                   child: PagePermissionGuard(
                     route: PagePermissionRoutes.loyalty,
-                    child: const LoyaltyRewards(),
+                    child: const ManageLoyaltyRewards(),
                   ),
                 ),
             '/menu': (context) => RoleGuard(

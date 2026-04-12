@@ -38,15 +38,9 @@ class _LoginState extends State<Login> {
 
       if (!mounted) return;
 
-      // Debug logging
-      print('Login response received:');
-      print('User isVerified: ${resp.user.isVerified}');
-      print('User role: ${resp.user.role}');
-      print('User email: ${resp.user.email}');
 
       // Check if user is verified
       if (resp.user.isVerified == false) {
-        print('User is not verified, redirecting to OTP');
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -56,8 +50,6 @@ class _LoginState extends State<Login> {
         );
         return;
       }
-
-      print('User is verified, proceeding with login');
       AuthSession.instance.setSession(
         token: resp.token,
         user: UserProfile(
@@ -70,31 +62,20 @@ class _LoginState extends State<Login> {
         ),
       );
 
-      print('Session set successfully');
-      print('Current user after session: ${AuthSession.instance.currentUser.value}');
-
       final role = resp.user.role;
-      print('User role for navigation: $role');
       final targetRoute = switch (role) {
         Role.superAdmin => '/manage-accounts',
         Role.supervisor => '/live-performance',
         Role.manager => '/manage-events',
         Role.admin => '/dashboard',
       };
-
-      print('Target route: $targetRoute');
-      print('About to navigate...');
       
       if (!mounted) {
-        print('Widget not mounted, skipping navigation');
         return;
       }
       
-      print('Navigating to: $targetRoute');
       Navigator.of(context).pushReplacementNamed(targetRoute);
-      print('Navigation completed');
     } on ApiError catch (e) {
-      print('ApiError caught: ${e.message}');
       if (e.message.contains("not verified")) {
         if (!mounted) return;
 
@@ -109,9 +90,7 @@ class _LoginState extends State<Login> {
       }
 
       setState(() => _errorMessage = e.message);
-    } catch (e, stackTrace) {
-      print('Unexpected error: $e');
-      print('Stack trace: $stackTrace');
+    } catch (e) {
       setState(() => _errorMessage = 'Login failed. Please try again.');
     } finally {
       if (mounted) {

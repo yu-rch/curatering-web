@@ -54,6 +54,7 @@ class EventOrderDto {
   final String status; // new_event | online_inquiries | for_processing | for_post_analysis | completed
 
   final String eventTitle;
+  final String orderType; // catering | catering_event
   final String eventType;
   final String formalityLevel;
 
@@ -70,11 +71,26 @@ class EventOrderDto {
   final EventThemeDesignDto themeDesign;
   final PostAnalysisDto? postAnalysis;
 
+  // Payment information
+  final double downPaymentAmount;
+  final String downPaymentStatus; // pending | paid | cancelled
+  final double fullPaymentAmount;
+  final String fullPaymentStatus; // pending | paid | cancelled
+  final double totalCost;
+
+  // Checklist and images
+  final List<ChecklistItemDto> checklist;
+  final List<String> actualEventImages; // Base64 encoded images
+
+  // Final status
+  final String finalStatus; // successful | cancelled
+
   const EventOrderDto({
     required this.id,
     required this.source,
     required this.status,
     required this.eventTitle,
+    required this.orderType,
     required this.eventType,
     required this.formalityLevel,
     required this.customerName,
@@ -87,6 +103,32 @@ class EventOrderDto {
     required this.menu,
     required this.themeDesign,
     this.postAnalysis,
+    this.downPaymentAmount = 0.0,
+    this.downPaymentStatus = 'pending',
+    this.fullPaymentAmount = 0.0,
+    this.fullPaymentStatus = 'pending',
+    this.totalCost = 0.0,
+    this.checklist = const [],
+    this.actualEventImages = const [],
+    this.finalStatus = 'successful',
+  });
+}
+
+class ChecklistItemDto {
+  final String id;
+  final String title;
+  final String description;
+  final double price;
+  final bool isCompleted;
+  final String assignedTo;
+
+  const ChecklistItemDto({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.price,
+    this.isCompleted = false,
+    this.assignedTo = '',
   });
 }
 

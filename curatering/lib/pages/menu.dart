@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -29,9 +28,21 @@ class _MenuState extends State<Menu> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
   final TextEditingController _paxController = TextEditingController();
+  final TextEditingController _newPaxController = TextEditingController();
+  final TextEditingController _newSauceController = TextEditingController();
+  final TextEditingController _setMenuNameController = TextEditingController();
 
   String? _pendingImageBase64;
+  String? _editingImageBase64;
   Map<String, String> _editingPaxPrices = {};
+  int _activeTabIndex = 0;
+  List<String> _editingPaxOptions = ['1 pax'];
+  List<String> _editingSauces = [];
+  MenuDish? _editingDish;
+  String _editingCategory = 'catering';
+  List<String> _selectedSetDishIds = [];
+  List<SetMenu> _setMenus = [];
+  String? _selectedSetMenuId;
 
   List<MenuDish> get _filteredDishes {
     final query = _searchController.text.trim().toLowerCase();
@@ -47,6 +58,9 @@ class _MenuState extends State<Menu> {
     _nameController.dispose();
     _priceController.dispose();
     _paxController.dispose();
+    _newPaxController.dispose();
+    _newSauceController.dispose();
+    _setMenuNameController.dispose();
     super.dispose();
   }
 
@@ -62,27 +76,7 @@ class _MenuState extends State<Menu> {
     return base64;
   }
 
-  List<String> _parsePaxOptions(String raw) {
-    return raw
-        .split(',')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-  }
-
-  int _activeTabIndex = 0;
-  final TextEditingController _newPaxController = TextEditingController();
-  final TextEditingController _newSauceController = TextEditingController();
-  final TextEditingController _setMenuNameController = TextEditingController();
-  List<String> _editingPaxOptions = ['1 pax'];
-  List<String> _editingSauces = [];
-  String? _editingImageBase64;
-  MenuDish? _editingDish;
-  String _editingCategory = 'catering';
-  List<String> _selectedSetDishIds = [];
-  List<SetMenu> _setMenus = [];
-  String? _selectedSetMenuId;
-
+  
   void _resetEditorState({String category = 'catering'}) {
     _editingDish = null;
     _editingCategory = category;
@@ -182,107 +176,7 @@ class _MenuState extends State<Menu> {
     }
   }
 
-  Future<void> _importMenuFromCSV() async {
-    try {
-      final String csvData = await rootBundle.loadString('assets/sads.csv');
-      final List<String> lines = csvData.split('\n');
-      
-      bool isCateringSection = false;
-      bool isRestaurantSection = false;
-      String currentSet = '';
-      
-      for (int i = 0; i < lines.length; i++) {
-        final line = lines[i].trim();
-        if (line.isEmpty) continue;
-        
-        // Check for section headers
-        if (line.contains('CATERING AND EVENTS MENU')) {
-          isCateringSection = true;
-          isRestaurantSection = false;
-          continue;
-        }
-        if (line.contains('RESTAURANT MENU')) {
-          isRestaurantSection = true;
-          isCateringSection = false;
-          continue;
-        }
-        
-        // Process catering sets
-        if (isCateringSection && line.startsWith('SET ')) {
-          currentSet = line.split(',')[0].trim();
-          continue;
-        }
-        
-        if (isCateringSection && line.startsWith(',') && !line.startsWith(',,,')) {
-          final parts = line.split(',');
-          if (parts.length >= 2) {
-            final dishName = parts[1].trim();
-            if (dishName.isNotEmpty && !dishName.contains('INGREDIENTS')) {
-              final ingredients = parts.length > 2 ? parts[2].trim() : '';
-              
-              // Add dish to catering menu
-              MenuStore.instance.addDish(
-                name: '$currentSet - $dishName',
-                price: '0', // Price to be set individually
-                paxOptions: ['1 pax', '10-20 pax', '21-30 pax', '31-40 pax'],
-                imageBase64: null,
-                category: 'catering',
-                sauces: [],
-              );
-            }
-          }
-        }
-        
-        // Process restaurant menu
-        if (isRestaurantSection && line.startsWith(',,') && !line.contains('SIZE')) {
-          final parts = line.split(',');
-          if (parts.length >= 4) {
-            final dishName = parts[2].trim();
-            final size = parts[3].trim();
-            final price = parts.length > 4 ? parts[4].trim() : '0';
-            final sauces = parts.length > 5 ? parts[5].trim() : '';
-            
-            if (dishName.isNotEmpty && size.isNotEmpty && price.isNotEmpty) {
-              final List<String> sauceList = sauces.isNotEmpty 
-                  ? sauces.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
-                  : [];
-              
-              // Add dish to restaurant menu
-              MenuStore.instance.addDish(
-                name: dishName,
-                price: price,
-                paxOptions: [size],
-                imageBase64: null,
-                category: 'restaurant',
-                sauces: sauceList,
-              );
-            }
-          }
-        }
-      }
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Menu data imported successfully from sads.csv'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error importing menu data: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
-  }
-
+  
   Future<void> _openSetMenuSelector() async {
     await showDialog<void>(
       context: context,
@@ -637,7 +531,7 @@ class _MenuState extends State<Menu> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '₱${dish.price}',
+                        'PHP${dish.price}',
                         style: TextStyle(color: Colors.grey.shade600),
                       ),
                     ],
@@ -667,7 +561,7 @@ class _MenuState extends State<Menu> {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(8),
                     color: option == '1 pax'
-                        ? Colors.green.shade100
+                        ? Color(0xFFFFC107)
                         : Colors.grey.shade100,
                   ),
                   child: Text(option),
@@ -692,7 +586,7 @@ class _MenuState extends State<Menu> {
                     ),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(8),
-                      color: Colors.orange.shade50,
+                      color: Color(0xFFFFC107)
                     ),
                     child: Text(sauce),
                   );
@@ -800,7 +694,7 @@ class _MenuState extends State<Menu> {
                               horizontal: 0,
                             ),
                             title: Text(dish.name),
-                            subtitle: Text('₱${dish.price}'),
+                            subtitle: Text('PHP${dish.price}'),
                             trailing: IconButton(
                               icon: const Icon(Icons.close, color: Colors.red),
                               onPressed: () => setState(() {
@@ -843,99 +737,36 @@ class _MenuState extends State<Menu> {
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _saveSetMenu,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1DB954),
-                          ),
-                          child: const Text('CREATE SET'),
-                        ),
+                      ElevatedButton(
+                        onPressed: _saveSetMenu,
+                        child: const Text('Save Set'),
                       ),
                       const SizedBox(width: 8),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _openSetMenuSelector,
-                          icon: const Icon(Icons.folder_open, size: 16),
-                          label: const Text('LOAD'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey.shade200,
-                            foregroundColor: Colors.black,
-                          ),
-                        ),
+                      ElevatedButton(
+                        onPressed: _openSetMenuSelector,
+                        child: const Text('Load Set'),
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 20),
-        Expanded(
-          flex: 3,
-          child: Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+                  const SizedBox(height: 16),
                   const Text(
-                    'AVAILABLE DISHES',
+                    'AVAILABLE CATERING DISHES',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   Expanded(
-                    child: GridView.builder(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        childAspectRatio: 0.8,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                      ),
-                      itemCount: MenuStore.instance.activeDishes.length,
-                      itemBuilder: (context, index) {
-                        final dish = MenuStore.instance.activeDishes[index];
+                    child: ListView(
+                      children: cateringDishes.map((dish) {
                         final isSelected = _selectedSetDishIds.contains(dish.id);
-                        return GestureDetector(
-                          onTap: () => _toggleSetDish(dish.id),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: isSelected ? Colors.blue : Colors.grey.shade300,
-                                width: isSelected ? 2 : 1,
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                              color: isSelected ? Colors.blue.withOpacity(0.1) : null,
-                            ),
-                            child: Column(
-                              children: [
-                                Expanded(
-                                  child: dish.imageBase64 != null && dish.imageBase64!.isNotEmpty
-                                      ? Image.memory(
-                                          base64Decode(dish.imageBase64!),
-                                          fit: BoxFit.cover,
-                                        )
-                                      : const Icon(Icons.fastfood, size: 40),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: Text(
-                                    dish.name,
-                                    style: const TextStyle(fontSize: 12),
-                                    textAlign: TextAlign.center,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                        return CheckboxListTile(
+                          title: Text(dish.name),
+                          subtitle: Text('PHP${dish.price}'),
+                          value: isSelected,
+                          onChanged: (value) {
+                            _toggleSetDish(dish.id);
+                          },
                         );
-                      },
+                      }).toList(),
                     ),
                   ),
                 ],
@@ -947,57 +778,107 @@ class _MenuState extends State<Menu> {
     );
   }
 
+  Widget _buildCateringTab() {
+    final cateringDishes = _filteredDishes.where((d) => d.category == 'catering').toList();
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search catering dishes...',
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton.icon(
+                onPressed: () => _openDishDialog(category: 'catering'),
+                icon: const Icon(Icons.add),
+                label: const Text('Add Dish'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Expanded(child: _buildMenuGrid(cateringDishes)),
+      ],
+    );
+  }
+
+  Widget _buildRestaurantTab() {
+    final restaurantDishes = _filteredDishes.where((d) => d.category == 'restaurant').toList();
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search restaurant dishes...',
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton.icon(
+                onPressed: () => _openDishDialog(category: 'restaurant'),
+                icon: const Icon(Icons.add),
+                label: const Text('Add Dish'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Expanded(child: _buildMenuGrid(restaurantDishes)),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      showSearch: true,
-      searchController: _searchController,
-      onSearchChanged: (query) => setState(() {}),
       child: Column(
         children: [
-          // Tab buttons and import button
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                topRight: Radius.circular(12),
-              ),
-            ),
-            child: Row(
-              children: [
-                _buildTabButton('Catering Menu', 0),
-                _buildTabButton('Restaurant Menu', 1),
-                _buildTabButton('New Set Menu', 2),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: _importMenuFromCSV,
-                  icon: const Icon(Icons.upload_file, size: 16),
-                  label: const Text('IMPORT CSV'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-            ),
+          // Tab buttons
+          Row(
+            children: [
+              _buildTabButton('CATERING', 0),
+              const SizedBox(width: 8),
+              _buildTabButton('RESTAURANT', 1),
+              const SizedBox(width: 8),
+              _buildTabButton('SET MENUS', 2),
+            ],
           ),
-          // Tab content
+          const SizedBox(height: 16),
+          // Content based on active tab
           Expanded(
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(12),
-                  bottomRight: Radius.circular(12),
-                ),
-              ),
-              child: [
-                _buildMenuGrid(_filteredDishes.where((d) => d.category == 'catering').toList()),
-                _buildMenuGrid(_filteredDishes.where((d) => d.category == 'restaurant').toList()),
-                _buildSetMenuTab(_filteredDishes.where((d) => d.category == 'catering').toList()),
-              ][_activeTabIndex],
-            ),
+            child: _activeTabIndex == 0
+                ? _buildCateringTab()
+                : _activeTabIndex == 1
+                    ? _buildRestaurantTab()
+                    : _buildSetMenuTab(_filteredDishes.where((d) => d.category == 'catering').toList()),
           ),
         ],
       ),

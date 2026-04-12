@@ -111,5 +111,53 @@ class ApiClient {
 
     return const <dynamic>[];
   }
+
+  Future<Map<String, dynamic>> putJson(
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    final uri = Uri.parse('$apiBaseUrl$path');
+    final res = await http.put(
+      uri,
+      headers: _defaultHeaders(),
+      body: body == null ? null : jsonEncode(body),
+    );
+
+    final decoded = jsonDecode(res.body.isEmpty ? '{}' : res.body);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw ApiError(
+        message: decoded is Map && decoded['message'] is String
+            ? decoded['message'] as String
+            : 'Request failed',
+        statusCode: res.statusCode,
+      );
+    }
+
+    return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> delete(
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    final uri = Uri.parse('$apiBaseUrl$path');
+    final res = await http.delete(
+      uri,
+      headers: _defaultHeaders(),
+      body: body == null ? null : jsonEncode(body),
+    );
+
+    final decoded = jsonDecode(res.body.isEmpty ? '{}' : res.body);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw ApiError(
+        message: decoded is Map && decoded['message'] is String
+            ? decoded['message'] as String
+            : 'Request failed',
+        statusCode: res.statusCode,
+      );
+    }
+
+    return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+  }
 }
 

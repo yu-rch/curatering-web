@@ -14,14 +14,26 @@ class EventsApi {
         ? '/api/manager/events/orders'
         : '/api/supervisor/events/orders';
 
+    print('DEBUG: Calling API at path: $path with status: $status'); // Debug line
+
     final decoded = await ApiClient.instance.getJson(
       path,
       queryParameters: {'status': status},
     );
 
-    final raw = decoded['orders'];
-    if (raw is! List) return const <EventOrderDto>[];
+    print('DEBUG: Raw API response: $decoded'); // Debug line
+    print('DEBUG: Response type: ${decoded.runtimeType}'); // Debug line
 
+    final raw = decoded['orders'];
+    print('DEBUG: Orders array: $raw'); // Debug line
+    print('DEBUG: Orders array type: ${raw.runtimeType}'); // Debug line
+    
+    if (raw is! List) {
+      print('DEBUG: Raw is not a List, returning empty');
+      return const <EventOrderDto>[];
+    }
+
+    print('DEBUG: Mapping ${raw.length} orders to EventOrderDto'); // Debug line
     return raw.map(_orderFromJson).toList();
   }
 
@@ -88,6 +100,91 @@ class EventsApi {
     );
   }
 
+  // Checklist CRUD operations
+  Future<void> addChecklistItem({
+    required String orderId,
+    required ChecklistItemDto item,
+  }) async {
+    await ApiClient.instance.postJson(
+      '/api/events/orders/$orderId/checklist',
+      body: {
+        'id': item.id,
+        'title': item.title,
+        'description': item.description,
+        'price': item.price,
+        'assignedTo': item.assignedTo,
+        'isCompleted': item.isCompleted,
+      },
+    );
+  }
+
+  Future<void> updateChecklistItem({
+    required String orderId,
+    required String itemId,
+    required bool isCompleted,
+    required String title,
+    required String description,
+    required double price,
+    required String assignedTo,
+  }) async {
+    await ApiClient.instance.putJson(
+      '/api/events/orders/$orderId/checklist/$itemId',
+      body: {
+        'isCompleted': isCompleted,
+        'title': title,
+        'description': description,
+        'price': price,
+        'assignedTo': assignedTo,
+      },
+    );
+  }
+
+  Future<void> deleteChecklistItem({
+    required String orderId,
+    required String itemId,
+  }) async {
+    await ApiClient.instance.delete(
+      '/api/events/orders/$orderId/checklist/$itemId',
+    );
+  }
+
+  // Payment status updates
+  Future<void> updatePaymentStatus({
+    required String orderId,
+    required String paymentType, // 'down_payment' or 'full_payment'
+    required String status, // 'paid' or 'pending'
+  }) async {
+    await ApiClient.instance.putJson(
+      '/api/events/orders/$orderId/payment-status',
+      body: {
+        'paymentType': paymentType,
+        'status': status,
+      },
+    );
+  }
+
+  // Event photos updates
+  Future<void> updateEventPhotos({
+    required String orderId,
+    required List<String> photos,
+  }) async {
+    await ApiClient.instance.putJson(
+      '/api/events/orders/$orderId/event-photos',
+      body: {
+        'photos': photos,
+      },
+    );
+  }
+
+  Future<void> removeEventPhoto({
+    required String orderId,
+    required int photoIndex,
+  }) async {
+    await ApiClient.instance.delete(
+      '/api/events/orders/$orderId/event-photos/$photoIndex',
+    );
+  }
+
   EventOrderDto _orderFromJson(dynamic raw) {
     final map = raw as Map<String, dynamic>;
     final scheduleRaw = map['scheduleSlots'];
@@ -139,13 +236,37 @@ class EventsApi {
       );
     }
 
+    final checklistRaw = map['checklist'];
+    final checklist = <ChecklistItemDto>[];
+    if (checklistRaw is List) {
+      for (final c in checklistRaw) {
+        final cc = c as Map<String, dynamic>;
+        checklist.add(
+          ChecklistItemDto(
+            id: cc['id'] as String? ?? '',
+            title: cc['title'] as String? ?? '',
+            description: cc['description'] as String? ?? '',
+            price: (cc['price'] as num?)?.toDouble() ?? 0.0,
+            isCompleted: cc['isCompleted'] as bool? ?? false,
+            assignedTo: cc['assignedTo'] as String? ?? '',
+          ),
+        );
+      }
+    }
+
+    final actualEventImages = <String>[];
+    if (map['actualEventImages'] is List) {
+      actualEventImages.addAll((map['actualEventImages'] as List).map((e) => e as String));
+    }
+
     return EventOrderDto(
       id: map['id'].toString(),
       source: map['source'] as String,
       status: map['status'] as String,
-      eventTitle: map['eventTitle'] as String,
-      eventType: map['eventType'] as String,
-      formalityLevel: map['formalityLevel'] as String,
+      eventTitle: map['eventTitle'] as String? ?? '',
+      orderType: map['orderType'] as String? ?? 'catering',
+      eventType: map['eventType'] as String? ?? '',
+      formalityLevel: map['formalityLevel'] as String? ?? '',
       customerName: map['customerName'] as String,
       contactPerson: map['contactPerson'] as String,
       contactNumber: map['contactNumber'] as String,
@@ -156,6 +277,14 @@ class EventsApi {
       menu: menu,
       themeDesign: themeDesign,
       postAnalysis: postAnalysis,
+      downPaymentAmount: (map['downPaymentAmount'] as num?)?.toDouble() ?? 0.0,
+      downPaymentStatus: map['downPaymentStatus'] as String? ?? 'pending',
+      fullPaymentAmount: (map['fullPaymentAmount'] as num?)?.toDouble() ?? 0.0,
+      fullPaymentStatus: map['fullPaymentStatus'] as String? ?? 'pending',
+      totalCost: (map['totalCost'] as num?)?.toDouble() ?? 0.0,
+      checklist: checklist,
+      actualEventImages: actualEventImages,
+      finalStatus: map['finalStatus'] as String? ?? 'successful',
     );
   }
 }
