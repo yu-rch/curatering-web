@@ -712,7 +712,7 @@ app.post(
             (source, status, order_type, customer_name, contact_person, contact_number, email_address,
              schedule_slots, address, guest_count, menu, theme_design, created_by, updated_by)
           VALUES
-            ('new_event', 'for_processing', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            ('new_event', 'for_processing', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            RETURNING id;`,
           [
             customerName,
@@ -737,7 +737,7 @@ app.post(
              schedule_slots, address, guest_count, menu, theme_design,
              created_by, updated_by)
            VALUES
-            ('new_event', 'for_processing', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+            ('new_event', 'for_processing', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
            RETURNING id;`,
           [
             eventTitle,

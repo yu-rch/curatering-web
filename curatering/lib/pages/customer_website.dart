@@ -1271,6 +1271,7 @@ class _InquireFormState extends State<_InquireForm> {
   final _guests = TextEditingController();
   String _eventType = 'Wedding';
   String _formality = 'casual';
+  String _serviceType = 'catering_event'; // 'catering' or 'catering_event'
   bool _submitting = false;
 
   @override
@@ -1287,7 +1288,12 @@ class _InquireFormState extends State<_InquireForm> {
 
   Future<void> _submit() async {
     final missing = <String>[];
-    if (_eventTitle.text.trim().isEmpty) missing.add('event title');
+    final isCateringOnly = _serviceType == 'catering';
+
+    // Only validate event-specific fields for catering+event
+    if (!isCateringOnly) {
+      if (_eventTitle.text.trim().isEmpty) missing.add('event title');
+    }
     if (_customer.text.trim().isEmpty) missing.add('customer name');
     if (_contactPerson.text.trim().isEmpty) missing.add('contact person');
     if (_phone.text.trim().isEmpty) missing.add('phone');
@@ -1309,9 +1315,10 @@ class _InquireFormState extends State<_InquireForm> {
           '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
       await PublicEventsApi.instance.submitOnlineInquiry(
         payload: {
-          'eventTitle': _eventTitle.text.trim(),
-          'eventType': _eventType,
-          'formalityLevel': _formality,
+          'orderType': _serviceType == 'catering' ? 'catering' : 'catering_event',
+          'eventTitle': _serviceType == 'catering' ? '' : _eventTitle.text.trim(),
+          'eventType': _serviceType == 'catering' ? null : _eventType,
+          'formalityLevel': _serviceType == 'catering' ? null : _formality,
           'customerName': _customer.text.trim(),
           'contactPerson': _contactPerson.text.trim(),
           'contactNumber': _phone.text.trim(),
@@ -1385,50 +1392,67 @@ class _InquireFormState extends State<_InquireForm> {
                 ),
               ),
               const SizedBox(height: 24),
-              TextField(
-                controller: _eventTitle,
-                decoration: const InputDecoration(
-                  labelText: 'EVENT TITLE',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
+              // Service type selector
               DropdownButtonFormField<String>(
-                value: _eventType,
+                value: _serviceType,
                 decoration: const InputDecoration(
-                  labelText: 'EVENT TYPE',
-                  border: OutlineInputBorder(),
-                ),
-                items:
-                    const [
-                          'Wedding',
-                          'Birthday',
-                          'Corporate',
-                          'Private Party',
-                          'Other',
-                        ]
-                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                        .toList(),
-                onChanged: (v) => setState(() => _eventType = v ?? _eventType),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _formality,
-                decoration: const InputDecoration(
-                  labelText: 'FORMALITY',
+                  labelText: 'SERVICE TYPE',
                   border: OutlineInputBorder(),
                 ),
                 items: const [
-                  DropdownMenuItem(value: 'casual', child: Text('Casual')),
-                  DropdownMenuItem(
-                    value: 'semi_formal',
-                    child: Text('Semi-formal'),
-                  ),
-                  DropdownMenuItem(value: 'formal', child: Text('Formal')),
+                  DropdownMenuItem(value: 'catering', child: Text('Catering Only')),
+                  DropdownMenuItem(value: 'catering_event', child: Text('Catering + Event')),
                 ],
-                onChanged: (v) => setState(() => _formality = v ?? _formality),
+                onChanged: (v) => setState(() => _serviceType = v ?? _serviceType),
               ),
               const SizedBox(height: 12),
+              // Only show event fields for catering+event
+              if (_serviceType != 'catering') ...[
+                TextField(
+                  controller: _eventTitle,
+                  decoration: const InputDecoration(
+                    labelText: 'EVENT TITLE',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _eventType,
+                  decoration: const InputDecoration(
+                    labelText: 'EVENT TYPE',
+                    border: OutlineInputBorder(),
+                  ),
+                  items:
+                      const [
+                            'Wedding',
+                            'Birthday',
+                            'Corporate',
+                            'Private Party',
+                            'Other',
+                          ]
+                          .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                          .toList(),
+                  onChanged: (v) => setState(() => _eventType = v ?? _eventType),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _formality,
+                  decoration: const InputDecoration(
+                    labelText: 'FORMALITY',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'casual', child: Text('Casual')),
+                    DropdownMenuItem(
+                      value: 'semi_formal',
+                      child: Text('Semi-formal'),
+                    ),
+                    DropdownMenuItem(value: 'formal', child: Text('Formal')),
+                  ],
+                  onChanged: (v) => setState(() => _formality = v ?? _formality),
+                ),
+                const SizedBox(height: 12),
+              ],
               TextField(
                 controller: _contactPerson,
                 decoration: const InputDecoration(

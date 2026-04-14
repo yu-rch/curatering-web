@@ -17,7 +17,7 @@ class AppScaffold1 extends StatelessWidget {
   static const _sidebarItems = <_SidebarItemData>[
     _SidebarItemData(
       icon: Icons.dashboard,
-      label: 'Liveboards',
+      label: 'Liveboards',  
       route: '/dashboard',
     ),
     _SidebarItemData(
