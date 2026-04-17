@@ -22,10 +22,12 @@ jobs:
         run: flutter config --enable-web
 
       - name: Install dependencies
+        working-directory: curatering/curatering-web/curatering
         run: flutter pub get
 
       - name: Build web
-        run: cd curatering && flutter pub get
+        working-directory: curatering/curatering-web/curatering
+        run: flutter build web --release
 
       - name: Install Vercel CLI
         run: cd curatering && flutter build web --release
