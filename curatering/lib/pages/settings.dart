@@ -3,7 +3,6 @@ import '../widgets/app_scaffold.dart';
 import '../services/user_api.dart';
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
-import '../data_store.dart';
 
 class Settings extends StatefulWidget {
   const Settings({super.key});
@@ -26,7 +25,6 @@ class _SettingsState extends State<Settings> {
   @override
   void initState() {
     super.initState();
-    _isDarkMode = DataStore.isDarkMode.value;
   }
 
   void _onLogout() {
@@ -70,7 +68,6 @@ class _SettingsState extends State<Settings> {
                             value: _isDarkMode,
                             onChanged: (value) {
                               setState(() => _isDarkMode = value);
-                              DataStore.isDarkMode.value = value;
                             },
                           ),
                         ],

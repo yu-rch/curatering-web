@@ -13,7 +13,6 @@ import 'pages/settings.dart';
 import 'pages/placeholder.dart';
 import 'pages/customer_website.dart';
 import 'auth/auth_session.dart';
-import 'data_store.dart';
 import 'auth/page_permissions.dart';
 import 'auth/role_guard.dart';
 import 'auth/roles.dart';
@@ -21,6 +20,7 @@ import 'widgets/page_permission_guard.dart';
 import 'pages/help_requests.dart';
 import 'pages/action_logs.dart';
 import 'pages/customer_management.dart';
+import 'data_store.dart';
 
 void main() {
   runApp(const MyApp());
