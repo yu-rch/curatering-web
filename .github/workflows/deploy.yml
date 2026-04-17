@@ -30,7 +30,7 @@ jobs:
         run: flutter build web --release
 
       - name: Install Vercel CLI
-        run: cd curatering && flutter build web --release
+        run: npm i -g vercel
 
       - name: Deploy to Vercel
         run: cd curatering/build/web --prod --token=${{ secrets.VERCEL_TOKEN }} --yes
