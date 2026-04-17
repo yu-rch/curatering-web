@@ -1,6 +1,6 @@
 {"projectId":"prj_8gxzThLw7RyBXOmwiQi3SoGtSCmj","orgId":"team_9Cqir4uTu0yL5CCZGHw8rQJZ","projectName":"curatering-web"}
 
 {
-  "buildCommand": "",
+  "buildCommand": "flutter build web --release",
   "outputDirectory": "build/web"
 }
