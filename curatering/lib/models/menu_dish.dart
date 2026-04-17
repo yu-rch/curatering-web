@@ -8,6 +8,9 @@ class MenuDish {
   final List<String> sauces;
   final bool archived;
   final DateTime? archivedAt;
+  final List<String> ingredients;
+  final String type; // For restaurant dish grouping (RICE MEALS, PASTA, etc.)
+  final List<String> setMenus; // Array of set names this dish belongs to
 
   const MenuDish({
     required this.id,
@@ -19,6 +22,9 @@ class MenuDish {
     this.sauces = const [],
     this.archived = false,
     this.archivedAt,
+    this.ingredients = const [],
+    this.type = '',
+    this.setMenus = const [],
   });
 
   MenuDish copyWith({
@@ -31,6 +37,9 @@ class MenuDish {
     List<String>? sauces,
     bool? archived,
     DateTime? archivedAt,
+    List<String>? ingredients,
+    String? type,
+    List<String>? setMenus,
   }) {
     return MenuDish(
       id: id ?? this.id,
@@ -42,6 +51,9 @@ class MenuDish {
       sauces: sauces ?? this.sauces,
       archived: archived ?? this.archived,
       archivedAt: archivedAt ?? this.archivedAt,
+      ingredients: ingredients ?? this.ingredients,
+      type: type ?? this.type,
+      setMenus: setMenus ?? this.setMenus,
     );
   }
 }

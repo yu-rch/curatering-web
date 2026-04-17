@@ -41,7 +41,7 @@ class AppScaffold1 extends StatelessWidget {
       label: 'Transactions',
       route: '/transactions',
     ),
-    // _SidebarItemData(icon: Icons.archive, label: 'Archive', route: '/archive'),
+    _SidebarItemData(icon: Icons.archive, label: 'Archive', route: '/archive'),
     _SidebarItemData(icon: Icons.public, label: 'Website', route: '/website'),
   ];
 

@@ -15,6 +15,8 @@ class _ForgotPasswordState extends State<ForgotPassword> {
   final _passwordController = TextEditingController();
   final List<TextEditingController> _otpFields =
       List.generate(6, (_) => TextEditingController());
+  final List<FocusNode> _otpFocusNodes =
+      List.generate(6, (_) => FocusNode());
 
   String _maskedEmail = '';
   bool _isLoading = false;
@@ -37,6 +39,9 @@ class _ForgotPasswordState extends State<ForgotPassword> {
     _passwordController.dispose();
     for (final c in _otpFields) {
       c.dispose();
+    }
+    for (final f in _otpFocusNodes) {
+      f.dispose();
     }
     super.dispose();
   }
@@ -291,6 +296,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                       width: 45,
                       child: TextField(
                         controller: _otpFields[index],
+                        focusNode: _otpFocusNodes[index],
                         textAlign: TextAlign.center,
                         keyboardType: TextInputType.number,
                         maxLength: 1,
@@ -303,6 +309,13 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                         onChanged: (value) {
                           final otp = _otpFields.map((c) => c.text).join();
                           _otpController.text = otp;
+                          
+                          // Auto-focus next field when digit entered
+                          if (value.isNotEmpty && index < 5) {
+                            _otpFocusNodes[index + 1].requestFocus();
+                          }
+                          
+                          // Auto-verify when all 6 digits entered
                           if (otp.length == 6) {
                             _verifyOtp();
                           }

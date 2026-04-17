@@ -45,7 +45,7 @@ class AppScaffold extends StatelessWidget {
       label: 'Transactions',
       route: '/transactions',
     ),
-    // _SidebarItemData(icon: Icons.archive, label: 'Archive', route: '/archive'),
+    _SidebarItemData(icon: Icons.archive, label: 'Archive', route: '/archive'),
     _SidebarItemData(icon: Icons.public, label: 'Website', route: '/website'),
   ];
 
@@ -54,6 +54,11 @@ class AppScaffold extends StatelessWidget {
       icon: Icons.people_alt,
       label: 'Manage Accounts',
       route: '/manage-accounts',
+    ),
+    _SidebarItemData(
+      icon: Icons.person_outline,
+      label: 'Customer Management',
+      route: '/customer-management',
     ),
     _SidebarItemData(
       icon: Icons.help_outline,

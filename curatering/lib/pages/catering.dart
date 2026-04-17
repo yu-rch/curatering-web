@@ -95,7 +95,6 @@ enum DownPaymentType {
   none,
   fiftyPercent,
   seventyFivePercent,
-  oneHundredPercent,
   fullPayment,
   custom;
 
@@ -107,8 +106,6 @@ enum DownPaymentType {
         return '50% Downpayment';
       case DownPaymentType.seventyFivePercent:
         return '75% Downpayment';
-      case DownPaymentType.oneHundredPercent:
-        return '100% Downpayment';
       case DownPaymentType.fullPayment:
         return 'Full Payment';
       case DownPaymentType.custom:
@@ -124,8 +121,6 @@ enum DownPaymentType {
         return 0.5;
       case DownPaymentType.seventyFivePercent:
         return 0.75;
-      case DownPaymentType.oneHundredPercent:
-        return 1.0;
       case DownPaymentType.fullPayment:
         return 1.0;
       case DownPaymentType.custom:
@@ -137,10 +132,9 @@ enum DownPaymentType {
 enum PaymentService {
   cash,
   bankTransfer,
-  creditCard,
-  gcash,
-  paymaya,
-  paypal;
+  ccdebitCard,
+  ewallet,
+  cheque;
 
   String get displayName {
     switch (this) {
@@ -148,14 +142,12 @@ enum PaymentService {
         return 'Cash';
       case PaymentService.bankTransfer:
         return 'Bank Transfer';
-      case PaymentService.creditCard:
-        return 'Credit Card';
-      case PaymentService.gcash:
-        return 'GCash';
-      case PaymentService.paymaya:
-        return 'PayMaya';
-      case PaymentService.paypal:
-        return 'PayPal';
+      case PaymentService.ccdebitCard:
+        return 'Debit/Credit Card';
+      case PaymentService.ewallet:
+        return 'E-wallet';
+      case PaymentService.cheque:
+        return 'Cheque';
     }
   }
 }
@@ -337,9 +329,8 @@ class _ManageEventsState extends State<ManageEvents>
 
   bool get _isSupervisor => AuthSession.instance.currentRole == Role.supervisor;
 
-  bool get _isManagerOrAdmin =>
-      AuthSession.instance.currentRole == Role.manager ||
-      AuthSession.instance.currentRole == Role.admin;
+  bool get _isManager =>
+      AuthSession.instance.currentRole == Role.manager;
 
   void _onMenuStoreChanged() {
     if (!mounted) return;
@@ -349,9 +340,7 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   EventOrderDto? _selectedProcessingOrderDto;
-
   EventOrderDto? _selectedPostAnalysisOrderDto;
-
   EventOrderDto? _selectedCompletedOrderDto;
 
   final List<Uint8List> _themeDesignImages = [];
@@ -368,7 +357,7 @@ class _ManageEventsState extends State<ManageEvents>
   final TextEditingController _paymentReferenceController =
       TextEditingController();
   bool _paymentDialogLoading = false;
-  PaymentConfirmationMode _selectedPaymentMode =
+  final PaymentConfirmationMode _selectedPaymentMode =
       PaymentConfirmationMode.downpayment;
   DownPaymentType _selectedDownPaymentType = DownPaymentType.fiftyPercent;
   double _customDownPaymentAmount = 0.0;
@@ -403,10 +392,9 @@ class _ManageEventsState extends State<ManageEvents>
 
   List<MenuDish> get _filteredDishes {
     final query = _foodSearchController.text.trim().toLowerCase();
-    if (query.isEmpty) return _allDishes;
-    return _allDishes
-        .where((d) => d.name.toLowerCase().contains(query))
-        .toList();
+    var dishes = _allDishes.where((d) => d.category == 'catering').toList();
+    if (query.isEmpty) return dishes;
+    return dishes.where((d) => d.name.toLowerCase().contains(query)).toList();
   }
 
   void _resetForm() {
@@ -857,85 +845,744 @@ class _ManageEventsState extends State<ManageEvents>
   Future<void> _openFinalizeOnlineInquiryDialog(EventOrderDto order) async {
     _applyOrderToForm(order);
 
+    // Determine initial service type from order data
+    final initialServiceType = order.themeDesign.picksBase64.isNotEmpty
+        ? 'catering+event'
+        : 'catering';
+
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (context) {
-        return AlertDialog(
-          title: Text('Finalize Online Inquiry'),
-          content: SizedBox(
-            width: 980,
-            height: 640,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildEventForm(),
-                  const SizedBox(height: 16),
-                  _buildMenuSection(),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Menu editing is simplified in this prototype.',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            // Local state for dialog
+            String serviceType = initialServiceType;
+            String menuChoice = order.menu.isNotEmpty ? 'yes' : 'suggest';
+            String? selectedSetMenuId;
+            final selectedDishIds = <String>[];
+            final selectedPaxOptions = <String, String>{};
+            final dateController = TextEditingController(
+              text: order.scheduleSlots.isNotEmpty
+                  ? order.scheduleSlots.first.date
+                  : '',
+            );
+            final timeController = TextEditingController(
+              text: order.scheduleSlots.isNotEmpty
+                  ? order.scheduleSlots.first.startTime
+                  : '',
+            );
+
+            // Pre-populate menu selections
+            if (order.menu.isNotEmpty) {
+              for (final item in order.menu) {
+                // Use dishName as identifier for pre-selection
+                final dish = MenuStore.instance.allDishes.firstWhere(
+                  (d) => d.name == item.dishName,
+                  orElse: () => MenuStore.instance.allDishes.first,
+                );
+                selectedDishIds.add(dish.id);
+                selectedPaxOptions[dish.id] = item.paxOption;
+              }
+            }
+
+            return AlertDialog(
+              title: const Text('Finalize Online Inquiry'),
+              content: SizedBox(
+                width: 1100,
+                height: 700,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red.shade400,
-                          ),
-                          child: const Text('CANCEL'),
-                        ),
+                      // Service Type Selection
+                      _buildOnlineInquiryServiceType(
+                        serviceType,
+                        (value) => setDialogState(() => serviceType = value),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () async {
-                            try {
-                              final payload = _buildPayloadFromForm();
-                              await EventsApi.instance
-                                  .managerFinalizeOnlineInquiry(
-                                    orderId: order.id,
-                                    payload: payload,
-                                  );
-                              if (!mounted) return;
-                              Navigator.of(context).pop();
-                              await _refreshOrders();
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Order moved to For Processing.',
-                                  ),
-                                ),
-                              );
-                            } catch (e) {
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Failed to finalize order.'),
-                                ),
-                              );
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1DB954),
+                      const SizedBox(height: 20),
+
+                      // Three Column Layout
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Event Information (Read-only except date/time)
+                          Expanded(
+                            child: _buildOnlineInquiryEventInfo(
+                              order,
+                              dateController,
+                              timeController,
+                              context,
+                            ),
                           ),
-                          child: const Text('FINALIZE & SUBMIT'),
-                        ),
+                          const SizedBox(width: 16),
+
+                          // Menu
+                          Expanded(
+                            child: _buildOnlineInquiryMenu(
+                              order,
+                              menuChoice,
+                              (value) =>
+                                  setDialogState(() => menuChoice = value),
+                              selectedDishIds,
+                              selectedPaxOptions,
+                              selectedSetMenuId,
+                              (setId) => setDialogState(
+                                () => selectedSetMenuId = setId,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+
+                          // Event Design (only if catering+event)
+                          if (serviceType == 'catering+event')
+                            Expanded(
+                              child: _buildOnlineInquiryEventDesign(order),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Action Buttons
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red,
+                                side: const BorderSide(color: Colors.red),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                              ),
+                              child: const Text('CANCEL'),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                try {
+                                  // Build payload with modifications
+                                  final payload = _buildOnlineInquiryPayload(
+                                    order,
+                                    dateController.text,
+                                    timeController.text,
+                                    serviceType,
+                                    menuChoice,
+                                    selectedDishIds,
+                                    selectedPaxOptions,
+                                    selectedSetMenuId,
+                                  );
+                                  await EventsApi.instance
+                                      .managerFinalizeOnlineInquiry(
+                                        orderId: order.id,
+                                        payload: payload,
+                                      );
+                                  if (!mounted) return;
+                                  Navigator.of(context).pop();
+                                  await _refreshOrders();
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Order moved to For Processing.',
+                                      ),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Failed to finalize order.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF1DB954),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                              ),
+                              child: const Text('FINALIZE & SUBMIT'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
+  }
+
+  Widget _buildOnlineInquiryServiceType(
+    String serviceType,
+    Function(String) onChanged,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          const Text(
+            'WHAT SERVICE DO YOU NEED?',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildServiceTypeChip(
+                'Catering Only',
+                'catering',
+                serviceType,
+                onChanged,
+              ),
+              const SizedBox(width: 16),
+              _buildServiceTypeChip(
+                'Catering + Event',
+                'catering+event',
+                serviceType,
+                onChanged,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildServiceTypeChip(
+    String label,
+    String value,
+    String selectedValue,
+    Function(String) onChanged,
+  ) {
+    final isSelected = selectedValue == value;
+    return ElevatedButton(
+      onPressed: () => onChanged(value),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isSelected
+            ? const Color(0xFFFFC107)
+            : Colors.grey.shade200,
+        foregroundColor: Colors.black,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(
+            color: isSelected ? const Color(0xFFFFC107) : Colors.grey.shade400,
+          ),
+        ),
+      ),
+      child: Text(label),
+    );
+  }
+
+  Widget _buildOnlineInquiryEventInfo(
+    EventOrderDto order,
+    TextEditingController dateController,
+    TextEditingController timeController,
+    BuildContext context,
+  ) {
+    Future<void> selectDate() async {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: DateTime.tryParse(dateController.text) ?? DateTime.now(),
+        firstDate: DateTime.now(),
+        lastDate: DateTime.now().add(const Duration(days: 365)),
+      );
+      if (picked != null) {
+        dateController.text =
+            '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+      }
+    }
+
+    Future<void> selectTime() async {
+      final picked = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.now(),
+      );
+      if (picked != null) {
+        timeController.text =
+            '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFC107),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              'EVENT INFORMATION',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Read-only fields
+          _buildReadOnlyField('EVENT TITLE', order.eventTitle),
+          const SizedBox(height: 12),
+          _buildReadOnlyField('EVENT TYPE', order.eventType),
+          const SizedBox(height: 12),
+          _buildReadOnlyField('FORMALITY LEVEL', order.formalityLevel),
+          const SizedBox(height: 12),
+          _buildReadOnlyField('CONTACT PERSON', order.contactPerson),
+          const SizedBox(height: 12),
+          _buildReadOnlyField('CONTACT NUMBER', order.contactNumber),
+          const SizedBox(height: 12),
+          _buildReadOnlyField('EMAIL ADDRESS', order.emailAddress),
+          const SizedBox(height: 12),
+          _buildReadOnlyField('CUSTOMER', order.customerName),
+          const SizedBox(height: 12),
+          _buildReadOnlyField('CITY OF EVENT', order.address),
+          const SizedBox(height: 12),
+
+          // Editable Date/Time
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: dateController,
+                  readOnly: true,
+                  onTap: selectDate,
+                  decoration: InputDecoration(
+                    labelText: 'DATE/TIME OF EVENT',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.calendar_today),
+                      onPressed: selectDate,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: selectTime,
+                icon: const Icon(Icons.access_time),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildReadOnlyField('NO OF GUESTS', order.guestCount.toString()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadOnlyField(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(4),
+        color: Colors.grey.shade100,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value.isEmpty ? '-' : value,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOnlineInquiryMenu(
+    EventOrderDto order,
+    String menuChoice,
+    Function(String) onMenuChoiceChanged,
+    List<String> selectedDishIds,
+    Map<String, String> selectedPaxOptions,
+    String? selectedSetMenuId,
+    Function(String?) onSetMenuChanged,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFC107),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              'MENU',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'WOULD YOU LIKE TO CURATE YOUR OWN MENU?',
+            style: TextStyle(fontSize: 12),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildMenuChoiceChip(
+                'YES!',
+                'yes',
+                menuChoice,
+                onMenuChoiceChanged,
+              ),
+              const SizedBox(width: 12),
+              _buildMenuChoiceChip(
+                'NO I\'D LIKE MACRINAS TO\nSUGGEST ME A MENU INSTEAD',
+                'suggest',
+                menuChoice,
+                onMenuChoiceChanged,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Menu Content
+          if (menuChoice == 'yes')
+            _buildDishSelector(selectedDishIds, selectedPaxOptions)
+          else
+            _buildSetMenuSelector(selectedSetMenuId, onSetMenuChanged),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuChoiceChip(
+    String label,
+    String value,
+    String selectedValue,
+    Function(String) onChanged,
+  ) {
+    final isYes = value == 'yes';
+    return ElevatedButton(
+      onPressed: () => onChanged(value),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isYes ? const Color(0xFFE8F5E9) : Colors.white,
+        foregroundColor: Colors.black,
+        side: BorderSide(
+          color: isYes ? const Color(0xFF4CAF50) : Colors.red.shade300,
+          width: 2,
+        ),
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      child: Text(
+        label,
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 11),
+      ),
+    );
+  }
+
+  Widget _buildDishSelector(
+    List<String> selectedDishIds,
+    Map<String, String> selectedPaxOptions,
+  ) {
+    final dishes = MenuStore.instance.activeDishes;
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 350),
+      child: ListView.builder(
+        shrinkWrap: true,
+        itemCount: dishes.length,
+        itemBuilder: (context, index) {
+          final dish = dishes[index];
+          final isSelected = selectedDishIds.contains(dish.id);
+          return Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: ListTile(
+              dense: true,
+              leading: dish.imageBase64 != null
+                  ? Image.memory(
+                      base64Decode(dish.imageBase64!),
+                      width: 40,
+                      height: 40,
+                      fit: BoxFit.cover,
+                    )
+                  : const Icon(Icons.restaurant, size: 32),
+              title: Text(
+                dish.name,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              subtitle: Text(
+                '₱${dish.price}',
+                style: const TextStyle(fontSize: 11),
+              ),
+              trailing: isSelected
+                  ? DropdownButton<String>(
+                      value:
+                          selectedPaxOptions[dish.id] ?? dish.paxOptions.first,
+                      isDense: true,
+                      style: const TextStyle(fontSize: 11),
+                      items: dish.paxOptions
+                          .map(
+                            (p) => DropdownMenuItem(value: p, child: Text(p)),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        selectedPaxOptions[dish.id] = v!;
+                      },
+                    )
+                  : null,
+              onTap: () {
+                if (isSelected) {
+                  selectedDishIds.remove(dish.id);
+                  selectedPaxOptions.remove(dish.id);
+                } else {
+                  selectedDishIds.add(dish.id);
+                  selectedPaxOptions[dish.id] = dish.paxOptions.first;
+                }
+              },
+              selected: isSelected,
+              selectedTileColor: Colors.green.shade50,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSetMenuSelector(
+    String? selectedSetMenuId,
+    Function(String?) onChanged,
+  ) {
+    final setMenus = [
+      {
+        'id': 'set_1',
+        'name': 'Filipino Feast Set',
+        'description': 'Bistek, Sinigang, Lechon Kawali, Kare-Kare',
+        'dishes': [
+          'dish_bistek',
+          'dish_sinigang',
+          'dish_lechon_kawali',
+          'dish_kare_kare',
+        ],
+      },
+      {
+        'id': 'set_2',
+        'name': 'Classic Party Set',
+        'description': 'Bistek, Sinigang, Lechon Kawali',
+        'dishes': ['dish_bistek', 'dish_sinigang', 'dish_lechon_kawali'],
+      },
+    ];
+
+    return Column(
+      children: setMenus.map((setMenu) {
+        return Card(
+          margin: const EdgeInsets.only(bottom: 8),
+          child: ListTile(
+            dense: true,
+            title: Text(
+              setMenu['name'] as String,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(
+              setMenu['description'] as String,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11),
+            ),
+            trailing: Radio<String>(
+              value: setMenu['id'] as String,
+              groupValue: selectedSetMenuId,
+              onChanged: onChanged,
+            ),
+            onTap: () => onChanged(setMenu['id'] as String),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildOnlineInquiryEventDesign(EventOrderDto order) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Text(
+            'EVENT DESIGN',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'WE CAN SUGGEST SOME DESIGNS FOR\nINSPIRATION FOR YOU TO PUT TOGETHER!\n\nJUST LET US KNOW HOW YOU\'D LIKE YOUR\nEVENT TO LOOK!',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: () {
+              // Open event design dialog
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              side: const BorderSide(color: Color(0xFF4CAF50), width: 2),
+              elevation: 0,
+              minimumSize: const Size(double.infinity, 48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('CREATE MY EVENT DESIGN'),
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton(
+            onPressed: () {
+              // Let Macrinas create design
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              side: BorderSide(color: Colors.red.shade300, width: 2),
+              elevation: 0,
+              minimumSize: const Size(double.infinity, 48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'NO I\'D LIKE MACRINAS TO CREATE MY\nEVENT DESIGN INSTEAD',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 11),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Map<String, dynamic> _buildOnlineInquiryPayload(
+    EventOrderDto order,
+    String date,
+    String time,
+    String serviceType,
+    String menuChoice,
+    List<String> selectedDishIds,
+    Map<String, String> selectedPaxOptions,
+    String? selectedSetMenuId,
+  ) {
+    List<Map<String, dynamic>> menuItems = [];
+
+    if (menuChoice == 'yes') {
+      for (final dishId in selectedDishIds) {
+        final dish = MenuStore.instance.allDishes.firstWhere(
+          (d) => d.id == dishId,
+        );
+        final paxOption = selectedPaxOptions[dishId] ?? dish.paxOptions.first;
+        menuItems.add({
+          'dishId': dishId,
+          'dishName': dish.name,
+          'paxOption': paxOption,
+          'price': dish.price,
+        });
+      }
+    } else if (selectedSetMenuId != null) {
+      final setMenus = [
+        {
+          'id': 'set_1',
+          'name': 'Filipino Feast Set',
+          'description': 'Bistek, Sinigang, Lechon Kawali, Kare-Kare',
+          'dishes': [
+            'dish_bistek',
+            'dish_sinigang',
+            'dish_lechon_kawali',
+            'dish_kare_kare',
+          ],
+        },
+        {
+          'id': 'set_2',
+          'name': 'Classic Party Set',
+          'description': 'Bistek, Sinigang, Lechon Kawali',
+          'dishes': ['dish_bistek', 'dish_sinigang', 'dish_lechon_kawali'],
+        },
+      ];
+      final setMenu = setMenus.firstWhere((s) => s['id'] == selectedSetMenuId);
+      final dishes = setMenu['dishes'] as List<String>;
+      for (final dishId in dishes) {
+        final dish = MenuStore.instance.allDishes.firstWhere(
+          (d) => d.id == dishId,
+        );
+        menuItems.add({
+          'dishId': dishId,
+          'dishName': dish.name,
+          'paxOption': '10 pax',
+          'price': dish.price,
+        });
+      }
+    }
+
+    return {
+      'eventTitle': order.eventTitle,
+      'eventType': order.eventType,
+      'formalityLevel': order.formalityLevel,
+      'customerName': order.customerName,
+      'contactPerson': order.contactPerson,
+      'contactNumber': order.contactNumber,
+      'emailAddress': order.emailAddress,
+      'scheduleSlots': [
+        {'date': date, 'startTime': time, 'endTime': '14:00'},
+      ],
+      'address': order.address,
+      'guestCount': order.guestCount,
+      'serviceType': serviceType,
+      'menu': menuItems,
+      'themeDesign': {
+        'picksBase64': order.themeDesign.picksBase64,
+        'tintEnabled': order.themeDesign.tintEnabled,
+        'tintColorHex': order.themeDesign.tintColorHex,
+        'colorPrompt': order.themeDesign.colorPrompt,
+      },
+    };
   }
 
   // Theme Design Image Pick
@@ -1007,9 +1654,32 @@ class _ManageEventsState extends State<ManageEvents>
     return _themeTintColor;
   }
 
+  // Preset colors for testing the swap color feature
+  final List<Color> _testColors = [
+    const Color(0xFFF4511E), // Orange
+    const Color(0xFF1DB954), // Green
+    const Color(0xFF1976D2), // Blue
+    const Color(0xFFE91E63), // Pink
+    const Color(0xFF6A1B9A), // Purple
+    const Color(0xFFFFC024), // Yellow
+    const Color(0xFFD32F2F), // Red
+    const Color(0xFF00796B), // Teal
+    const Color(0xFF5D4037), // Brown
+    const Color(0xFF455A64), // Blue Grey
+  ];
+  int _testColorIndex = 0;
+
   Future<void> _swapThemeColorsAi() async {
     final prompt = _themeColorPromptController.text;
-    final nextColor = _colorFromThemePrompt(prompt);
+    
+    // If no prompt entered, cycle through test colors for easy testing
+    final Color nextColor;
+    if (prompt.trim().isEmpty) {
+      nextColor = _testColors[_testColorIndex % _testColors.length];
+      _testColorIndex++;
+    } else {
+      nextColor = _colorFromThemePrompt(prompt);
+    }
 
     setState(() {
       _isAiProcessingTheme = true;
@@ -1017,8 +1687,8 @@ class _ManageEventsState extends State<ManageEvents>
       _themeTintColor = nextColor;
     });
 
-    // Stub: plug AI API here
-    await Future<void>.delayed(const Duration(seconds: 1));
+    // Simulate AI processing delay for testing
+    await Future<void>.delayed(const Duration(milliseconds: 800));
 
     if (!mounted) return;
     setState(() {
@@ -1475,8 +2145,6 @@ class _ManageEventsState extends State<ManageEvents>
         return selPost.totalCost * 0.5;
       case DownPaymentType.seventyFivePercent:
         return selPost.totalCost * 0.75;
-      case DownPaymentType.oneHundredPercent:
-        return selPost.totalCost;
       case DownPaymentType.fullPayment:
         return selPost.totalCost;
       case DownPaymentType.custom:
@@ -2197,15 +2865,17 @@ class _ManageEventsState extends State<ManageEvents>
     Color statusColor = Colors.orange;
     String statusText = 'PENDING';
 
-    if (dto.finalStatus == 'cancelled') {
+    // For processing and post analysis tabs, always show PENDING
+    // For completed tab, show COMPLETED/CANCELLED based on finalStatus
+    if (dto.status == 'for_processing' || dto.status == 'for_post_analysis') {
+      statusColor = Colors.orange;
+      statusText = 'PENDING';
+    } else if (dto.finalStatus == 'cancelled') {
       statusColor = Colors.red;
       statusText = 'CANCELLED';
     } else if (dto.finalStatus == 'successful') {
       statusColor = Colors.green;
       statusText = 'COMPLETED';
-    } else if (dto.status == 'for_processing') {
-      statusColor = Colors.orange;
-      statusText = 'PENDING';
     }
 
     return InkWell(
@@ -2777,29 +3447,11 @@ class _ManageEventsState extends State<ManageEvents>
     return 'N/A';
   }
 
-  bool _isValidPaymentReference(String raw) {
-    return RegExp(r'^\d{10}$').hasMatch(raw.trim());
-  }
-
   Future<bool> _confirmOrderPayment(
     EventOrderDto order,
     PaymentConfirmationMode mode,
-    String reference,
+    PaymentService paymentService,
   ) async {
-    if (!_isValidPaymentReference(reference)) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'A valid 10-digit payment reference number is required.',
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return false;
-    }
-
     try {
       setState(() => _paymentDialogLoading = true);
       await EventsApi.instance.acceptOrder(orderId: order.id);
@@ -2841,8 +3493,7 @@ class _ManageEventsState extends State<ManageEvents>
     EventOrderDto order,
     PaymentConfirmationMode mode,
   ) async {
-    _paymentReferenceController.clear();
-    var referenceText = '';
+    var selectedPaymentService = PaymentService.cash;
     final title = mode == PaymentConfirmationMode.downpayment
         ? 'Enter Downpayment'
         : 'Confirm Full Payment';
@@ -2859,11 +3510,10 @@ class _ManageEventsState extends State<ManageEvents>
       builder: (context) {
         return StatefulBuilder(
           builder: (context, dialogSetState) {
-            final isReferenceValid = _isValidPaymentReference(referenceText);
             return AlertDialog(
               title: Text(title),
               content: SizedBox(
-                width: 780,
+                width: 400,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2878,26 +3528,30 @@ class _ManageEventsState extends State<ManageEvents>
                         color: Color(0xFFF4511E),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _paymentReferenceController,
-                      decoration: InputDecoration(
-                        labelText: 'Payment Reference Number',
-                        hintText: '10 digit reference number',
-                        errorText: referenceText.isNotEmpty && !isReferenceValid
-                            ? 'Reference must be exactly 10 digits'
-                            : null,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Payment Type',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<PaymentService>(
+                      value: selectedPaymentService,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
                       ),
-                      keyboardType: TextInputType.number,
-                      maxLength: 10,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      items: PaymentService.values.map((service) {
+                        return DropdownMenuItem(
+                          value: service,
+                          child: Text(service.displayName),
+                        );
+                      }).toList(),
                       onChanged: (value) {
-                        dialogSetState(() {
-                          referenceText = value;
-                        });
+                        if (value != null) {
+                          dialogSetState(() {
+                            selectedPaymentService = value;
+                          });
+                        }
                       },
                     ),
                     const SizedBox(height: 16),
@@ -2918,13 +3572,13 @@ class _ManageEventsState extends State<ManageEvents>
                   child: const Text('cancel'),
                 ),
                 ElevatedButton(
-                  onPressed: !isReferenceValid || _paymentDialogLoading
+                  onPressed: _paymentDialogLoading
                       ? null
                       : () async {
                           final confirmed = await _confirmOrderPayment(
                             order,
                             mode,
-                            referenceText,
+                            selectedPaymentService,
                           );
                           if (confirmed && mounted) {
                             Navigator.of(context).pop();
@@ -3030,17 +3684,49 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
+  List<ChecklistItem> _buildChecklistFromMenuWithIngredients(
+    List<EventMenuItemDto> menu,
+  ) {
+    final items = <ChecklistItem>[];
+
+    for (final menuItem in menu) {
+      // Add the dish itself
+      items.add(
+        ChecklistItem(
+          item: menuItem.dishName,
+          description: menuItem.paxOption,
+          quantity: 1,
+          cost: double.tryParse(menuItem.price) ?? 0.0,
+        ),
+      );
+
+      // Find the dish in MenuStore and add its ingredients
+      final dish = MenuStore.instance.allDishes.cast<MenuDish?>().firstWhere(
+        (d) => d?.name.toLowerCase() == menuItem.dishName.toLowerCase(),
+        orElse: () => null,
+      );
+
+      if (dish != null && dish.ingredients.isNotEmpty) {
+        for (final ingredient in dish.ingredients) {
+          items.add(
+            ChecklistItem(
+              item: '  - $ingredient',
+              description: 'Ingredient for ${menuItem.dishName}',
+              quantity: 1,
+              cost: 0.0,
+              isCompleted: false,
+            ),
+          );
+        }
+      }
+    }
+
+    return items;
+  }
+
   Future<void> _showChecklistDialog(EventOrderDto order) async {
     final List<ChecklistItem> editableItems = order.checklist.isEmpty
-        ? order.menu.map((m) {
-            final item = m;
-            return ChecklistItem(
-              item: item.dishName,
-              description: item.paxOption,
-              quantity: 1,
-              cost: double.tryParse(item.price) ?? 0.0,
-            );
-          }).toList()
+        ? _buildChecklistFromMenuWithIngredients(order.menu)
         : order.checklist
               .map(
                 (item) => ChecklistItem(
@@ -3076,14 +3762,14 @@ class _ManageEventsState extends State<ManageEvents>
                             DataColumn(label: Text('Item')),
                             DataColumn(label: Text('Description')),
                             DataColumn(label: Text('Quantity')),
-                            if (_isManagerOrAdmin) ...[
+                            if (_isManager) ...[
                               DataColumn(label: Text('Price/1')),
                               DataColumn(label: Text('Total Price')),
                             ] else ...[
                               DataColumn(label: Text('Cost')),
                             ],
                             DataColumn(label: Text('Status')),
-                            if (_isManagerOrAdmin) ...[
+                            if (_isManager) ...[
                               DataColumn(label: Text('Actions')),
                             ],
                           ],
@@ -3093,7 +3779,7 @@ class _ManageEventsState extends State<ManageEvents>
                             return DataRow(
                               cells: [
                                 DataCell(
-                                  _isManagerOrAdmin
+                                  _isManager
                                       ? TextFormField(
                                           initialValue: item.item,
                                           decoration: const InputDecoration(
@@ -3118,7 +3804,7 @@ class _ManageEventsState extends State<ManageEvents>
                                       : Text(item.item),
                                 ),
                                 DataCell(
-                                  _isManagerOrAdmin
+                                  _isManager
                                       ? TextFormField(
                                           initialValue: item.description,
                                           decoration: const InputDecoration(
@@ -3142,7 +3828,7 @@ class _ManageEventsState extends State<ManageEvents>
                                       : Text(item.description),
                                 ),
                                 DataCell(
-                                  _isManagerOrAdmin
+                                  _isManager
                                       ? TextFormField(
                                           initialValue: item.quantity
                                               .toString(),
@@ -3171,7 +3857,7 @@ class _ManageEventsState extends State<ManageEvents>
                                         )
                                       : Text('${item.quantity}'),
                                 ),
-                                if (_isManagerOrAdmin) ...[
+                                if (_isManager) ...[
                                   DataCell(
                                     TextFormField(
                                       initialValue: item.cost.toStringAsFixed(
@@ -3281,7 +3967,7 @@ class _ManageEventsState extends State<ManageEvents>
                                     ),
                                   ),
                                 ),
-                                if (_isManagerOrAdmin) ...[
+                                if (_isManager) ...[
                                   DataCell(
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
@@ -3343,7 +4029,7 @@ class _ManageEventsState extends State<ManageEvents>
                     ),
                     const SizedBox(height: 8),
                     // Add Item button (aligned left like in reference)
-                    if (_isManagerOrAdmin) ...[
+                    if (_isManager) ...[
                       Row(
                         children: [
                           Container(
@@ -3695,55 +4381,57 @@ class _ManageEventsState extends State<ManageEvents>
 
               return Column(
                 children: [
-                  // Focused photo on top
-                  Container(
-                    height: 250,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Stack(
-                        children: [
-                          Positioned.fill(
-                            child: Image.memory(
-                              _themePicks[_focusedPickIndex],
-                              fit: BoxFit.cover,
+                  // Focused photo on top - use flexible height
+                  Flexible(
+                    flex: 3,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: Image.memory(
+                                _themePicks[_focusedPickIndex],
+                                fit: BoxFit.cover,
+                              ),
                             ),
-                          ),
-                          Positioned(
-                            top: 8,
-                            right: 8,
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () {
-                                  _removeThemePick(_focusedPickIndex);
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black54,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: const Icon(
-                                    Icons.remove_circle,
-                                    color: Colors.white,
-                                    size: 20,
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: () {
+                                    _removeThemePick(_focusedPickIndex);
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: const Icon(
+                                      Icons.remove_circle,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // Smaller carousel below
+                  // Smaller carousel below - fixed height but constrained
                   SizedBox(
-                    height: 80,
+                    height: 70,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
                       itemCount: _themePicks.length,
@@ -3751,27 +4439,32 @@ class _ManageEventsState extends State<ManageEvents>
                         final bytes = _themePicks[index];
                         final isFocused = index == _focusedPickIndex;
 
-                        return GestureDetector(
-                          onTap: () {
-                            setStateDialog(() {
-                              _focusedPickIndex = index;
-                            });
-                          },
-                          child: Container(
-                            width: 80,
-                            margin: const EdgeInsets.only(right: 8),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: isFocused
-                                    ? Colors.blue
-                                    : Colors.grey.shade300,
-                                width: isFocused ? 3 : 1,
+                        return MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              setStateDialog(() {
+                                _focusedPickIndex = index;
+                              });
+                            },
+                            child: Container(
+                              width: 70,
+                              height: 70,
+                              margin: const EdgeInsets.only(right: 8),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isFocused
+                                      ? Colors.blue
+                                      : Colors.grey.shade300,
+                                  width: isFocused ? 3 : 1,
+                                ),
                               ),
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Image.memory(bytes, fit: BoxFit.cover),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.memory(bytes, fit: BoxFit.cover),
+                              ),
                             ),
                           ),
                         );
@@ -3787,305 +4480,320 @@ class _ManageEventsState extends State<ManageEvents>
               content: SizedBox(
                 width: 900,
                 height: 520,
-                child: Row(
-                  children: [
-                    // Left: template board + uploads
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'DESIGN BOARD',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 12),
-                          Expanded(
-                            child: designGridImages.isEmpty
-                                ? Center(
-                                    child: Text(
-                                      'No theme images available yet.',
-                                      style: TextStyle(
-                                        color: Colors.grey.shade600,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  )
-                                : imageCarousel(),
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () async {
-                                if (!kIsWeb) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Image upload is only supported on web.',
-                                      ),
-                                    ),
-                                  );
-                                  return;
-                                }
+                child: SingleChildScrollView(
+                  child: SizedBox(
+                    height: 520,
+                    child: Row(
+                      children: [
+                        // Left: template board + uploads
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'DESIGN BOARD',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 12),
+                              Expanded(
+                                child: designGridImages.isEmpty
+                                    ? Center(
+                                        child: Text(
+                                          'No theme images available yet.',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade600,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      )
+                                    : imageCarousel(),
+                              ),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  onPressed: () async {
+                                    if (!kIsWeb) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Image upload is only supported on web.',
+                                          ),
+                                        ),
+                                      );
+                                      return;
+                                    }
 
-                                final uploadInput =
-                                    html.FileUploadInputElement();
-                                uploadInput.accept = 'image/*';
-                                uploadInput.multiple = true;
-                                uploadInput.click();
+                                    final uploadInput =
+                                        html.FileUploadInputElement();
+                                    uploadInput.accept = 'image/*';
+                                    uploadInput.multiple = true;
+                                    uploadInput.click();
 
-                                uploadInput.onChange.listen((event) {
-                                  final files = uploadInput.files;
-                                  if (files == null || files.isEmpty) return;
+                                    uploadInput.onChange.listen((event) {
+                                      final files = uploadInput.files;
+                                      if (files == null || files.isEmpty)
+                                        return;
 
-                                  for (final file in files) {
-                                    final reader = html.FileReader();
-                                    reader.readAsArrayBuffer(file);
-                                    reader.onLoad.listen((event) {
-                                      final data = reader.result;
-                                      if (data is Uint8List) {
-                                        setStateDialog(() {
-                                          _themeDesignImages.add(data);
-                                        });
-                                      } else if (data is ByteBuffer) {
-                                        setStateDialog(() {
-                                          _themeDesignImages.add(
-                                            data.asUint8List(),
-                                          );
+                                      for (final file in files) {
+                                        final reader = html.FileReader();
+                                        reader.readAsArrayBuffer(file);
+                                        reader.onLoad.listen((event) {
+                                          final data = reader.result;
+                                          if (data is Uint8List) {
+                                            setStateDialog(() {
+                                              _themeDesignImages.add(data);
+                                            });
+                                          } else if (data is ByteBuffer) {
+                                            setStateDialog(() {
+                                              _themeDesignImages.add(
+                                                data.asUint8List(),
+                                              );
+                                            });
+                                          }
                                         });
                                       }
                                     });
-                                  }
-                                });
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFF4511E),
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFF4511E),
+                                  ),
+                                  child: const Text('UPLOAD IMAGES'),
+                                ),
                               ),
-                              child: const Text('UPLOAD IMAGES'),
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
 
-                    const SizedBox(width: 20),
+                        const SizedBox(width: 20),
 
-                    // Right: picks + collage preview
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'YOUR PICKS',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 12),
-                          Expanded(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                decoration: BoxDecoration(
+                        // Right: picks + collage preview
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'YOUR PICKS',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 12),
+                              Expanded(
+                                child: ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: Colors.grey.shade300,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.grey.shade300,
+                                      ),
+                                    ),
+                                    padding: const EdgeInsets.all(12),
+                                    child: picksPreview(),
                                   ),
                                 ),
-                                padding: const EdgeInsets.all(12),
-                                child: picksPreview(),
                               ),
-                            ),
-                          ),
 
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: _themeColorPromptController,
-                            decoration: InputDecoration(
-                              labelText: 'What colors would like to have?',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: _themeColorPromptController,
+                                decoration: InputDecoration(
+                                  labelText: 'What colors would like to have?',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  suffixIcon: _isAiProcessingTheme
+                                      ? const Padding(
+                                          padding: EdgeInsets.all(12),
+                                          child: SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          ),
+                                        )
+                                      : null,
+                                ),
                               ),
-                              suffixIcon: _isAiProcessingTheme
-                                  ? const Padding(
-                                      padding: EdgeInsets.all(12),
-                                      child: SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
+                              const SizedBox(height: 8),
+
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed:
+                                          _themePicks.isEmpty ||
+                                              _isAiProcessingTheme
+                                          ? null
+                                          : () async {
+                                              await _swapThemeColorsAi();
+                                              setStateDialog(() {});
+                                            },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFF1DB954,
                                         ),
                                       ),
-                                    )
-                                  : null,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed:
-                                      _themePicks.isEmpty ||
-                                          _isAiProcessingTheme
-                                      ? null
-                                      : () async {
-                                          await _swapThemeColorsAi();
-                                          setStateDialog(() {});
-                                        },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF1DB954),
-                                  ),
-                                  child: const Text('SWAP COLORS'),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed:
-                                      _themePicks.isEmpty ||
-                                          _isAiProcessingTheme ||
-                                          _isSegmenting ||
-                                          _isDetecting
-                                      ? null
-                                      : () async {
-                                          if (_themePicks.isNotEmpty) {
-                                            await _runYOLOAndSAM(
-                                              _themePicks.first,
-                                            );
-                                          }
-                                        },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color.fromARGB(
-                                      255,
-                                      193,
-                                      169,
-                                      66,
+                                      child: const Text('SWAP COLORS'),
                                     ),
                                   ),
-                                  child: _isSegmenting || _isDetecting
-                                      ? const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            valueColor:
-                                                AlwaysStoppedAnimation<Color>(
-                                                  Colors.white,
-                                                ),
-                                          ),
-                                        )
-                                      : const Text('DETECT & SEGMENT'),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 8),
-
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: _themePicks.length <= 1
-                                      ? null
-                                      : () async {
-                                          await _createAutoCollage();
-                                          setStateDialog(() {});
-                                        },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: _themePicks.length <= 1
-                                        ? Colors.grey.shade400
-                                        : const Color(0xFF1DB954),
-                                  ),
-                                  child: _isAiProcessingTheme
-                                      ? const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            valueColor:
-                                                AlwaysStoppedAnimation<Color>(
-                                                  Colors.white,
-                                                ),
-                                          ),
-                                        )
-                                      : Text(
-                                          _themePicks.length <= 1
-                                              ? 'AUTO COLLAGE (Need 2+ photos)'
-                                              : 'AUTO COLLAGE',
-                                          style: const TextStyle(fontSize: 12),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed:
+                                          _themePicks.isEmpty ||
+                                              _isAiProcessingTheme ||
+                                              _isSegmenting ||
+                                              _isDetecting
+                                          ? null
+                                          : () async {
+                                              if (_themePicks.isNotEmpty) {
+                                                await _runYOLOAndSAM(
+                                                  _themePicks.first,
+                                                );
+                                              }
+                                            },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color.fromARGB(
+                                          255,
+                                          193,
+                                          169,
+                                          66,
                                         ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: _currentSegmentationResult != null
-                                      ? () {
-                                          Navigator.of(context).pop();
-                                          showDialog(
-                                            context: context,
-                                            builder: (context) =>
-                                                _buildSegmentationOverlay(),
-                                          );
-                                        }
-                                      : null,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.orange,
+                                      ),
+                                      child: _isSegmenting || _isDetecting
+                                          ? const SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                      Color
+                                                    >(Colors.white),
+                                              ),
+                                            )
+                                          : const Text('DETECT & SEGMENT'),
+                                    ),
                                   ),
-                                  child: const Text('EDIT OBJECTS'),
-                                ),
+                                ],
                               ),
-                            ],
-                          ),
 
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    // Save changes and close dialog
-                                    Navigator.of(context).pop();
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF1DB954),
+                              const SizedBox(height: 8),
+
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: _themePicks.length <= 1
+                                          ? null
+                                          : () async {
+                                              await _createAutoCollage();
+                                              setStateDialog(() {});
+                                            },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: _themePicks.length <= 1
+                                            ? Colors.grey.shade400
+                                            : const Color(0xFF1DB954),
+                                      ),
+                                      child: _isAiProcessingTheme
+                                          ? const SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                      Color
+                                                    >(Colors.white),
+                                              ),
+                                            )
+                                          : Text(
+                                              _themePicks.length <= 1
+                                                  ? 'AUTO COLLAGE (Need 2+ photos)'
+                                                  : 'AUTO COLLAGE',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                    ),
                                   ),
-                                  child: const Text('DONE'),
-                                ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed:
+                                          _currentSegmentationResult != null
+                                          ? () {
+                                              Navigator.of(context).pop();
+                                              showDialog(
+                                                context: context,
+                                                builder: (context) =>
+                                                    _buildSegmentationOverlay(),
+                                              );
+                                            }
+                                          : null,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.orange,
+                                      ),
+                                      child: const Text('EDIT OBJECTS'),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    // Restore previous state and close dialog
-                                    setState(() {
-                                      _themePicks
-                                        ..clear()
-                                        ..addAll(picksBefore);
-                                      _themePickHashes
-                                        ..clear()
-                                        ..addAll(pickHashesBefore);
-                                      _collageOrder = collageBefore;
-                                      _themeTintEnabled = tintEnabledBefore;
-                                      _themeTintColor = tintColorBefore;
-                                      _themeColorPromptController.text =
-                                          promptBefore;
-                                    });
-                                    Navigator.of(context).pop();
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red.shade400,
+
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        // Save changes and close dialog
+                                        Navigator.of(context).pop();
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFF1DB954,
+                                        ),
+                                      ),
+                                      child: const Text('DONE'),
+                                    ),
                                   ),
-                                  child: const Text('CANCEL'),
-                                ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        // Restore previous state and close dialog
+                                        setState(() {
+                                          _themePicks
+                                            ..clear()
+                                            ..addAll(picksBefore);
+                                          _themePickHashes
+                                            ..clear()
+                                            ..addAll(pickHashesBefore);
+                                          _collageOrder = collageBefore;
+                                          _themeTintEnabled = tintEnabledBefore;
+                                          _themeTintColor = tintColorBefore;
+                                          _themeColorPromptController.text =
+                                              promptBefore;
+                                        });
+                                        Navigator.of(context).pop();
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.red.shade400,
+                                      ),
+                                      child: const Text('CANCEL'),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             );
@@ -4370,156 +5078,148 @@ class _ManageEventsState extends State<ManageEvents>
               ],
             ],
 
-            // Actual Event Photos Section
-            if (!_isSupervisor) ...[
+            // Actual Event Photos Section - Only for catering+event orders
+            if (!_isSupervisor &&
+                selPost != null &&
+                selPost.orderType == 'catering_event') ...[
               const Text(
                 'Actual Event Photos',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
-              if (selPost == null)
-                Text(
-                  'Select an order to upload event photos.',
-                  style: TextStyle(color: Colors.grey.shade600),
-                )
-              else ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
-                  child: Column(
-                    children: [
-                      if (selPost.actualEventImages.isEmpty)
-                        Column(
-                          children: [
-                            Icon(
-                              Icons.photo_library_outlined,
-                              size: 48,
-                              color: Colors.grey.shade400,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'No event photos uploaded yet',
-                              style: TextStyle(color: Colors.grey.shade600),
-                            ),
-                            const SizedBox(height: 12),
-                            ElevatedButton.icon(
-                              onPressed: () => _uploadEventPhotos(selPost),
-                              icon: const Icon(Icons.upload),
-                              label: const Text('Upload Photos'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue,
-                                foregroundColor: Colors.white,
-                              ),
-                            ),
-                          ],
-                        )
-                      else
-                        Column(
-                          children: [
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: selPost.actualEventImages
-                                  .asMap()
-                                  .entries
-                                  .map((entry) {
-                                    final index = entry.key;
-                                    final imageUrl = entry.value;
-                                    return Stack(
-                                      children: [
-                                        Container(
-                                          width: 80,
-                                          height: 80,
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            border: Border.all(
-                                              color: Colors.grey.shade300,
-                                            ),
-                                          ),
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadius.circular(
-                                              7,
-                                            ),
-                                            child: imageUrl.startsWith('http')
-                                                ? Image.network(
-                                                    imageUrl,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder:
-                                                        (
-                                                          context,
-                                                          error,
-                                                          stackTrace,
-                                                        ) {
-                                                          return Container(
-                                                            color: Colors
-                                                                .grey
-                                                                .shade200,
-                                                            child: const Icon(
-                                                              Icons
-                                                                  .broken_image,
-                                                            ),
-                                                          );
-                                                        },
-                                                  )
-                                                : Image.memory(
-                                                    Uint8List.fromList(
-                                                      imageUrl.codeUnits,
-                                                    ),
-                                                    fit: BoxFit.cover,
-                                                  ),
-                                          ),
-                                        ),
-                                        Positioned(
-                                          top: 4,
-                                          right: 4,
-                                          child: GestureDetector(
-                                            onTap: () => _removeEventPhoto(
-                                              selPost,
-                                              index,
-                                            ),
-                                            child: Container(
-                                              padding: const EdgeInsets.all(4),
-                                              decoration: BoxDecoration(
-                                                color: Colors.red,
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-                                              child: const Icon(
-                                                Icons.close,
-                                                size: 12,
-                                                color: Colors.white,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  })
-                                  .toList(),
-                            ),
-                            const SizedBox(height: 12),
-                            ElevatedButton.icon(
-                              onPressed: () => _uploadEventPhotos(selPost),
-                              icon: const Icon(Icons.add_photo_alternate),
-                              label: const Text('Add More Photos'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade200),
                 ),
-                const SizedBox(height: 16),
-              ],
+                child: Column(
+                  children: [
+                    if (selPost.actualEventImages.isEmpty)
+                      Column(
+                        children: [
+                          Icon(
+                            Icons.photo_library_outlined,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'No event photos uploaded yet',
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                          const SizedBox(height: 12),
+                          ElevatedButton.icon(
+                            onPressed: () => _uploadEventPhotos(selPost),
+                            icon: const Icon(Icons.upload),
+                            label: const Text('Upload Photos'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      Column(
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: selPost.actualEventImages
+                                .asMap()
+                                .entries
+                                .map((entry) {
+                                  final index = entry.key;
+                                  final imageUrl = entry.value;
+                                  return Stack(
+                                    children: [
+                                      Container(
+                                        width: 80,
+                                        height: 80,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.grey.shade300,
+                                          ),
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            7,
+                                          ),
+                                          child: imageUrl.startsWith('http')
+                                              ? Image.network(
+                                                  imageUrl,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder:
+                                                      (
+                                                        context,
+                                                        error,
+                                                        stackTrace,
+                                                      ) {
+                                                        return Container(
+                                                          color: Colors
+                                                              .grey
+                                                              .shade200,
+                                                          child: const Icon(
+                                                            Icons.broken_image,
+                                                          ),
+                                                        );
+                                                      },
+                                                )
+                                              : Image.memory(
+                                                  Uint8List.fromList(
+                                                    imageUrl.codeUnits,
+                                                  ),
+                                                  fit: BoxFit.cover,
+                                                ),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        top: 4,
+                                        right: 4,
+                                        child: GestureDetector(
+                                          onTap: () =>
+                                              _removeEventPhoto(selPost, index),
+                                          child: Container(
+                                            padding: const EdgeInsets.all(4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.red,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: const Icon(
+                                              Icons.close,
+                                              size: 12,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                })
+                                .toList(),
+                          ),
+                          const SizedBox(height: 12),
+                          ElevatedButton.icon(
+                            onPressed: () => _uploadEventPhotos(selPost),
+                            icon: const Icon(Icons.add_photo_alternate),
+                            label: const Text('Add More Photos'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
             ],
 
             const Text(
@@ -4682,7 +5382,13 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Widget _buildCompletedEventsView(bool isNarrow) {
-    final orderDtos = _completedOrdersDto;
+    // Filter completed orders to only show those from last 1 month
+    final oneMonthAgo = DateTime.now().subtract(const Duration(days: 30));
+    final orderDtos = _completedOrdersDto.where((dto) {
+      if (dto.scheduleSlots.isEmpty) return false;
+      final eventDate = DateTime.parse(dto.scheduleSlots.first.date);
+      return eventDate.isAfter(oneMonthAgo) || eventDate.isAtSameMomentAs(oneMonthAgo);
+    }).toList();
 
     final listSection = Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -4700,9 +5406,18 @@ class _ManageEventsState extends State<ManageEvents>
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 40),
                 child: Center(
-                  child: Text(
-                    'No completed or cancelled events yet.',
-                    style: TextStyle(color: Colors.grey.shade600),
+                  child: Column(
+                    children: [
+                      Text(
+                        'No completed or cancelled events in the last 30 days.',
+                        style: TextStyle(color: Colors.grey.shade600),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Older events are available in the Transactions page.',
+                        style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                      ),
+                    ],
                   ),
                 ),
               )
@@ -5917,39 +6632,6 @@ class _ManageEventsState extends State<ManageEvents>
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildPaymentInfo(EventOrderDto order) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildPaymentRow(
-            'Down Payment:',
-            'PHP ${order.downPaymentAmount.toStringAsFixed(2)}',
-            order.downPaymentStatus,
-          ),
-          const SizedBox(height: 8),
-          _buildPaymentRow(
-            'Full Payment:',
-            'PHP ${order.fullPaymentAmount.toStringAsFixed(2)}',
-            order.fullPaymentStatus,
-          ),
-          const SizedBox(height: 8),
-          _buildPaymentRow(
-            'Total Cost:',
-            'PHP ${order.totalCost.toStringAsFixed(2)}',
-            'calculated',
-          ),
-        ],
-      ),
     );
   }
 

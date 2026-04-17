@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../auth/auth_session.dart';
 import '../auth/page_permissions.dart';
 import '../auth/roles.dart';
 import '../models/user.dart';
@@ -112,6 +113,7 @@ class _ManageAccountsState extends State<ManageAccounts> {
                     DropdownButton<Role>(
                       value: role,
                       items: Role.values
+                          .where((r) => r != Role.admin)
                           .map((r) => DropdownMenuItem(value: r, child: Text(r.displayName)))
                           .toList(),
                       onChanged: (v) => setStateDialog(() => role = v ?? role),
@@ -168,6 +170,7 @@ class _ManageAccountsState extends State<ManageAccounts> {
                     DropdownButton<Role>(
                       value: role,
                       items: Role.values
+                          .where((r) => r != Role.admin)
                           .map((r) => DropdownMenuItem(value: r, child: Text(r.displayName)))
                           .toList(),
                       onChanged: (v) => setStateDialog(() => role = v ?? role),
@@ -251,6 +254,8 @@ class _ManageAccountsState extends State<ManageAccounts> {
       );
     }
 
+    final isCurrentUserSuperAdmin = AuthSession.instance.currentRole == Role.superAdmin;
+
     if (u.role == Role.superAdmin) {
       return Card(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -262,6 +267,10 @@ class _ManageAccountsState extends State<ManageAccounts> {
               Text(u.fullName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               Text(u.email, style: TextStyle(color: Colors.grey.shade700)),
+              if (isCurrentUserSuperAdmin) ...[
+                const SizedBox(height: 4),
+                Text('ID: ${u.id}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontFamily: 'monospace')),
+              ],
               const SizedBox(height: 16),
               const Text(
                 'Super Admin accounts always have full access to all areas.',
@@ -285,6 +294,10 @@ class _ManageAccountsState extends State<ManageAccounts> {
             Text(u.email, style: TextStyle(color: Colors.grey.shade700)),
             const SizedBox(height: 4),
             Text('Role: ${u.role.displayName}', style: const TextStyle(fontWeight: FontWeight.w600)),
+            if (isCurrentUserSuperAdmin) ...[
+              const SizedBox(height: 4),
+              Text('ID: ${u.id}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontFamily: 'monospace')),
+            ],
             const SizedBox(height: 16),
             const Text('USER ACCESS', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
@@ -359,9 +372,9 @@ class _ManageAccountsState extends State<ManageAccounts> {
                   value: _roleFilter,
                   items: [
                     const DropdownMenuItem<Role?>(value: null, child: Text('All Roles')),
-                    ...Role.values.map(
-                      (r) => DropdownMenuItem<Role?>(value: r, child: Text(r.displayName)),
-                    ),
+                    ...Role.values
+                        .where((r) => r != Role.admin)
+                        .map((r) => DropdownMenuItem<Role?>(value: r, child: Text(r.displayName))),
                   ],
                   onChanged: (v) {
                     setState(() => _roleFilter = v);

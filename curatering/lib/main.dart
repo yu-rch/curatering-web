@@ -20,6 +20,7 @@ import 'auth/roles.dart';
 import 'widgets/page_permission_guard.dart';
 import 'pages/help_requests.dart';
 import 'pages/action_logs.dart';
+import 'pages/customer_management.dart';
 
 void main() {
   runApp(const MyApp());
@@ -42,7 +43,7 @@ class MyApp extends StatelessWidget {
             brightness: dark ? Brightness.dark : Brightness.light,
             textTheme: GoogleFonts.interTextTheme(),
           ),
-          initialRoute: '/login',
+          initialRoute: '/public',
           routes: {
             '/login': (context) => const Login(),
             '/public': (context) => const CustomerWebsiteScreen(
@@ -51,7 +52,7 @@ class MyApp extends StatelessWidget {
                 ),
             '/dashboard': (context) => RoleGuard(
                   requiredRole: Role.manager,
-                  allowedRoles: {Role.manager, Role.supervisor, Role.admin},
+                  allowedRoles: {Role.manager, Role.supervisor},
                   child: PagePermissionGuard(
                     route: PagePermissionRoutes.dashboard,
                     child: const Dashboard(),
@@ -76,6 +77,10 @@ class MyApp extends StatelessWidget {
             '/action-logs': (context) => const RoleGuard(
                   requiredRole: Role.superAdmin,
                   child: ActionLogsPage(),
+                ),
+            '/customer-management': (context) => const RoleGuard(
+                  requiredRole: Role.superAdmin,
+                  child: CustomerManagementPage(),
                 ),
             '/manage-events': (context) => RoleGuard(
                   requiredRole: Role.manager,
@@ -119,7 +124,7 @@ class MyApp extends StatelessWidget {
                 ),
             '/archive': (context) => RoleGuard(
                   requiredRole: Role.manager,
-                  allowedRoles: {Role.manager},
+                  allowedRoles: {Role.manager, Role.superAdmin},
                   child: PagePermissionGuard(
                     route: PagePermissionRoutes.archive,
                     child: Archive(),
@@ -131,7 +136,6 @@ class MyApp extends StatelessWidget {
                     Role.manager,
                     Role.supervisor,
                     Role.superAdmin,
-                    Role.admin,
                   },
                   child: PagePermissionGuard(
                     route: PagePermissionRoutes.website,

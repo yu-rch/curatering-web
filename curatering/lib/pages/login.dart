@@ -65,9 +65,9 @@ class _LoginState extends State<Login> {
       final role = resp.user.role;
       final targetRoute = switch (role) {
         Role.superAdmin => '/manage-accounts',
-        Role.supervisor => '/live-performance',
+        Role.supervisor => '/dashboard',
         Role.manager => '/manage-events',
-        Role.admin => '/dashboard',
+        Role.admin => '/dashboard', // Deprecated - treat as supervisor
       };
       
       if (!mounted) {
