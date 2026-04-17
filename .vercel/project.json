@@ -1,6 +1,16 @@
-{"projectId":"prj_8gxzThLw7RyBXOmwiQi3SoGtSCmj","orgId":"team_9Cqir4uTu0yL5CCZGHw8rQJZ","projectName":"curatering-web"}
 
 {
-  "buildCommand": "flutter build web --release",
-  "outputDirectory": "build/web"
+  "projectId":"prj_8gxzThLw7RyBXOmwiQi3SoGtSCmj","orgId":"team_9Cqir4uTu0yL5CCZGHw8rQJZ","projectName":"curatering-web",
+  "builds": [
+    {
+      "src": "build/web/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
 }
