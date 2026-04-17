@@ -65,9 +65,3 @@ flutter:
     - lib/assets/main.png
     - lib/assets/main-2.png
     - lib/assets/profileicon 1.png
-
-  fonts:
-    - family: Inter
-      fonts:
-        - asset: assets\Inter-Italic-VariableFont_opsz,wght.ttf
-        - asset: assets\Inter-VariableFont_opsz,wght.ttf
