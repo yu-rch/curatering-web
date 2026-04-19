@@ -33,4 +33,6 @@ jobs:
         run: npm i -g vercel
 
       - name: Deploy to Vercel
-        run: cd curatering/build/web --prod --token=${{ secrets.VERCEL_TOKEN }} --yes
+        run: |
+          cd curatering/build/web
+          vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes
