@@ -8,6 +8,9 @@ class UserDto {
   final bool archived;
   final bool isVerified;
   final Map<String, dynamic>? pagePermissions;
+  final String? birthday;
+  final String? contactNumber;
+  final String? employmentType;
 
   const UserDto({
     required this.id,
@@ -17,6 +20,9 @@ class UserDto {
     required this.archived,
     this.isVerified = false,
     this.pagePermissions,
+    this.birthday,
+    this.contactNumber,
+    this.employmentType,
   });
 }
 

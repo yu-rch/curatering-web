@@ -20,6 +20,15 @@ class ApiClient {
 
   static final ApiClient instance = ApiClient._();
 
+  // API base URL from centralized config
+
+  String _resolveUrl(String path) {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    return '$apiBaseUrl$path';
+  }
+
   Map<String, String> _defaultHeaders() {
     final headers = <String, String>{
       'Content-Type': 'application/json',
@@ -35,31 +44,21 @@ class ApiClient {
     String path, {
     Map<String, dynamic>? body,
   }) async {
-    final uri = Uri.parse('$apiBaseUrl$path');
+    final uri = Uri.parse(_resolveUrl(path));
     final res = await http.post(
       uri,
       headers: _defaultHeaders(),
       body: body == null ? null : jsonEncode(body),
     );
 
-    final decoded = jsonDecode(res.body.isEmpty ? '{}' : res.body);
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw ApiError(
-        message: decoded is Map && decoded['message'] is String
-            ? decoded['message'] as String
-            : 'Request failed',
-        statusCode: res.statusCode,
-      );
-    }
-
-    return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    return _handleResponse(res, uri);
   }
 
   Future<Map<String, dynamic>> getJson(
     String path, {
     Map<String, String>? queryParameters,
   }) async {
-    var uri = Uri.parse('$apiBaseUrl$path');
+    var uri = Uri.parse(_resolveUrl(path));
     if (queryParameters != null && queryParameters.isNotEmpty) {
       uri = uri.replace(queryParameters: queryParameters);
     }
@@ -68,17 +67,7 @@ class ApiClient {
       headers: _defaultHeaders(),
     );
 
-    final decoded = jsonDecode(res.body.isEmpty ? '{}' : res.body);
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw ApiError(
-        message: decoded is Map && decoded['message'] is String
-            ? decoded['message'] as String
-            : 'Request failed',
-        statusCode: res.statusCode,
-      );
-    }
-
-    return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    return _handleResponse(res, uri);
   }
 
   Future<List<dynamic>> getJsonList(
@@ -86,7 +75,7 @@ class ApiClient {
     Map<String, String>? queryParameters,
     required String dataKey,
   }) async {
-    var uri = Uri.parse('$apiBaseUrl$path');
+    var uri = Uri.parse(_resolveUrl(path));
     if (queryParameters != null && queryParameters.isNotEmpty) {
       uri = uri.replace(queryParameters: queryParameters);
     }
@@ -95,7 +84,7 @@ class ApiClient {
       headers: _defaultHeaders(),
     );
 
-    final decoded = jsonDecode(res.body.isEmpty ? '{}' : res.body);
+    final decoded = _parseResponse(res, uri);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw ApiError(
         message: decoded is Map && decoded['message'] is String
@@ -116,38 +105,50 @@ class ApiClient {
     String path, {
     Map<String, dynamic>? body,
   }) async {
-    final uri = Uri.parse('$apiBaseUrl$path');
+    final uri = Uri.parse(_resolveUrl(path));
     final res = await http.put(
       uri,
       headers: _defaultHeaders(),
       body: body == null ? null : jsonEncode(body),
     );
 
-    final decoded = jsonDecode(res.body.isEmpty ? '{}' : res.body);
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw ApiError(
-        message: decoded is Map && decoded['message'] is String
-            ? decoded['message'] as String
-            : 'Request failed',
-        statusCode: res.statusCode,
-      );
-    }
-
-    return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    return _handleResponse(res, uri);
   }
 
   Future<Map<String, dynamic>> delete(
     String path, {
     Map<String, dynamic>? body,
   }) async {
-    final uri = Uri.parse('$apiBaseUrl$path');
+    final uri = Uri.parse(_resolveUrl(path));
     final res = await http.delete(
       uri,
       headers: _defaultHeaders(),
       body: body == null ? null : jsonEncode(body),
     );
 
-    final decoded = jsonDecode(res.body.isEmpty ? '{}' : res.body);
+    return _handleResponse(res, uri);
+  }
+
+  /// Parse response body and detect HTML error pages
+  dynamic _parseResponse(http.Response res, Uri uri) {
+    final contentType = res.headers['content-type'] ?? '';
+    final body = res.body.isEmpty ? '{}' : res.body;
+
+    if (body.trim().startsWith('<!DOCTYPE') ||
+        body.trim().startsWith('<html') ||
+        contentType.contains('text/html')) {
+      throw ApiError(
+        message: 'Server returned HTML error page. Status: ${res.statusCode}. URL: $uri',
+        statusCode: res.statusCode,
+      );
+    }
+
+    return jsonDecode(body);
+  }
+
+  /// Handle response and return Map for successful requests
+  Map<String, dynamic> _handleResponse(http.Response res, Uri uri) {
+    final decoded = _parseResponse(res, uri);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw ApiError(
         message: decoded is Map && decoded['message'] is String

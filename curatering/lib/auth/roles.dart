@@ -3,6 +3,7 @@ enum Role {
   manager,
   supervisor,
   superAdmin,
+  cashier,
 }
 
 extension RoleX on Role {
@@ -12,6 +13,7 @@ extension RoleX on Role {
       Role.manager => 'Manager',
       Role.supervisor => 'Supervisor',
       Role.superAdmin => 'Super Admin',
+      Role.cashier => 'Cashier',
     };
   }
 }
@@ -23,6 +25,7 @@ Role roleFromString(String raw) {
     'manager' => Role.manager,
     'supervisor' => Role.supervisor,
     'super_admin' || 'superadmin' || 'super-admin' => Role.superAdmin,
+    'cashier' => Role.cashier,
     _ => Role.supervisor,
   };
 }
@@ -33,6 +36,7 @@ String roleToString(Role role) {
     Role.manager => 'manager',
     Role.supervisor => 'supervisor',
     Role.superAdmin => 'super_admin',
+    Role.cashier => 'cashier',
   };
 }
 

@@ -22,7 +22,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev-change-me";
 const connectionString = process.env.DATABASE_URL
 const sql = postgres(connectionString)
 
-const allowedRoles = new Set(["admin", "manager", "supervisor", "super_admin"]);
+const allowedRoles = new Set(["admin", "manager", "supervisor", "super_admin", "cashier"]);
 const allowedHelpStatuses = new Set(["unresolved", "resolved"]);
 
 function signToken({ userId, role }) {
@@ -287,7 +287,7 @@ app.get(
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
     const result = await pool.query(
-      `SELECT id, email, full_name, role, archived, page_permissions
+      `SELECT id, email, full_name, role, archived, page_permissions, birthday, contact_number, employment_type
      FROM users
      ${whereSql}
      ORDER BY created_at DESC
@@ -303,6 +303,9 @@ app.get(
         role: u.role,
         archived: u.archived,
         pagePermissions: u.page_permissions || {},
+        birthday: u.birthday,
+        contactNumber: u.contact_number,
+        employmentType: u.employment_type,
       })),
     });
   },
@@ -311,7 +314,7 @@ app.get(
 //create account
 app.post("/api/super-admin/users", authRequired, requireSuperAdmin, async (req, res) => {
     try {
-      const { email, password, fullName, role } = req.body || {};
+      const { email, password, fullName, role, birthday, contactNumber, employmentType } = req.body || {};
 
       if (!email || !password || !fullName || !role) {
         return res
@@ -338,9 +341,9 @@ app.post("/api/super-admin/users", authRequired, requireSuperAdmin, async (req, 
       const userId = generateUserId();
       await pool.query(
         `INSERT INTO users 
-        (id, email, password_hash, full_name, role, archived, is_verified, otp_code, otp_expiry)
-       VALUES ($1, $2, $3, $4, $5, FALSE, FALSE, $6, $7);`,
-        [userId, email, passwordHash, fullName, role, otp, expiry],
+        (id, email, password_hash, full_name, role, birthday, contact_number, employment_type, archived, is_verified, otp_code, otp_expiry)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE, FALSE, $9, $10);`,
+        [userId, email, passwordHash, fullName, role, birthday || null, contactNumber || null, employmentType || null, otp, expiry],
       );
 
       await sendOtpEmail(email, otp);
@@ -406,7 +409,7 @@ app.post(
   async (req, res) => {
     try {
       const { userId } = req.params;
-      const { fullName, role } = req.body || {};
+      const { fullName, role, birthday, contactNumber, employmentType } = req.body || {};
       if (!fullName || !role) {
         return res
           .status(400)
@@ -419,9 +422,9 @@ app.post(
 
       await pool.query(
         `UPDATE users
-       SET full_name = $1, role = $2
-       WHERE id = $3;`,
-        [fullName, role, userId],
+       SET full_name = $1, role = $2, birthday = $3, contact_number = $4, employment_type = $5
+       WHERE id = $6;`,
+        [fullName, role, birthday || null, contactNumber || null, employmentType || null, userId],
       );
 
       await logAction({
@@ -1149,7 +1152,7 @@ app.post(
 );
 
 // Public: customer submits online inquiries
-app.post("/api/public/online-inquiries", async (req, res) => {
+app.post("/api/online-inquiries", async (req, res) => {
   try {
     const {
       orderType,
@@ -2178,12 +2181,14 @@ initDb()
       try {
         const decoded = jwt.verify(token, JWT_SECRET);
         if (decoded.role !== 'customer') {
+          console.log('Auth failed: role is', decoded.role, 'expected customer');
           return res.status(403).json({ error: 'Customer access required' });
         }
         req.customer = { id: decoded.customerId };
         next();
       } catch (error) {
-        return res.status(401).json({ error: 'Invalid token' });
+        console.log('Token verification failed:', error.message);
+        return res.status(401).json({ error: 'Invalid or expired token', details: error.message });
       }
     };
 
@@ -2210,7 +2215,9 @@ initDb()
         res.status(201).json({ order: result.rows[0] });
       } catch (error) {
         console.error('Error creating restaurant order:', error);
-        res.status(500).json({ error: 'Failed to create order' });
+        console.error('Request body:', req.body);
+        console.error('Customer ID:', req.customer?.id);
+        res.status(500).json({ error: 'Failed to create order', details: error.message });
       }
     });
 
@@ -2683,6 +2690,16 @@ initDb()
       }
     });
 
+    // Serve Flutter web build files (production)
+    app.use(express.static(path.join(__dirname, '../../curatering/build/web')));
+    
+    // SPA fallback - serve index.html for all non-API routes
+    app.get('*', (req, res) => {
+      if (!req.path.startsWith('/api')) {
+        res.sendFile(path.join(__dirname, '../../curatering/build/web/index.html'));
+      }
+    });
+    
     app.listen(PORT, () => {
       console.log(`Curatering server listening on port ${PORT}`);
     });

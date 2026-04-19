@@ -1,39 +1,8 @@
 import 'package:flutter/material.dart';
 import '../widgets/app_scaffold.dart';
+import '../services/loyalty_rewards_store.dart';
 
-// Models for Points Condition
-class PointsCondition {
-  String? id;
-  double minimumCost;
-  int pointsApplication;
-  bool isActive;
-
-  PointsCondition({
-    this.id,
-    required this.minimumCost,
-    required this.pointsApplication,
-    this.isActive = true,
-  });
-}
-
-// Models for Rewards Condition
-class RewardsCondition {
-  String? id;
-  int minimumPoints;
-  int maximumPoints;
-  String reward;
-  String size;
-  bool isActive;
-
-  RewardsCondition({
-    this.id,
-    required this.minimumPoints,
-    required this.maximumPoints,
-    required this.reward,
-    required this.size,
-    this.isActive = true,
-  });
-}
+// Models are imported from the store
 
 // Customer with loyalty points
 class LoyaltyCustomer {
@@ -50,7 +19,7 @@ class LoyaltyCustomer {
 
 // Customer Transaction
 class CustomerTransaction {
-  String transactionNo;
+  String orderNo;
   String eventTitle;
   String dateTime;
   double totalCost;
@@ -59,7 +28,7 @@ class CustomerTransaction {
   String reward;
 
   CustomerTransaction({
-    required this.transactionNo,
+    required this.orderNo,
     required this.eventTitle,
     required this.dateTime,
     required this.totalCost,
@@ -79,32 +48,16 @@ class ManageLoyaltyRewards extends StatefulWidget {
 class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
   bool _showCustomersTab = true;
   String? _selectedCustomerId;
-  
-  // Sample data - replace with API calls
+
+  // Sample data - will be replaced with API calls later
   final List<LoyaltyCustomer> _customers = [
-    LoyaltyCustomer(id: '1', name: 'Guess Inc.', points: 356),
-    LoyaltyCustomer(id: '2', name: 'Guess Inc.', points: 455),
-    LoyaltyCustomer(id: '3', name: 'Guess Inc.', points: 109),
-    LoyaltyCustomer(id: '4', name: 'Guess Inc.', points: 56),
+    LoyaltyCustomer(id: '1', name: 'Sample Customer 1', points: 356),
+    LoyaltyCustomer(id: '2', name: 'Sample Customer 2', points: 455),
   ];
 
-  final List<PointsCondition> _pointsConditions = [
-    PointsCondition(id: '1', minimumCost: 2000.00, pointsApplication: 50),
-  ];
-
-  final List<RewardsCondition> _rewardsConditions = [
-    RewardsCondition(
-      id: '1',
-      minimumPoints: 1000,
-      maximumPoints: 1500,
-      reward: 'Shrimp Tempura',
-      size: '50 pcs',
-    ),
-  ];
-
-  final List<CustomerTransaction> _transactions = [
+  final List<CustomerTransaction> _orders = [
     CustomerTransaction(
-      transactionNo: '887766443399',
+      orderNo: '887766443399',
       eventTitle: "Queenie's 18th Birthday",
       dateTime: 'Feb 24 2026 1:23 PM',
       totalCost: 25000,
@@ -113,6 +66,27 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
       reward: 'Shrimp Tempura half tray',
     ),
   ];
+
+  // Get conditions from store
+  List<PointsCondition> get _pointsConditions => LoyaltyRewardsStore.instance.pointsConditions;
+  List<RewardsCondition> get _rewardsConditions => LoyaltyRewardsStore.instance.rewardsConditions;
+
+  @override
+  void initState() {
+    super.initState();
+    LoyaltyRewardsStore.instance.ensureLoaded();
+    LoyaltyRewardsStore.instance.addListener(_onStoreChanged);
+  }
+
+  @override
+  void dispose() {
+    LoyaltyRewardsStore.instance.removeListener(_onStoreChanged);
+    super.dispose();
+  }
+
+  void _onStoreChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -272,7 +246,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
             ),
             child: const Center(
               child: Text(
-                'CUSTOMER TRANSACTIONS',
+                'CUSTOMER ORDERS',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
@@ -481,7 +455,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
             ),
             child: const Row(
               children: [
-                Expanded(flex: 2, child: Text('Transaction No.', style: TextStyle(fontWeight: FontWeight.bold))),
+                Expanded(flex: 2, child: Text('Order No.', style: TextStyle(fontWeight: FontWeight.bold))),
                 Expanded(flex: 2, child: Text('Event Title', style: TextStyle(fontWeight: FontWeight.bold))),
                 Expanded(flex: 2, child: Text('Date & Time', style: TextStyle(fontWeight: FontWeight.bold))),
                 Expanded(flex: 1, child: Text('Total Cost', style: TextStyle(fontWeight: FontWeight.bold))),
@@ -492,7 +466,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
             ),
           ),
           // Rows
-          ..._transactions.map((transaction) {
+          ..._orders.map((order) {
             return Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
@@ -502,13 +476,13 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
               ),
               child: Row(
                 children: [
-                  Expanded(flex: 2, child: Text(transaction.transactionNo)),
-                  Expanded(flex: 2, child: Text(transaction.eventTitle)),
-                  Expanded(flex: 2, child: Text(transaction.dateTime)),
-                  Expanded(flex: 1, child: Text('₱${transaction.totalCost}')),
-                  Expanded(flex: 1, child: Text('+${transaction.loyaltyPointsObtained} pts')),
-                  Expanded(flex: 1, child: Text('${transaction.totalLoyaltyPoints} pts')),
-                  Expanded(flex: 2, child: Text(transaction.reward)),
+                  Expanded(flex: 2, child: Text(order.orderNo)),
+                  Expanded(flex: 2, child: Text(order.eventTitle)),
+                  Expanded(flex: 2, child: Text(order.dateTime)),
+                  Expanded(flex: 1, child: Text('₱${order.totalCost}')),
+                  Expanded(flex: 1, child: Text('+${order.loyaltyPointsObtained} pts')),
+                  Expanded(flex: 1, child: Text('${order.totalLoyaltyPoints} pts')),
+                  Expanded(flex: 2, child: Text(order.reward)),
                 ],
               ),
             );
@@ -566,13 +540,10 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
         actions: [
           ElevatedButton(
             onPressed: () {
-              setState(() {
-                _pointsConditions.add(PointsCondition(
-                  id: DateTime.now().toString(),
-                  minimumCost: double.tryParse(minimumCostController.text) ?? 0,
-                  pointsApplication: int.tryParse(pointsController.text) ?? 0,
-                ));
-              });
+              LoyaltyRewardsStore.instance.addPointsCondition(
+                minimumCost: double.tryParse(minimumCostController.text) ?? 0,
+                pointsApplication: int.tryParse(pointsController.text) ?? 0,
+              );
               Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(
@@ -639,10 +610,9 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
         actions: [
           ElevatedButton(
             onPressed: () {
-              setState(() {
-                condition.minimumCost = double.tryParse(minimumCostController.text) ?? 0;
-                condition.pointsApplication = int.tryParse(pointsController.text) ?? 0;
-              });
+              condition.minimumCost = double.tryParse(minimumCostController.text) ?? 0;
+              condition.pointsApplication = int.tryParse(pointsController.text) ?? 0;
+              LoyaltyRewardsStore.instance.updatePointsCondition(condition);
               Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(
@@ -688,9 +658,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
         actions: [
           ElevatedButton(
             onPressed: () {
-              setState(() {
-                condition.isActive = false;
-              });
+              LoyaltyRewardsStore.instance.archivePointsCondition(condition.id);
               Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(
@@ -787,15 +755,12 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
         actions: [
           ElevatedButton(
             onPressed: () {
-              setState(() {
-                _rewardsConditions.add(RewardsCondition(
-                  id: DateTime.now().toString(),
-                  minimumPoints: int.tryParse(minPointsController.text) ?? 0,
-                  maximumPoints: int.tryParse(maxPointsController.text) ?? 0,
-                  reward: rewardController.text,
-                  size: sizeController.text,
-                ));
-              });
+              LoyaltyRewardsStore.instance.addRewardsCondition(
+                minimumPoints: int.tryParse(minPointsController.text) ?? 0,
+                maximumPoints: int.tryParse(maxPointsController.text) ?? 0,
+                reward: rewardController.text,
+                size: sizeController.text,
+              );
               Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(
@@ -892,12 +857,11 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
         actions: [
           ElevatedButton(
             onPressed: () {
-              setState(() {
-                condition.minimumPoints = int.tryParse(minPointsController.text) ?? 0;
-                condition.maximumPoints = int.tryParse(maxPointsController.text) ?? 0;
-                condition.reward = rewardController.text;
-                condition.size = sizeController.text;
-              });
+              condition.minimumPoints = int.tryParse(minPointsController.text) ?? 0;
+              condition.maximumPoints = int.tryParse(maxPointsController.text) ?? 0;
+              condition.reward = rewardController.text;
+              condition.size = sizeController.text;
+              LoyaltyRewardsStore.instance.updateRewardsCondition(condition);
               Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(
@@ -957,9 +921,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
         actions: [
           ElevatedButton(
             onPressed: () {
-              setState(() {
-                condition.isActive = false;
-              });
+              LoyaltyRewardsStore.instance.archiveRewardsCondition(condition.id);
               Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(

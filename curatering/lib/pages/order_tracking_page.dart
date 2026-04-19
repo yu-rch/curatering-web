@@ -202,7 +202,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
                 // Back to Home Button
                 ElevatedButton(
                   onPressed: () {
-                    Navigator.of(context).pushNamedAndRemoveUntil('/public', (route) => false);
+                    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF1E1E1E),

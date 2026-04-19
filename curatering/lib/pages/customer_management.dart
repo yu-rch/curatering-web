@@ -4,6 +4,9 @@ import 'dart:convert';
 import '../auth/auth_session.dart';
 import '../config.dart';
 
+// Runtime fallback for dev mode (String.fromEnvironment defaultValue doesn't work in JIT mode)
+String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'http://localhost:3000' : apiBaseUrl;
+
 class CustomerManagementPage extends StatefulWidget {
   const CustomerManagementPage({super.key});
 
@@ -30,7 +33,7 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
 
     try {
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/api/admin/customers'),
+        Uri.parse('$_apiBaseUrl/api/admin/customers'),
         headers: {
           'Authorization': 'Bearer ${AuthSession.instance.token}',
         },
@@ -169,7 +172,7 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
 
     try {
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/api/admin/customers/${widget.customerId}'),
+        Uri.parse('/api/admin/customers/${widget.customerId}'),
         headers: {
           'Authorization': 'Bearer ${AuthSession.instance.token}',
         },
@@ -202,7 +205,7 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
   Future<void> _archiveCustomer(bool archived) async {
     try {
       final response = await http.put(
-        Uri.parse('$apiBaseUrl/api/admin/customers/${widget.customerId}/archive'),
+        Uri.parse('/api/admin/customers/${widget.customerId}/archive'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ${AuthSession.instance.token}',

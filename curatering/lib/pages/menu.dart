@@ -62,11 +62,21 @@ class _MenuState extends State<Menu> {
   }
 
   void _onMenuChanged() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      // Defer setState to avoid calling during build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   void _onSetMenusChanged() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      // Defer setState to avoid calling during build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   @override
@@ -721,19 +731,20 @@ class _MenuState extends State<Menu> {
                     ],
                   ),
                 ),
-                IconButton(
+                _buildIconLabelButton(
+                  icon: Icons.list_alt,
+                  label: 'Ingredients',
                   onPressed: () => _showIngredientsDialog(dish),
-                  icon: const Icon(Icons.list_alt, size: 20),
-                  tooltip: 'Ingredients',
                 ),
-                IconButton(
-                  onPressed: () =>
-                      _openDishDialog(dish: dish, category: dish.category),
-                  icon: const Icon(Icons.edit, size: 20),
+                _buildIconLabelButton(
+                  icon: Icons.edit,
+                  label: 'Edit',
+                  onPressed: () => _openDishDialog(dish: dish, category: dish.category),
                 ),
-                IconButton(
+                _buildIconLabelButton(
+                  icon: Icons.delete_outline,
+                  label: 'Archive',
                   onPressed: () => _confirmArchiveDish(dish),
-                  icon: const Icon(Icons.delete_outline, size: 20),
                 ),
               ],
             ),
@@ -782,6 +793,33 @@ class _MenuState extends State<Menu> {
                 }).toList(),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIconLabelButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return InkWell(
+      onTap: onPressed,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: Colors.grey.shade700),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey.shade700,
+              ),
+            ),
           ],
         ),
       ),
@@ -961,7 +999,11 @@ class _MenuState extends State<Menu> {
 
     return Column(
       children: [
-        // Header with search and add dish button
+        const Text(
+              'Catering and Restaurant Menu',
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(

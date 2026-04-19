@@ -6,6 +6,6 @@ class PublicEventsApi {
   static final PublicEventsApi instance = PublicEventsApi._();
 
   Future<void> submitOnlineInquiry({required Map<String, dynamic> payload}) async {
-    await ApiClient.instance.postJson('/api/public/online-inquiries', body: payload);
+    await ApiClient.instance.postJson('/api/online-inquiries', body: payload);
   }
 }

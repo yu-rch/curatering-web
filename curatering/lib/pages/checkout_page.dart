@@ -1,13 +1,17 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
 import '../services/cart_store.dart';
+import '../services/loyalty_rewards_store.dart';
 import '../config.dart';
 import 'customer_login.dart';
 import 'payment_page.dart';
+
+// Runtime fallback for dev mode
+String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'http://localhost:3000' : apiBaseUrl;
 
 class CheckoutPage extends StatefulWidget {
   const CheckoutPage({super.key});
@@ -26,6 +30,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   double? _deliveryLng;
   bool _isLoading = false;
   Map<String, dynamic>? _customerData;
+  int _currentPoints = 150; // User's current points - in production from API
 
   @override
   void initState() {
@@ -60,6 +65,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Future<void> _handlePlaceOrder() async {
+    // Check if user is logged in first
+    if (_customerData == null) {
+      final result = await Navigator.of(context).push(
+        MaterialPageRoute(builder: (context) => const CustomerLoginPage(redirectToCheckout: true)),
+      );
+      if (result != null) {
+        await _loadCustomerData();
+        // Re-check after login data is loaded
+        if (_customerData == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please log in to continue')),
+          );
+          return;
+        }
+      } else {
+        return;
+      }
+    }
+
     if (_nameController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter your name')),
@@ -81,46 +105,44 @@ class _CheckoutPageState extends State<CheckoutPage> {
       return;
     }
 
-    if (_customerData == null) {
-      final result = await Navigator.of(context).push(
-        MaterialPageRoute(builder: (context) => const CustomerLoginPage()),
-      );
-      if (result != null) {
-        await _loadCustomerData();
-      } else {
-        return;
-      }
-    }
-
     setState(() => _isLoading = true);
 
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
       
+      if (token == null || token.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please log in to place an order')),
+        );
+        return;
+      }
+      
       final items = CartStore.instance.items.map((item) => {
         'dishId': item.dish.id,
         'name': item.dish.name,
-        'price': item.dish.price,
+        'price': item.dish.price, 
         'quantity': item.quantity,
       }).toList();
 
+      final orderData = {
+        'items': items,
+        'fullName': _nameController.text,
+        'phone': _phoneController.text,
+        'deliveryAddress': _addressController.text,
+        'deliveryLat': _deliveryLat,
+        'deliveryLng': _deliveryLng,
+        'deliveryNotes': _notesController.text.trim(),
+        'totalAmount': CartStore.instance.totalAmount,
+      };
+
       final response = await http.post(
-        Uri.parse('$apiBaseUrl/api/restaurant/orders'),
+        Uri.parse('$_apiBaseUrl/api/restaurant/orders'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: jsonEncode({
-          'items': items,
-          'fullName': _nameController.text,
-          'phone': _phoneController.text,
-          'deliveryAddress': _addressController.text,
-          'deliveryLat': _deliveryLat,
-          'deliveryLng': _deliveryLng,
-          'deliveryNotes': _notesController.text.trim(),
-          'totalAmount': CartStore.instance.totalAmount,
-        }),
+        body: jsonEncode(orderData),
       );
 
       final data = jsonDecode(response.body);
@@ -134,9 +156,19 @@ class _CheckoutPageState extends State<CheckoutPage> {
             ),
           );
         }
+      } else if (response.statusCode == 401) {
+        // Token expired or invalid - clear and redirect to login
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('customer_token');
+        await prefs.remove('customer_data');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Session expired. Please log in again.')),
+          );
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? 'Failed to place order')),
+          SnackBar(content: Text(data['error'] ?? 'Failed to create order')),
         );
       }
     } catch (e) {
@@ -271,21 +303,54 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                             ],
                                           ),
                                         ),
-                                        Column(
-                                          crossAxisAlignment: CrossAxisAlignment.end,
+                                        // Quantity Controls (+ amount -)
+                                        Row(
                                           children: [
-                                            Text(
-                                              'x${item.quantity}',
-                                              style: const TextStyle(fontSize: 10),
+                                            IconButton(
+                                              onPressed: () {
+                                                if (item.quantity > 1) {
+                                                  setState(() {
+                                                    CartStore.instance.updateQuantity(item.dish.id, item.quantity - 1);
+                                                  });
+                                                } else {
+                                                  // Remove item if quantity becomes 0
+                                                  setState(() {
+                                                    CartStore.instance.removeItem(item.dish.id);
+                                                  });
+                                                }
+                                              },
+                                              icon: Icon(Icons.remove_circle_outline, size: 20, color: Colors.red.shade400),
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(),
                                             ),
+                                            const SizedBox(width: 8),
                                             Text(
-                                              '₱${(double.tryParse(item.dish.price) ?? 0) * item.quantity}',
+                                              '${item.quantity}',
                                               style: const TextStyle(
-                                                fontSize: 10,
+                                                fontSize: 12,
                                                 fontWeight: FontWeight.bold,
                                               ),
                                             ),
+                                            const SizedBox(width: 8),
+                                            IconButton(
+                                              onPressed: () {
+                                                setState(() {
+                                                  CartStore.instance.updateQuantity(item.dish.id, item.quantity + 1);
+                                                });
+                                              },
+                                              icon: Icon(Icons.add_circle_outline, size: 20, color: Colors.green.shade400),
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(),
+                                            ),
                                           ],
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Text(
+                                          '₱${((double.tryParse(item.dish.price) ?? 0) * item.quantity).toStringAsFixed(0)}',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -293,6 +358,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                 }).toList(),
                               ),
                             ),
+                            // Redeem/Loyalty Banner
+                            _buildRedeemBanner(),
                             const SizedBox(height: 16),
                             Divider(color: Colors.grey.shade200, height: 1),
                             Container(
@@ -587,6 +654,218 @@ class _CheckoutPageState extends State<CheckoutPage> {
           ),
         ),
       ],
+    );
+  }
+
+  // Redeem/Loyalty Banner - shows points and rewards
+  Widget _buildRedeemBanner() {
+    // Get values from store (with defaults)
+    final double minimumOrderForPoints = LoyaltyRewardsStore.instance.minimumOrderForPoints;
+    final int pointsEarned = LoyaltyRewardsStore.instance.pointsEarned;
+    // Ensure store is loaded
+    LoyaltyRewardsStore.instance.ensureLoaded();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.orange.shade400, Colors.red.shade400],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.stars,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Loyalty Rewards',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'You have $_currentPoints points',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.9),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '$pointsEarned pts',
+                    style: TextStyle(
+                      color: Colors.red.shade400,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Progress bar for next reward
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Spend ₱$minimumOrderForPoints to earn $pointsEarned points',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 11,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: CartStore.instance.totalAmount / minimumOrderForPoints,
+                    backgroundColor: Colors.white.withOpacity(0.3),
+                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                    minHeight: 6,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Redeem Button
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _showRewardDialog(_currentPoints),
+              icon: const Icon(Icons.redeem, color: Colors.orange, size: 18),
+              label: const Text(
+                'Redeem Rewards',
+                style: TextStyle(
+                  color: Colors.orange,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.orange,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRewardDialog(int currentPoints) {
+    // Get rewards from store
+    final availableRewards = LoyaltyRewardsStore.instance.rewardsConditions;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.card_giftcard, color: Colors.orange),
+            const SizedBox(width: 8),
+            const Text('Redeem Rewards'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Your Points: $currentPoints',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ...availableRewards.map((reward) {
+                final canRedeem = currentPoints >= reward.minimumPoints;
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: canRedeem ? Colors.green : Colors.grey.shade300,
+                      child: Icon(
+                        canRedeem ? Icons.check : Icons.lock,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                    title: Text(reward.reward),
+                    subtitle: Text(reward.description),
+                    trailing: Chip(
+                      label: Text('${reward.minimumPoints} pts'),
+                      backgroundColor: canRedeem ? Colors.green.shade100 : Colors.grey.shade200,
+                      labelStyle: TextStyle(
+                        color: canRedeem ? Colors.green.shade800 : Colors.grey.shade600,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                    onTap: canRedeem
+                        ? () {
+                            Navigator.of(context).pop();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('${reward.reward} redeemed successfully!'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                        : null,
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 }

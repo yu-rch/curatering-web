@@ -34,7 +34,7 @@ class AppScaffold extends StatelessWidget {
       label: 'Loyalty Rewards',
       route: '/loyalty',
     ),
-    _SidebarItemData(icon: Icons.menu_book, label: 'Menu', route: '/menu'),
+    _SidebarItemData(icon: Icons.menu_book, label: 'Catering/Restaurant Menu', route: '/catering-restaurant-menu'),
     _SidebarItemData(
       icon: Icons.bar_chart,
       label: 'Reports',

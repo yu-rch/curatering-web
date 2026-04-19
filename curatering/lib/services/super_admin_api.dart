@@ -39,6 +39,9 @@ class SuperAdminApi {
                     permRaw.map((k, v) => MapEntry(k.toString(), v)),
                   )
                 : null),
+        birthday: um['birthday'] as String?,
+        contactNumber: um['contactNumber'] as String?,
+        employmentType: um['employmentType'] as String?,
       );
     }).toList();
   }
@@ -58,6 +61,9 @@ class SuperAdminApi {
     required String password,
     required String fullName,
     required String role,
+    String? birthday,
+    String? contactNumber,
+    String? employmentType,
   }) async {
     await ApiClient.instance.postJson(
       '/api/super-admin/users',
@@ -66,6 +72,9 @@ class SuperAdminApi {
         'password': password,
         'fullName': fullName,
         'role': role,
+        'birthday': birthday,
+        'contactNumber': contactNumber,
+        'employmentType': employmentType,
       },
     );
   }
@@ -74,12 +83,18 @@ class SuperAdminApi {
     required String userId,
     required String fullName,
     required String role,
+    String? birthday,
+    String? contactNumber,
+    String? employmentType,
   }) async {
     await ApiClient.instance.postJson(
       '/api/super-admin/users/$userId',
       body: {
         'fullName': fullName,
         'role': role,
+        'birthday': birthday,
+        'contactNumber': contactNumber,
+        'employmentType': employmentType,
       },
     );
   }

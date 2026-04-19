@@ -6,7 +6,7 @@ import '../services/super_admin_api.dart';
 import '../models/user.dart';
 
 class ArchivedTransaction {
-  final String transactionNo;
+  final String OrderNo;
   final String customerName;
   final String eventTitle;
   final String eventType;
@@ -15,7 +15,7 @@ class ArchivedTransaction {
   final String archiveDate;
 
   ArchivedTransaction({
-    required this.transactionNo,
+    required this.OrderNo,
     required this.customerName,
     required this.eventTitle,
     required this.eventType,
@@ -200,7 +200,7 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
     return SingleChildScrollView(
       child: _buildTable<ArchivedTransaction>(
         columns: const [
-          DataColumn(label: Text('Transaction No.')),
+          DataColumn(label: Text('Order No.')),
           DataColumn(label: Text('Customer Name')),
           DataColumn(label: Text('Event Title')),
           DataColumn(label: Text('Event Type')),

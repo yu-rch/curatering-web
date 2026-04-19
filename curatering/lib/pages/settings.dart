@@ -12,13 +12,12 @@ class Settings extends StatefulWidget {
 }
 
 class _SettingsState extends State<Settings> {
-  late bool _isDarkMode;
   String _selectedIssue = 'Select problem';
 
   final List<String> _issues = [
     'Login issue',
     'Data not loading',
-    'Missing transactions',
+    'Missing Orders',
     'Other',
   ];
 
@@ -64,12 +63,6 @@ class _SettingsState extends State<Settings> {
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ),
-                          Switch(
-                            value: _isDarkMode,
-                            onChanged: (value) {
-                              setState(() => _isDarkMode = value);
-                            },
-                          ),
                         ],
                       ),
                     ),
@@ -111,7 +104,7 @@ class _SettingsState extends State<Settings> {
                                 Expanded(
                                   flex: 1,
                                   child: DropdownButtonFormField<String>(
-                                    initialValue: _selectedIssue,
+                                    value: _selectedIssue,
                                     items: [
                                       const DropdownMenuItem(
                                         value: 'Select problem',

@@ -7,7 +7,8 @@ import 'api_client.dart';
 class MenuStore extends ChangeNotifier {
   MenuStore._internal() {
     _items = [];
-    loadDishes();
+    // Defer loading to avoid notifyListeners during widget build
+    Future.microtask(() => loadDishes());
   }
 
   static final MenuStore instance = MenuStore._internal();

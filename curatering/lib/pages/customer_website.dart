@@ -13,6 +13,7 @@ import '../services/set_menu_store.dart';
 import '../services/public_events_api.dart';
 import '../services/website_content_store.dart';
 import '../services/cart_store.dart';
+import '../services/loyalty_rewards_store.dart';
 import 'customer_login.dart';
 import 'checkout_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -141,9 +142,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         _isCustomerLoggedIn = false;
         _customerData = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Logged out successfully')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Logged out successfully')));
     }
   }
 
@@ -171,14 +172,14 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   void _navigateToCheckout() {
     if (CartStore.instance.items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Your cart is empty')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Your cart is empty')));
       return;
     }
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const CheckoutPage()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const CheckoutPage()));
   }
 
   @override
@@ -278,7 +279,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       color: Colors.red,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
+                    ),
                     child: Text(
                       '${CartStore.instance.itemCount}',
                       style: const TextStyle(color: Colors.white, fontSize: 10),
@@ -308,27 +312,25 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   const Icon(Icons.arrow_drop_down, color: Colors.white),
                 ],
               ),
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'logout',
-                  child: Row(
-                    children: [
-                      Icon(Icons.logout, size: 18),
-                      SizedBox(width: 8),
-                      Text('Logout'),
-                    ],
-                  ),
-                ),
-              ],
+              itemBuilder:
+                  (context) => [
+                    const PopupMenuItem(
+                      value: 'logout',
+                      child: Row(
+                        children: [
+                          Icon(Icons.logout, size: 18),
+                          SizedBox(width: 8),
+                          Text('Logout'),
+                        ],
+                      ),
+                    ),
+                  ],
             )
           else
             TextButton.icon(
               onPressed: _handleLogin,
               icon: const Icon(Icons.login, color: Colors.white, size: 18),
-              label: const Text(
-                'Login',
-                style: TextStyle(color: Colors.white),
-              ),
+              label: const Text('Login', style: TextStyle(color: Colors.white)),
             ),
         ],
       ),
@@ -338,10 +340,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Widget _navLink(String label, int index) {
     final on = _navIndex == index && _galleryDetailIndex == null;
     return InkWell(
-      onTap: () => setState(() {
-        _galleryDetailIndex = null;
-        _navIndex = index;
-      }),
+      onTap:
+          () => setState(() {
+            _galleryDetailIndex = null;
+            _navIndex = index;
+          }),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Column(
@@ -503,19 +506,20 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   SizedBox(
                     height: 280,
                     width: double.infinity,
-                    child: w.homeHeroImageBase64.isEmpty
-                        ? Container(
-                            color: Colors.grey.shade400,
-                            alignment: Alignment.center,
-                            child: Text(
-                              'Macrina\'s Kitchen and Catering',
-                              style: GoogleFonts.playfairDisplay(
-                                fontSize: 28,
-                                color: Colors.white,
+                    child:
+                        w.homeHeroImageBase64.isEmpty
+                            ? Container(
+                              color: Colors.grey.shade400,
+                              alignment: Alignment.center,
+                              child: Text(
+                                'Macrina\'s Kitchen and Catering',
+                                style: GoogleFonts.playfairDisplay(
+                                  fontSize: 28,
+                                  color: Colors.white,
+                                ),
                               ),
-                            ),
-                          )
-                        : _b64Image(w.homeHeroImageBase64, height: 280),
+                            )
+                            : _b64Image(w.homeHeroImageBase64, height: 280),
                   ),
                   _editChip(() async {
                     final b64 = await _pickImageB64();
@@ -598,8 +602,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                         Text(w.latestEventBody),
                                         const SizedBox(height: 12),
                                         TextButton(
-                                          onPressed: () =>
-                                              setState(() => _navIndex = 3),
+                                          onPressed:
+                                              () =>
+                                                  setState(() => _navIndex = 3),
                                           child: const Text('INQUIRE NOW!'),
                                         ),
                                       ],
@@ -617,54 +622,60 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     );
                                     await showDialog<void>(
                                       context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        title: const Text('Edit latest event'),
-                                        content: SingleChildScrollView(
-                                          child: Column(
-                                            children: [
-                                              TextField(
-                                                controller: title,
-                                                decoration:
-                                                    const InputDecoration(
-                                                      labelText: 'Title',
-                                                    ),
+                                      builder:
+                                          (ctx) => AlertDialog(
+                                            title: const Text(
+                                              'Edit latest event',
+                                            ),
+                                            content: SingleChildScrollView(
+                                              child: Column(
+                                                children: [
+                                                  TextField(
+                                                    controller: title,
+                                                    decoration:
+                                                        const InputDecoration(
+                                                          labelText: 'Title',
+                                                        ),
+                                                  ),
+                                                  TextField(
+                                                    controller: sub,
+                                                    decoration:
+                                                        const InputDecoration(
+                                                          labelText: 'Subtitle',
+                                                        ),
+                                                  ),
+                                                  TextField(
+                                                    controller: body,
+                                                    maxLines: 4,
+                                                    decoration:
+                                                        const InputDecoration(
+                                                          labelText: 'Body',
+                                                        ),
+                                                  ),
+                                                ],
                                               ),
-                                              TextField(
-                                                controller: sub,
-                                                decoration:
-                                                    const InputDecoration(
-                                                      labelText: 'Subtitle',
-                                                    ),
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed:
+                                                    () => Navigator.pop(ctx),
+                                                child: const Text('Cancel'),
                                               ),
-                                              TextField(
-                                                controller: body,
-                                                maxLines: 4,
-                                                decoration:
-                                                    const InputDecoration(
-                                                      labelText: 'Body',
-                                                    ),
+                                              TextButton(
+                                                onPressed: () {
+                                                  w.latestEventTitle =
+                                                      title.text;
+                                                  w.latestEventSubtitle =
+                                                      sub.text;
+                                                  w.latestEventBody = body.text;
+                                                  w.save();
+                                                  Navigator.pop(ctx);
+                                                  setState(() {});
+                                                },
+                                                child: const Text('Save'),
                                               ),
                                             ],
                                           ),
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () => Navigator.pop(ctx),
-                                            child: const Text('Cancel'),
-                                          ),
-                                          TextButton(
-                                            onPressed: () {
-                                              w.latestEventTitle = title.text;
-                                              w.latestEventSubtitle = sub.text;
-                                              w.latestEventBody = body.text;
-                                              w.save();
-                                              Navigator.pop(ctx);
-                                              setState(() {});
-                                            },
-                                            child: const Text('Save'),
-                                          ),
-                                        ],
-                                      ),
                                     );
                                   }),
                                 ],
@@ -680,9 +691,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     runSpacing: 8,
                                     children: List.generate(4, (i) {
                                       final list = w.latestEventCollageBase64;
-                                      final b64 = i < list.length
-                                          ? list[i]
-                                          : null;
+                                      final b64 =
+                                          i < list.length ? list[i] : null;
                                       return SizedBox(
                                         width: 160,
                                         height: 120,
@@ -758,64 +768,77 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           height: 160,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            children: dishes.map((d) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: SizedBox(
-                  width: 140,
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child:
-                              d.imageBase64 != null && d.imageBase64!.isNotEmpty
-                              ? _b64Image(d.imageBase64, fit: BoxFit.cover)
-                              : Container(
-                                  color: Colors.grey.shade200,
-                                  child: const Icon(Icons.fastfood, size: 40),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        d.name.toUpperCase(),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '₱${d.price}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.amber.shade800,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      SizedBox(
-                        height: 24,
-                        child: ElevatedButton.icon(
-                          onPressed: () => _addToCart(d),
-                          icon: const Icon(Icons.add, size: 14),
-                          label: const Text('Add', style: TextStyle(fontSize: 10)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1E1E1E),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
+            children:
+                dishes.map((d) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: SizedBox(
+                      width: 140,
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child:
+                                  d.imageBase64 != null &&
+                                          d.imageBase64!.isNotEmpty
+                                      ? _b64Image(
+                                        d.imageBase64,
+                                        fit: BoxFit.cover,
+                                      )
+                                      : Container(
+                                        color: Colors.grey.shade200,
+                                        child: const Icon(
+                                          Icons.fastfood,
+                                          size: 40,
+                                        ),
+                                      ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 6),
+                          Text(
+                            d.name.toUpperCase(),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '₱${d.price}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.amber.shade800,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          SizedBox(
+                            height: 24,
+                            child: ElevatedButton.icon(
+                              onPressed: () => _addToCart(d),
+                              icon: const Icon(Icons.add, size: 14),
+                              label: const Text(
+                                'Add',
+                                style: TextStyle(fontSize: 10),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF1E1E1E),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
+                    ),
+                  );
+                }).toList(),
           ),
         ),
         const SizedBox(height: 28),
@@ -848,12 +871,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   borderRadius: BorderRadius.circular(8),
                   child: SizedBox(
                     width: 160,
-                    child: i < w.eventDesignImageBase64.length
-                        ? _b64Image(
-                            w.eventDesignImageBase64[i],
-                            fit: BoxFit.cover,
-                          )
-                        : Container(color: Colors.grey.shade300),
+                    child:
+                        i < w.eventDesignImageBase64.length
+                            ? _b64Image(
+                              w.eventDesignImageBase64[i],
+                              fit: BoxFit.cover,
+                            )
+                            : Container(color: Colors.grey.shade300),
                   ),
                 ),
               ),
@@ -925,20 +949,22 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             child: GridView.builder(
               padding: const EdgeInsets.all(24),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: isMobile(context)
-                    ? 1
-                    : isTablet(context)
-                    ? 2
-                    : 3,
+                crossAxisCount:
+                    isMobile(context)
+                        ? 1
+                        : isTablet(context)
+                        ? 2
+                        : 3,
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
                 childAspectRatio: 1.2,
               ),
               itemCount: cat.imageBase64List.length,
-              itemBuilder: (ctx, i) => ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: _b64Image(cat.imageBase64List[i], fit: BoxFit.cover),
-              ),
+              itemBuilder:
+                  (ctx, i) => ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: _b64Image(cat.imageBase64List[i], fit: BoxFit.cover),
+                  ),
             ),
           ),
         ],
@@ -974,11 +1000,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: isMobile(context)
-                          ? 1
-                          : isTablet(context)
-                          ? 2
-                          : 3,
+                      crossAxisCount:
+                          isMobile(context)
+                              ? 1
+                              : isTablet(context)
+                              ? 2
+                              : 3,
                       crossAxisSpacing: 16,
                       mainAxisSpacing: 16,
                       childAspectRatio: 1.1,
@@ -986,9 +1013,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     itemCount: w.galleryCategories.length,
                     itemBuilder: (ctx, i) {
                       final c = w.galleryCategories[i];
-                      final thumb = c.imageBase64List.isNotEmpty
-                          ? c.imageBase64List.first
-                          : null;
+                      final thumb =
+                          c.imageBase64List.isNotEmpty
+                              ? c.imageBase64List.first
+                              : null;
                       return InkWell(
                         onTap: () => setState(() => _galleryDetailIndex = i),
                         child: Stack(
@@ -1043,25 +1071,29 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     );
                                     await showDialog<void>(
                                       context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        title: const Text('Category label'),
-                                        content: TextField(controller: ctrl),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () => Navigator.pop(ctx),
-                                            child: const Text('Cancel'),
+                                      builder:
+                                          (ctx) => AlertDialog(
+                                            title: const Text('Category label'),
+                                            content: TextField(
+                                              controller: ctrl,
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed:
+                                                    () => Navigator.pop(ctx),
+                                                child: const Text('Cancel'),
+                                              ),
+                                              TextButton(
+                                                onPressed: () {
+                                                  c.label = ctrl.text;
+                                                  w.save();
+                                                  Navigator.pop(ctx);
+                                                  setState(() {});
+                                                },
+                                                child: const Text('Save'),
+                                              ),
+                                            ],
                                           ),
-                                          TextButton(
-                                            onPressed: () {
-                                              c.label = ctrl.text;
-                                              w.save();
-                                              Navigator.pop(ctx);
-                                              setState(() {});
-                                            },
-                                            child: const Text('Save'),
-                                          ),
-                                        ],
-                                      ),
                                     );
                                   },
                                 ),
@@ -1115,7 +1147,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     }
 
     final allDishes = MenuStore.instance.activeDishes;
-    final cateringDishes = allDishes.where((d) => d.category == 'catering').toList();
+    final cateringDishes =
+        allDishes.where((d) => d.category == 'catering').toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -1147,11 +1180,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: isMobile(context)
-                        ? 1
-                        : isTablet(context)
-                        ? 2
-                        : 3,
+                    crossAxisCount:
+                        isMobile(context)
+                            ? 1
+                            : isTablet(context)
+                            ? 2
+                            : 3,
                     crossAxisSpacing: 16,
                     mainAxisSpacing: 16,
                     childAspectRatio: 0.9,
@@ -1169,12 +1203,18 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                               ),
                               child:
                                   d.imageBase64 != null &&
-                                      d.imageBase64!.isNotEmpty
-                                  ? _b64Image(d.imageBase64, fit: BoxFit.cover)
-                                  : Container(
-                                      color: Colors.grey.shade200,
-                                      child: const Icon(Icons.fastfood, size: 48),
-                                    ),
+                                          d.imageBase64!.isNotEmpty
+                                      ? _b64Image(
+                                        d.imageBase64,
+                                        fit: BoxFit.cover,
+                                      )
+                                      : Container(
+                                        color: Colors.grey.shade200,
+                                        child: const Icon(
+                                          Icons.fastfood,
+                                          size: 48,
+                                        ),
+                                      ),
                             ),
                           ),
                           Padding(
@@ -1207,7 +1247,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   Widget _buildRestaurantMenu() {
     final allDishes = MenuStore.instance.activeDishes;
-    final restaurantDishes = allDishes.where((d) => d.category == 'restaurant').toList();
+    final restaurantDishes =
+        allDishes.where((d) => d.category == 'restaurant').toList();
     final cartItems = CartStore.instance.items;
     final totalAmount = CartStore.instance.totalAmount;
     final dishes = restaurantDishes;
@@ -1244,19 +1285,28 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFFFC024),
                           foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 12,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                         child: const Text(
                           'LOG IN TO ORDER',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+                // Loyalty Points Banner
+                _buildLoyaltyBanner(),
+                const SizedBox(height: 16),
                 // Search and Filter
                 Row(
                   children: [
@@ -1273,7 +1323,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             hintStyle: TextStyle(color: Colors.grey),
                             prefixIcon: Icon(Icons.search, color: Colors.grey),
                             border: InputBorder.none,
-                            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
                           ),
                         ),
                       ),
@@ -1326,12 +1379,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                      childAspectRatio: 0.75,
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                          childAspectRatio: 0.75,
+                        ),
                     itemCount: dishes.length,
                     itemBuilder: (ctx, i) {
                       final d = dishes[i];
@@ -1349,12 +1403,20 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                 borderRadius: const BorderRadius.vertical(
                                   top: Radius.circular(12),
                                 ),
-                                child: d.imageBase64 != null && d.imageBase64!.isNotEmpty
-                                    ? _b64Image(d.imageBase64, fit: BoxFit.cover)
-                                    : Container(
-                                        color: Colors.grey.shade200,
-                                        child: const Icon(Icons.fastfood, size: 48),
-                                      ),
+                                child:
+                                    d.imageBase64 != null &&
+                                            d.imageBase64!.isNotEmpty
+                                        ? _b64Image(
+                                          d.imageBase64,
+                                          fit: BoxFit.cover,
+                                        )
+                                        : Container(
+                                          color: Colors.grey.shade200,
+                                          child: const Icon(
+                                            Icons.fastfood,
+                                            size: 48,
+                                          ),
+                                        ),
                               ),
                             ),
                             Expanded(
@@ -1376,7 +1438,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      d.sauces.isNotEmpty ? d.sauces.join(', ').toUpperCase() : '',
+                                      d.sauces.isNotEmpty
+                                          ? d.sauces.join(', ').toUpperCase()
+                                          : '',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         fontSize: 9,
@@ -1401,14 +1465,22 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                         child: ElevatedButton(
                                           onPressed: () => _addToCart(d),
                                           style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(0xFF1E1E1E),
+                                            backgroundColor: const Color(
+                                              0xFF1E1E1E,
+                                            ),
                                             foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                            ),
                                             shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(6),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
                                             ),
                                           ),
-                                          child: const Text('Add', style: TextStyle(fontSize: 11)),
+                                          child: const Text(
+                                            'Add',
+                                            style: TextStyle(fontSize: 11),
+                                          ),
                                         ),
                                       ),
                                   ],
@@ -1449,7 +1521,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+                    border: Border(
+                      bottom: BorderSide(color: Colors.grey.shade200),
+                    ),
                   ),
                   child: const Text(
                     'YOUR TRAY',
@@ -1462,133 +1536,180 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 ),
                 // Cart items
                 Flexible(
-                  child: cartItems.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.shopping_cart_outlined, size: 48, color: Colors.grey.shade300),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Your tray is empty',
-                              style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: cartItems.length,
-                        itemBuilder: (context, index) {
-                          final cartItem = cartItems[index];
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Row(
+                  child:
+                      cartItems.isEmpty
+                          ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                if (cartItem.dish.imageBase64 != null)
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(4),
-                                    child: Image.memory(
-                                      base64Decode(cartItem.dish.imageBase64!),
-                                      width: 50,
-                                      height: 50,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  )
-                                else
-                                  Container(
-                                    width: 50,
-                                    height: 50,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade200,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Icon(Icons.fastfood, size: 20, color: Colors.grey),
-                                  ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        cartItem.dish.name.toUpperCase(),
-                                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      if (cartItem.dish.sauces.isNotEmpty)
-                                        Text(
-                                          cartItem.dish.sauces.first.toUpperCase(),
-                                          style: TextStyle(fontSize: 8, color: Colors.grey.shade600),
-                                        ),
-                                    ],
-                                  ),
+                                Icon(
+                                  Icons.shopping_cart_outlined,
+                                  size: 48,
+                                  color: Colors.grey.shade300,
                                 ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      'x${cartItem.quantity}',
-                                      style: const TextStyle(fontSize: 10),
-                                    ),
-                                    Text(
-                                      '₱${(double.tryParse(cartItem.dish.price) ?? 0) * cartItem.quantity}',
-                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-                                    ),
-                                  ],
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Your tray is empty',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade500,
+                                    fontSize: 12,
+                                  ),
                                 ),
                               ],
                             ),
-                          );
-                        },
-                      ),
-              ),
-              // Footer with total and checkout
-              if (cartItems.isNotEmpty || true)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    border: Border(top: BorderSide(color: Colors.grey.shade200)),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'TOTAL',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                          )
+                          : ListView.builder(
+                            padding: const EdgeInsets.all(12),
+                            itemCount: cartItems.length,
+                            itemBuilder: (context, index) {
+                              final cartItem = cartItems[index];
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Row(
+                                  children: [
+                                    if (cartItem.dish.imageBase64 != null)
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: Image.memory(
+                                          base64Decode(
+                                            cartItem.dish.imageBase64!,
+                                          ),
+                                          width: 50,
+                                          height: 50,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      )
+                                    else
+                                      Container(
+                                        width: 50,
+                                        height: 50,
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade200,
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.fastfood,
+                                          size: 20,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            cartItem.dish.name.toUpperCase(),
+                                            style: const TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          if (cartItem.dish.sauces.isNotEmpty)
+                                            Text(
+                                              cartItem.dish.sauces.first
+                                                  .toUpperCase(),
+                                              style: TextStyle(
+                                                fontSize: 8,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          'x${cartItem.quantity}',
+                                          style: const TextStyle(fontSize: 10),
+                                        ),
+                                        Text(
+                                          '₱${(double.tryParse(cartItem.dish.price) ?? 0) * cartItem.quantity}',
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                           ),
-                          Text(
-                            '₱${totalAmount.toStringAsFixed(2)}',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                          ),
-                        ],
+                ),
+                // Footer with total and checkout
+                if (cartItems.isNotEmpty || true)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(color: Colors.grey.shade200),
                       ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _isCustomerLoggedIn ? () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (context) => const CheckoutPage()),
-                          ) : _handleLogin,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFC024),
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'TOTAL',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              '₱${totalAmount.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed:
+                                _isCustomerLoggedIn
+                                    ? () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder:
+                                            (context) => const CheckoutPage(),
+                                      ),
+                                    )
+                                    : _handleLogin,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFC024),
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                            child: Text(
+                              _isCustomerLoggedIn
+                                  ? 'CHECKOUT'
+                                  : 'LOG IN TO ORDER',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                          child: Text(
-                            _isCustomerLoggedIn ? 'CHECKOUT' : 'LOG IN TO ORDER',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -1646,53 +1767,55 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
       /// ✅ Sticky header using NestedScrollView
       body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
-          SliverToBoxAdapter(
-            child: Column(
-              children: [
-                if (widget.showStaffChrome && AuthSession.instance.hasToken)
-                  Material(
-                    color: Colors.black,
-                    child: SafeArea(
-                      bottom: false,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
-                        child: Row(
-                          children: [
-                            TextButton(
-                              onPressed: () => Navigator.pushReplacementNamed(
-                                context,
-                                _staffHomeRoute(),
-                              ),
-                              child: const Text(
-                                '← Back to Curatering',
-                                style: TextStyle(color: Color(0xFFFFC024)),
-                              ),
+        headerSliverBuilder:
+            (context, innerBoxIsScrolled) => [
+              SliverToBoxAdapter(
+                child: Column(
+                  children: [
+                    if (widget.showStaffChrome && AuthSession.instance.hasToken)
+                      Material(
+                        color: Colors.black,
+                        child: SafeArea(
+                          bottom: false,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
                             ),
-                            const Spacer(),
-                            if (widget.contentEditable)
-                              Chip(
-                                label: const Text(
-                                  'EDIT MODE',
-                                  style: TextStyle(fontSize: 11),
+                            child: Row(
+                              children: [
+                                TextButton(
+                                  onPressed:
+                                      () => Navigator.pushReplacementNamed(
+                                        context,
+                                        _staffHomeRoute(),
+                                      ),
+                                  child: const Text(
+                                    '← Back to Curatering',
+                                    style: TextStyle(color: Color(0xFFFFC024)),
+                                  ),
                                 ),
-                                backgroundColor: Colors.amber.shade100,
-                              ),
-                          ],
+                                const Spacer(),
+                                if (widget.contentEditable)
+                                  Chip(
+                                    label: const Text(
+                                      'EDIT MODE',
+                                      style: TextStyle(fontSize: 11),
+                                    ),
+                                    backgroundColor: Colors.amber.shade100,
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
 
-                /// ✅ Sticky public header
-                _publicHeader(),
-              ],
-            ),
-          ),
-        ],
+                    /// ✅ Sticky public header
+                    _publicHeader(),
+                  ],
+                ),
+              ),
+            ],
 
         /// ✅ Scrollable content + footer
         body: CustomScrollView(
@@ -1742,110 +1865,145 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             ),
             // Cart items
             Expanded(
-              child: cartItems.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.shopping_cart_outlined, size: 64, color: Colors.grey.shade400),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Your cart is empty',
-                            style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Add items from the restaurant menu',
-                            style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: cartItems.length,
-                      itemBuilder: (context, index) {
-                        final cartItem = cartItems[index];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              children: [
-                                if (cartItem.dish.imageBase64 != null)
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.memory(
-                                      base64Decode(cartItem.dish.imageBase64!),
+              child:
+                  cartItems.isEmpty
+                      ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.shopping_cart_outlined,
+                              size: 64,
+                              color: Colors.grey.shade400,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Your cart is empty',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Add items from the restaurant menu',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                      : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: cartItems.length,
+                        itemBuilder: (context, index) {
+                          final cartItem = cartItems[index];
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  if (cartItem.dish.imageBase64 != null)
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.memory(
+                                        base64Decode(
+                                          cartItem.dish.imageBase64!,
+                                        ),
+                                        width: 60,
+                                        height: 60,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    )
+                                  else
+                                    Container(
                                       width: 60,
                                       height: 60,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  )
-                                else
-                                  Container(
-                                    width: 60,
-                                    height: 60,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade300,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Icon(Icons.restaurant, size: 24, color: Colors.grey),
-                                  ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        cartItem.dish.name,
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade300,
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
-                                      const SizedBox(height: 4),
+                                      child: const Icon(
+                                        Icons.restaurant,
+                                        size: 24,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          cartItem.dish.name,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '₱${cartItem.dish.price}',
+                                          style: TextStyle(
+                                            color: Colors.amber.shade800,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Row(
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.remove_circle_outline,
+                                          size: 20,
+                                        ),
+                                        onPressed: () {
+                                          if (cartItem.quantity > 1) {
+                                            CartStore.instance.updateQuantity(
+                                              cartItem.dish.id,
+                                              cartItem.quantity - 1,
+                                            );
+                                          } else {
+                                            CartStore.instance.removeItem(
+                                              cartItem.dish.id,
+                                            );
+                                          }
+                                        },
+                                      ),
                                       Text(
-                                        '₱${cartItem.dish.price}',
-                                        style: TextStyle(color: Colors.amber.shade800, fontWeight: FontWeight.bold),
+                                        '${cartItem.quantity}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.add_circle_outline,
+                                          size: 20,
+                                        ),
+                                        onPressed: () {
+                                          CartStore.instance.updateQuantity(
+                                            cartItem.dish.id,
+                                            cartItem.quantity + 1,
+                                          );
+                                        },
                                       ),
                                     ],
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                Row(
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.remove_circle_outline, size: 20),
-                                      onPressed: () {
-                                        if (cartItem.quantity > 1) {
-                                          CartStore.instance.updateQuantity(
-                                            cartItem.dish.id,
-                                            cartItem.quantity - 1,
-                                          );
-                                        } else {
-                                          CartStore.instance.removeItem(cartItem.dish.id);
-                                        }
-                                      },
-                                    ),
-                                    Text(
-                                      '${cartItem.quantity}',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.add_circle_outline, size: 20),
-                                      onPressed: () {
-                                        CartStore.instance.updateQuantity(
-                                          cartItem.dish.id,
-                                          cartItem.quantity + 1,
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
+                          );
+                        },
+                      ),
             ),
             // Footer with total and checkout
             if (cartItems.isNotEmpty)
@@ -1871,7 +2029,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         children: [
                           const Text(
                             'Total:',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           Text(
                             '₱${totalAmount.toStringAsFixed(2)}',
@@ -1901,7 +2062,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           ),
                           child: const Text(
                             'Proceed to Checkout',
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
@@ -1912,6 +2076,248 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // Loyalty Points Banner - shows points earned and reward selection
+  Widget _buildLoyaltyBanner() {
+    // Get values from LoyaltyRewardsStore (persisted from management page)
+    final double minimumOrderForPoints = LoyaltyRewardsStore.instance.minimumOrderForPoints;
+    final int pointsEarned = LoyaltyRewardsStore.instance.pointsEarned;
+    final int currentPoints = 150; // User's current points balance - in production from API
+    final availableRewards = LoyaltyRewardsStore.instance.rewardsConditions;
+    // Ensure store is loaded
+    LoyaltyRewardsStore.instance.ensureLoaded();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.amber.shade400, Colors.orange.shade500],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withOpacity(0.3),
+            spreadRadius: 2,
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.stars, color: Colors.white, size: 32),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Loyalty Rewards',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Earn $pointsEarned points on orders ≥ ₱${minimumOrderForPoints.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.9),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '$currentPoints pts',
+                  style: TextStyle(
+                    color: Colors.orange.shade700,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_isCustomerLoggedIn)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed:
+                    () => _showRewardDialog(availableRewards, currentPoints),
+                icon: const Icon(Icons.redeem, color: Colors.white),
+                label: const Text(
+                  'Redeem Rewards',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black.withOpacity(0.2),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _handleLogin,
+                icon: const Icon(Icons.login, color: Colors.white),
+                label: const Text(
+                  'Log in to view and redeem rewards',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black.withOpacity(0.2),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // Show reward selection dialog
+  Future<void> _showRewardDialog(
+    List<RewardsCondition> rewards,
+    int currentPoints,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.card_giftcard, color: Colors.orange),
+              const SizedBox(width: 8),
+              const Text('Redeem Rewards'),
+            ],
+          ),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.stars, color: Colors.amber.shade700),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Your Points: $currentPoints',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.amber.shade800,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Available Rewards:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                ...rewards.map((reward) {
+                  final canRedeem = currentPoints >= reward.minimumPoints;
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor:
+                            canRedeem ? Colors.green : Colors.grey.shade300,
+                        child: Icon(
+                          canRedeem ? Icons.check : Icons.lock,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                      title: Text(reward.reward),
+                      subtitle: Text(reward.description),
+                      trailing: Chip(
+                        label: Text('${reward.minimumPoints} pts'),
+                        backgroundColor:
+                            canRedeem
+                                ? Colors.green.shade100
+                                : Colors.grey.shade200,
+                        labelStyle: TextStyle(
+                          color:
+                              canRedeem
+                                  ? Colors.green.shade800
+                                  : Colors.grey.shade600,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                      onTap:
+                          canRedeem
+                              ? () {
+                                Navigator.of(context).pop();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      '${reward.reward} redeemed successfully!',
+                                    ),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                              : null,
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -2035,23 +2441,24 @@ class _ContactSectionState extends State<_ContactSection> {
                             );
                             await showDialog<void>(
                               context: ctx,
-                              builder: (dctx) => AlertDialog(
-                                content: TextField(controller: t),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dctx),
-                                    child: const Text('Cancel'),
+                              builder:
+                                  (dctx) => AlertDialog(
+                                    content: TextField(controller: t),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dctx),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          widget.store.contactFacebook = t.text;
+                                          widget.store.save();
+                                          Navigator.pop(dctx);
+                                        },
+                                        child: const Text('Save'),
+                                      ),
+                                    ],
                                   ),
-                                  TextButton(
-                                    onPressed: () {
-                                      widget.store.contactFacebook = t.text;
-                                      widget.store.save();
-                                      Navigator.pop(dctx);
-                                    },
-                                    child: const Text('Save'),
-                                  ),
-                                ],
-                              ),
                             );
                           },
                         ),
@@ -2066,23 +2473,27 @@ class _ContactSectionState extends State<_ContactSection> {
                             );
                             await showDialog<void>(
                               context: ctx,
-                              builder: (dctx) => AlertDialog(
-                                content: TextField(controller: t, maxLines: 2),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dctx),
-                                    child: const Text('Cancel'),
+                              builder:
+                                  (dctx) => AlertDialog(
+                                    content: TextField(
+                                      controller: t,
+                                      maxLines: 2,
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dctx),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          widget.store.contactAddress = t.text;
+                                          widget.store.save();
+                                          Navigator.pop(dctx);
+                                        },
+                                        child: const Text('Save'),
+                                      ),
+                                    ],
                                   ),
-                                  TextButton(
-                                    onPressed: () {
-                                      widget.store.contactAddress = t.text;
-                                      widget.store.save();
-                                      Navigator.pop(dctx);
-                                    },
-                                    child: const Text('Save'),
-                                  ),
-                                ],
-                              ),
                             );
                           },
                         ),
@@ -2097,24 +2508,25 @@ class _ContactSectionState extends State<_ContactSection> {
                             );
                             await showDialog<void>(
                               context: ctx,
-                              builder: (dctx) => AlertDialog(
-                                title: const Text('Hours'),
-                                content: TextField(controller: t),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dctx),
-                                    child: const Text('Cancel'),
+                              builder:
+                                  (dctx) => AlertDialog(
+                                    title: const Text('Hours'),
+                                    content: TextField(controller: t),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dctx),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          widget.store.contactHours = t.text;
+                                          widget.store.save();
+                                          Navigator.pop(dctx);
+                                        },
+                                        child: const Text('Save'),
+                                      ),
+                                    ],
                                   ),
-                                  TextButton(
-                                    onPressed: () {
-                                      widget.store.contactHours = t.text;
-                                      widget.store.save();
-                                      Navigator.pop(dctx);
-                                    },
-                                    child: const Text('Save'),
-                                  ),
-                                ],
-                              ),
                             );
                           },
                         ),
@@ -2129,24 +2541,25 @@ class _ContactSectionState extends State<_ContactSection> {
                             );
                             await showDialog<void>(
                               context: ctx,
-                              builder: (dctx) => AlertDialog(
-                                title: const Text('Phone'),
-                                content: TextField(controller: t),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dctx),
-                                    child: const Text('Cancel'),
+                              builder:
+                                  (dctx) => AlertDialog(
+                                    title: const Text('Phone'),
+                                    content: TextField(controller: t),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dctx),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          widget.store.contactPhone = t.text;
+                                          widget.store.save();
+                                          Navigator.pop(dctx);
+                                        },
+                                        child: const Text('Save'),
+                                      ),
+                                    ],
                                   ),
-                                  TextButton(
-                                    onPressed: () {
-                                      widget.store.contactPhone = t.text;
-                                      widget.store.save();
-                                      Navigator.pop(dctx);
-                                    },
-                                    child: const Text('Save'),
-                                  ),
-                                ],
-                              ),
                             );
                           },
                         ),
@@ -2161,24 +2574,25 @@ class _ContactSectionState extends State<_ContactSection> {
                             );
                             await showDialog<void>(
                               context: ctx,
-                              builder: (dctx) => AlertDialog(
-                                title: const Text('Email'),
-                                content: TextField(controller: t),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dctx),
-                                    child: const Text('Cancel'),
+                              builder:
+                                  (dctx) => AlertDialog(
+                                    title: const Text('Email'),
+                                    content: TextField(controller: t),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dctx),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          widget.store.contactEmail = t.text;
+                                          widget.store.save();
+                                          Navigator.pop(dctx);
+                                        },
+                                        child: const Text('Save'),
+                                      ),
+                                    ],
                                   ),
-                                  TextButton(
-                                    onPressed: () {
-                                      widget.store.contactEmail = t.text;
-                                      widget.store.save();
-                                      Navigator.pop(dctx);
-                                    },
-                                    child: const Text('Save'),
-                                  ),
-                                ],
-                              ),
                             );
                           },
                         ),
@@ -2240,19 +2654,23 @@ class _ContactSectionState extends State<_ContactSection> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: _submittingHelp ? null : _submitHelpRequest,
+                            onPressed:
+                                _submittingHelp ? null : _submitHelpRequest,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFFFC024),
                               foregroundColor: Colors.black,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                             ),
-                            child: _submittingHelp
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Text('SUBMIT HELP REQUEST'),
+                            child:
+                                _submittingHelp
+                                    ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                    : const Text('SUBMIT HELP REQUEST'),
                           ),
                         ),
                       ],
@@ -2321,12 +2739,17 @@ class _InquireFormState extends State<_InquireForm> {
   String _serviceType = 'catering'; // 'catering' or 'catering+event'
 
   // Catering Service for small orders (< 50 PAX)
-  bool? _cateringServiceSelected; // null = not selected yet, true/false for selection
+  bool?
+  _cateringServiceSelected; // null = not selected yet, true/false for selection
 
   // Menu Selection State
   String _menuChoice = 'suggest'; // 'yes' or 'suggest'
   final Map<String, String> _selectedPaxOptions = {}; // dishId -> paxOption
   final List<String> _selectedDishIds = [];
+
+  // Set Menu Pax Selection State
+  final Map<String, String> _setMenuDishPaxOptions =
+      {}; // dishId -> paxOption for set menu dishes
 
   // Event Design State
   bool _wantsCustomDesign = false;
@@ -2343,7 +2766,8 @@ class _InquireFormState extends State<_InquireForm> {
   final List<String> _designPhotoUrls = []; // For uploaded/linked photos
   final _designPhotoCtrl = TextEditingController();
   int? _focusedPhotoIndex;
-  final _themeRequestCtrl = TextEditingController(); // For Macrina's theme request
+  final _themeRequestCtrl =
+      TextEditingController(); // For Macrina's theme request
 
   @override
   void initState() {
@@ -2357,6 +2781,41 @@ class _InquireFormState extends State<_InquireForm> {
     // Ensure dishes are loaded for set menu display
     if (MenuStore.instance.activeDishes.isEmpty) {
       MenuStore.instance.loadDishes();
+    }
+    // Load customer data if logged in
+    _loadCustomerData();
+  }
+
+  Future<void> _loadCustomerData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('customer_token');
+    final customerData = prefs.getString('customer_data');
+
+    if (token != null && token.isNotEmpty && customerData != null) {
+      // User is logged in, auto-fill contact info
+      final data = jsonDecode(customerData);
+      if (mounted) {
+        setState(() {
+          _contactPerson.text = data['fullName'] ?? '';
+          _email.text = data['email'] ?? '';
+          _phone.text = data['phone'] ?? '';
+        });
+      }
+    } else {
+      // User is not logged in, show login dialog
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          final result = await showDialog(
+            context: context,
+            builder:
+                (context) => const CustomerLoginPage(redirectToCheckout: true),
+          );
+          if (result != null) {
+            // Reload customer data after login
+            await _loadCustomerData();
+          }
+        });
+      }
     }
   }
 
@@ -2427,7 +2886,9 @@ class _InquireFormState extends State<_InquireForm> {
     if (g == null || g < 1) missing.add('guest count');
 
     // Menu is required
-    if (_menuChoice == 'yes' && _selectedDishIds.isEmpty && _customDishes.isEmpty) {
+    if (_menuChoice == 'yes' &&
+        _selectedDishIds.isEmpty &&
+        _customDishes.isEmpty) {
       missing.add('menu (select dishes or add custom dishes)');
     } else if (_menuChoice == 'suggest' && _selectedSetMenuId == null) {
       missing.add('menu (select a set menu)');
@@ -2447,8 +2908,11 @@ class _InquireFormState extends State<_InquireForm> {
       if (_menuChoice == 'yes') {
         // Curated menu - include selected dishes
         for (final dishId in _selectedDishIds) {
-          final dish = MenuStore.instance.allDishes.firstWhere((d) => d.id == dishId);
-          final paxOption = _selectedPaxOptions[dishId] ?? dish.paxOptions.first;
+          final dish = MenuStore.instance.allDishes.firstWhere(
+            (d) => d.id == dishId,
+          );
+          final paxOption =
+              _selectedPaxOptions[dishId] ?? dish.paxOptions.first;
           menuItems.add({
             'dishId': dishId,
             'dishName': dish.name,
@@ -2470,13 +2934,19 @@ class _InquireFormState extends State<_InquireForm> {
         }
       } else if (_selectedSetMenuId != null) {
         // Set menu selected - use SetMenuStore
-        final setMenu = SetMenuStore.instance.activeSetMenus.firstWhere((s) => s.id == _selectedSetMenuId);
+        final setMenu = SetMenuStore.instance.activeSetMenus.firstWhere(
+          (s) => s.id == _selectedSetMenuId,
+        );
         for (final dishId in setMenu.dishIds) {
-          final dish = MenuStore.instance.allDishes.firstWhere((d) => d.id == dishId);
+          final dish = MenuStore.instance.allDishes.firstWhere(
+            (d) => d.id == dishId,
+          );
+          final paxOption =
+              _setMenuDishPaxOptions[dishId] ?? dish.paxOptions.first;
           menuItems.add({
             'dishId': dishId,
             'dishName': dish.name,
-            'paxOption': '10 pax',
+            'paxOption': paxOption,
             'price': dish.price,
             'isCustom': false,
           });
@@ -2489,8 +2959,10 @@ class _InquireFormState extends State<_InquireForm> {
 
       await PublicEventsApi.instance.submitOnlineInquiry(
         payload: {
-          'orderType': _serviceType == 'catering' ? 'catering' : 'catering_event',
-          'eventTitle': _serviceType == 'catering' ? '' : _eventTitle.text.trim(),
+          'orderType':
+              _serviceType == 'catering' ? 'catering' : 'catering_event',
+          'eventTitle':
+              _serviceType == 'catering' ? '' : _eventTitle.text.trim(),
           'eventType': _serviceType == 'catering' ? null : _eventType,
           'formalityLevel': _serviceType == 'catering' ? null : _formality,
           'customerName': _customer.text.trim(),
@@ -2513,7 +2985,8 @@ class _InquireFormState extends State<_InquireForm> {
             'tintColorHex': null,
             'colorPrompt': _themeRequestCtrl.text.trim(),
             'wantsCustomDesign': _wantsCustomDesign,
-            'customerThemeRequest': _wantsCustomDesign ? null : _themeRequestCtrl.text.trim(),
+            'customerThemeRequest':
+                _wantsCustomDesign ? null : _themeRequestCtrl.text.trim(),
           },
         },
       );
@@ -2523,6 +2996,8 @@ class _InquireFormState extends State<_InquireForm> {
           content: Text('Inquiry submitted. We\'ll get back to you soon!'),
         ),
       );
+      // Reset form after successful submission
+      _resetForm();
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2533,6 +3008,44 @@ class _InquireFormState extends State<_InquireForm> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  void _resetForm() {
+    setState(() {
+      // Clear all text controllers
+      _eventTitle.clear();
+      _customer.clear();
+      _contactPerson.clear();
+      _phone.clear();
+      _email.clear();
+      _address.clear();
+      _guests.clear();
+      _dateController.clear();
+      _timeController.clear();
+      _themeRequestCtrl.clear();
+      _designPhotoCtrl.clear();
+
+      // Reset state variables to initial values
+      _eventType = 'Birthday';
+      _formality = 'casual';
+      _serviceType = 'catering';
+      _cateringServiceSelected = null;
+      _menuChoice = 'suggest';
+      _wantsCustomDesign = false;
+      _selectedSetMenuId = null;
+
+      // Clear collections
+      _selectedPaxOptions.clear();
+      _selectedDishIds.clear();
+      _setMenuDishPaxOptions.clear();
+      _setMenus.clear();
+      _customDishes.clear();
+      _designPhotoUrls.clear();
+      _focusedPhotoIndex = null;
+
+      // Keep customer info if logged in (reload from saved data)
+      _loadCustomerData();
+    });
   }
 
   @override
@@ -2581,26 +3094,26 @@ class _InquireFormState extends State<_InquireForm> {
               // Three Column Layout
               isDesktop(context)
                   ? Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: _buildEventInfoColumn()),
-                        const SizedBox(width: 16),
-                        Expanded(child: _buildMenuColumn()),
-                        const SizedBox(width: 16),
-                        if (_serviceType == 'catering+event')
-                          Expanded(child: _buildEventDesignColumn()),
-                      ],
-                    )
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: _buildEventInfoColumn()),
+                      const SizedBox(width: 16),
+                      Expanded(child: _buildMenuColumn()),
+                      const SizedBox(width: 16),
+                      if (_serviceType == 'catering+event')
+                        Expanded(child: _buildEventDesignColumn()),
+                    ],
+                  )
                   : Column(
-                      children: [
-                        _buildEventInfoColumn(),
-                        const SizedBox(height: 16),
-                        _buildMenuColumn(),
-                        const SizedBox(height: 16),
-                        if (_serviceType == 'catering+event')
-                          _buildEventDesignColumn(),
-                      ],
-                    ),
+                    children: [
+                      _buildEventInfoColumn(),
+                      const SizedBox(height: 16),
+                      _buildMenuColumn(),
+                      const SizedBox(height: 16),
+                      if (_serviceType == 'catering+event')
+                        _buildEventDesignColumn(),
+                    ],
+                  ),
 
               const SizedBox(height: 32),
               // Submit Button
@@ -2612,22 +3125,26 @@ class _InquireFormState extends State<_InquireForm> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: Colors.black,
-                      side: const BorderSide(color: Color(0xFF4CAF50), width: 2),
+                      side: const BorderSide(
+                        color: Color(0xFF4CAF50),
+                        width: 2,
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    child: _submitting
-                        ? const SizedBox(
-                            height: 22,
-                            width: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text(
-                            'SUBMIT INQUIRY',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
+                    child:
+                        _submitting
+                            ? const SizedBox(
+                              height: 22,
+                              width: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Text(
+                              'SUBMIT INQUIRY',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
                   ),
                 ),
               ),
@@ -2670,13 +3187,16 @@ class _InquireFormState extends State<_InquireForm> {
     return ElevatedButton(
       onPressed: () => setState(() => _serviceType = value),
       style: ElevatedButton.styleFrom(
-        backgroundColor: isSelected ? const Color(0xFFFFC107) : Colors.grey.shade200,
+        backgroundColor:
+            isSelected ? const Color(0xFFFFC107) : Colors.grey.shade200,
         foregroundColor: Colors.black,
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: isSelected ? const Color(0xFFFFC107) : Colors.grey.shade400),
+          side: BorderSide(
+            color: isSelected ? const Color(0xFFFFC107) : Colors.grey.shade400,
+          ),
         ),
       ),
       child: Text(label),
@@ -2713,19 +3233,31 @@ class _InquireFormState extends State<_InquireForm> {
           if (!isCateringOnly) ...[
             _buildTextField(_eventTitle, 'EVENT TITLE'),
             const SizedBox(height: 12),
-            _buildDropdown(
-              'EVENT TYPE',
-              _eventType,
-              ['Birthday', 'Wedding', 'Corporate', 'Private Party', 'Other'],
-              (v) => setState(() => _eventType = v),
-            ),
+            _buildDropdown('EVENT TYPE', _eventType, [
+              'Wedding',
+              'Birthday',
+              'Corporate',
+              'Private Party',
+              'Sports',
+              'Government',
+              'Show',
+              'Educational',
+              'Reunion',
+              'Gala',
+              'Dinner',
+              'Other',
+            ], (v) => setState(() => _eventType = v)),
             const SizedBox(height: 12),
             _buildDropdown(
               'FORMALITY LEVEL',
               _formality,
               ['casual', 'semi_formal', 'formal'],
               (v) => setState(() => _formality = v),
-              displayMap: {'casual': 'Casual', 'semi_formal': 'Semi-formal', 'formal': 'Formal'},
+              displayMap: {
+                'casual': 'Casual',
+                'semi_formal': 'Semi-formal',
+                'formal': 'Formal',
+              },
             ),
             const SizedBox(height: 12),
           ],
@@ -2733,9 +3265,17 @@ class _InquireFormState extends State<_InquireForm> {
           const SizedBox(height: 12),
           _buildTextField(_contactPerson, 'CONTACT PERSON'),
           const SizedBox(height: 12),
-          _buildTextField(_phone, 'CONTACT NUMBER', keyboardType: TextInputType.phone),
+          _buildTextField(
+            _phone,
+            'CONTACT NUMBER',
+            keyboardType: TextInputType.phone,
+          ),
           const SizedBox(height: 12),
-          _buildTextField(_email, 'EMAIL ADDRESS', keyboardType: TextInputType.emailAddress),
+          _buildTextField(
+            _email,
+            'EMAIL ADDRESS',
+            keyboardType: TextInputType.emailAddress,
+          ),
           const SizedBox(height: 12),
           _buildTextField(_address, 'Address'),
           const SizedBox(height: 12),
@@ -2777,16 +3317,20 @@ class _InquireFormState extends State<_InquireForm> {
             decoration: const InputDecoration(
               labelText: 'NO OF GUESTS',
               border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 10,
+              ),
             ),
             style: const TextStyle(fontSize: 13),
-            onChanged: (value) => setState(() {
-              // Reset catering service selection when guest count changes
-              final count = int.tryParse(value) ?? 0;
-              if (count >= 50) {
-                _cateringServiceSelected = null;
-              }
-            }),
+            onChanged:
+                (value) => setState(() {
+                  // Reset catering service selection when guest count changes
+                  final count = int.tryParse(value) ?? 0;
+                  if (count >= 50) {
+                    _cateringServiceSelected = null;
+                  }
+                }),
           ),
           const SizedBox(height: 12),
           // Catering Service radio for small orders (< 50 PAX)
@@ -2845,12 +3389,19 @@ class _InquireFormState extends State<_InquireForm> {
             ),
             child: Row(
               children: [
-                Icon(Icons.warning_amber, color: Colors.orange.shade700, size: 20),
+                Icon(
+                  Icons.warning_amber,
+                  color: Colors.orange.shade700,
+                  size: 20,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'For catering orders with less than 50 PAX will incur additional charges.',
-                    style: TextStyle(color: Colors.orange.shade700, fontSize: 12),
+                    style: TextStyle(
+                      color: Colors.orange.shade700,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ],
@@ -2903,9 +3454,12 @@ class _InquireFormState extends State<_InquireForm> {
           ),
           const SizedBox(height: 16),
           // Menu Content
-          if (_menuChoice == 'yes') _buildDishSelectionList()
-          else if (_selectedSetMenuId != null) _buildSetMenuView()
-          else _buildSetMenuSelection(),
+          if (_menuChoice == 'yes')
+            _buildDishSelectionList()
+          else if (_selectedSetMenuId != null)
+            _buildSetMenuView()
+          else
+            _buildSetMenuSelection(),
         ],
       ),
     );
@@ -2936,7 +3490,10 @@ class _InquireFormState extends State<_InquireForm> {
   }
 
   Widget _buildDishSelectionList() {
-    final dishes = MenuStore.instance.activeDishes.where((d) => d.category == 'catering').toList();
+    final dishes =
+        MenuStore.instance.activeDishes
+            .where((d) => d.category == 'catering')
+            .toList();
     return Container(
       constraints: const BoxConstraints(maxHeight: 500),
       child: Column(
@@ -2959,23 +3516,36 @@ class _InquireFormState extends State<_InquireForm> {
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            ..._customDishes.map((customDish) => Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              color: Colors.amber.shade50,
-              child: ListTile(
-                leading: const Icon(Icons.edit_note, size: 40, color: Color(0xFFFFC024)),
-                title: Text(customDish.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text(customDish.description, maxLines: 2, overflow: TextOverflow.ellipsis),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  onPressed: () {
-                    setState(() {
-                      _customDishes.removeWhere((d) => d.id == customDish.id);
-                    });
-                  },
+            ..._customDishes.map(
+              (customDish) => Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                color: Colors.amber.shade50,
+                child: ListTile(
+                  leading: const Icon(
+                    Icons.edit_note,
+                    size: 40,
+                    color: Color(0xFFFFC024),
+                  ),
+                  title: Text(
+                    customDish.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    customDish.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    onPressed: () {
+                      setState(() {
+                        _customDishes.removeWhere((d) => d.id == customDish.id);
+                      });
+                    },
+                  ),
                 ),
               ),
-            )),
+            ),
             const Divider(),
           ],
           // Catering Dishes from Menu
@@ -2989,30 +3559,43 @@ class _InquireFormState extends State<_InquireForm> {
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
-                    leading: dish.imageBase64 != null
-                        ? Image.memory(
-                            base64Decode(dish.imageBase64!),
-                            width: 50,
-                            height: 50,
-                            fit: BoxFit.cover,
-                          )
-                        : const Icon(Icons.restaurant, size: 40),
-                    title: Text(dish.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    leading:
+                        dish.imageBase64 != null
+                            ? Image.memory(
+                              base64Decode(dish.imageBase64!),
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.cover,
+                            )
+                            : const Icon(Icons.restaurant, size: 40),
+                    title: Text(
+                      dish.name,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     subtitle: Text('₱${dish.price}'),
-                    trailing: isSelected
-                        ? DropdownButton<String>(
-                            value: _selectedPaxOptions[dish.id] ?? dish.paxOptions.first,
-                            isDense: true,
-                            items: dish.paxOptions
-                                .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                                .toList(),
-                            onChanged: (v) {
-                              setState(() {
-                                _selectedPaxOptions[dish.id] = v!;
-                              });
-                            },
-                          )
-                        : null,
+                    trailing:
+                        isSelected
+                            ? DropdownButton<String>(
+                              value:
+                                  _selectedPaxOptions[dish.id] ??
+                                  dish.paxOptions.first,
+                              isDense: true,
+                              items:
+                                  dish.paxOptions
+                                      .map(
+                                        (p) => DropdownMenuItem(
+                                          value: p,
+                                          child: Text(p),
+                                        ),
+                                      )
+                                      .toList(),
+                              onChanged: (v) {
+                                setState(() {
+                                  _selectedPaxOptions[dish.id] = v!;
+                                });
+                              },
+                            )
+                            : null,
                     onTap: () {
                       setState(() {
                         if (isSelected) {
@@ -3039,53 +3622,56 @@ class _InquireFormState extends State<_InquireForm> {
   void _showAddCustomDishDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Custom Dish'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _customDishNameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Dish Name',
-                hintText: 'e.g., Grilled Salmon with Lemon Butter',
-              ),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Add Custom Dish'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: _customDishNameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Dish Name',
+                    hintText: 'e.g., Grilled Salmon with Lemon Butter',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _customDishDescCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Description (optional)',
+                    hintText: 'Special requests, ingredients, etc.',
+                  ),
+                  maxLines: 3,
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _customDishDescCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Description (optional)',
-                hintText: 'Special requests, ingredients, etc.',
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
               ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+              ElevatedButton(
+                onPressed: () {
+                  if (_customDishNameCtrl.text.trim().isNotEmpty) {
+                    setState(() {
+                      _customDishes.add(
+                        _CustomDish(
+                          id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
+                          name: _customDishNameCtrl.text.trim(),
+                          description: _customDishDescCtrl.text.trim(),
+                        ),
+                      );
+                      _customDishNameCtrl.clear();
+                      _customDishDescCtrl.clear();
+                    });
+                  }
+                  Navigator.pop(context);
+                },
+                child: const Text('Add'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              if (_customDishNameCtrl.text.trim().isNotEmpty) {
-                setState(() {
-                  _customDishes.add(_CustomDish(
-                    id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
-                    name: _customDishNameCtrl.text.trim(),
-                    description: _customDishDescCtrl.text.trim(),
-                  ));
-                  _customDishNameCtrl.clear();
-                  _customDishDescCtrl.clear();
-                });
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -3104,32 +3690,161 @@ class _InquireFormState extends State<_InquireForm> {
       );
     }
     return Column(
-      children: setMenus.map((setMenu) {
-        return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: ListTile(
-            title: Text(setMenu.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('${setMenu.dishIds.length} dishes', maxLines: 2, overflow: TextOverflow.ellipsis),
-            trailing: Radio<String>(
-              value: setMenu.id,
-              groupValue: _selectedSetMenuId,
-              onChanged: (v) => setState(() => _selectedSetMenuId = v),
-            ),
-            onTap: () => setState(() => _selectedSetMenuId = setMenu.id),
-          ),
-        );
-      }).toList(),
+      children:
+          setMenus.map((setMenu) {
+            // Calculate total price for this set menu
+            double totalPrice = 0;
+            for (final dishId in setMenu.dishIds) {
+              final dish = MenuStore.instance.allDishes.firstWhere(
+                (d) => d.id == dishId,
+                orElse:
+                    () => MenuDish(
+                      id: dishId,
+                      name: 'Unknown',
+                      category: '',
+                      price: '0',
+                      archived: false,
+                      paxOptions: ['10 pax'],
+                    ),
+              );
+              final price = double.tryParse(dish.price) ?? 0;
+              final paxOption =
+                  _setMenuDishPaxOptions[dishId] ?? dish.paxOptions.first;
+              final paxCount =
+                  int.tryParse(paxOption.replaceAll(RegExp(r'[^0-9]'), '')) ??
+                  10;
+              totalPrice += price * (paxCount / 10);
+            }
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                title: Text(
+                  setMenu.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${setMenu.dishIds.length} dishes',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      '₱${totalPrice.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFFFC024),
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+                isThreeLine: true,
+                trailing: Radio<String>(
+                  value: setMenu.id,
+                  groupValue: _selectedSetMenuId,
+                  onChanged: (v) {
+                    setState(() {
+                      _selectedSetMenuId = v;
+                      // Initialize pax options for all dishes in this set menu
+                      for (final dishId in setMenu.dishIds) {
+                        final dish = MenuStore.instance.allDishes.firstWhere(
+                          (d) => d.id == dishId,
+                          orElse:
+                              () => MenuDish(
+                                id: dishId,
+                                name: 'Unknown',
+                                category: '',
+                                price: '0',
+                                archived: false,
+                                paxOptions: ['10 pax'],
+                              ),
+                        );
+                        if (!_setMenuDishPaxOptions.containsKey(dishId)) {
+                          _setMenuDishPaxOptions[dishId] =
+                              dish.paxOptions.first;
+                        }
+                      }
+                    });
+                  },
+                ),
+                onTap: () {
+                  setState(() {
+                    _selectedSetMenuId = setMenu.id;
+                    // Initialize pax options for all dishes in this set menu
+                    for (final dishId in setMenu.dishIds) {
+                      final dish = MenuStore.instance.allDishes.firstWhere(
+                        (d) => d.id == dishId,
+                        orElse:
+                            () => MenuDish(
+                              id: dishId,
+                              name: 'Unknown',
+                              category: '',
+                              price: '0',
+                              archived: false,
+                              paxOptions: ['10 pax'],
+                            ),
+                      );
+                      if (!_setMenuDishPaxOptions.containsKey(dishId)) {
+                        _setMenuDishPaxOptions[dishId] = dish.paxOptions.first;
+                      }
+                    }
+                  });
+                },
+              ),
+            );
+          }).toList(),
     );
   }
 
   Widget _buildSetMenuView() {
-    final setMenu = SetMenuStore.instance.activeSetMenus.firstWhere((s) => s.id == _selectedSetMenuId);
+    final setMenu = SetMenuStore.instance.activeSetMenus.firstWhere(
+      (s) => s.id == _selectedSetMenuId,
+    );
+
+    // Calculate total price for this set menu
+    double totalPrice = 0;
+    for (final dishId in setMenu.dishIds) {
+      final dish = MenuStore.instance.allDishes.firstWhere(
+        (d) => d.id == dishId,
+        orElse:
+            () => MenuDish(
+              id: dishId,
+              name: 'Unknown Dish',
+              category: '',
+              price: '0',
+              archived: false,
+              paxOptions: ['10 pax'],
+            ),
+      );
+      final price = double.tryParse(dish.price) ?? 0;
+      final paxOption = _setMenuDishPaxOptions[dishId] ?? dish.paxOptions.first;
+      final paxCount =
+          int.tryParse(paxOption.replaceAll(RegExp(r'[^0-9]'), '')) ?? 10;
+      totalPrice += price * (paxCount / 10);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          setMenu.name,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              setMenu.name,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            Text(
+              '₱${totalPrice.toStringAsFixed(2)}',
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Color(0xFFFFC024),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
         Text('${setMenu.dishIds.length} dishes'),
@@ -3142,28 +3857,59 @@ class _InquireFormState extends State<_InquireForm> {
         ...setMenu.dishIds.map((dishId) {
           final dish = MenuStore.instance.allDishes.firstWhere(
             (d) => d.id == dishId,
-            orElse: () => MenuDish(
-              id: dishId,
-              name: 'Unknown Dish',
-              category: '',
-              price: '0',
-              archived: false,
-              paxOptions: ['10 pax'],
-            ),
+            orElse:
+                () => MenuDish(
+                  id: dishId,
+                  name: 'Unknown Dish',
+                  category: '',
+                  price: '0',
+                  archived: false,
+                  paxOptions: ['10 pax'],
+                ),
           );
+          final price = double.tryParse(dish.price) ?? 0;
+          final paxOption =
+              _setMenuDishPaxOptions[dishId] ?? dish.paxOptions.first;
+          final paxCount =
+              int.tryParse(paxOption.replaceAll(RegExp(r'[^0-9]'), '')) ?? 10;
+          final adjustedPrice = price * (paxCount / 10);
+
           return Card(
             margin: const EdgeInsets.only(bottom: 8),
             child: ListTile(
               dense: true,
-              leading: dish.imageBase64 != null
-                  ? Image.memory(
-                      base64Decode(dish.imageBase64!),
-                      width: 40,
-                      height: 40,
-                      fit: BoxFit.cover,
-                    )
-                  : const Icon(Icons.restaurant, size: 32),
+              leading:
+                  dish.imageBase64 != null
+                      ? Image.memory(
+                        base64Decode(dish.imageBase64!),
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.cover,
+                      )
+                      : const Icon(Icons.restaurant, size: 32),
               title: Text(dish.name, style: const TextStyle(fontSize: 13)),
+              subtitle: Text(
+                '₱${adjustedPrice.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFFFFC024),
+                ),
+              ),
+              trailing: DropdownButton<String>(
+                value: _setMenuDishPaxOptions[dishId] ?? dish.paxOptions.first,
+                isDense: true,
+                style: const TextStyle(fontSize: 12),
+                items:
+                    dish.paxOptions
+                        .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                        .toList(),
+                onChanged: (v) {
+                  setState(() {
+                    _setMenuDishPaxOptions[dishId] = v!;
+                  });
+                },
+              ),
             ),
           );
         }),
@@ -3285,7 +4031,9 @@ class _InquireFormState extends State<_InquireForm> {
                 side: const BorderSide(color: Color(0xFF4CAF50), width: 2),
                 elevation: 0,
                 minimumSize: const Size(double.infinity, 48),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
               child: const Text('CREATE MY EVENT DESIGN'),
             ),
@@ -3300,7 +4048,9 @@ class _InquireFormState extends State<_InquireForm> {
                 side: BorderSide(color: Colors.red.shade300, width: 2),
                 elevation: 0,
                 minimumSize: const Size(double.infinity, 48),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
               child: const Text(
                 'NO I\'D LIKE MACRINAS TO CREATE MY\nEVENT DESIGN INSTEAD',
@@ -3317,55 +4067,63 @@ class _InquireFormState extends State<_InquireForm> {
   void _showMacrinaDesignDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Macrina\'s Will Create Your Design'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Let us know what themes, colors, or styles you\'d like for your event.',
-              style: TextStyle(fontSize: 13),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Macrina\'s Will Create Your Design'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Let us know what themes, colors, or styles you\'d like for your event.',
+                  style: TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _themeRequestCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Theme/Style Preferences',
+                    hintText:
+                        'e.g., Rustic, Elegant, Garden theme, Pink and gold colors...',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 4,
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _themeRequestCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Theme/Style Preferences',
-                hintText: 'e.g., Rustic, Elegant, Garden theme, Pink and gold colors...',
-                border: OutlineInputBorder(),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
               ),
-              maxLines: 4,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+              ElevatedButton(
+                onPressed: () {
+                  if (_themeRequestCtrl.text.trim().isNotEmpty) {
+                    setState(() => _wantsCustomDesign = false);
+                  }
+                  Navigator.pop(context);
+                },
+                child: const Text('Confirm'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              if (_themeRequestCtrl.text.trim().isNotEmpty) {
-                setState(() => _wantsCustomDesign = false);
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('Confirm'),
-          ),
-        ],
-      ),
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label,
-      {TextInputType? keyboardType}) {
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label, {
+    TextInputType? keyboardType,
+  }) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
       ),
       style: const TextStyle(fontSize: 13),
     );
@@ -3383,14 +4141,23 @@ class _InquireFormState extends State<_InquireForm> {
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
       ),
-      items: options
-          .map((o) => DropdownMenuItem(
-                value: o,
-                child: Text(displayMap?[o] ?? o, style: const TextStyle(fontSize: 13)),
-              ))
-          .toList(),
+      items:
+          options
+              .map(
+                (o) => DropdownMenuItem(
+                  value: o,
+                  child: Text(
+                    displayMap?[o] ?? o,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              )
+              .toList(),
       onChanged: (v) => onChanged(v!),
     );
   }
@@ -3398,160 +4165,243 @@ class _InquireFormState extends State<_InquireForm> {
   void _showCustomDesignDialog() {
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Create Your Event Design'),
-          content: SizedBox(
-            width: 500,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Upload or link inspiration photos for your event design:',
-                    style: TextStyle(fontSize: 13),
-                  ),
-                  const SizedBox(height: 16),
-                  // Photo URL input
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _designPhotoCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Photo URL',
-                            hintText: 'Paste image link here...',
-                            border: OutlineInputBorder(),
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('Create Your Event Design'),
+                  content: SizedBox(
+                    width: 500,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Upload or link inspiration photos for your event design:',
+                            style: TextStyle(fontSize: 13),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: () {
-                          if (_designPhotoCtrl.text.trim().isNotEmpty) {
-                            setDialogState(() {
-                              _designPhotoUrls.add(_designPhotoCtrl.text.trim());
-                              _designPhotoCtrl.clear();
-                            });
-                            setState(() {});
-                          }
-                        },
-                        child: const Text('Add'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  // Photo count
-                  Text(
-                    '${_designPhotoUrls.length} photo(s) added',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-                  // Focused photo display (larger)
-                  if (_designPhotoUrls.isNotEmpty) ...[
-                    Container(
-                      height: 200,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          _focusedPhotoIndex != null && _focusedPhotoIndex! < _designPhotoUrls.length
-                              ? _designPhotoUrls[_focusedPhotoIndex!]
-                              : _designPhotoUrls.first,
-                          fit: BoxFit.contain,
-                          errorBuilder: (ctx, err, stack) => const Center(
-                            child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // Photo carousel (smaller thumbnails)
-                    SizedBox(
-                      height: 80,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _designPhotoUrls.length,
-                        itemBuilder: (ctx, index) {
-                          final isFocused = _focusedPhotoIndex == index ||
-                              (_focusedPhotoIndex == null && index == 0);
-                          return GestureDetector(
-                            onTap: () {
-                              setDialogState(() {
-                                _focusedPhotoIndex = index;
-                              });
-                            },
-                            child: Container(
-                              width: 80,
-                              margin: const EdgeInsets.only(right: 8),
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: isFocused ? const Color(0xFFFFC024) : Colors.grey.shade300,
-                                  width: isFocused ? 3 : 1,
+                          const SizedBox(height: 16),
+                          // Photo URL input
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _designPhotoCtrl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Photo URL',
+                                    hintText: 'Paste image link here...',
+                                    border: OutlineInputBorder(),
+                                  ),
                                 ),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton(
+                                onPressed: () {
+                                  if (_designPhotoCtrl.text.trim().isNotEmpty) {
+                                    setDialogState(() {
+                                      _designPhotoUrls.add(
+                                        _designPhotoCtrl.text.trim(),
+                                      );
+                                      _designPhotoCtrl.clear();
+                                    });
+                                    setState(() {});
+                                  }
+                                },
+                                child: const Text('Add'),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          // Photo count
+                          Text(
+                            '${_designPhotoUrls.length} photo(s) added',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          // List of added URLs (for verification)
+                          if (_designPhotoUrls.isNotEmpty) ...[
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: _designPhotoUrls.asMap().entries.map((entry) {
+                                  final idx = entry.key;
+                                  final url = entry.value;
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 2),
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          '${idx + 1}. ',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey.shade600,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Text(
+                                            url.length > 50 ? '${url.substring(0, 50)}...' : url,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey.shade700,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                          // Focused photo display (larger)
+                          if (_designPhotoUrls.isNotEmpty) ...[
+                            Container(
+                              height: 200,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    Image.network(
-                                      _designPhotoUrls[index],
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (ctx, err, stack) => const Center(
-                                        child: Icon(Icons.broken_image, color: Colors.grey),
-                                      ),
-                                    ),
-                                    // Delete button
-                                    Positioned(
-                                      top: 2,
-                                      right: 2,
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          setDialogState(() {
-                                            _designPhotoUrls.removeAt(index);
-                                            if (_focusedPhotoIndex != null && _focusedPhotoIndex! >= index) {
-                                              _focusedPhotoIndex = _focusedPhotoIndex! > 0 ? _focusedPhotoIndex! - 1 : null;
-                                            }
-                                          });
-                                          setState(() {});
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(2),
-                                          decoration: const BoxDecoration(
-                                            color: Colors.red,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(Icons.close, size: 14, color: Colors.white),
+                                child: Image.network(
+                                  _focusedPhotoIndex != null &&
+                                          _focusedPhotoIndex! <
+                                              _designPhotoUrls.length
+                                      ? _designPhotoUrls[_focusedPhotoIndex!]
+                                      : _designPhotoUrls.first,
+                                  fit: BoxFit.contain,
+                                  errorBuilder:
+                                      (ctx, err, stack) => const Center(
+                                        child: Icon(
+                                          Icons.broken_image,
+                                          size: 48,
+                                          color: Colors.grey,
                                         ),
                                       ),
-                                    ),
-                                  ],
                                 ),
                               ),
                             ),
-                          );
-                        },
+                            const SizedBox(height: 8),
+                            // Photo carousel (smaller thumbnails)
+                            SizedBox(
+                              height: 80,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: _designPhotoUrls.length,
+                                itemBuilder: (ctx, index) {
+                                  final isFocused =
+                                      _focusedPhotoIndex == index ||
+                                      (_focusedPhotoIndex == null &&
+                                          index == 0);
+                                  return GestureDetector(
+                                    onTap: () {
+                                      setDialogState(() {
+                                        _focusedPhotoIndex = index;
+                                      });
+                                    },
+                                    child: Container(
+                                      width: 80,
+                                      margin: const EdgeInsets.only(right: 8),
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                          color:
+                                              isFocused
+                                                  ? const Color(0xFFFFC024)
+                                                  : Colors.grey.shade300,
+                                          width: isFocused ? 3 : 1,
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Stack(
+                                          fit: StackFit.expand,
+                                          children: [
+                                            Image.network(
+                                              _designPhotoUrls[index],
+                                              fit: BoxFit.cover,
+                                              errorBuilder:
+                                                  (ctx, err, stack) =>
+                                                      const Center(
+                                                        child: Icon(
+                                                          Icons.broken_image,
+                                                          color: Colors.grey,
+                                                        ),
+                                                      ),
+                                            ),
+                                            // Delete button
+                                            Positioned(
+                                              top: 2,
+                                              right: 2,
+                                              child: GestureDetector(
+                                                onTap: () {
+                                                  setDialogState(() {
+                                                    _designPhotoUrls.removeAt(
+                                                      index,
+                                                    );
+                                                    if (_focusedPhotoIndex !=
+                                                            null &&
+                                                        _focusedPhotoIndex! >=
+                                                            index) {
+                                                      _focusedPhotoIndex =
+                                                          _focusedPhotoIndex! >
+                                                                  0
+                                                              ? _focusedPhotoIndex! -
+                                                                  1
+                                                              : null;
+                                                    }
+                                                  });
+                                                  setState(() {});
+                                                },
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(
+                                                    2,
+                                                  ),
+                                                  decoration:
+                                                      const BoxDecoration(
+                                                        color: Colors.red,
+                                                        shape: BoxShape.circle,
+                                                      ),
+                                                  child: const Icon(
+                                                    Icons.close,
+                                                    size: 14,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Done'),
+                    ),
                   ],
-                ],
-              ),
-            ),
+                ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Done'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

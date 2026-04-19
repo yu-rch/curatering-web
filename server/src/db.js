@@ -103,7 +103,10 @@ export async function initDb() {
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       full_name TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('admin','manager','supervisor','super_admin')),
+      role TEXT NOT NULL CHECK (role IN ('admin','manager','supervisor','super_admin','cashier')),
+      birthday DATE,
+      contact_number TEXT,
+      employment_type TEXT CHECK (employment_type IN ('regular','part_time')),
       is_verified BOOLEAN DEFAULT FALSE,
       otp_code VARCHAR(6),
       otp_expiry TIMESTAMP,
@@ -260,17 +263,6 @@ export async function initDb() {
       points_used INTEGER NOT NULL,
       UNIQUE(user_id, reward_id)
     );
-  `);
-
-  // Insert sample rewards
-  await pool.query(`
-    INSERT INTO rewards (title, description, points_cost, category, icon_name, color, is_limited) VALUES
-    ('10% Off Next Order', 'Get 10% discount on your next catering order', 500, 'Discount', 'local_offer', 'green', FALSE),
-    ('Free Birthday Cake', 'Complimentary birthday cake with any catering order', 800, 'Free Item', 'cake', 'pink', FALSE),
-    ('Priority Service', 'Skip the queue and get priority service for your event', 1200, 'Service', 'star', 'amber', FALSE),
-    ('Double Points Day', 'Earn 2x points on all orders for one day', 0, 'Bonus', 'diamond', 'purple', TRUE),
-    ('VIP Event Access', 'Exclusive access to VIP events and special offers', 2000, 'Exclusive', 'emoji_events', 'deepOrange', FALSE)
-    ON CONFLICT DO NOTHING;
   `);
 
   await pool.query(`
@@ -462,23 +454,20 @@ export async function initDb() {
     );
   `);
 
+  // Migration: Add full_name and phone columns if they don't exist (for existing tables)
+  try {
+    await pool.query(`ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS full_name TEXT`);
+    await pool.query(`ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS phone TEXT`);
+    console.log('Migration: Added full_name and phone columns to restaurant_orders');
+  } catch (err) {
+    console.log('Migration check for restaurant_orders columns:', err.message);
+  }
+
   // Insert default dishes from CSV if table is empty
   const dishCount = await pool.query(`SELECT COUNT(*) FROM menu_dishes`);
   if (parseInt(dishCount.rows[0].count) === 0) {
     console.log('Inserting default menu dishes...');
     
-    // Catering Set dishes (from CSV)
-    const cateringSets = [
-      { name: 'SET A', ingredients: ['Crispy Pata (Medium)', 'Fried Chicken (8 pcs)', 'Chopsuey', 'Shanghai (25 pcs)', 'Rice (3 pcs)'] },
-      { name: 'SET B', ingredients: ['Lechon Belly (1kg)', 'Chicken Curry (8 pcs)', 'Chopsuey', 'Carbonara (1 tray)', 'Rice (3 pcs)'] },
-      { name: 'SET C', ingredients: ['Lechon Belly (1kg)', 'Fried Chicken (8 pcs)', 'Chopsuey', 'Shanghai (25 pcs)', 'Rice (3 pcs)'] },
-      { name: 'SET D', ingredients: ['Lechon Belly (1kg)', 'Chicken Curry (8 pcs)', 'Lumpiang Sariwa (15 pcs)', 'Carbonara (1 tray)', 'Rice (3 pcs)'] },
-      { name: 'SET E', ingredients: ['Lechon Belly (1kg)', 'Fried Chicken (8 pcs)', 'Chopsuey', 'Lumpiang Sariwa (15 pcs)', 'Rice (3 pcs)'] },
-      { name: 'SET F', ingredients: ['Crispy Pata (Large)', 'Fried Chicken (12 pcs)', 'Chopsuey', 'Shanghai (30 pcs)', 'Rice (4 pcs)'] },
-      { name: 'SET G', ingredients: ['Lechon Belly (2kg)', 'Chicken Curry (12 pcs)', 'Chopsuey', 'Carbonara (2 trays)', 'Rice (4 pcs)'] },
-      { name: 'SET H', ingredients: ['Lechon Belly (2kg)', 'Fried Chicken (12 pcs)', 'Chopsuey', 'Shanghai (30 pcs)', 'Rice (4 pcs)'] },
-      { name: 'SET I', ingredients: ['Lechon Belly (2kg)', 'Chicken Curry (12 pcs)', 'Lumpiang Sariwa (20 pcs)', 'Carbonara (2 trays)', 'Rice (4 pcs)'] },
-    ];
 
     for (const set of cateringSets) {
       await pool.query(`
@@ -486,62 +475,6 @@ export async function initDb() {
         VALUES ($1, $2, $3, $4, $5)
       `, [set.name, '0.00', 'catering', JSON.stringify(['10 pax', '20 pax', '30 pax', '50 pax', '100 pax']), JSON.stringify(set.ingredients)]);
     }
-
-    // Restaurant menu items
-    const restaurantItems = [
-      // Rice Meals
-      { name: 'Bistek', price: '180', category: 'restaurant', ingredients: ['Beef', 'Onions', 'Soy Sauce', 'Calamansi', 'Garlic', 'Rice'], sauces: [] },
-      { name: 'Pork Steak', price: '170', category: 'restaurant', ingredients: ['Pork', 'Onions', 'Soy Sauce', 'Calamansi', 'Garlic', 'Rice'], sauces: [] },
-      { name: 'Chicken Curry', price: '170', category: 'restaurant', ingredients: ['Chicken', 'Coconut Milk', 'Curry Powder', 'Potatoes', 'Carrots', 'Rice'], sauces: [] },
-      { name: 'Porkchop', price: '170', category: 'restaurant', ingredients: ['Pork', 'Gravy', 'Rice'], sauces: ['Gravy'] },
-      { name: 'Fried Chicken', price: '170', category: 'restaurant', ingredients: ['Chicken', 'Rice'], sauces: ['Gravy'] },
-      { name: 'Beefsteak', price: '180', category: 'restaurant', ingredients: ['Beef', 'Onions', 'Soy Sauce', 'Calamansi', 'Garlic', 'Rice'], sauces: [] },
-      { name: 'Liempo', price: '180', category: 'restaurant', ingredients: ['Pork Belly', 'Soy Sauce', 'Vinegar', 'Garlic', 'Rice'], sauces: [] },
-      { name: 'Pata Kare-Kare', price: '195', category: 'restaurant', ingredients: ['Pork Pata', 'Peanut Sauce', 'Vegetables', 'Rice'], sauces: ['Bagoong'] },
-      { name: 'Beef Kare-Kare', price: '195', category: 'restaurant', ingredients: ['Beef', 'Peanut Sauce', 'Vegetables', 'Rice'], sauces: ['Bagoong'] },
-      { name: 'Sinigang na Baboy', price: '195', category: 'restaurant', ingredients: ['Pork', 'Tamarind', 'Vegetables', 'Rice'], sauces: [] },
-      { name: 'Sinigang na Beef', price: '195', category: 'restaurant', ingredients: ['Beef', 'Tamarind', 'Vegetables', 'Rice'], sauces: [] },
-      { name: 'Lechon Kawali', price: '170', category: 'restaurant', ingredients: ['Pork Belly', 'Lechon Sauce', 'Rice'], sauces: ['Lechon Sauce'] },
-      { name: 'Buttered Chicken', price: '220', category: 'restaurant', ingredients: ['Chicken', 'Butter', 'Garlic', 'Rice'], sauces: [] },
-      { name: 'Crispy Pata (Solo)', price: '250', category: 'restaurant', ingredients: ['Pork Pata', 'Soy Vinegar Dip', 'Rice'], sauces: ['Soy Vinegar Dip'] },
-      { name: 'Crispy Pata (Buddy)', price: '350', category: 'restaurant', ingredients: ['Pork Pata', 'Soy Vinegar Dip', 'Rice'], sauces: ['Soy Vinegar Dip'] },
-      { name: 'Crispy Pata (Superbuddy)', price: '430', category: 'restaurant', ingredients: ['Pork Pata', 'Soy Vinegar Dip', 'Rice'], sauces: ['Soy Vinegar Dip'] },
-      // Silog Meals
-      { name: 'Tapsilog', price: '150', category: 'restaurant', ingredients: ['Tapa', 'Egg', 'Garlic Rice'], sauces: [] },
-      { name: 'Bacsilog', price: '130', category: 'restaurant', ingredients: ['Bacon', 'Egg', 'Garlic Rice'], sauces: [] },
-      { name: 'Hamsilog', price: '130', category: 'restaurant', ingredients: ['Ham', 'Egg', 'Garlic Rice'], sauces: [] },
-      { name: 'Chicksilog', price: '150', category: 'restaurant', ingredients: ['Chicken', 'Egg', 'Garlic Rice'], sauces: [] },
-      { name: 'Liemposilog', price: '150', category: 'restaurant', ingredients: ['Liempo', 'Egg', 'Garlic Rice'], sauces: [] },
-      { name: 'Porksilog', price: '150', category: 'restaurant', ingredients: ['Pork Chop', 'Egg', 'Garlic Rice'], sauces: [] },
-      { name: 'Sisig Silog', price: '180', category: 'restaurant', ingredients: ['Sisig', 'Egg', 'Garlic Rice'], sauces: [] },
-      { name: 'Chao Fan', price: '130', category: 'restaurant', ingredients: ['Rice', 'Vegetables', 'Meat'], sauces: [] },
-      // Pasta
-      { name: 'Carbonara', price: '200', category: 'restaurant', ingredients: ['Pasta', 'Cream', 'Bacon', 'Mushroom', 'Cheese'], sauces: [] },
-      { name: 'Spaghetti', price: '180', category: 'restaurant', ingredients: ['Pasta', 'Tomato Sauce', 'Hotdog', 'Ground Pork'], sauces: [] },
-      // Sandwiches
-      { name: 'Hamburger', price: '80', category: 'restaurant', ingredients: ['Bun', 'Beef Patty', 'Lettuce', 'Tomato'], sauces: [] },
-      { name: 'Cheese Burger', price: '90', category: 'restaurant', ingredients: ['Bun', 'Beef Patty', 'Cheese', 'Lettuce', 'Tomato'], sauces: [] },
-      { name: 'Ham Sandwich', price: '60', category: 'restaurant', ingredients: ['Bread', 'Ham', 'Lettuce', 'Mayonnaise'], sauces: [] },
-      // Drinks
-      { name: 'Coke', price: '40', category: 'restaurant', ingredients: ['Coca-Cola'], sauces: [] },
-      { name: 'Sprite', price: '40', category: 'restaurant', ingredients: ['Sprite'], sauces: [] },
-      { name: 'Royal', price: '40', category: 'restaurant', ingredients: ['Royal Tru-Orange'], sauces: [] },
-      { name: 'Coke Zero', price: '45', category: 'restaurant', ingredients: ['Coke Zero'], sauces: [] },
-      { name: 'Iced Tea', price: '35', category: 'restaurant', ingredients: ['Tea', 'Lemon', 'Sugar', 'Ice'], sauces: [] },
-      { name: 'Pineapple Juice', price: '35', category: 'restaurant', ingredients: ['Pineapple Juice'], sauces: [] },
-      { name: 'Iced Coffee', price: '50', category: 'restaurant', ingredients: ['Coffee', 'Milk', 'Sugar', 'Ice'], sauces: [] },
-      { name: 'Hot Coffee', price: '45', category: 'restaurant', ingredients: ['Coffee', 'Milk', 'Sugar'], sauces: [] },
-      // Crispy Pata Family
-      { name: 'Crispy Pata (Small)', price: '550', category: 'restaurant', ingredients: ['Pork Pata', 'Soy Vinegar Dip'], sauces: ['Soy Vinegar Dip'] },
-      { name: 'Crispy Pata (Medium)', price: '780', category: 'restaurant', ingredients: ['Pork Pata', 'Soy Vinegar Dip'], sauces: ['Soy Vinegar Dip'] },
-      { name: 'Crispy Pata (Large)', price: '950', category: 'restaurant', ingredients: ['Pork Pata', 'Soy Vinegar Dip'], sauces: ['Soy Vinegar Dip'] },
-      // Patatim Family
-      { name: 'Patatim (Small)', price: '550', category: 'restaurant', ingredients: ['Pork Pata', 'Star Anise', 'Soy Sauce', 'Sugar'], sauces: [] },
-      { name: 'Patatim (Medium)', price: '780', category: 'restaurant', ingredients: ['Pork Pata', 'Star Anise', 'Soy Sauce', 'Sugar'], sauces: [] },
-      { name: 'Patatim (Large)', price: '950', category: 'restaurant', ingredients: ['Pork Pata', 'Star Anise', 'Soy Sauce', 'Sugar'], sauces: [] },
-      // Champorado
-      { name: 'Champorado', price: '80', category: 'restaurant', ingredients: ['Rice', 'Chocolate', 'Milk', 'Sugar'], sauces: [] },
-    ];
 
     for (const item of restaurantItems) {
       await pool.query(`

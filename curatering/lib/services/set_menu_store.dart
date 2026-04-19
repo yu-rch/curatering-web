@@ -33,7 +33,8 @@ class SetMenu {
 class SetMenuStore extends ChangeNotifier {
   SetMenuStore._internal() {
     _items = [];
-    loadSetMenus();
+    // Defer loading to avoid notifyListeners during widget build
+    Future.microtask(() => loadSetMenus());
   }
 
   static final SetMenuStore instance = SetMenuStore._internal();

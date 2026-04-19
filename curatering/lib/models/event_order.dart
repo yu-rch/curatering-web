@@ -50,8 +50,8 @@ class PostAnalysisDto {
 
 class EventOrderDto {
   final String id;
-  final String source; // new_event | online_inquiry
-  final String status; // new_event | online_inquiries | for_processing | for_post_analysis | completed
+  final String source;
+  final String status;
 
   final String eventTitle;
   final String orderType; // catering | catering_event

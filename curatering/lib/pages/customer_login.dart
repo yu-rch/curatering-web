@@ -4,6 +4,9 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 
+// Runtime fallback for dev mode (String.fromEnvironment defaultValue doesn't work in JIT mode)
+String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'http://localhost:3000' : apiBaseUrl;
+
 class CustomerLoginPage extends StatefulWidget {
   final bool? redirectToCheckout;
   const CustomerLoginPage({super.key, this.redirectToCheckout});
@@ -56,7 +59,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
     try {
       final response = await http.post(
-        Uri.parse('$apiBaseUrl/api/customer/forgot-password'),
+        Uri.parse('/api/customer/forgot-password'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'email': _emailController.text.trim(),
@@ -106,7 +109,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
     try {
       final response = await http.post(
-        Uri.parse('$apiBaseUrl/api/customer/reset-password'),
+        Uri.parse('/api/customer/reset-password'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'email': _resetEmail,
@@ -149,7 +152,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
     try {
       final response = await http.post(
-        Uri.parse('$apiBaseUrl/api/customer/login'),
+        Uri.parse('$_apiBaseUrl/api/customer/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'email': _emailController.text.trim(),
@@ -204,7 +207,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
     try {
       final response = await http.post(
-        Uri.parse('$apiBaseUrl/api/customer/signup'),
+        Uri.parse('$_apiBaseUrl/api/customer/signup'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'email': _emailController.text.trim(),
@@ -252,7 +255,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
     try {
       final response = await http.post(
-        Uri.parse('$apiBaseUrl/api/customer/verify-otp'),
+        Uri.parse('$_apiBaseUrl/api/customer/verify-otp'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'email': _pendingEmail,
@@ -263,12 +266,11 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? 'Email verified successfully')),
-        );
-        
-        // Auto login after verification
-        await _handleLogin();
+        // Close dialog immediately on success
+        if (mounted) {
+          Navigator.of(context).pop({'verified': true, 'email': _pendingEmail});
+        }
+        return;
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(data['error'] ?? 'Verification failed')),

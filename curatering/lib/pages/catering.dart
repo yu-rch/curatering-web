@@ -387,6 +387,13 @@ class _ManageEventsState extends State<ManageEvents>
     'Birthday',
     'Corporate',
     'Private Party',
+    'Sports',
+    'Government',
+    'Show',
+    'Educational',
+    'Reunion',
+    'Gala',
+    'Dinner',
     'Other',
   ];
 
@@ -1412,6 +1419,25 @@ class _ManageEventsState extends State<ManageEvents>
 
     return Column(
       children: setMenus.map((setMenu) {
+        // Calculate total price for this set menu
+        double totalPrice = 0;
+        final dishes = setMenu['dishes'] as List<String>;
+        for (final dishId in dishes) {
+          final dish = MenuStore.instance.allDishes.firstWhere(
+            (d) => d.id == dishId,
+            orElse: () => MenuDish(
+              id: dishId,
+              name: 'Unknown',
+              category: '',
+              price: '0',
+              archived: false,
+              paxOptions: ['10 pax'],
+            ),
+          );
+          final price = double.tryParse(dish.price) ?? 0;
+          totalPrice += price;
+        }
+
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
@@ -1420,12 +1446,26 @@ class _ManageEventsState extends State<ManageEvents>
               setMenu['name'] as String,
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
             ),
-            subtitle: Text(
-              setMenu['description'] as String,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  setMenu['description'] as String,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11),
+                ),
+                Text(
+                  '₱${totalPrice.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFFFC024),
+                  ),
+                ),
+              ],
             ),
+            isThreeLine: true,
             trailing: Radio<String>(
               value: setMenu['id'] as String,
               groupValue: selectedSetMenuId,
@@ -1552,10 +1592,11 @@ class _ManageEventsState extends State<ManageEvents>
         final dish = MenuStore.instance.allDishes.firstWhere(
           (d) => d.id == dishId,
         );
+        final paxOption = selectedPaxOptions[dishId] ?? dish.paxOptions.first;
         menuItems.add({
           'dishId': dishId,
           'dishName': dish.name,
-          'paxOption': '10 pax',
+          'paxOption': paxOption,
           'price': dish.price,
         });
       }
@@ -3206,7 +3247,7 @@ class _ManageEventsState extends State<ManageEvents>
                 selectedOrder.scheduleSlots.first.date,
               ),
             _buildEventInfoRow(
-              'TRANSACTION NO',
+              'ORDER NO',
               _transactionNumberForOrder(selectedOrder),
             ),
             const SizedBox(height: 16),
@@ -3421,14 +3462,6 @@ class _ManageEventsState extends State<ManageEvents>
                   );
                 }).toList(),
               ),
-
-            // Payment Information Section
-            // if (!_isSupervisor) ...[
-            //   const SizedBox(height: 20),
-            //   _buildSectionTitle('PAYMENT INFORMATION'),
-            //   const SizedBox(height: 12),
-            //   _buildPaymentInfo(selectedOrder),
-            // ],
           ],
         ),
       ),
@@ -3438,9 +3471,9 @@ class _ManageEventsState extends State<ManageEvents>
   String _transactionNumberForOrder(EventOrderDto order) {
     try {
       final txn =
-          (order as dynamic).transactionNumber ??
-          (order as dynamic).transactionNo ??
-          (order as dynamic).transactionId;
+          (order as dynamic).orderNumber ??
+          (order as dynamic).orderNo ??
+          (order as dynamic).orderId;
       if (txn is String && txn.trim().isNotEmpty) return txn;
       if (txn is int) return txn.toString();
     } catch (_) {}
@@ -5414,7 +5447,7 @@ class _ManageEventsState extends State<ManageEvents>
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Older events are available in the Transactions page.',
+                        'Older events are available in the Order History page.',
                         style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
                       ),
                     ],

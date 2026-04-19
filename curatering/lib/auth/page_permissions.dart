@@ -8,7 +8,7 @@ class PagePermissionRoutes {
   static const String loyalty = '/loyalty';
   static const String menu = '/menu';
   static const String reports = '/reports';
-  static const String transactions = '/transactions';
+  static const String orderHistory = '/order-history';
   static const String archive = '/archive';
   static const String website = '/website';
   static const String settings = '/settings';
@@ -20,7 +20,7 @@ class PagePermissionRoutes {
     ('Loyalty Rewards', loyalty),
     ('Menu', menu),
     ('Reports', reports),
-    ('Transactions', transactions),
+    ('Order History', orderHistory),
     ('Archive', archive),
     ('Website', website),
     ('Settings', settings),

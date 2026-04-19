@@ -94,7 +94,10 @@ class _ManageAccountsState extends State<ManageAccounts> {
     final fullNameCtrl = TextEditingController();
     final emailCtrl = TextEditingController();
     final passwordCtrl = TextEditingController();
+    final birthdayCtrl = TextEditingController();
+    final contactNumberCtrl = TextEditingController();
     Role role = Role.supervisor;
+    String employmentType = 'regular';
 
     final ok = await showDialog<bool>(
       context: context,
@@ -105,18 +108,34 @@ class _ManageAccountsState extends State<ManageAccounts> {
               title: const Text('Create Account'),
               content: SingleChildScrollView(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     TextField(controller: fullNameCtrl, decoration: const InputDecoration(labelText: 'Full name')),
                     TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email')),
                     TextField(controller: passwordCtrl, decoration: const InputDecoration(labelText: 'Password'), obscureText: true),
+                    TextField(controller: birthdayCtrl, decoration: const InputDecoration(labelText: 'Birthday (YYYY-MM-DD)')),
+                    TextField(controller: contactNumberCtrl, decoration: const InputDecoration(labelText: 'Contact Number'), keyboardType: TextInputType.phone),
                     const SizedBox(height: 10),
+                    const Text('Role:', style: TextStyle(fontSize: 12)),
                     DropdownButton<Role>(
+                      isExpanded: true,
                       value: role,
                       items: Role.values
                           .where((r) => r != Role.admin)
                           .map((r) => DropdownMenuItem(value: r, child: Text(r.displayName)))
                           .toList(),
                       onChanged: (v) => setStateDialog(() => role = v ?? role),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text('Employment Type:', style: TextStyle(fontSize: 12)),
+                    DropdownButton<String>(
+                      isExpanded: true,
+                      value: employmentType,
+                      items: const [
+                        DropdownMenuItem(value: 'regular', child: Text('Regular')),
+                        DropdownMenuItem(value: 'part_time', child: Text('Part-time')),
+                      ],
+                      onChanged: (v) => setStateDialog(() => employmentType = v ?? employmentType),
                     ),
                   ],
                 ),
@@ -131,6 +150,9 @@ class _ManageAccountsState extends State<ManageAccounts> {
                         password: passwordCtrl.text,
                         fullName: fullNameCtrl.text.trim(),
                         role: roleToString(role),
+                        birthday: birthdayCtrl.text.trim().isEmpty ? null : birthdayCtrl.text.trim(),
+                        contactNumber: contactNumberCtrl.text.trim().isEmpty ? null : contactNumberCtrl.text.trim(),
+                        employmentType: employmentType,
                       );
                       if (!context.mounted) return;
                       Navigator.of(context).pop(true);
@@ -153,7 +175,10 @@ class _ManageAccountsState extends State<ManageAccounts> {
 
   Future<void> _editUser(UserDto user) async {
     final fullNameCtrl = TextEditingController(text: user.fullName);
+    final birthdayCtrl = TextEditingController(text: user.birthday ?? '');
+    final contactNumberCtrl = TextEditingController(text: user.contactNumber ?? '');
     Role role = user.role;
+    String employmentType = user.employmentType ?? 'regular';
 
     final ok = await showDialog<bool>(
       context: context,
@@ -164,16 +189,32 @@ class _ManageAccountsState extends State<ManageAccounts> {
               title: const Text('Edit Account'),
               content: SingleChildScrollView(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     TextField(controller: fullNameCtrl, decoration: const InputDecoration(labelText: 'Full name')),
+                    TextField(controller: birthdayCtrl, decoration: const InputDecoration(labelText: 'Birthday (YYYY-MM-DD)')),
+                    TextField(controller: contactNumberCtrl, decoration: const InputDecoration(labelText: 'Contact Number'), keyboardType: TextInputType.phone),
                     const SizedBox(height: 10),
+                    const Text('Role:', style: TextStyle(fontSize: 12)),
                     DropdownButton<Role>(
+                      isExpanded: true,
                       value: role,
                       items: Role.values
                           .where((r) => r != Role.admin)
                           .map((r) => DropdownMenuItem(value: r, child: Text(r.displayName)))
                           .toList(),
                       onChanged: (v) => setStateDialog(() => role = v ?? role),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text('Employment Type:', style: TextStyle(fontSize: 12)),
+                    DropdownButton<String>(
+                      isExpanded: true,
+                      value: employmentType,
+                      items: const [
+                        DropdownMenuItem(value: 'regular', child: Text('Regular')),
+                        DropdownMenuItem(value: 'part_time', child: Text('Part-time')),
+                      ],
+                      onChanged: (v) => setStateDialog(() => employmentType = v ?? employmentType),
                     ),
                   ],
                 ),
@@ -187,6 +228,9 @@ class _ManageAccountsState extends State<ManageAccounts> {
                         userId: user.id,
                         fullName: fullNameCtrl.text.trim(),
                         role: roleToString(role),
+                        birthday: birthdayCtrl.text.trim().isEmpty ? null : birthdayCtrl.text.trim(),
+                        contactNumber: contactNumberCtrl.text.trim().isEmpty ? null : contactNumberCtrl.text.trim(),
+                        employmentType: employmentType,
                       );
                       if (!context.mounted) return;
                       Navigator.of(context).pop(true);
@@ -294,6 +338,18 @@ class _ManageAccountsState extends State<ManageAccounts> {
             Text(u.email, style: TextStyle(color: Colors.grey.shade700)),
             const SizedBox(height: 4),
             Text('Role: ${u.role.displayName}', style: const TextStyle(fontWeight: FontWeight.w600)),
+            if (u.birthday != null && u.birthday!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('Birthday: ${u.birthday}', style: TextStyle(color: Colors.grey.shade700)),
+            ],
+            if (u.contactNumber != null && u.contactNumber!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('Contact: ${u.contactNumber}', style: TextStyle(color: Colors.grey.shade700)),
+            ],
+            if (u.employmentType != null && u.employmentType!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('Employment: ${u.employmentType == 'part_time' ? 'Part-time' : 'Regular'}', style: TextStyle(color: Colors.grey.shade700)),
+            ],
             if (isCurrentUserSuperAdmin) ...[
               const SizedBox(height: 4),
               Text('ID: ${u.id}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontFamily: 'monospace')),

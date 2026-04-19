@@ -7,7 +7,7 @@ import '../widgets/app_scaffold.dart';
 import '../utils/order_calculations.dart';
 
 class TransactionItem {
-  final String transactionNo;
+  final String orderNo;
   final String customerName;
   final String eventTitle;
   final String eventType;
@@ -15,7 +15,7 @@ class TransactionItem {
   final String loyaltyRewards;
 
   TransactionItem({
-    required this.transactionNo,
+    required this.orderNo,
     required this.customerName,
     required this.eventTitle,
     required this.eventType,
@@ -85,7 +85,7 @@ class _TransactionsState extends State<Transactions> {
         }
       });
     } catch (e) {
-      setState(() => _errorMessage = 'Failed to load transactions.');
+      setState(() => _errorMessage = 'Failed to load orders.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -152,11 +152,11 @@ class _TransactionsState extends State<Transactions> {
             return haystack.contains(_searchQuery);
           }).toList();
 
-    final transactions = filteredOrders.map((o) {
+    final orders = filteredOrders.map((o) {
       final totalCost = computeOrderTotalCost(o);
       final points = computeLoyaltyPointsFromCost(totalCost);
       return TransactionItem(
-        transactionNo: o.id,
+        orderNo: o.id,
         customerName: o.customerName,
         eventTitle: o.eventTitle,
         eventType: o.eventType,
@@ -176,7 +176,7 @@ class _TransactionsState extends State<Transactions> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Transactions',
+              'Orders',
               style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
@@ -195,7 +195,7 @@ class _TransactionsState extends State<Transactions> {
                               child: Text(
                                 _isLoading
                                     ? 'Loading...'
-                                    : (_errorMessage ?? 'No transactions yet.'),
+                                    : (_errorMessage ?? 'No orders yet.'),
                                 style: TextStyle(color: Colors.grey.shade600),
                               ),
                             ),
@@ -220,7 +220,7 @@ class _TransactionsState extends State<Transactions> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Transactions',
+                              'Orders',
                               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                             ),
                             const SizedBox(height: 16),
@@ -231,12 +231,12 @@ class _TransactionsState extends State<Transactions> {
                                   child: CircularProgressIndicator(),
                                 ),
                               )
-                            else if (transactions.isEmpty)
+                            else if (orders.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.symmetric(vertical: 40),
                                 child: Center(
                                   child: Text(
-                                    'No transactions available for this date.',
+                                    'No orders available for this date.',
                                     style: TextStyle(color: Colors.grey.shade600),
                                   ),
                                 ),
@@ -246,16 +246,16 @@ class _TransactionsState extends State<Transactions> {
                                 scrollDirection: Axis.horizontal,
                                 child: DataTable(
                                   columns: const [
-                                    DataColumn(label: Text('Transaction No.')),
+                                    DataColumn(label: Text('Order No.')),
                                     DataColumn(label: Text('Customer Name')),
                                     DataColumn(label: Text('Event Title')),
                                     DataColumn(label: Text('Event Type')),
                                     DataColumn(label: Text('Total Cost')),
                                     DataColumn(label: Text('Loyalty Rewards')),
                                   ],
-                                  rows: transactions.map((tx) {
+                                  rows: orders.map((tx) {
                                     return DataRow(cells: [
-                                      DataCell(Text(tx.transactionNo)),
+                                      DataCell(Text(tx.orderNo)),
                                       DataCell(Text(tx.customerName)),
                                       DataCell(Text(tx.eventTitle)),
                                       DataCell(Text(tx.eventType)),
