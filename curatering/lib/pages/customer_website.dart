@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -16,6 +15,10 @@ import '../services/cart_store.dart';
 import '../services/loyalty_rewards_store.dart';
 import 'customer_login.dart';
 import 'checkout_page.dart';
+import 'my_orders_page.dart';
+import 'my_caterings_page.dart';
+import 'my_order_tracking_page.dart';
+import 'my_profile_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _SetDish {
@@ -88,21 +91,25 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   int? _galleryDetailIndex;
   Map<String, dynamic>? _customerData;
   bool _isCustomerLoggedIn = false;
+  String _selectedRestaurantType = 'RICE MEALS'; // Default selected category
 
   @override
   void initState() {
     super.initState();
-    WebsiteContentStore.instance.ensureLoaded().then((_) {
-      if (mounted) setState(() {});
-    });
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    await WebsiteContentStore.instance.ensureLoaded();
+    if (mounted) setState(() {});
     MenuStore.instance.addListener(_onMenuChanged);
     // Ensure dishes are loaded
     if (MenuStore.instance.activeDishes.isEmpty) {
-      MenuStore.instance.loadDishes();
+      await MenuStore.instance.loadDishes();
     }
     CartStore.instance.init();
     CartStore.instance.addListener(_onCartChanged);
-    _checkCustomerAuth();
+    await _checkCustomerAuth();
   }
 
   Future<void> _checkCustomerAuth() async {
@@ -182,6 +189,46 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     ).push(MaterialPageRoute(builder: (context) => const CheckoutPage()));
   }
 
+  Future<void> _navigateToMyOrders() async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const MyOrdersPage()),
+    );
+    if (result == 'login_required' && mounted) {
+      await _handleLogin();
+    }
+  }
+
+  Future<void> _navigateToMyCaterings() async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const MyCateringsPage()),
+    );
+    if (result == 'login_required' && mounted) {
+      await _handleLogin();
+    }
+  }
+
+  Future<void> _navigateToOrderTracking() async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const MyOrderTrackingPage()),
+    );
+    if (result == 'login_required' && mounted) {
+      await _handleLogin();
+    }
+  }
+
+  Future<void> _navigateToMyProfile() async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const MyProfilePage()),
+    );
+    if (result == 'login_required' && mounted) {
+      await _handleLogin();
+    }
+    // Refresh customer data after profile update
+    if (result == 'profile_updated' && mounted) {
+      await _checkCustomerAuth();
+    }
+  }
+
   @override
   void dispose() {
     MenuStore.instance.removeListener(_onMenuChanged);
@@ -223,8 +270,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         );
     if (b64 == null || b64.isEmpty) return ph;
     try {
+      final normalized = b64
+          .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
+          .replaceAll('\n', '')
+          .trim();
       return Image.memory(
-        base64Decode(b64),
+        base64Decode(normalized),
         height: height,
         width: double.infinity,
         fit: fit,
@@ -296,9 +347,23 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           // Login/Logout Button
           if (_isCustomerLoggedIn)
             PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'logout') {
-                  _handleLogout();
+              onSelected: (value) async {
+                switch (value) {
+                  case 'my_profile':
+                    await _navigateToMyProfile();
+                    break;
+                  case 'my_orders':
+                    await _navigateToMyOrders();
+                    break;
+                  case 'my_caterings':
+                    await _navigateToMyCaterings();
+                    break;
+                  case 'order_tracking':
+                    await _navigateToOrderTracking();
+                    break;
+                  case 'logout':
+                    await _handleLogout();
+                    break;
                 }
               },
               child: Row(
@@ -315,12 +380,53 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               itemBuilder:
                   (context) => [
                     const PopupMenuItem(
+                      value: 'my_profile',
+                      child: Row(
+                        children: [
+                          Icon(Icons.person, size: 18),
+                          SizedBox(width: 8),
+                          Text('My Profile'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'my_orders',
+                      child: Row(
+                        children: [
+                          Icon(Icons.receipt_long, size: 18),
+                          SizedBox(width: 8),
+                          Text('My Orders'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'my_caterings',
+                      child: Row(
+                        children: [
+                          Icon(Icons.event, size: 18),
+                          SizedBox(width: 8),
+                          Text('My Caterings'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'order_tracking',
+                      child: Row(
+                        children: [
+                          Icon(Icons.local_shipping, size: 18),
+                          SizedBox(width: 8),
+                          Text('Order Tracking'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
                       value: 'logout',
                       child: Row(
                         children: [
-                          Icon(Icons.logout, size: 18),
+                          Icon(Icons.logout, size: 18, color: Colors.red),
                           SizedBox(width: 8),
-                          Text('Logout'),
+                          Text('Logout', style: TextStyle(color: Colors.red)),
                         ],
                       ),
                     ),
@@ -1247,11 +1353,48 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   Widget _buildRestaurantMenu() {
     final allDishes = MenuStore.instance.activeDishes;
-    final restaurantDishes =
-        allDishes.where((d) => d.category == 'restaurant').toList();
+    final restaurantDishes = allDishes.where((d) {
+      final category = d.category.trim().toLowerCase();
+      final isRestaurantCategory = category == 'restaurant' ||
+          category == 'main_course' ||
+          category == 'noodles' ||
+          category == 'appetizer' ||
+          category == 'rice' ||
+          category == 'dessert' ||
+          category == 'drinks' ||
+          category == 'drink';
+      return isRestaurantCategory || d.type.trim().isNotEmpty;
+    }).toList();
     final cartItems = CartStore.instance.items;
     final totalAmount = CartStore.instance.totalAmount;
-    final dishes = restaurantDishes;
+    // Filter restaurant dishes by selected type
+    String restaurantTypeForDish(MenuDish dish) {
+      final rawType = dish.type.trim().toLowerCase();
+      if (rawType.isNotEmpty) return rawType;
+      final category = dish.category.trim().toLowerCase();
+      switch (category) {
+        case 'main_course':
+        case 'rice':
+          return 'rice meals';
+        case 'noodles':
+          return 'pasta';
+        case 'appetizer':
+          return 'sandwiches';
+        case 'dessert':
+          return 'others';
+        case 'drink':
+        case 'drinks':
+          return 'drinks';
+        default:
+          return 'others';
+      }
+    }
+
+    final selectedType = _selectedRestaurantType.trim().toLowerCase();
+    final dishes = restaurantDishes.where((d) {
+      final dishType = restaurantTypeForDish(d);
+      return dishType == selectedType;
+    }).toList();
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1354,12 +1497,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      _buildCategoryTab('RICE MEALS', true),
-                      _buildCategoryTab('SILOG MEALS', false),
-                      _buildCategoryTab('PASTA', false),
-                      _buildCategoryTab('SANDWICHES', false),
-                      _buildCategoryTab('OTHERS', false),
-                      _buildCategoryTab('DRINKS', false),
+                      _buildCategoryTab('RICE MEALS'),
+                      _buildCategoryTab('SILOG MEALS'),
+                      _buildCategoryTab('PASTA'),
+                      _buildCategoryTab('SANDWICHES'),
+                      _buildCategoryTab('OTHERS'),
+                      _buildCategoryTab('DRINKS'),
                     ],
                   ),
                 ),
@@ -1381,10 +1524,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
-                          childAspectRatio: 0.75,
+                          crossAxisCount: 5,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                          childAspectRatio: 0.70,
                         ),
                     itemCount: dishes.length,
                     itemBuilder: (ctx, i) {
@@ -1718,11 +1861,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
-  Widget _buildCategoryTab(String label, bool isSelected) {
+  Widget _buildCategoryTab(String label) {
+    final isSelected = label == _selectedRestaurantType;
     return Container(
       margin: const EdgeInsets.only(right: 8),
       child: ElevatedButton(
-        onPressed: () {},
+        onPressed: () {
+          setState(() {
+            _selectedRestaurantType = label;
+          });
+        },
         style: ElevatedButton.styleFrom(
           backgroundColor: isSelected ? const Color(0xFF1E1E1E) : Colors.white,
           foregroundColor: isSelected ? const Color(0xFFFFC024) : Colors.black,
@@ -2084,7 +2232,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     // Get values from LoyaltyRewardsStore (persisted from management page)
     final double minimumOrderForPoints = LoyaltyRewardsStore.instance.minimumOrderForPoints;
     final int pointsEarned = LoyaltyRewardsStore.instance.pointsEarned;
-    final int currentPoints = 150; // User's current points balance - in production from API
+    final int currentPoints = 0; // User's current points balance - in production from API
     final availableRewards = LoyaltyRewardsStore.instance.rewardsConditions;
     // Ensure store is loaded
     LoyaltyRewardsStore.instance.ensureLoaded();
@@ -2747,10 +2895,6 @@ class _InquireFormState extends State<_InquireForm> {
   final Map<String, String> _selectedPaxOptions = {}; // dishId -> paxOption
   final List<String> _selectedDishIds = [];
 
-  // Set Menu Pax Selection State
-  final Map<String, String> _setMenuDishPaxOptions =
-      {}; // dishId -> paxOption for set menu dishes
-
   // Event Design State
   bool _wantsCustomDesign = false;
 
@@ -2867,6 +3011,229 @@ class _InquireFormState extends State<_InquireForm> {
     }
   }
 
+  Future<void> _showOrderSummaryDialog() async {
+    // Validate required fields first
+    final missing = <String>[];
+    final isCateringOnly = _serviceType == 'catering';
+
+    if (!isCateringOnly) {
+      if (_eventTitle.text.trim().isEmpty) missing.add('event title');
+    }
+    if (_customer.text.trim().isEmpty) missing.add('customer name');
+    if (_contactPerson.text.trim().isEmpty) missing.add('contact person');
+    if (_phone.text.trim().isEmpty) missing.add('phone');
+    if (_email.text.trim().isEmpty) missing.add('email');
+    if (_address.text.trim().isEmpty) missing.add('city / address');
+    if (_dateController.text.trim().isEmpty) missing.add('event date');
+    if (_timeController.text.trim().isEmpty) missing.add('event time');
+    final g = int.tryParse(_guests.text.trim());
+    if (g == null || g < 1) missing.add('guest count');
+
+    // Menu is required
+    if (_menuChoice == 'yes' &&
+        _selectedDishIds.isEmpty &&
+        _customDishes.isEmpty) {
+      missing.add('menu (select dishes or add custom dishes)');
+    } else if (_menuChoice == 'suggest' && _selectedSetMenuId == null) {
+      missing.add('menu (select a set menu)');
+    }
+
+    if (missing.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Complete: ${missing.join(', ')}')),
+      );
+      return;
+    }
+
+    // Build menu items for summary
+    List<Map<String, dynamic>> menuItems = [];
+    String menuSummaryTitle = '';
+    
+    if (_menuChoice == 'yes') {
+      menuSummaryTitle = 'Curated Menu';
+      for (final dishId in _selectedDishIds) {
+        final dish = MenuStore.instance.allDishes.firstWhere(
+          (d) => d.id == dishId,
+        );
+        menuItems.add({
+          'dishName': dish.name,
+          'paxOption': '',
+          'price': '0',
+        });
+      }
+      for (final customDish in _customDishes) {
+        menuItems.add({
+          'dishName': customDish.name,
+          'paxOption': 'Custom',
+          'price': 0,
+        });
+      }
+    } else if (_selectedSetMenuId != null) {
+      final setMenu = SetMenuStore.instance.activeSetMenus.firstWhere(
+        (s) => s.id == _selectedSetMenuId,
+      );
+      menuSummaryTitle = 'Set Menu: ${setMenu.name}';
+      for (final dishId in setMenu.dishIds) {
+        final dish = MenuStore.instance.allDishes.firstWhere(
+          (d) => d.id == dishId,
+        );
+        menuItems.add({
+          'dishName': dish.name,
+          'paxOption': '',
+          'price': '0',
+        });
+      }
+    } else {
+      menuSummaryTitle = 'Menu to be suggested by Macrina';
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.receipt_long, color: Color(0xFF4CAF50)),
+              SizedBox(width: 8),
+              Text('Order Summary'),
+            ],
+          ),
+          content: SizedBox(
+            width: 500,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Event Details
+                  _buildSummarySection(
+                    'Event Details',
+                    [
+                      _buildSummaryRow('Service Type', _serviceType == 'catering' ? 'Catering Only' : 'Catering + Event'),
+                      if (!isCateringOnly) ...[
+                        _buildSummaryRow('Event Title', _eventTitle.text.trim()),
+                        _buildSummaryRow('Event Type', _eventType),
+                        _buildSummaryRow('Formality', _formality),
+                      ],
+                      _buildSummaryRow('Date', _dateController.text.trim()),
+                      _buildSummaryRow('Time', _timeController.text.trim()),
+                      _buildSummaryRow('Guests', _guests.text.trim()),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  
+                  // Contact Information
+                  _buildSummarySection(
+                    'Contact Information',
+                    [
+                      _buildSummaryRow('Customer', _customer.text.trim()),
+                      _buildSummaryRow('Contact Person', _contactPerson.text.trim()),
+                      _buildSummaryRow('Phone', _phone.text.trim()),
+                      _buildSummaryRow('Email', _email.text.trim()),
+                      _buildSummaryRow('Address', _address.text.trim()),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  
+                  // Menu
+                  _buildSummarySection(
+                    menuSummaryTitle,
+                    menuItems.isEmpty
+                        ? [_buildSummaryRow('Menu', 'Will be suggested by Macrina')]
+                        : menuItems
+                            .map((item) => _buildSummaryRow(item['dishName'], 'Selected'))
+                            .toList(),
+                  ),
+                  
+                  // Theme/Design
+                  if (_serviceType == 'catering+event') ...[
+                    const Divider(height: 24),
+                    _buildSummarySection(
+                      'Theme & Design',
+                      [
+                        _buildSummaryRow('Custom Design', _wantsCustomDesign ? 'Yes' : 'Standard'),
+                        if (_themeRequestCtrl.text.trim().isNotEmpty)
+                          _buildSummaryRow('Theme Request', _themeRequestCtrl.text.trim()),
+                        if (_designPhotoUrls.isNotEmpty)
+                          _buildSummaryRow('Reference Photos', '${_designPhotoUrls.length} photo(s)'),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('EDIT'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4CAF50),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('CONFIRM & SUBMIT'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      await _submit();
+    }
+  }
+
+  Widget _buildSummarySection(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+            color: Color(0xFF4CAF50),
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...children,
+      ],
+    );
+  }
+
+  Widget _buildSummaryRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _submit() async {
     final missing = <String>[];
     final isCateringOnly = _serviceType == 'catering';
@@ -2911,13 +3278,11 @@ class _InquireFormState extends State<_InquireForm> {
           final dish = MenuStore.instance.allDishes.firstWhere(
             (d) => d.id == dishId,
           );
-          final paxOption =
-              _selectedPaxOptions[dishId] ?? dish.paxOptions.first;
           menuItems.add({
             'dishId': dishId,
             'dishName': dish.name,
-            'paxOption': paxOption,
-            'price': dish.price,
+            'paxOption': '',
+            'price': '0',
             'isCustom': false,
           });
         }
@@ -2941,13 +3306,11 @@ class _InquireFormState extends State<_InquireForm> {
           final dish = MenuStore.instance.allDishes.firstWhere(
             (d) => d.id == dishId,
           );
-          final paxOption =
-              _setMenuDishPaxOptions[dishId] ?? dish.paxOptions.first;
           menuItems.add({
             'dishId': dishId,
             'dishName': dish.name,
-            'paxOption': paxOption,
-            'price': dish.price,
+            'paxOption': '',
+            'price': '0',
             'isCustom': false,
           });
         }
@@ -3037,7 +3400,6 @@ class _InquireFormState extends State<_InquireForm> {
       // Clear collections
       _selectedPaxOptions.clear();
       _selectedDishIds.clear();
-      _setMenuDishPaxOptions.clear();
       _setMenus.clear();
       _customDishes.clear();
       _designPhotoUrls.clear();
@@ -3121,7 +3483,7 @@ class _InquireFormState extends State<_InquireForm> {
                 child: SizedBox(
                   width: 300,
                   child: ElevatedButton(
-                    onPressed: _submitting ? null : _submit,
+                    onPressed: _submitting ? null : _showOrderSummaryDialog,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: Colors.black,
@@ -3142,7 +3504,7 @@ class _InquireFormState extends State<_InquireForm> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                             : const Text(
-                              'SUBMIT INQUIRY',
+                              'REVIEW & SUBMIT',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                   ),
@@ -3415,8 +3777,16 @@ class _InquireFormState extends State<_InquireForm> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.black.withOpacity(0.08)),
+        borderRadius: BorderRadius.circular(14),
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3467,14 +3837,13 @@ class _InquireFormState extends State<_InquireForm> {
 
   Widget _buildMenuChoiceButton(String label, String value) {
     final isSelected = _menuChoice == value;
-    final isYes = value == 'yes';
     return ElevatedButton(
       onPressed: () => setState(() => _menuChoice = value),
       style: ElevatedButton.styleFrom(
-        backgroundColor: isYes ? const Color(0xFFE8F5E9) : Colors.white,
+        backgroundColor: isSelected ? const Color(0xFFE8F5E9) : Colors.white,
         foregroundColor: Colors.black,
         side: BorderSide(
-          color: isYes ? const Color(0xFF4CAF50) : Colors.red.shade300,
+          color: isSelected ? const Color(0xFF4CAF50) : Colors.grey.shade400,
           width: 2,
         ),
         elevation: 0,
@@ -3572,30 +3941,10 @@ class _InquireFormState extends State<_InquireForm> {
                       dish.name,
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    subtitle: Text('₱${dish.price}'),
-                    trailing:
-                        isSelected
-                            ? DropdownButton<String>(
-                              value:
-                                  _selectedPaxOptions[dish.id] ??
-                                  dish.paxOptions.first,
-                              isDense: true,
-                              items:
-                                  dish.paxOptions
-                                      .map(
-                                        (p) => DropdownMenuItem(
-                                          value: p,
-                                          child: Text(p),
-                                        ),
-                                      )
-                                      .toList(),
-                              onChanged: (v) {
-                                setState(() {
-                                  _selectedPaxOptions[dish.id] = v!;
-                                });
-                              },
-                            )
-                            : null,
+                    subtitle: null,
+                    trailing: isSelected
+                        ? const Icon(Icons.check_circle, color: Color(0xFF4CAF50))
+                        : const Icon(Icons.add_circle_outline, color: Colors.grey),
                     onTap: () {
                       setState(() {
                         if (isSelected) {
@@ -3603,7 +3952,7 @@ class _InquireFormState extends State<_InquireForm> {
                           _selectedPaxOptions.remove(dish.id);
                         } else {
                           _selectedDishIds.add(dish.id);
-                          _selectedPaxOptions[dish.id] = dish.paxOptions.first;
+                          _selectedPaxOptions[dish.id] = '';
                         }
                       });
                     },
@@ -3692,32 +4041,18 @@ class _InquireFormState extends State<_InquireForm> {
     return Column(
       children:
           setMenus.map((setMenu) {
-            // Calculate total price for this set menu
-            double totalPrice = 0;
-            for (final dishId in setMenu.dishIds) {
-              final dish = MenuStore.instance.allDishes.firstWhere(
-                (d) => d.id == dishId,
-                orElse:
-                    () => MenuDish(
-                      id: dishId,
-                      name: 'Unknown',
-                      category: '',
-                      price: '0',
-                      archived: false,
-                      paxOptions: ['10 pax'],
-                    ),
-              );
-              final price = double.tryParse(dish.price) ?? 0;
-              final paxOption =
-                  _setMenuDishPaxOptions[dishId] ?? dish.paxOptions.first;
-              final paxCount =
-                  int.tryParse(paxOption.replaceAll(RegExp(r'[^0-9]'), '')) ??
-                  10;
-              totalPrice += price * (paxCount / 10);
-            }
-
             return Card(
-              margin: const EdgeInsets.only(bottom: 8),
+              margin: const EdgeInsets.only(bottom: 10),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: _selectedSetMenuId == setMenu.id
+                      ? const Color(0xFFFFC024)
+                      : Colors.grey.shade300,
+                  width: _selectedSetMenuId == setMenu.id ? 1.5 : 1,
+                ),
+              ),
               child: ListTile(
                 title: Text(
                   setMenu.name,
@@ -3731,12 +4066,12 @@ class _InquireFormState extends State<_InquireForm> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    const SizedBox(height: 4),
                     Text(
-                      '₱${totalPrice.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFFFFC024),
-                        fontSize: 14,
+                      'Tap to preview dishes',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 12,
                       ),
                     ),
                   ],
@@ -3748,49 +4083,12 @@ class _InquireFormState extends State<_InquireForm> {
                   onChanged: (v) {
                     setState(() {
                       _selectedSetMenuId = v;
-                      // Initialize pax options for all dishes in this set menu
-                      for (final dishId in setMenu.dishIds) {
-                        final dish = MenuStore.instance.allDishes.firstWhere(
-                          (d) => d.id == dishId,
-                          orElse:
-                              () => MenuDish(
-                                id: dishId,
-                                name: 'Unknown',
-                                category: '',
-                                price: '0',
-                                archived: false,
-                                paxOptions: ['10 pax'],
-                              ),
-                        );
-                        if (!_setMenuDishPaxOptions.containsKey(dishId)) {
-                          _setMenuDishPaxOptions[dishId] =
-                              dish.paxOptions.first;
-                        }
-                      }
                     });
                   },
                 ),
                 onTap: () {
                   setState(() {
                     _selectedSetMenuId = setMenu.id;
-                    // Initialize pax options for all dishes in this set menu
-                    for (final dishId in setMenu.dishIds) {
-                      final dish = MenuStore.instance.allDishes.firstWhere(
-                        (d) => d.id == dishId,
-                        orElse:
-                            () => MenuDish(
-                              id: dishId,
-                              name: 'Unknown',
-                              category: '',
-                              price: '0',
-                              archived: false,
-                              paxOptions: ['10 pax'],
-                            ),
-                      );
-                      if (!_setMenuDishPaxOptions.containsKey(dishId)) {
-                        _setMenuDishPaxOptions[dishId] = dish.paxOptions.first;
-                      }
-                    }
                   });
                 },
               ),
@@ -3804,28 +4102,6 @@ class _InquireFormState extends State<_InquireForm> {
       (s) => s.id == _selectedSetMenuId,
     );
 
-    // Calculate total price for this set menu
-    double totalPrice = 0;
-    for (final dishId in setMenu.dishIds) {
-      final dish = MenuStore.instance.allDishes.firstWhere(
-        (d) => d.id == dishId,
-        orElse:
-            () => MenuDish(
-              id: dishId,
-              name: 'Unknown Dish',
-              category: '',
-              price: '0',
-              archived: false,
-              paxOptions: ['10 pax'],
-            ),
-      );
-      final price = double.tryParse(dish.price) ?? 0;
-      final paxOption = _setMenuDishPaxOptions[dishId] ?? dish.paxOptions.first;
-      final paxCount =
-          int.tryParse(paxOption.replaceAll(RegExp(r'[^0-9]'), '')) ?? 10;
-      totalPrice += price * (paxCount / 10);
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3836,18 +4112,23 @@ class _InquireFormState extends State<_InquireForm> {
               setMenu.name,
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
-            Text(
-              '₱${totalPrice.toStringAsFixed(2)}',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: Color(0xFFFFC024),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3D0),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '${setMenu.dishIds.length} dishes',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                  color: Color(0xFF9A6B00),
+                ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        Text('${setMenu.dishIds.length} dishes'),
         const SizedBox(height: 16),
         const Text(
           'Dishes in this set:',
@@ -3867,15 +4148,13 @@ class _InquireFormState extends State<_InquireForm> {
                   paxOptions: ['10 pax'],
                 ),
           );
-          final price = double.tryParse(dish.price) ?? 0;
-          final paxOption =
-              _setMenuDishPaxOptions[dishId] ?? dish.paxOptions.first;
-          final paxCount =
-              int.tryParse(paxOption.replaceAll(RegExp(r'[^0-9]'), '')) ?? 10;
-          final adjustedPrice = price * (paxCount / 10);
-
           return Card(
             margin: const EdgeInsets.only(bottom: 8),
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: Colors.grey.shade300),
+            ),
             child: ListTile(
               dense: true,
               leading:
@@ -3888,27 +4167,13 @@ class _InquireFormState extends State<_InquireForm> {
                       )
                       : const Icon(Icons.restaurant, size: 32),
               title: Text(dish.name, style: const TextStyle(fontSize: 13)),
-              subtitle: Text(
-                '₱${adjustedPrice.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFFFFC024),
-                ),
+              subtitle: const Text(
+                'Selected dish',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
-              trailing: DropdownButton<String>(
-                value: _setMenuDishPaxOptions[dishId] ?? dish.paxOptions.first,
-                isDense: true,
-                style: const TextStyle(fontSize: 12),
-                items:
-                    dish.paxOptions
-                        .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                        .toList(),
-                onChanged: (v) {
-                  setState(() {
-                    _setMenuDishPaxOptions[dishId] = v!;
-                  });
-                },
+              trailing: const Icon(
+                Icons.check_circle,
+                color: Color(0xFF1DB954),
               ),
             ),
           );

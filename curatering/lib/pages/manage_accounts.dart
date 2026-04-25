@@ -290,7 +290,11 @@ class _ManageAccountsState extends State<ManageAccounts> {
     final u = _selectedUser;
     if (u == null) {
       return Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+        ),
         child: const Padding(
           padding: EdgeInsets.all(24.0),
           child: Center(child: Text('Select an account to view details and page access.')),
@@ -302,7 +306,11 @@ class _ManageAccountsState extends State<ManageAccounts> {
 
     if (u.role == Role.superAdmin) {
       return Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(20.0),
           child: Column(
@@ -327,7 +335,11 @@ class _ManageAccountsState extends State<ManageAccounts> {
     }
 
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(20.0),
         child: Column(
@@ -421,6 +433,11 @@ class _ManageAccountsState extends State<ManageAccounts> {
               'Manage Accounts',
               style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
             ),
+            const SizedBox(height: 6),
+            Text(
+              'Create staff accounts and manage page-level permissions.',
+              style: TextStyle(color: Colors.grey.shade700),
+            ),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -473,7 +490,11 @@ class _ManageAccountsState extends State<ManageAccounts> {
                           builder: (context, c) {
                             final wide = c.maxWidth >= 900;
                             final list = Card(
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                              ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../models/event_order.dart';
 import 'api_client.dart';
 
@@ -14,26 +16,16 @@ class EventsApi {
         ? '/api/manager/events/orders'
         : '/api/supervisor/events/orders';
 
-    print('DEBUG: Calling API at path: $path with status: $status'); // Debug line
-
     final decoded = await ApiClient.instance.getJson(
       path,
       queryParameters: {'status': status},
     );
 
-    print('DEBUG: Raw API response: $decoded'); // Debug line
-    print('DEBUG: Response type: ${decoded.runtimeType}'); // Debug line
-
-    final raw = decoded['orders'];
-    print('DEBUG: Orders array: $raw'); // Debug line
-    print('DEBUG: Orders array type: ${raw.runtimeType}'); // Debug line
-    
+    final raw = decoded['orders'] ?? decoded['data'];
     if (raw is! List) {
-      print('DEBUG: Raw is not a List, returning empty');
       return const <EventOrderDto>[];
     }
 
-    print('DEBUG: Mapping ${raw.length} orders to EventOrderDto'); // Debug line
     return raw.map(_orderFromJson).toList();
   }
 
@@ -185,48 +177,132 @@ class EventsApi {
     );
   }
 
+  Future<Map<String, dynamic>> processThemeColor({
+    required List<String> picksBase64,
+    required String prompt,
+    String? currentTintColorHex,
+  }) async {
+    return ApiClient.instance.postJson(
+      '/api/events/theme-design/swap-colors',
+      body: {
+        'picksBase64': picksBase64,
+        'prompt': prompt,
+        'currentTintColorHex': currentTintColorHex,
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> detectThemeObjects({
+    required String imageBase64,
+  }) async {
+    return ApiClient.instance.postJson(
+      '/api/events/theme-design/detect-objects',
+      body: {'imageBase64': imageBase64},
+    );
+  }
+
+  Future<Map<String, dynamic>> segmentThemeObjects({
+    required String imageBase64,
+    required List<Map<String, dynamic>> detections,
+    required List<String> selectedClassIds,
+  }) async {
+    return ApiClient.instance.postJson(
+      '/api/events/theme-design/segment-objects',
+      body: {
+        'imageBase64': imageBase64,
+        'detections': detections,
+        'selectedClassIds': selectedClassIds,
+      },
+    );
+  }
+
   EventOrderDto _orderFromJson(dynamic raw) {
-    final map = raw as Map<String, dynamic>;
-    final scheduleRaw = map['scheduleSlots'];
+    final map = Map<String, dynamic>.from(raw as Map);
+    final scheduleRaw = map['scheduleSlots'] ?? map['schedule_slots'];
     final scheduleSlots = <EventScheduleSlotDto>[];
     if (scheduleRaw is List) {
       for (final s in scheduleRaw) {
-        final sm = s as Map<String, dynamic>;
+        final sm = Map<String, dynamic>.from(s as Map);
         scheduleSlots.add(
           EventScheduleSlotDto(
-            date: sm['date'] as String,
-            startTime: sm['startTime'] as String,
-            endTime: sm['endTime'] as String,
+            date: (sm['date'] ?? '').toString(),
+            startTime: (sm['startTime'] ?? sm['start_time'] ?? '').toString(),
+            endTime: (sm['endTime'] ?? sm['end_time'] ?? '').toString(),
           ),
         );
       }
+    } else if (scheduleRaw is String && scheduleRaw.isNotEmpty) {
+      try {
+        final parsed = jsonDecode(scheduleRaw);
+        if (parsed is List) {
+          for (final s in parsed) {
+            final sm = Map<String, dynamic>.from(s as Map);
+            scheduleSlots.add(
+              EventScheduleSlotDto(
+                date: (sm['date'] ?? '').toString(),
+                startTime: (sm['startTime'] ?? sm['start_time'] ?? '').toString(),
+                endTime: (sm['endTime'] ?? sm['end_time'] ?? '').toString(),
+              ),
+            );
+          }
+        }
+      } catch (_) {}
     }
 
     final menuRaw = map['menu'];
     final menu = <EventMenuItemDto>[];
     if (menuRaw is List) {
       for (final m in menuRaw) {
-        final mm = m as Map<String, dynamic>;
+        final mm = Map<String, dynamic>.from(m as Map);
         menu.add(
           EventMenuItemDto(
-            dishName: mm['dishName'] as String,
-            paxOption: mm['paxOption'] as String,
-            price: mm['price'] as String,
+            dishName: (mm['dishName'] ?? mm['dish_name'] ?? '').toString(),
+            paxOption: (mm['paxOption'] ?? mm['pax_option'] ?? '').toString(),
+            price: mm['price']?.toString() ?? '0',
           ),
         );
       }
+    } else if (menuRaw is String && menuRaw.isNotEmpty) {
+      try {
+        final parsed = jsonDecode(menuRaw);
+        if (parsed is List) {
+          for (final m in parsed) {
+            final mm = Map<String, dynamic>.from(m as Map);
+            menu.add(
+              EventMenuItemDto(
+                dishName: (mm['dishName'] ?? mm['dish_name'] ?? '').toString(),
+                paxOption: (mm['paxOption'] ?? mm['pax_option'] ?? '').toString(),
+                price: mm['price']?.toString() ?? '0',
+              ),
+            );
+          }
+        }
+      } catch (_) {}
     }
 
-    final themeRaw = map['themeDesign'] as Map<String, dynamic>;
+    Map<String, dynamic> themeRaw = <String, dynamic>{};
+    final rawTheme = map['themeDesign'] ?? map['theme_design'];
+    if (rawTheme is Map) {
+      themeRaw = Map<String, dynamic>.from(rawTheme);
+    } else if (rawTheme is String && rawTheme.isNotEmpty) {
+      try {
+        final parsed = jsonDecode(rawTheme);
+        if (parsed is Map) {
+          themeRaw = Map<String, dynamic>.from(parsed);
+        }
+      } catch (_) {}
+    }
     final themeDesign = EventThemeDesignDto(
-      picksBase64: (themeRaw['picksBase64'] as List).map((e) => e as String).toList(),
-      tintEnabled: themeRaw['tintEnabled'] as bool,
+      picksBase64: (themeRaw['picksBase64'] as List<dynamic>? ?? const <dynamic>[])
+          .map((e) => e.toString())
+          .toList(),
+      tintEnabled: themeRaw['tintEnabled'] as bool? ?? false,
       tintColorHex: themeRaw['tintColorHex'] as String?,
       colorPrompt: themeRaw['colorPrompt'] as String?,
     );
 
     PostAnalysisDto? postAnalysis;
-    final paRaw = map['postAnalysis'];
+    final paRaw = map['postAnalysis'] ?? map['post_analysis'];
     if (paRaw != null && paRaw is Map) {
       final pm = Map<String, dynamic>.from(paRaw);
       postAnalysis = PostAnalysisDto(
@@ -260,20 +336,20 @@ class EventsApi {
     }
 
     return EventOrderDto(
-      id: map['id'].toString(),
-      source: map['source'] as String,
-      status: map['status'] as String,
+      id: (map['id'] ?? '').toString(),
+      source: (map['source'] ?? '').toString(),
+      status: (map['status'] ?? '').toString(),
       eventTitle: map['eventTitle'] as String? ?? '',
       orderType: map['orderType'] as String? ?? 'catering',
       eventType: map['eventType'] as String? ?? '',
       formalityLevel: map['formalityLevel'] as String? ?? '',
-      customerName: map['customerName'] as String,
-      contactPerson: map['contactPerson'] as String,
-      contactNumber: map['contactNumber'] as String,
-      emailAddress: map['emailAddress'] as String,
+      customerName: (map['customerName'] ?? map['customer_name'] ?? '').toString(),
+      contactPerson: (map['contactPerson'] ?? map['contact_person'] ?? '').toString(),
+      contactNumber: (map['contactNumber'] ?? map['contact_number'] ?? '').toString(),
+      emailAddress: (map['emailAddress'] ?? map['email_address'] ?? '').toString(),
       scheduleSlots: scheduleSlots,
-      address: map['address'] as String,
-      guestCount: (map['guestCount'] as num).toInt(),
+      address: (map['address'] ?? '').toString(),
+      guestCount: ((map['guestCount'] ?? map['guest_count']) as num?)?.toInt() ?? 0,
       menu: menu,
       themeDesign: themeDesign,
       postAnalysis: postAnalysis,

@@ -33,7 +33,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
       case 'pending':
         return 'Order Placed';
       case 'confirmed':
-        return 'Payment Confirmed';
+        return 'Order Confirmed';
       case 'preparing':
         return 'Preparing';
       case 'out_for_delivery':
@@ -44,6 +44,19 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
         return 'Cancelled';
       default:
         return status;
+    }
+  }
+
+  String _getPaymentStatusText(String paymentStatus) {
+    switch (paymentStatus) {
+      case 'pending':
+        return 'Payment Pending';
+      case 'paid':
+        return 'Payment Confirmed';
+      case 'failed':
+        return 'Payment Failed';
+      default:
+        return 'Payment Pending';
     }
   }
 
@@ -423,6 +436,9 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
   }
 
   Widget _buildPaymentConfirmedColumn({required String paymentReference}) {
+    final paymentStatus = widget.orderData['payment_status'] ?? 'pending';
+    final isPaymentConfirmed = paymentStatus == 'paid';
+    
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -435,13 +451,13 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
         children: [
           const SizedBox(height: 20),
 
-          // PAYMENT CONFIRMED!
+          // PAYMENT STATUS
           Text(
-            'PAYMENT CONFIRMED!',
+            isPaymentConfirmed ? 'PAYMENT CONFIRMED!' : 'PAYMENT PENDING',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Colors.green.shade600,
+              color: isPaymentConfirmed ? Colors.green.shade600 : Colors.orange.shade600,
               letterSpacing: 0.5,
             ),
           ),
@@ -449,7 +465,9 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
 
           // Message
           Text(
-            'PLEASE WAIT FOR YOUR ORDER CONFIRMATION VIA TEXT.',
+            isPaymentConfirmed 
+                ? 'PLEASE WAIT FOR YOUR ORDER CONFIRMATION VIA TEXT.'
+                : 'AWAITING PAYMENT CONFIRMATION FROM MANAGER.',
             style: TextStyle(
               fontSize: 9,
               color: Colors.grey.shade600,

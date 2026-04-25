@@ -9,7 +9,7 @@ import '../config.dart';
 import 'order_tracking_page.dart';
 
 // Runtime fallback for dev mode (String.fromEnvironment defaultValue doesn't work in JIT mode)
-String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'http://localhost:3000' : apiBaseUrl;
+String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/' : apiBaseUrl;
 
 class PaymentPage extends StatefulWidget {
   final Map<String, dynamic> orderData;

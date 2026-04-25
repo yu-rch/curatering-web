@@ -40,7 +40,11 @@ class _TransactionsState extends State<Transactions> {
 
   List<EventOrderDto> _completedOrders = const <EventOrderDto>[];
   List<DateTime> _availableDates = const <DateTime>[];
-  late DateTime _selectedDate;
+  DateTime _selectedDate = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    DateTime.now().day,
+  );
 
   @override
   void initState() {
@@ -70,7 +74,8 @@ class _TransactionsState extends State<Transactions> {
       final dates = <DateTime>{};
       for (final o in orders) {
         if (o.scheduleSlots.isEmpty) continue;
-        final d = DateTime.parse(o.scheduleSlots.first.date);
+        final d = DateTime.tryParse(o.scheduleSlots.first.date);
+        if (d == null) continue;
         dates.add(DateTime(d.year, d.month, d.day));
       }
       final sortedDates = dates.toList()..sort((a, b) => b.compareTo(a));
@@ -139,7 +144,8 @@ class _TransactionsState extends State<Transactions> {
 
     final ordersForSelectedDate = _completedOrders.where((o) {
       if (o.scheduleSlots.isEmpty) return false;
-      final d = DateTime.parse(o.scheduleSlots.first.date);
+      final d = DateTime.tryParse(o.scheduleSlots.first.date);
+      if (d == null) return false;
       final key = DateTime(d.year, d.month, d.day);
       return key == selectedKey;
     }).toList();
@@ -179,6 +185,25 @@ class _TransactionsState extends State<Transactions> {
               'Orders',
               style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
             ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Text(
+                  'Daily completed orders and loyalty rewards summary.',
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: _loadCompletedOrders,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E1E1E),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
             Expanded(
               child: Row(
@@ -213,7 +238,11 @@ class _TransactionsState extends State<Transactions> {
                   Expanded(
                     flex: 6,
                     child: Card(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                      ),
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(

@@ -7,11 +7,12 @@ import 'package:http/http.dart' as http;
 import '../services/cart_store.dart';
 import '../services/loyalty_rewards_store.dart';
 import '../config.dart';
+import '../widgets/map_picker.dart';
 import 'customer_login.dart';
 import 'payment_page.dart';
 
 // Runtime fallback for dev mode
-String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'http://localhost:3000' : apiBaseUrl;
+String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/' : apiBaseUrl;
 
 class CheckoutPage extends StatefulWidget {
   const CheckoutPage({super.key});
@@ -29,8 +30,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
   double? _deliveryLat;
   double? _deliveryLng;
   bool _isLoading = false;
+  bool _saveAddress = false;
   Map<String, dynamic>? _customerData;
-  int _currentPoints = 150; // User's current points - in production from API
+  int _currentPoints = 0; // User's current points - in production from API
 
   @override
   void initState() {
@@ -59,8 +61,84 @@ class _CheckoutPageState extends State<CheckoutPage> {
           _phoneController.text = _customerData?['phone'] ?? '';
         });
       }
+      
+      // Load saved address from profile
+      await _loadSavedAddress();
     } catch (e) {
       debugPrint('Error loading customer data: $e');
+    }
+  }
+
+  Future<void> _loadSavedAddress() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('customer_token');
+      
+      if (token == null || token.isEmpty) return;
+      
+      final response = await http.get(
+        Uri.parse('$_apiBaseUrl/api/customer/profile'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['deliveryAddress'] != null && data['deliveryAddress'].isNotEmpty) {
+          setState(() {
+            _addressController.text = data['deliveryAddress'];
+            _deliveryLat = data['deliveryLat']?.toDouble();
+            _deliveryLng = data['deliveryLng']?.toDouble();
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading saved address: $e');
+    }
+  }
+
+  Future<void> _saveAddressToProfile() async {
+    if (!_saveAddress) return;
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('customer_token');
+      
+      if (token == null || token.isEmpty) return;
+      
+      await http.put(
+        Uri.parse('$_apiBaseUrl/api/customer/profile'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'deliveryAddress': _addressController.text,
+          'deliveryLat': _deliveryLat,
+          'deliveryLng': _deliveryLng,
+        }),
+      );
+    } catch (e) {
+      debugPrint('Error saving address: $e');
+    }
+  }
+
+  Future<void> _showMapPicker() async {
+    final result = await showMapPicker(
+      context: context,
+      initialLatitude: _deliveryLat,
+      initialLongitude: _deliveryLng,
+      initialAddress: _addressController.text.isNotEmpty ? _addressController.text : null,
+    );
+
+    if (result != null) {
+      setState(() {
+        _addressController.text = result.address;
+        _deliveryLat = result.latitude;
+        _deliveryLng = result.longitude;
+      });
     }
   }
 
@@ -149,6 +227,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
       if (response.statusCode == 201) {
         CartStore.instance.clearCart();
+        // Save address to profile if checkbox is checked
+        await _saveAddressToProfile();
         if (mounted) {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
@@ -426,9 +506,28 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     digitsOnly: true,
                                   ),
                                   const SizedBox(height: 16),
-                                  // Delivery Address
-                                  _buildLabelAndField('DELIVERY ADDRESS', '', controller: _addressController, maxLines: 3),
-                                  const SizedBox(height: 24),
+                                  // Delivery Address with Map Picker
+                                  _buildAddressFieldWithMap(),
+                                  const SizedBox(height: 8),
+                                  // Save Address Checkbox
+                                  Row(
+                                    children: [
+                                      Checkbox(
+                                        value: _saveAddress,
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _saveAddress = value ?? false;
+                                          });
+                                        },
+                                        activeColor: const Color(0xFFF4511E),
+                                      ),
+                                      const Text(
+                                        'Save this address to my profile',
+                                        style: TextStyle(fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
                                   // Time of delivery
                                   _buildLabelAndDropdown('TIME OF DELIVERY', 'NOW', ['NOW', 'LATER']),
                                   const SizedBox(height: 16),
@@ -555,6 +654,45 @@ class _CheckoutPageState extends State<CheckoutPage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildAddressFieldWithMap() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 100,
+          child: Text(
+            'DELIVERY ADDRESS',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        Expanded(
+          child: TextField(
+            controller: _addressController,
+            maxLines: 3,
+            style: const TextStyle(fontSize: 12),
+            decoration: InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.map, size: 20),
+                onPressed: _showMapPicker,
+                tooltip: 'Pick from map',
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

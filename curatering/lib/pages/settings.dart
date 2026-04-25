@@ -45,31 +45,22 @@ class _SettingsState extends State<Settings> {
               'Settings',
               style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
             ),
+            const SizedBox(height: 6),
+            Text(
+              'Session controls and support actions.',
+              style: TextStyle(color: Colors.grey.shade700),
+            ),
             const SizedBox(height: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Card(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Row(
-                        children: [
-                          const Expanded(
-                            flex: 1,
-                            child: Text(
-                              'Dark mode',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ],
-                      ),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Card(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: SizedBox(
@@ -88,7 +79,11 @@ class _SettingsState extends State<Settings> {
                   const SizedBox(height: 16),
                   if (role == Role.superAdmin)
                     Card(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                      ),
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
@@ -167,7 +162,11 @@ class _SettingsState extends State<Settings> {
                     )
                   else
                     Card(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                      ),
                       child: const Padding(
                         padding: EdgeInsets.all(16.0),
                         child: Text(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Placeholder;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -22,6 +23,8 @@ import 'widgets/page_permission_guard.dart';
 import 'pages/help_requests.dart';
 import 'pages/action_logs.dart';
 import 'pages/customer_management.dart';
+import 'pages/restaurant_transactions_page.dart';
+import 'widgets/app_scaffold.dart';
 import 'data_store.dart';
 
 Future<void> main() async {
@@ -106,6 +109,16 @@ class MyApp extends StatelessWidget {
                   child: PagePermissionGuard(
                     route: PagePermissionRoutes.menu,
                     child: const Menu(),
+                  ),
+                ),
+            '/restaurant-orders': (context) => RoleGuard(
+                  requiredRole: Role.manager,
+                  allowedRoles: {Role.manager, Role.supervisor},
+                  child: PagePermissionGuard(
+                    route: PagePermissionRoutes.restaurantOrders,
+                    child: const AppScaffold(
+                      child: RestaurantTransactionsPage(),
+                    ),
                   ),
                 ),
             '/reports': (context) => RoleGuard(

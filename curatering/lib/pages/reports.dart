@@ -51,7 +51,8 @@ class _ReportsState extends State<Reports> {
       final months = <DateTime>{};
       for (final o in orders) {
         if (o.scheduleSlots.isEmpty) continue;
-        final d = DateTime.parse(o.scheduleSlots.first.date);
+        final d = DateTime.tryParse(o.scheduleSlots.first.date);
+        if (d == null) continue;
         months.add(DateTime(d.year, d.month, 1));
       }
 
@@ -196,7 +197,8 @@ class _ReportsState extends State<Reports> {
   Widget build(BuildContext context) {
     final monthOrders = _completedOrders.where((o) {
       if (o.scheduleSlots.isEmpty) return false;
-      final d = DateTime.parse(o.scheduleSlots.first.date);
+      final d = DateTime.tryParse(o.scheduleSlots.first.date);
+      if (d == null) return false;
       return d.year == _selectedMonth.year && d.month == _selectedMonth.month;
     }).toList();
 
@@ -245,6 +247,25 @@ class _ReportsState extends State<Reports> {
             const Text(
               'Reports',
               style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Text(
+                  'Monthly sales and event performance insights.',
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: _loadCompletedOrders,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E1E1E),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             if (_isLoading)

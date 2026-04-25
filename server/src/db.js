@@ -22,6 +22,52 @@ function generateUserId() {
   return `CTR-${randomNum}`;
 }
 
+// Function to generate sequential ID (e.g., CUS-0001, INQ-000001)
+async function generateSequentialId(prefix, padding = 4) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    // Get and increment the counter
+    const result = await client.query(
+      `INSERT INTO id_counters (prefix, last_number) 
+       VALUES ($1, 1)
+       ON CONFLICT (prefix) 
+       DO UPDATE SET 
+         last_number = id_counters.last_number + 1,
+         updated_at = now()
+       RETURNING last_number`,
+      [prefix]
+    );
+    
+    await client.query('COMMIT');
+    
+    const nextNumber = result.rows[0].last_number;
+    const paddedNumber = nextNumber.toString().padStart(padding, '0');
+    return `${prefix}-${paddedNumber}`;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+const cateringSets = [
+  { name: 'Set Menu A', ingredients: ['Chicken Adobo', 'Pancit Canton', 'Steamed Rice', 'Lumpiang Shanghai', 'Fruit Salad'] },
+  { name: 'Set Menu B', ingredients: ['Beef Caldereta', 'Chopsuey', 'Garlic Rice', 'Fish Fillet', 'Leche Flan'] },
+  { name: 'Set Menu C', ingredients: ['Pork Sinigang', 'Grilled Tilapia', 'Java Rice', 'Pork BBQ', 'Buko Pandan'] },
+];
+
+const restaurantItems = [
+  { name: 'Chicken Adobo', price: '180.00', category: 'main_course', ingredients: ['Chicken', 'Soy Sauce', 'Vinegar', 'Garlic'], sauces: [] },
+  { name: 'Beef Caldereta', price: '220.00', category: 'main_course', ingredients: ['Beef', 'Tomato Sauce', 'Potatoes', 'Carrots'], sauces: [] },
+  { name: 'Pancit Canton', price: '150.00', category: 'noodles', ingredients: ['Egg Noodles', 'Vegetables', 'Soy Sauce'], sauces: [] },
+  { name: 'Lumpiang Shanghai', price: '120.00', category: 'appetizer', ingredients: ['Ground Pork', 'Vegetables', 'Wrapper'], sauces: ['Sweet & Sour Sauce'] },
+  { name: 'Steamed Rice', price: '35.00', category: 'rice', ingredients: ['Rice'], sauces: [] },
+  { name: 'Leche Flan', price: '60.00', category: 'dessert', ingredients: ['Eggs', 'Milk', 'Sugar'], sauces: [] },
+];
+
 export async function initDb() {
   await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
 
@@ -113,6 +159,15 @@ export async function initDb() {
       archived BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+  `);
+
+  // Backward-compatible migration for older databases.
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS birthday DATE,
+    ADD COLUMN IF NOT EXISTS contact_number TEXT,
+    ADD COLUMN IF NOT EXISTS employment_type TEXT,
+    ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
   `);
 
   await pool.query(`
@@ -367,6 +422,22 @@ export async function initDb() {
     ADD COLUMN IF NOT EXISTS final_status TEXT DEFAULT 'successful' CHECK (final_status IN ('successful','cancelled'));
   `);
 
+  await pool.query(`
+    ALTER TABLE catering_orders
+    ADD COLUMN IF NOT EXISTS final_status TEXT DEFAULT 'successful' CHECK (final_status IN ('successful','cancelled'));
+  `);
+
+  // Add inquiry_id column for formatted IDs (INQ-000000, MINQ-000000)
+  await pool.query(`
+    ALTER TABLE event_orders
+    ADD COLUMN IF NOT EXISTS inquiry_id TEXT UNIQUE;
+  `);
+
+  await pool.query(`
+    ALTER TABLE catering_orders
+    ADD COLUMN IF NOT EXISTS inquiry_id TEXT UNIQUE;
+  `);
+
   // Create menu_dishes table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS menu_dishes (
@@ -413,10 +484,33 @@ export async function initDb() {
     );
   `);
 
-  // Create customer_accounts table
+  // Create ID counters table for sequential ID generation
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS id_counters (
+      prefix TEXT PRIMARY KEY,
+      last_number INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  // Initialize ID counters
+  await pool.query(`
+    INSERT INTO id_counters (prefix, last_number) VALUES ('CUS', 0)
+    ON CONFLICT (prefix) DO NOTHING;
+  `);
+  await pool.query(`
+    INSERT INTO id_counters (prefix, last_number) VALUES ('INQ', 0)
+    ON CONFLICT (prefix) DO NOTHING;
+  `);
+  await pool.query(`
+    INSERT INTO id_counters (prefix, last_number) VALUES ('MINQ', 0)
+    ON CONFLICT (prefix) DO NOTHING;
+  `);
+
+  // Create customer_accounts table with TEXT ID for CUS-0000 format
   await pool.query(`
     CREATE TABLE IF NOT EXISTS customer_accounts (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      id TEXT PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       full_name TEXT NOT NULL,
@@ -432,11 +526,26 @@ export async function initDb() {
     );
   `);
 
+  // Create customer_profiles table for delivery addresses and additional info
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS customer_profiles (
+      id SERIAL PRIMARY KEY,
+      customer_id TEXT NOT NULL REFERENCES customer_accounts(id) ON DELETE CASCADE,
+      delivery_address TEXT,
+      delivery_lat DECIMAL(10,8),
+      delivery_lng DECIMAL(10,8),
+      loyalty_points INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(customer_id)
+    );
+  `);
+
   // Create restaurant_orders table for customer orders
   await pool.query(`
     CREATE TABLE IF NOT EXISTS restaurant_orders (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      customer_id uuid REFERENCES customer_accounts(id) ON DELETE SET NULL,
+      customer_id TEXT REFERENCES customer_accounts(id) ON DELETE SET NULL,
       full_name TEXT,
       phone TEXT,
       items JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -463,6 +572,86 @@ export async function initDb() {
     console.log('Migration check for restaurant_orders columns:', err.message);
   }
 
+  // Migration: Fix invalid status values in existing restaurant_orders data
+  try {
+    console.log('Migration: Fixing invalid status values in restaurant_orders...');
+    
+    // Check for and fix invalid status values
+    const invalidStatusResult = await pool.query(`
+      SELECT id, status FROM restaurant_orders 
+      WHERE status NOT IN ('pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled')
+    `);
+    
+    if (invalidStatusResult.rowCount > 0) {
+      console.log(`Found ${invalidStatusResult.rowCount} orders with invalid status values`);
+      
+      // Update invalid status values to valid ones
+      await pool.query(`UPDATE restaurant_orders SET status = 'confirmed' WHERE status = 'processing'`);
+      await pool.query(`UPDATE restaurant_orders SET status = 'out_for_delivery' WHERE status = 'for_delivery'`);
+      await pool.query(`UPDATE restaurant_orders SET status = 'delivered' WHERE status = 'completed'`);
+      
+      console.log('Migration: Fixed invalid status values in restaurant_orders');
+    } else {
+      console.log('Migration: No invalid status values found');
+    }
+  } catch (err) {
+    console.log('Migration check for invalid status values:', err.message);
+  }
+
+  // Migrations commented out - no longer needed
+  // Migration: Update coordinate columns precision to float8 (async, non-blocking)
+  /*
+  try {
+    // Run coordinate column updates in background without blocking startup
+    setTimeout(async () => {
+      try {
+        console.log('Background: Updating coordinate columns precision...');
+        // Use a separate connection for migrations to avoid pool interference
+        const client = await pool.connect();
+        try {
+          await client.query(`ALTER TABLE restaurant_orders ALTER COLUMN delivery_lat TYPE float8 USING delivery_lat::float8`);
+          await client.query(`ALTER TABLE restaurant_orders ALTER COLUMN delivery_lng TYPE float8 USING delivery_lng::float8`);
+          await client.query(`ALTER TABLE customer_profiles ALTER COLUMN delivery_lat TYPE float8 USING delivery_lat::float8`);
+          await client.query(`ALTER TABLE customer_profiles ALTER COLUMN delivery_lng TYPE float8 USING delivery_lng::float8`);
+          console.log('Background: Coordinate columns precision updated successfully');
+        } finally {
+          client.release();
+        }
+      } catch (err) {
+        console.log('Background: Coordinate columns precision update:', err.message);
+      }
+    }, 5000); // Start after 5 seconds to allow server to fully initialize
+  } catch (err) {
+    console.log('Migration check for coordinate columns precision:', err.message);
+  }
+  */
+
+  // Migration: Add performance indexes for restaurant orders (async, non-blocking)
+  /*
+  try {
+    // Run index creation in background without blocking startup
+    setTimeout(async () => {
+      try {
+        console.log('Background: Creating restaurant orders indexes...');
+        // Use a separate connection for migrations to avoid pool interference
+        const client = await pool.connect();
+        try {
+          await client.query(`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_restaurant_orders_status ON restaurant_orders(status)`);
+          await client.query(`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_restaurant_orders_created_at ON restaurant_orders(created_at DESC)`);
+          await client.query(`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_restaurant_orders_status_created_at ON restaurant_orders(status, created_at DESC)`);
+          console.log('Background: Restaurant orders indexes created successfully');
+        } finally {
+          client.release();
+        }
+      } catch (err) {
+        console.log('Background: Restaurant orders indexes creation:', err.message);
+      }
+    }, 6000); // Start after 6 seconds to allow server to fully initialize
+  } catch (err) {
+    console.log('Migration check for restaurant orders indexes:', err.message);
+  }
+  */
+
   // Insert default dishes from CSV if table is empty
   const dishCount = await pool.query(`SELECT COUNT(*) FROM menu_dishes`);
   if (parseInt(dishCount.rows[0].count) === 0) {
@@ -487,4 +676,4 @@ export async function initDb() {
   }
 }
 
-export { pool, generateUserId };
+export { pool, generateUserId, generateSequentialId };

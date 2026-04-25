@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import '../config.dart';
+import '../auth/auth_session.dart';
 
 class RestaurantTransactionsPage extends StatefulWidget {
   const RestaurantTransactionsPage({super.key});
@@ -15,6 +18,10 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   List<Map<String, dynamic>> _confirmationOrders = [];
   List<Map<String, dynamic>> _processingOrders = [];
   List<Map<String, dynamic>> _completedOrders = [];
+  
+  // Performance optimization: Cache last fetch time
+  DateTime? _lastFetchTime;
+  static const Duration _cacheValidity = Duration(minutes: 2);
 
   @override
   void initState() {
@@ -29,39 +36,101 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     super.dispose();
   }
 
-  Future<void> _loadOrders() async {
+  Future<void> _loadOrders({bool forceRefresh = false}) async {
+    if (_isLoading) return; // Prevent multiple simultaneous loads
+    
+    // Check if user is authenticated
+    if (!AuthSession.instance.hasToken) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please log in to view restaurant orders'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+    
+    // Check cache validity
+    if (!forceRefresh && _lastFetchTime != null) {
+      final timeSinceLastFetch = DateTime.now().difference(_lastFetchTime!);
+      if (timeSinceLastFetch < _cacheValidity) {
+        return; // Use cached data
+      }
+    }
+    
+    final stopwatch = Stopwatch()..start();
     setState(() => _isLoading = true);
+    
     try {
-      final supabase = Supabase.instance.client;
+      final token = await _getAuthToken();
+      print('Debug: Using token for restaurant orders: ${token.substring(0, 20)}...');
+      
+      // Load smaller batches for faster initial display
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/api/manager/restaurant/orders?limit=50'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
 
-      // Fetch orders by status
-      final confirmationResponse = await supabase
-          .from('restaurant_orders')
-          .select()
-          .eq('status', 'pending')
-          .order('created_at', ascending: false);
+      if (response.statusCode == 200) {
+        final parseTime = Stopwatch()..start();
+        final allOrders = _parseResponse(response.body);
+        parseTime.stop();
+        
+        // Optimized filtering with pre-allocated lists
+        final confirmationOrders = <Map<String, dynamic>>[];
+        final processingOrders = <Map<String, dynamic>>[];
+        final completedOrders = <Map<String, dynamic>>[];
+        
+        // Use forEach instead of for loop for better performance
+        allOrders.forEach((order) {
+          final status = order['status'] as String? ?? '';
+          switch (status) {
+            case 'pending':
+              confirmationOrders.add(order);
+              break;
+            case 'confirmed':
+            case 'preparing':
+            case 'out_for_delivery':
+              processingOrders.add(order);
+              break;
+            case 'delivered':
+            case 'cancelled':
+              completedOrders.add(order);
+              break;
+          }
+        });
 
-      final processingResponse = await supabase
-          .from('restaurant_orders')
-          .select()
-          .inFilter('status', ['processing', 'for_delivery'])
-          .order('created_at', ascending: false);
-
-      final completedResponse = await supabase
-          .from('restaurant_orders')
-          .select()
-          .inFilter('status', ['completed', 'cancelled'])
-          .order('created_at', ascending: false);
-
-      setState(() {
-        _confirmationOrders = List<Map<String, dynamic>>.from(confirmationResponse);
-        _processingOrders = List<Map<String, dynamic>>.from(processingResponse);
-        _completedOrders = List<Map<String, dynamic>>.from(completedResponse);
-      });
+        setState(() {
+          _confirmationOrders = confirmationOrders;
+          _processingOrders = processingOrders;
+          _completedOrders = completedOrders;
+          _lastFetchTime = DateTime.now();
+        });
+        
+        stopwatch.stop();
+        print('Performance: Load took ${stopwatch.elapsedMilliseconds}ms, Parse took ${parseTime.elapsedMilliseconds}ms');
+      } else {
+        final errorMessage = response.statusCode == 401 
+          ? 'Authentication failed. Please log in again.'
+          : response.statusCode == 403
+          ? 'Access denied. You need manager permissions to view orders.'
+          : 'Failed to load orders (Status: ${response.statusCode})';
+        throw Exception(errorMessage);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading orders: $e')),
+          SnackBar(
+            content: Text('Error loading orders: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     } finally {
@@ -69,21 +138,86 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     }
   }
 
+  void _refreshOrders() {
+    _loadOrders(forceRefresh: true);
+  }
+
+  Future<String> _getAuthToken() async {
+    final token = AuthSession.instance.token;
+    if (token == null || token.isEmpty) {
+      throw Exception('No authentication token found. Please log in again.');
+    }
+    return token;
+  }
+
+  // Helper method to safely parse amount from database (string or num)
+  double _parseAmount(dynamic amount) {
+    if (amount == null) return 0.0;
+    if (amount is num) return amount.toDouble();
+    if (amount is String) {
+      return double.tryParse(amount) ?? 0.0;
+    }
+    return 0.0;
+  }
+
+  List<dynamic> _parseResponse(String responseBody) {
+    try {
+      final parsed = jsonDecode(responseBody);
+      if (parsed is Map<String, dynamic> && parsed.containsKey('orders')) {
+        final orders = parsed['orders'] as List<dynamic>;
+        // Pre-process the data to avoid repeated parsing
+        return orders.map((order) {
+          if (order is Map<String, dynamic>) {
+            // Ensure items is already parsed
+            final items = order['items'];
+            if (items is String) {
+              try {
+                order['items'] = jsonDecode(items);
+              } catch (e) {
+                order['items'] = [];
+              }
+            }
+          }
+          return order;
+        }).toList();
+      }
+      return parsed as List<dynamic>;
+    } catch (e) {
+      return [];
+    }
+  }
+
   Future<void> _updateOrderStatus(String orderId, String newStatus,
       {String? deliveryUrl}) async {
+    // Optimistic update: Update UI immediately
+    final originalOrder = _findOrderById(orderId);
+    if (originalOrder != null) {
+      _optimisticallyUpdateOrder(orderId, newStatus, deliveryUrl);
+    }
+
     try {
-      final supabase = Supabase.instance.client;
+      final token = await _getAuthToken();
       final updateData = {'status': newStatus};
       if (deliveryUrl != null) {
-        updateData['delivery_url'] = deliveryUrl;
+        updateData['delivery_tracking_url'] = deliveryUrl;
       }
 
-      await supabase
-          .from('restaurant_orders')
-          .update(updateData)
-          .eq('id', orderId);
+      final response = await http.put(
+        Uri.parse('$apiBaseUrl/api/manager/restaurant/orders/$orderId'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(updateData),
+      );
 
-      await _loadOrders();
+      if (response.statusCode != 200) {
+        // Revert optimistic update on failure
+        if (originalOrder != null) {
+          _revertOrderUpdate(orderId, originalOrder);
+        }
+        throw Exception('Failed to update order');
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -99,179 +233,448 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     }
   }
 
+  Map<String, dynamic>? _findOrderById(String orderId) {
+    for (final orderList in [_confirmationOrders, _processingOrders, _completedOrders]) {
+      try {
+        final order = orderList.firstWhere((order) => order['id'] == orderId);
+        return Map<String, dynamic>.from(order);
+      } catch (e) {
+        // Continue searching
+      }
+    }
+    return null;
+  }
+
+  void _optimisticallyUpdateOrder(String orderId, String newStatus, String? deliveryUrl) {
+    setState(() {
+      // Remove from current list
+      _removeOrderFromAllLists(orderId);
+      
+      // Add to appropriate new list with updated status
+      final updatedOrder = _findOrderById(orderId);
+      if (updatedOrder != null) {
+        updatedOrder['status'] = newStatus;
+        if (deliveryUrl != null) {
+          updatedOrder['delivery_tracking_url'] = deliveryUrl;
+        }
+        
+        if (newStatus == 'pending') {
+          _confirmationOrders.add(updatedOrder);
+        } else if (newStatus == 'processing' || newStatus == 'for_delivery') {
+          _processingOrders.add(updatedOrder);
+        } else if (newStatus == 'completed' || newStatus == 'cancelled') {
+          _completedOrders.add(updatedOrder);
+        }
+      }
+    });
+  }
+
+  void _revertOrderUpdate(String orderId, Map<String, dynamic> originalOrder) {
+    setState(() {
+      _removeOrderFromAllLists(orderId);
+      
+      final status = originalOrder['status'] as String? ?? '';
+      if (status == 'pending') {
+        _confirmationOrders.add(originalOrder);
+      } else if (status == 'processing' || status == 'for_delivery') {
+        _processingOrders.add(originalOrder);
+      } else if (status == 'completed' || status == 'cancelled') {
+        _completedOrders.add(originalOrder);
+      }
+    });
+  }
+
+  void _removeOrderFromAllLists(String orderId) {
+    _confirmationOrders.removeWhere((order) => order['id'] == orderId);
+    _processingOrders.removeWhere((order) => order['id'] == orderId);
+    _completedOrders.removeWhere((order) => order['id'] == orderId);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E1E1E),
         foregroundColor: Colors.white,
         elevation: 0,
+        automaticallyImplyLeading: false,
         title: const Text('Restaurant Orders'),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: const Color(0xFFFFC024),
-          labelColor: const Color(0xFFFFC024),
-          unselectedLabelColor: Colors.grey,
-          tabs: [
-            Tab(
-              icon: Badge(
-                isLabelVisible: _confirmationOrders.isNotEmpty,
-                label: Text('${_confirmationOrders.length}'),
-                child: const Icon(Icons.pending_actions),
-              ),
-              text: 'Confirmation',
-            ),
-            const Tab(icon: Icon(Icons.local_shipping), text: 'Processing'),
-            const Tab(icon: Icon(Icons.check_circle), text: 'Completed'),
-          ],
-        ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshOrders,
+            tooltip: 'Refresh Orders',
+          ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(60),
+          child: Container(
+            color: Colors.white,
+            child: TabBar(
               controller: _tabController,
-              children: [
-                _buildConfirmationTab(),
-                _buildProcessingTab(),
-                _buildCompletedTab(),
+              indicatorColor: const Color(0xFFFFC024),
+              labelColor: const Color(0xFFFFC024),
+              unselectedLabelColor: Colors.grey.shade600,
+              labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+              tabs: [
+                Tab(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.pending_actions, size: 20),
+                      const SizedBox(width: 8),
+                      Text('Confirmation (${_confirmationOrders.length})'),
+                    ],
+                  ),
+                ),
+                Tab(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.local_shipping, size: 20),
+                      const SizedBox(width: 8),
+                      Text('Processing (${_processingOrders.length})'),
+                    ],
+                  ),
+                ),
+                Tab(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.check_circle, size: 20),
+                      const SizedBox(width: 8),
+                      Text('Completed (${_completedOrders.length})'),
+                    ],
+                  ),
+                ),
               ],
             ),
+          ),
+        ),
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+            child: Text(
+              'Track confirmations, delivery progress, and completed orders.',
+              style: TextStyle(color: Colors.grey.shade700),
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildConfirmationTab(),
+                      _buildProcessingTab(),
+                      _buildCompletedTab(),
+                    ],
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildConfirmationTab() {
     if (_confirmationOrders.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.inbox, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
+            Icon(Icons.inbox, size: 64, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
             Text(
               'No orders awaiting confirmation',
-              style: TextStyle(color: Colors.grey, fontSize: 16),
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _confirmationOrders.length,
-      itemBuilder: (context, index) {
-        final order = _confirmationOrders[index];
-        return _buildOrderCard(
-          order: order,
-          actions: [
-            ElevatedButton.icon(
-              onPressed: () => _confirmOrder(order['id']),
-              icon: const Icon(Icons.check, color: Colors.white),
-              label: const Text('Confirm', style: TextStyle(color: Colors.white)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
+    return Container(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Summary Cards
+          Row(
+            children: [
+              _buildSummaryCard(
+                'Total Orders',
+                '${_confirmationOrders.length}',
+                Icons.receipt_long,
+                Colors.blue,
               ),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton.icon(
-              onPressed: () => _cancelOrder(order['id']),
-              icon: const Icon(Icons.close, color: Colors.white),
-              label: const Text('Cancel', style: TextStyle(color: Colors.white)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
+              const SizedBox(width: 16),
+              _buildSummaryCard(
+                'Pending Revenue',
+                '$_currencySymbol${_confirmationOrders.fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
+                Icons.attach_money,
+                Colors.green,
               ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          
+          // Orders Table
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.shade200,
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-          ],
-        );
-      },
+            child: Column(
+              children: [
+                // Table Header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      topRight: Radius.circular(12),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(flex: 1, child: _buildTableHeader('Order ID')),
+                      Expanded(flex: 2, child: _buildTableHeader('Customer')),
+                      Expanded(flex: 1, child: _buildTableHeader('Phone')),
+                      Expanded(flex: 1, child: _buildTableHeader('Items')),
+                      Expanded(flex: 1, child: _buildTableHeader('Total')),
+                      Expanded(flex: 1, child: _buildTableHeader('Date')),
+                      Expanded(flex: 2, child: _buildTableHeader('Actions')),
+                    ],
+                  ),
+                ),
+                // Table Rows
+                ..._confirmationOrders.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final order = entry.value;
+                  return _buildOrderTableRow(order, index);
+                }).toList(),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildProcessingTab() {
     if (_processingOrders.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.local_shipping, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
+            Icon(Icons.local_shipping, size: 64, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
             Text(
               'No orders in processing',
-              style: TextStyle(color: Colors.grey, fontSize: 16),
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _processingOrders.length,
-      itemBuilder: (context, index) {
-        final order = _processingOrders[index];
-        final status = order['status'] as String;
-        final deliveryUrl = order['delivery_url'] as String?;
-
-        return _buildOrderCard(
-          order: order,
-          actions: status == 'processing'
-              ? [
-                  ElevatedButton.icon(
-                    onPressed: () => _showDeliveryUrlDialog(order['id']),
-                    icon: const Icon(Icons.local_shipping, color: Colors.white),
-                    label: const Text('For Delivery', style: TextStyle(color: Colors.white)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
+    return Container(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Summary Cards
+          Row(
+            children: [
+              _buildSummaryCard(
+                'Processing Orders',
+                '${_processingOrders.length}',
+                Icons.local_shipping,
+                Colors.orange,
+              ),
+              const SizedBox(width: 16),
+              _buildSummaryCard(
+                'Processing Revenue',
+                '$_currencySymbol${_processingOrders.fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
+                Icons.attach_money,
+                Colors.green,
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          
+          // Orders Table
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.shade200,
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                // Table Header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      topRight: Radius.circular(12),
                     ),
                   ),
-                ]
-              : deliveryUrl != null
-                  ? [
-                      ElevatedButton.icon(
-                        onPressed: () => _markDelivered(order['id']),
-                        icon: const Icon(Icons.check_circle, color: Colors.white),
-                        label: const Text('Delivered', style: TextStyle(color: Colors.white)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                        ),
-                      ),
-                    ]
-                  : [],
-        );
-      },
+                  child: Row(
+                    children: [
+                      Expanded(flex: 1, child: _buildTableHeader('Order ID')),
+                      Expanded(flex: 2, child: _buildTableHeader('Customer')),
+                      Expanded(flex: 1, child: _buildTableHeader('Status')),
+                      Expanded(flex: 1, child: _buildTableHeader('Items')),
+                      Expanded(flex: 1, child: _buildTableHeader('Total')),
+                      Expanded(flex: 1, child: _buildTableHeader('Date')),
+                      Expanded(flex: 2, child: _buildTableHeader('Actions')),
+                    ],
+                  ),
+                ),
+                // Table Rows
+                ..._processingOrders.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final order = entry.value;
+                  return _buildProcessingOrderTableRow(order, index);
+                }).toList(),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildCompletedTab() {
     if (_completedOrders.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.check_circle_outline, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
+            Icon(Icons.check_circle_outline, size: 64, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
             Text(
               'No completed orders yet',
-              style: TextStyle(color: Colors.grey, fontSize: 16),
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _completedOrders.length,
-      itemBuilder: (context, index) {
-        final order = _completedOrders[index];
-        final status = order['status'] as String;
-
-        return _buildOrderCard(
-          order: order,
-          statusColor: status == 'cancelled' ? Colors.red : Colors.green,
-        );
-      },
+    return Container(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Summary Cards
+          Row(
+            children: [
+              _buildSummaryCard(
+                'Completed Orders',
+                '${_completedOrders.where((o) => o['status'] == 'completed').length}',
+                Icons.check_circle,
+                Colors.green,
+              ),
+              const SizedBox(width: 16),
+              _buildSummaryCard(
+                'Cancelled Orders',
+                '${_completedOrders.where((o) => o['status'] == 'cancelled').length}',
+                Icons.cancel,
+                Colors.red,
+              ),
+              const SizedBox(width: 16),
+              _buildSummaryCard(
+                'Total Revenue',
+                '$_currencySymbol${_completedOrders.where((o) => o['status'] == 'completed').fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
+                Icons.attach_money,
+                Colors.green,
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          
+          // Orders Table
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.shade200,
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                // Table Header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      topRight: Radius.circular(12),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(flex: 1, child: _buildTableHeader('Order ID')),
+                      Expanded(flex: 2, child: _buildTableHeader('Customer')),
+                      Expanded(flex: 1, child: _buildTableHeader('Status')),
+                      Expanded(flex: 1, child: _buildTableHeader('Items')),
+                      Expanded(flex: 1, child: _buildTableHeader('Total')),
+                      Expanded(flex: 1, child: _buildTableHeader('Date')),
+                      Expanded(flex: 2, child: _buildTableHeader('Payment Status')),
+                    ],
+                  ),
+                ),
+                // Table Rows
+                ..._completedOrders.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final order = entry.value;
+                  return _buildCompletedOrderTableRow(order, index);
+                }).toList(),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -286,6 +689,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -298,28 +702,28 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                 Text(
                   'Order #${order['id'].toString().substring(0, 8).toUpperCase()}',
                   style: const TextStyle(
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                     fontSize: 16,
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: (statusColor ?? _getStatusColor(status)).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
                     status.toUpperCase(),
                     style: TextStyle(
                       color: statusColor ?? _getStatusColor(status),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
                     ),
                   ),
                 ),
               ],
             ),
-            const Divider(height: 24),
+            const SizedBox(height: 16),
 
             // Customer Information
             _buildInfoRow('Customer Name', order['full_name'] ?? 'N/A'),
@@ -332,12 +736,13 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             const SizedBox(height: 16),
 
             // Order Details
-            const Text(
+            Text(
               'ORDER DETAILS',
               style: TextStyle(
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w600,
                 fontSize: 12,
-                letterSpacing: 1,
+                color: Colors.grey.shade600,
+                letterSpacing: 0.5,
               ),
             ),
             const SizedBox(height: 8),
@@ -355,7 +760,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                     ),
                     Expanded(
                       child: Text(
-                        '₱${price.toStringAsFixed(2)}',
+                        '$_currencySymbol${price.toStringAsFixed(2)}',
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -367,7 +772,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                     ),
                     Expanded(
                       child: Text(
-                        '₱${total.toStringAsFixed(2)}',
+                        '$_currencySymbol${total.toStringAsFixed(2)}',
                         textAlign: TextAlign.right,
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
@@ -376,7 +781,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                 ),
               );
             }).toList(),
-            const Divider(height: 24),
+            const SizedBox(height: 16),
 
             // Total and Payment Method
             Row(
@@ -384,12 +789,15 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               children: [
                 Text(
                   'Payment: ${order['payment_method'] ?? 'GCash'}',
-                  style: TextStyle(color: Colors.grey.shade600),
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 14,
+                  ),
                 ),
                 Text(
-                  'Total: ₱${(order['total_amount'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                  'Total: $_currencySymbol${_parseAmount(order['total_amount']).toStringAsFixed(2)}',
                   style: const TextStyle(
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                     fontSize: 16,
                   ),
                 ),
@@ -441,7 +849,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
   Widget _buildInfoRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -452,6 +860,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               style: TextStyle(
                 color: Colors.grey.shade600,
                 fontSize: 13,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ),
@@ -459,7 +868,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             child: Text(
               value,
               style: const TextStyle(
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
                 fontSize: 13,
               ),
             ),
@@ -486,6 +895,333 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     }
   }
 
+  static const String _currencySymbol = '₱';
+
+  Widget _buildSummaryCard(String title, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: Colors.white, size: 24),
+          ),
+          const SizedBox(width: 16),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTableHeader(String text) {
+    return Text(
+      text,
+      style: TextStyle(
+        color: Colors.grey.shade700,
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.5,
+      ),
+    );
+  }
+
+  Widget _buildOrderTableRow(Map<String, dynamic> order, int index) {
+    final items = (order['items'] as List<dynamic>?) ?? [];
+    final isEven = index % 2 == 0;
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: isEven ? Colors.white : Colors.grey.shade50,
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.grey.shade200,
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            Expanded(flex: 1, child: _buildTableCell('#${order['id'].toString().substring(0, 8).toUpperCase()}')),
+            Expanded(flex: 2, child: _buildTableCell(order['full_name'] ?? 'N/A')),
+            Expanded(flex: 1, child: _buildTableCell(order['phone'] ?? 'N/A')),
+            Expanded(flex: 1, child: _buildTableCell('${items.length}')),
+            Expanded(flex: 1, child: _buildTableCell('$_currencySymbol${_parseAmount(order['total_amount']).toStringAsFixed(2)}')),
+            Expanded(flex: 1, child: _buildTableCell('${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}')),
+            Expanded(
+              flex: 2,
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => _confirmOrder(order['id']),
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.green,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check, color: Colors.white, size: 16),
+                            SizedBox(width: 4),
+                            Text('Confirm', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => _cancelOrder(order['id']),
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.close, color: Colors.white, size: 16),
+                            SizedBox(width: 4),
+                            Text('Cancel', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTableCell(String text) {
+    return Text(
+      text,
+      style: TextStyle(
+        color: Colors.grey.shade800,
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(String status, Color? statusColor) {
+    final color = statusColor ?? _getStatusColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Text(
+        status.toUpperCase(),
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w600,
+          fontSize: 11,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProcessingOrderTableRow(Map<String, dynamic> order, int index) {
+    final items = (order['items'] as List<dynamic>?) ?? [];
+    final status = order['status'] as String? ?? 'processing';
+    final isEven = index % 2 == 0;
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: isEven ? Colors.white : Colors.grey.shade50,
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.grey.shade200,
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            Expanded(flex: 1, child: _buildTableCell('#${order['id'].toString().substring(0, 8).toUpperCase()}')),
+            Expanded(flex: 2, child: _buildTableCell(order['full_name'] ?? 'N/A')),
+            Expanded(flex: 1, child: _buildStatusBadge(status, null)),
+            Expanded(flex: 1, child: _buildTableCell('${items.length}')),
+            Expanded(flex: 1, child: _buildTableCell('$_currencySymbol${_parseAmount(order['total_amount']).toStringAsFixed(2)}')),
+            Expanded(flex: 1, child: _buildTableCell('${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}')),
+            Expanded(
+              flex: 2,
+              child: Row(
+                children: [
+                  if (status == 'confirmed' || status == 'preparing') ...[
+                    GestureDetector(
+                      onTap: () => _showDeliveryUrlDialog(order['id']),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.orange,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.local_shipping, color: Colors.white, size: 16),
+                              SizedBox(width: 4),
+                              Text('For Delivery', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (status == 'out_for_delivery') ...[
+                    GestureDetector(
+                      onTap: () => _markDelivered(order['id']),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.green,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.check_circle, color: Colors.white, size: 16),
+                              SizedBox(width: 4),
+                              Text('Delivered', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompletedOrderTableRow(Map<String, dynamic> order, int index) {
+    final items = (order['items'] as List<dynamic>?) ?? [];
+    final status = order['status'] as String? ?? 'completed';
+    final paymentStatus = order['payment_status'] as String? ?? 'pending';
+    final isEven = index % 2 == 0;
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: isEven ? Colors.white : Colors.grey.shade50,
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.grey.shade200,
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            Expanded(flex: 1, child: _buildTableCell('#${order['id'].toString().substring(0, 8).toUpperCase()}')),
+            Expanded(flex: 2, child: _buildTableCell(order['full_name'] ?? 'N/A')),
+            Expanded(flex: 1, child: _buildStatusBadge(status, null)),
+            Expanded(flex: 1, child: _buildTableCell('${items.length}')),
+            Expanded(flex: 1, child: _buildTableCell('$_currencySymbol${_parseAmount(order['total_amount']).toStringAsFixed(2)}')),
+            Expanded(flex: 1, child: _buildTableCell('${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}')),
+            Expanded(
+              flex: 2,
+              child: _buildPaymentStatusBadge(paymentStatus),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaymentStatusBadge(String paymentStatus) {
+    Color color;
+    String text;
+    
+    switch (paymentStatus) {
+      case 'paid':
+        color = Colors.green;
+        text = 'PAID';
+        break;
+      case 'failed':
+        color = Colors.red;
+        text = 'FAILED';
+        break;
+      default:
+        color = Colors.orange;
+        text = 'PENDING';
+    }
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w600,
+          fontSize: 11,
+        ),
+      ),
+    );
+  }
+
   Future<void> _confirmOrder(String orderId) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -507,7 +1243,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     );
 
     if (confirmed == true) {
-      await _updateOrderStatus(orderId, 'processing');
+      await _updateOrderStatus(orderId, 'confirmed');
     }
   }
 
@@ -576,7 +1312,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     );
 
     if (result != null && result.isNotEmpty) {
-      await _updateOrderStatus(orderId, 'for_delivery', deliveryUrl: result);
+      await _updateOrderStatus(orderId, 'out_for_delivery', deliveryUrl: result);
     }
   }
 
@@ -601,7 +1337,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     );
 
     if (confirmed == true) {
-      await _updateOrderStatus(orderId, 'completed');
+      await _updateOrderStatus(orderId, 'delivered');
     }
   }
 }

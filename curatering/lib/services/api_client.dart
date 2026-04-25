@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../auth/auth_session.dart';
 import '../config.dart';
+import '../utils/api_cache.dart';
 
 class ApiError implements Exception {
   final String message;
@@ -57,15 +58,21 @@ class ApiClient {
   Future<Map<String, dynamic>> getJson(
     String path, {
     Map<String, String>? queryParameters,
+    bool useCache = true,
+    Duration? cacheExpiry,
   }) async {
     var uri = Uri.parse(_resolveUrl(path));
     if (queryParameters != null && queryParameters.isNotEmpty) {
       uri = uri.replace(queryParameters: queryParameters);
     }
-    final res = await http.get(
-      uri,
-      headers: _defaultHeaders(),
-    );
+
+    final res = useCache
+        ? await ApiCache().get(
+            uri,
+            headers: _defaultHeaders(),
+            expiry: cacheExpiry ?? const Duration(minutes: 2),
+          )
+        : await http.get(uri, headers: _defaultHeaders());
 
     return _handleResponse(res, uri);
   }

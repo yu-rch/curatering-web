@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 
 // Runtime fallback for dev mode (String.fromEnvironment defaultValue doesn't work in JIT mode)
-String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'http://localhost:3000' : apiBaseUrl;
+String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/' : apiBaseUrl;
 
 class CustomerLoginPage extends StatefulWidget {
   final bool? redirectToCheckout;

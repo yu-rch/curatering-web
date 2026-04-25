@@ -7,6 +7,7 @@ class PagePermissionRoutes {
   static const String manageEvents = '/manage-events';
   static const String loyalty = '/loyalty';
   static const String menu = '/menu';
+  static const String restaurantOrders = '/restaurant-orders';
   static const String reports = '/reports';
   static const String orderHistory = '/order-history';
   static const String archive = '/archive';

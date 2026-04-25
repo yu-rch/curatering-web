@@ -3,9 +3,10 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../auth/auth_session.dart';
 import '../config.dart';
+import '../widgets/app_scaffold.dart';
 
 // Runtime fallback for dev mode (String.fromEnvironment defaultValue doesn't work in JIT mode)
-String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'http://localhost:3000' : apiBaseUrl;
+String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/' : apiBaseUrl;
 
 class CustomerManagementPage extends StatefulWidget {
   const CustomerManagementPage({super.key});
@@ -70,19 +71,38 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Customer Management'),
-        backgroundColor: const Color(0xFF1E1E1E),
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadCustomers,
-          ),
-        ],
-      ),
-      body: _isLoading
+    return AppScaffold(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Customer Management',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: _loadCustomers,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E1E1E),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Review customer accounts, loyalty stats, and order activity.',
+              style: TextStyle(color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(
@@ -101,12 +121,17 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
               : _customers.isEmpty
                   ? const Center(child: Text('No customers found'))
                   : ListView.builder(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
                       itemCount: _customers.length,
                       itemBuilder: (context, index) {
                         final customer = _customers[index];
                         return Card(
                           margin: const EdgeInsets.only(bottom: 12),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                          ),
                           child: ListTile(
                             leading: CircleAvatar(
                               backgroundColor: customer['is_verified'] == true
@@ -138,6 +163,10 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
                         );
                       },
                     ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -172,7 +201,7 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
 
     try {
       final response = await http.get(
-        Uri.parse('/api/admin/customers/${widget.customerId}'),
+        Uri.parse('$_apiBaseUrl/api/admin/customers/${widget.customerId}'),
         headers: {
           'Authorization': 'Bearer ${AuthSession.instance.token}',
         },
@@ -205,7 +234,7 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
   Future<void> _archiveCustomer(bool archived) async {
     try {
       final response = await http.put(
-        Uri.parse('/api/admin/customers/${widget.customerId}/archive'),
+        Uri.parse('$_apiBaseUrl/api/admin/customers/${widget.customerId}/archive'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ${AuthSession.instance.token}',
@@ -234,19 +263,44 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Customer Details'),
-        backgroundColor: const Color(0xFF1E1E1E),
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadCustomerDetails,
-          ),
-        ],
-      ),
-      body: _isLoading
+    return AppScaffold(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.arrow_back),
+                  tooltip: 'Back to customers',
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  'Customer Details',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: _loadCustomerDetails,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E1E1E),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'View profile details, totals, and account status.',
+              style: TextStyle(color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(child: Text(_error!))
@@ -257,7 +311,11 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
                     children: [
                       // Customer Info Card
                       Card(
-                        elevation: 4,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                        ),
                         child: Padding(
                           padding: const EdgeInsets.all(20),
                           child: Column(
@@ -446,6 +504,10 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
                     ],
                   ),
                 ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

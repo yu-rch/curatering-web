@@ -36,14 +36,19 @@ class AppScaffold extends StatelessWidget {
     ),
     _SidebarItemData(icon: Icons.menu_book, label: 'Catering/Restaurant Menu', route: '/catering-restaurant-menu'),
     _SidebarItemData(
+      icon: Icons.receipt_long,
+      label: 'Restaurant Orders',
+      route: '/restaurant-orders',
+    ),
+    _SidebarItemData(
       icon: Icons.bar_chart,
       label: 'Reports',
       route: '/reports',
     ),
     _SidebarItemData(
       icon: Icons.swap_horiz,
-      label: 'Transactions',
-      route: '/transactions',
+      label: 'Order History',
+      route: '/order-history',
     ),
     _SidebarItemData(icon: Icons.archive, label: 'Archive', route: '/archive'),
     _SidebarItemData(icon: Icons.public, label: 'Website', route: '/website'),

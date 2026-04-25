@@ -45,6 +45,58 @@ class MenuStore extends ChangeNotifier {
     }
   }
 
+  // Load dishes with images (slower, use when needed)
+  Future<void> loadDishesWithImages() async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      final decoded = await ApiClient.instance.getJson('/api/menu/dishes/with-images');
+      final raw = decoded['dishes'];
+
+      if (raw is! List) {
+        _items = [];
+      } else {
+        _items = raw.map((json) => _dishFromJson(json)).toList();
+      }
+
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading menu dishes with images: $e');
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // Load single dish with image
+  Future<MenuDish?> loadDishWithImage(String dishId) async {
+    try {
+      final decoded = await ApiClient.instance.getJson('/api/menu/dishes/$dishId/with-image');
+      final dishData = decoded['dish'];
+      
+      if (dishData is! Map<String, dynamic>) {
+        return null;
+      }
+      
+      final dish = _dishFromJson(dishData);
+      
+      // Update the dish in the items list
+      final index = _items.indexWhere((item) => item.id == dishId);
+      if (index != -1) {
+        _items[index] = dish;
+        notifyListeners();
+      }
+      
+      return dish;
+    } catch (e) {
+      debugPrint('Error loading dish with image: $e');
+      return null;
+    }
+  }
+
   MenuDish _dishFromJson(Map<String, dynamic> json) {
     return MenuDish(
       id: json['id'] as String? ?? '',
@@ -57,7 +109,7 @@ class MenuStore extends ChangeNotifier {
       imageBase64: json['image_base64'] as String?,
       archived: json['archived'] as bool? ?? false,
       archivedAt: json['archived_at'] != null
-          ? DateTime.parse(json['archived_at'] as String)
+          ? DateTime.tryParse(json['archived_at'] as String)
           : null,
       type: json['type'] as String? ?? '',
       setMenus: (json['set_menus'] as List<dynamic>?)?.cast<String>() ?? [],

@@ -245,18 +245,52 @@ class _ManageEventsState extends State<ManageEvents>
   final TextEditingController _eventAddressController = TextEditingController();
   final TextEditingController _guestCountController = TextEditingController();
 
-  // Form validation error states
-  String? _contactNumberError;
-  String? _emailError;
-  String? _guestCountError;
+  /// Selects the best matching pax option based on guest count.
+  /// Example: 15 guests → "10-20 pax", 35 guests → "25-40 pax"
+  String _selectPaxForGuests(int guestCount, List<String> paxOptions) {
+    if (paxOptions.isEmpty) return '';
+    if (guestCount <= 0) return paxOptions.first;
 
-  final TextEditingController _postCardsController = TextEditingController();
-  final TextEditingController _postInquiriesController =
-      TextEditingController();
-  final TextEditingController _postComplaintsController =
-      TextEditingController();
+    // Try to match by parsing range bounds from strings like "10-20 pax"
+    for (final option in paxOptions) {
+      final lower = _extractLowerBound(option);
+      final upper = _extractUpperBound(option);
+      if (lower != null && upper != null) {
+        if (guestCount >= lower && guestCount <= upper) return option;
+      } else if (option.contains('+')) {
+        final min = _extractLowerBound(option);
+        if (min != null && guestCount >= min) return option;
+      }
+    }
 
-  bool _postAnalysisSaving = false;
+    // Fallback: find closest lower bound
+    String? closest;
+    int? closestDiff;
+    for (final option in paxOptions) {
+      final lower = _extractLowerBound(option);
+      if (lower != null) {
+        final diff = (guestCount - lower).abs();
+        if (closestDiff == null || diff < closestDiff) {
+          closestDiff = diff;
+          closest = option;
+        }
+      }
+    }
+
+    return closest ?? paxOptions.first;
+  }
+
+  int? _extractLowerBound(String pax) {
+    // Matches "10-20 pax" -> 10, "100+ pax" -> 100
+    final match = RegExp(r'(\d+)').firstMatch(pax);
+    return match != null ? int.tryParse(match.group(1)!) : null;
+  }
+
+  int? _extractUpperBound(String pax) {
+    // Matches "10-20 pax" -> 20
+    final matches = RegExp(r'(\d+)').allMatches(pax).toList();
+    return matches.length >= 2 ? int.tryParse(matches[1].group(1)!) : null;
+  }
 
   EventStatus _selectedStatus = EventStatus.newEvent;
   String? _eventType;
@@ -310,7 +344,6 @@ class _ManageEventsState extends State<ManageEvents>
     MenuStore.instance.removeListener(_onMenuStoreChanged);
     _eventSearchController.dispose();
     _inquirySearchController.dispose();
-    _foodSearchController.dispose();
     _eventTitleController.dispose();
     _customerController.dispose();
     _contactPersonController.dispose();
@@ -318,12 +351,6 @@ class _ManageEventsState extends State<ManageEvents>
     _emailController.dispose();
     _eventAddressController.dispose();
     _guestCountController.dispose();
-    _postCardsController.dispose();
-    _postInquiriesController.dispose();
-    _postComplaintsController.dispose();
-    _themeColorPromptController.dispose();
-    _paymentReferenceController.dispose();
-    _customDownPaymentController.dispose();
     super.dispose();
   }
 
@@ -354,9 +381,7 @@ class _ManageEventsState extends State<ManageEvents>
   bool _isAiProcessingTheme = false;
   final TextEditingController _themeColorPromptController =
       TextEditingController();
-  final TextEditingController _paymentReferenceController =
-      TextEditingController();
-  bool _paymentDialogLoading = false;
+    bool _paymentDialogLoading = false;
   final PaymentConfirmationMode _selectedPaymentMode =
       PaymentConfirmationMode.downpayment;
   DownPaymentType _selectedDownPaymentType = DownPaymentType.fiftyPercent;
@@ -364,6 +389,17 @@ class _ManageEventsState extends State<ManageEvents>
   // final PaymentService _selectedPaymentService = PaymentService.cash;
   final TextEditingController _customDownPaymentController =
       TextEditingController();
+
+  // Post analysis controllers
+  final TextEditingController _postCardsController = TextEditingController();
+  final TextEditingController _postInquiriesController = TextEditingController();
+  final TextEditingController _postComplaintsController = TextEditingController();
+  bool _postAnalysisSaving = false;
+
+  // Validation error variables
+  String? _contactNumberError;
+  String? _emailError;
+  String? _guestCountError;
 
   // SAM Integration variables
   SamSegmentationResult? _currentSegmentationResult;
@@ -398,7 +434,7 @@ class _ManageEventsState extends State<ManageEvents>
   ];
 
   List<MenuDish> get _filteredDishes {
-    final query = _foodSearchController.text.trim().toLowerCase();
+    final query = _inquirySearchController.text.trim().toLowerCase();
     var dishes = _allDishes.where((d) => d.category == 'catering').toList();
     if (query.isEmpty) return dishes;
     return dishes.where((d) => d.name.toLowerCase().contains(query)).toList();
@@ -430,11 +466,7 @@ class _ManageEventsState extends State<ManageEvents>
       _themeColorPromptController.clear();
       _selectedStatus = EventStatus.newEvent;
       _eventSearchController.clear();
-      _foodSearchController.clear();
-      // Clear validation errors
-      _contactNumberError = null;
-      _emailError = null;
-      _guestCountError = null;
+      _inquirySearchController.clear();
     });
   }
 
@@ -605,7 +637,7 @@ class _ManageEventsState extends State<ManageEvents>
           status: 'new_event',
           roleType: 'supervisor',
         );
-      } else if (role == Role.manager || role == Role.admin) {
+      } else if (role == Role.manager || role == Role.admin || role == Role.superAdmin) {
         // print('DEBUG: Calling manager API for for_processing orders');
         _onlineInquiryOrders = await EventsApi.instance.listOrders(
           status: 'online_inquiries',
@@ -697,6 +729,13 @@ class _ManageEventsState extends State<ManageEvents>
     return '#${rgb.toRadixString(16).padLeft(6, '0')}';
   }
 
+  Color? _colorFromHexOrNull(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final match = RegExp(r'^#?([0-9a-fA-F]{6})$').firstMatch(raw.trim());
+    if (match == null) return null;
+    return Color(int.parse(match.group(1)!, radix: 16) + 0xFF000000);
+  }
+
   ProcessingOrder _orderToProcessingOrderSummary(EventOrderDto order) {
     final firstSlot = order.scheduleSlots.isNotEmpty
         ? order.scheduleSlots.first
@@ -717,20 +756,7 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   void _syncPostAnalysisFields(EventOrderDto? dto) {
-    if (dto == null) {
-      _postCardsController.clear();
-      _postInquiriesController.clear();
-      _postComplaintsController.clear();
-      return;
-    }
-    final pa = dto.postAnalysis;
-    _postCardsController.text = pa == null
-        ? ''
-        : '${pa.businessCardsGivenAway}';
-    _postInquiriesController.text = pa == null
-        ? ''
-        : '${pa.onTheSpotInquiries}';
-    _postComplaintsController.text = pa == null ? '' : '${pa.complaints}';
+    // Post analysis fields sync - currently no implementation needed
   }
 
   List<EventOrderDto> _filterEventOrdersBySearch(List<EventOrderDto> orders) {
@@ -879,6 +905,9 @@ class _ManageEventsState extends State<ManageEvents>
                   ? order.scheduleSlots.first.startTime
                   : '',
             );
+            final costController = TextEditingController(
+              text: order.totalCost > 0 ? order.totalCost.toString() : '',
+            );
 
             // Pre-populate menu selections
             if (order.menu.isNotEmpty) {
@@ -889,7 +918,12 @@ class _ManageEventsState extends State<ManageEvents>
                   orElse: () => MenuStore.instance.allDishes.first,
                 );
                 selectedDishIds.add(dish.id);
-                selectedPaxOptions[dish.id] = item.paxOption;
+                // Auto-select pax based on guest count, but keep original if valid
+                if (dish.paxOptions.contains(item.paxOption)) {
+                  selectedPaxOptions[dish.id] = item.paxOption;
+                } else {
+                  selectedPaxOptions[dish.id] = _selectPaxForGuests(order.guestCount, dish.paxOptions);
+                }
               }
             }
 
@@ -906,6 +940,7 @@ class _ManageEventsState extends State<ManageEvents>
                       _buildOnlineInquiryServiceType(
                         serviceType,
                         (value) => setDialogState(() => serviceType = value),
+                        order.guestCount,
                       ),
                       const SizedBox(height: 20),
 
@@ -920,13 +955,14 @@ class _ManageEventsState extends State<ManageEvents>
                               dateController,
                               timeController,
                               context,
+                              serviceType,
                             ),
                           ),
                           const SizedBox(width: 16),
 
                           // Menu
                           Expanded(
-                            child: _buildOnlineInquiryMenu(
+                            child: _buildMenuSection(
                               order,
                               menuChoice,
                               (value) =>
@@ -937,6 +973,7 @@ class _ManageEventsState extends State<ManageEvents>
                               (setId) => setDialogState(
                                 () => selectedSetMenuId = setId,
                               ),
+                              () => setDialogState(() {}),
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -950,26 +987,117 @@ class _ManageEventsState extends State<ManageEvents>
                       ),
                       const SizedBox(height: 24),
 
+                      // Cost Estimation
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'COST ESTIMATION',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: costController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'Estimated total (PHP)',
+                                prefixText: 'PHP ',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Use "Post Changes" to send estimate updates without moving the inquiry.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
                       // Action Buttons
                       Row(
                         children: [
                           Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.red,
-                                side: const BorderSide(color: Colors.red),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                ),
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                try {
+                                  final payload = _buildOnlineInquiryPayload(
+                                    order,
+                                    dateController.text,
+                                    timeController.text,
+                                    serviceType,
+                                    menuChoice,
+                                    selectedDishIds,
+                                    selectedPaxOptions,
+                                    selectedSetMenuId,
+                                    costController.text,
+                                    'post_changes',
+                                  );
+                                  await EventsApi.instance.managerFinalizeOnlineInquiry(
+                                    orderId: order.id,
+                                    payload: payload,
+                                  );
+                                  if (!mounted) return;
+                                  Navigator.of(context).pop();
+                                  await _refreshOrders();
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Changes posted. Customer can review updates in My Events.',
+                                      ),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Failed to post changes: $e'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF1976D2),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
                               ),
-                              child: const Text('CANCEL'),
+                              child: const Text('POST CHANGES'),
                             ),
                           ),
                           const SizedBox(width: 16),
                           Expanded(
                             child: ElevatedButton(
                               onPressed: () async {
+                                // Validate menu selection
+                                if (menuChoice == 'yes' && selectedDishIds.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Please select at least one dish.'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                  return;
+                                }
+                                if (menuChoice == 'suggest' && selectedSetMenuId == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Please select a set menu.'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                  return;
+                                }
                                 try {
                                   // Build payload with modifications
                                   final payload = _buildOnlineInquiryPayload(
@@ -981,6 +1109,8 @@ class _ManageEventsState extends State<ManageEvents>
                                     selectedDishIds,
                                     selectedPaxOptions,
                                     selectedSetMenuId,
+                                    costController.text,
+                                    'confirm_inquiry',
                                   );
                                   await EventsApi.instance
                                       .managerFinalizeOnlineInquiry(
@@ -1001,10 +1131,11 @@ class _ManageEventsState extends State<ManageEvents>
                                 } catch (e) {
                                   if (!context.mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
+                                    SnackBar(
                                       content: Text(
-                                        'Failed to finalize order.',
+                                        'Failed to finalize: $e',
                                       ),
+                                      backgroundColor: Colors.red,
                                     ),
                                   );
                                 }
@@ -1015,7 +1146,57 @@ class _ManageEventsState extends State<ManageEvents>
                                   vertical: 16,
                                 ),
                               ),
-                              child: const Text('FINALIZE & SUBMIT'),
+                              child: const Text('CONFIRM INQUIRY'),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () async {
+                                try {
+                                  final payload = _buildOnlineInquiryPayload(
+                                    order,
+                                    dateController.text,
+                                    timeController.text,
+                                    serviceType,
+                                    menuChoice,
+                                    selectedDishIds,
+                                    selectedPaxOptions,
+                                    selectedSetMenuId,
+                                    costController.text,
+                                    'cancel_event',
+                                  );
+                                  await EventsApi.instance.managerFinalizeOnlineInquiry(
+                                    orderId: order.id,
+                                    payload: payload,
+                                  );
+                                  if (!mounted) return;
+                                  Navigator.of(context).pop();
+                                  await _refreshOrders();
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Inquiry cancelled and moved to Completed.',
+                                      ),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Failed to cancel event: $e'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red,
+                                side: const BorderSide(color: Colors.red),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                              ),
+                              child: const Text('CANCEL EVENT'),
                             ),
                           ),
                         ],
@@ -1034,7 +1215,9 @@ class _ManageEventsState extends State<ManageEvents>
   Widget _buildOnlineInquiryServiceType(
     String serviceType,
     Function(String) onChanged,
+    int guestCount,
   ) {
+    final isEditable = guestCount < 50;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1043,11 +1226,6 @@ class _ManageEventsState extends State<ManageEvents>
       ),
       child: Column(
         children: [
-          const Text(
-            'WHAT SERVICE DO YOU NEED?',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -1055,17 +1233,24 @@ class _ManageEventsState extends State<ManageEvents>
                 'Catering Only',
                 'catering',
                 serviceType,
-                onChanged,
+                isEditable ? onChanged : (_) {},
               ),
               const SizedBox(width: 16),
               _buildServiceTypeChip(
                 'Catering + Event',
                 'catering+event',
                 serviceType,
-                onChanged,
+                isEditable ? onChanged : (_) {},
               ),
             ],
           ),
+          if (!isEditable) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Service type locked (50+ guests)',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            ),
+          ],
         ],
       ),
     );
@@ -1103,6 +1288,7 @@ class _ManageEventsState extends State<ManageEvents>
     TextEditingController dateController,
     TextEditingController timeController,
     BuildContext context,
+    String serviceType,
   ) {
     Future<void> selectDate() async {
       final picked = await showDatePicker(
@@ -1128,6 +1314,8 @@ class _ManageEventsState extends State<ManageEvents>
       }
     }
 
+    final isCateringOnly = serviceType == 'catering';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1152,13 +1340,15 @@ class _ManageEventsState extends State<ManageEvents>
           ),
           const SizedBox(height: 16),
 
-          // Read-only fields
-          _buildReadOnlyField('EVENT TITLE', order.eventTitle),
-          const SizedBox(height: 12),
-          _buildReadOnlyField('EVENT TYPE', order.eventType),
-          const SizedBox(height: 12),
-          _buildReadOnlyField('FORMALITY LEVEL', order.formalityLevel),
-          const SizedBox(height: 12),
+          // Read-only fields - hide event title/type/formality for catering only
+          if (!isCateringOnly) ...[
+            _buildReadOnlyField('EVENT TITLE', order.eventTitle),
+            const SizedBox(height: 12),
+            _buildReadOnlyField('EVENT TYPE', order.eventType),
+            const SizedBox(height: 12),
+            _buildReadOnlyField('FORMALITY LEVEL', order.formalityLevel),
+            const SizedBox(height: 12),
+          ],
           _buildReadOnlyField('CONTACT PERSON', order.contactPerson),
           const SizedBox(height: 12),
           _buildReadOnlyField('CONTACT NUMBER', order.contactNumber),
@@ -1227,7 +1417,7 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
-  Widget _buildOnlineInquiryMenu(
+  Widget _buildMenuSection(
     EventOrderDto order,
     String menuChoice,
     Function(String) onMenuChoiceChanged,
@@ -1235,6 +1425,7 @@ class _ManageEventsState extends State<ManageEvents>
     Map<String, String> selectedPaxOptions,
     String? selectedSetMenuId,
     Function(String?) onSetMenuChanged,
+    VoidCallback onStateChanged,
   ) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1287,7 +1478,7 @@ class _ManageEventsState extends State<ManageEvents>
 
           // Menu Content
           if (menuChoice == 'yes')
-            _buildDishSelector(selectedDishIds, selectedPaxOptions)
+            _buildDishSelector(selectedDishIds, selectedPaxOptions, onStateChanged, order)
           else
             _buildSetMenuSelector(selectedSetMenuId, onSetMenuChanged),
         ],
@@ -1326,6 +1517,8 @@ class _ManageEventsState extends State<ManageEvents>
   Widget _buildDishSelector(
     List<String> selectedDishIds,
     Map<String, String> selectedPaxOptions,
+    VoidCallback onStateChanged,
+    EventOrderDto order,
   ) {
     final dishes = MenuStore.instance.activeDishes;
     return Container(
@@ -1355,33 +1548,17 @@ class _ManageEventsState extends State<ManageEvents>
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              subtitle: Text(
-                '₱${dish.price}',
-                style: const TextStyle(fontSize: 11),
-              ),
+              subtitle: null,
               trailing: isSelected
-                  ? DropdownButton<String>(
-                      value:
-                          selectedPaxOptions[dish.id] ?? dish.paxOptions.first,
-                      isDense: true,
-                      style: const TextStyle(fontSize: 11),
-                      items: dish.paxOptions
-                          .map(
-                            (p) => DropdownMenuItem(value: p, child: Text(p)),
-                          )
-                          .toList(),
-                      onChanged: (v) {
-                        selectedPaxOptions[dish.id] = v!;
-                      },
-                    )
-                  : null,
+                  ? const Icon(Icons.check_circle, color: Color(0xFF4CAF50))
+                  : const Icon(Icons.add_circle_outline, color: Colors.grey),
               onTap: () {
                 if (isSelected) {
                   selectedDishIds.remove(dish.id);
                   selectedPaxOptions.remove(dish.id);
                 } else {
                   selectedDishIds.add(dish.id);
-                  selectedPaxOptions[dish.id] = dish.paxOptions.first;
+                  selectedPaxOptions[dish.id] = '';
                 }
               },
               selected: isSelected,
@@ -1419,25 +1596,6 @@ class _ManageEventsState extends State<ManageEvents>
 
     return Column(
       children: setMenus.map((setMenu) {
-        // Calculate total price for this set menu
-        double totalPrice = 0;
-        final dishes = setMenu['dishes'] as List<String>;
-        for (final dishId in dishes) {
-          final dish = MenuStore.instance.allDishes.firstWhere(
-            (d) => d.id == dishId,
-            orElse: () => MenuDish(
-              id: dishId,
-              name: 'Unknown',
-              category: '',
-              price: '0',
-              archived: false,
-              paxOptions: ['10 pax'],
-            ),
-          );
-          final price = double.tryParse(dish.price) ?? 0;
-          totalPrice += price;
-        }
-
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
@@ -1454,14 +1612,6 @@ class _ManageEventsState extends State<ManageEvents>
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 11),
-                ),
-                Text(
-                  '₱${totalPrice.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFFFFC024),
-                  ),
                 ),
               ],
             ),
@@ -1550,6 +1700,8 @@ class _ManageEventsState extends State<ManageEvents>
     List<String> selectedDishIds,
     Map<String, String> selectedPaxOptions,
     String? selectedSetMenuId,
+    String costText,
+    String action,
   ) {
     List<Map<String, dynamic>> menuItems = [];
 
@@ -1558,12 +1710,11 @@ class _ManageEventsState extends State<ManageEvents>
         final dish = MenuStore.instance.allDishes.firstWhere(
           (d) => d.id == dishId,
         );
-        final paxOption = selectedPaxOptions[dishId] ?? dish.paxOptions.first;
         menuItems.add({
           'dishId': dishId,
           'dishName': dish.name,
-          'paxOption': paxOption,
-          'price': dish.price,
+          'paxOption': '',
+          'price': '0',
         });
       }
     } else if (selectedSetMenuId != null) {
@@ -1592,12 +1743,11 @@ class _ManageEventsState extends State<ManageEvents>
         final dish = MenuStore.instance.allDishes.firstWhere(
           (d) => d.id == dishId,
         );
-        final paxOption = selectedPaxOptions[dishId] ?? dish.paxOptions.first;
         menuItems.add({
           'dishId': dishId,
           'dishName': dish.name,
-          'paxOption': paxOption,
-          'price': dish.price,
+          'paxOption': '',
+          'price': '0',
         });
       }
     }
@@ -1623,6 +1773,8 @@ class _ManageEventsState extends State<ManageEvents>
         'tintColorHex': order.themeDesign.tintColorHex,
         'colorPrompt': order.themeDesign.colorPrompt,
       },
+      'totalCost': double.tryParse(costText) ?? 0.0,
+      'action': action,
     };
   }
 
@@ -1695,46 +1847,41 @@ class _ManageEventsState extends State<ManageEvents>
     return _themeTintColor;
   }
 
-  // Preset colors for testing the swap color feature
-  final List<Color> _testColors = [
-    const Color(0xFFF4511E), // Orange
-    const Color(0xFF1DB954), // Green
-    const Color(0xFF1976D2), // Blue
-    const Color(0xFFE91E63), // Pink
-    const Color(0xFF6A1B9A), // Purple
-    const Color(0xFFFFC024), // Yellow
-    const Color(0xFFD32F2F), // Red
-    const Color(0xFF00796B), // Teal
-    const Color(0xFF5D4037), // Brown
-    const Color(0xFF455A64), // Blue Grey
-  ];
-  int _testColorIndex = 0;
-
   Future<void> _swapThemeColorsAi() async {
+    if (_themePicks.isEmpty) return;
     final prompt = _themeColorPromptController.text;
-    
-    // If no prompt entered, cycle through test colors for easy testing
-    final Color nextColor;
-    if (prompt.trim().isEmpty) {
-      nextColor = _testColors[_testColorIndex % _testColors.length];
-      _testColorIndex++;
-    } else {
-      nextColor = _colorFromThemePrompt(prompt);
-    }
 
     setState(() {
       _isAiProcessingTheme = true;
-      _themeTintEnabled = true;
-      _themeTintColor = nextColor;
     });
 
-    // Simulate AI processing delay for testing
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-
-    if (!mounted) return;
-    setState(() {
-      _isAiProcessingTheme = false;
-    });
+    try {
+      final response = await EventsApi.instance.processThemeColor(
+        picksBase64: _themePicks.map((b) => base64Encode(b)).toList(),
+        prompt: prompt.trim(),
+        currentTintColorHex: _themeTintColorHex(_themeTintColor),
+      );
+      final tintColorHex = response['tintColorHex'] as String?;
+      final resolvedColor =
+          _colorFromHexOrNull(tintColorHex) ?? _colorFromThemePrompt(prompt);
+      if (!mounted) return;
+      setState(() {
+        _isAiProcessingTheme = false;
+        _themeTintEnabled = true;
+        _themeTintColor = resolvedColor;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isAiProcessingTheme = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Theme color processing failed: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   // Combined YOLO and SAM Integration Methods
@@ -1748,37 +1895,34 @@ class _ManageEventsState extends State<ManageEvents>
     });
 
     try {
-      // Simulate YOLO detection
-      await Future.delayed(const Duration(milliseconds: 800));
-
-      // Mock YOLO detection results
-      final mockDetections = <YOLODetection>[
-        YOLODetection(
-          classId: 'person',
-          className: 'Person',
-          confidence: 0.92,
-          boundingBox: const Rect.fromLTWH(50, 30, 120, 200),
-          currentColor: Colors.blue,
-        ),
-        YOLODetection(
-          classId: 'table',
-          className: 'Table',
-          confidence: 0.87,
-          boundingBox: const Rect.fromLTWH(200, 150, 150, 100),
-          currentColor: Colors.green,
-        ),
-        YOLODetection(
-          classId: 'chair',
-          className: 'Chair',
-          confidence: 0.79,
-          boundingBox: const Rect.fromLTWH(180, 200, 80, 120),
-          currentColor: Colors.orange,
-        ),
-      ];
+      final response = await EventsApi.instance.detectThemeObjects(
+        imageBase64: base64Encode(imageBytes),
+      );
+      final detectionsRaw = (response['detections'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      final parsedDetections = detectionsRaw.map((raw) {
+        final box = Map<String, dynamic>.from(
+          (raw['boundingBox'] as Map?) ?? const <String, dynamic>{},
+        );
+        return YOLODetection(
+          classId: (raw['classId'] ?? '').toString(),
+          className: (raw['className'] ?? '').toString(),
+          confidence: (raw['confidence'] as num?)?.toDouble() ?? 0.0,
+          boundingBox: Rect.fromLTWH(
+            (box['left'] as num?)?.toDouble() ?? 0.0,
+            (box['top'] as num?)?.toDouble() ?? 0.0,
+            (box['width'] as num?)?.toDouble() ?? 0.2,
+            (box['height'] as num?)?.toDouble() ?? 0.2,
+          ),
+          currentColor: _colorFromHexOrNull(raw['currentColorHex'] as String?),
+        );
+      }).toList();
 
       setState(() {
         _currentYOLOResult = YOLOResult(
-          detections: mockDetections,
+          detections: parsedDetections,
           originalImage: imageBytes,
         );
         _isDetecting = false;
@@ -1855,66 +1999,73 @@ class _ManageEventsState extends State<ManageEvents>
                               ),
                               child: Stack(
                                 children: [
-                                  // Original image
-                                  Image.memory(
-                                    _currentYOLOResult!.originalImage,
-                                    fit: BoxFit.contain,
+                                  // Original image - wrapped in RepaintBoundary
+                                  RepaintBoundary(
+                                    child: Image.memory(
+                                      _currentYOLOResult!.originalImage,
+                                      fit: BoxFit.contain,
+                                      gaplessPlayback: true,
+                                    ),
                                   ),
 
-                                  // YOLO detection overlays
-                                  ..._currentYOLOResult!.detections.map((
-                                    detection,
-                                  ) {
-                                    final isSelected = _selectedYOLOIds
-                                        .contains(detection.classId);
-                                    return Positioned(
-                                      left:
-                                          detection.boundingBox.left *
-                                          400, // Scale to container width
-                                      top:
-                                          detection.boundingBox.top *
-                                          600, // Scale to container height
-                                      width: detection.boundingBox.width * 400,
-                                      height:
-                                          detection.boundingBox.height * 600,
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          setStateDialog(() {
-                                            if (isSelected) {
-                                              _selectedYOLOIds.remove(
-                                                detection.classId,
-                                              );
-                                            } else {
-                                              _selectedYOLOIds.add(
-                                                detection.classId,
-                                              );
-                                            }
-                                          });
-                                        },
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            border: Border.all(
-                                              color:
-                                                  detection.currentColor ??
-                                                  Colors.blue,
-                                              width: isSelected ? 3 : 2,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              4,
+                                  // YOLO detection overlays - isolated in RepaintBoundary
+                                  RepaintBoundary(
+                                    child: Stack(
+                                      children: _currentYOLOResult!.detections.map((
+                                        detection,
+                                      ) {
+                                        final isSelected = _selectedYOLOIds
+                                            .contains(detection.classId);
+                                        return Positioned(
+                                          left:
+                                              detection.boundingBox.left *
+                                              400, // Scale to container width
+                                          top:
+                                              detection.boundingBox.top *
+                                              600, // Scale to container height
+                                          width: detection.boundingBox.width * 400,
+                                          height:
+                                              detection.boundingBox.height * 600,
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              setStateDialog(() {
+                                                if (isSelected) {
+                                                  _selectedYOLOIds.remove(
+                                                    detection.classId,
+                                                  );
+                                                } else {
+                                                  _selectedYOLOIds.add(
+                                                    detection.classId,
+                                                  );
+                                                }
+                                              });
+                                            },
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                border: Border.all(
+                                                  color:
+                                                      detection.currentColor ??
+                                                      Colors.blue,
+                                                  width: isSelected ? 3 : 2,
+                                                ),
+                                                borderRadius: BorderRadius.circular(
+                                                  4,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                detection.className,
+                                                style: const TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.white,
+                                                  backgroundColor: Colors.black54,
+                                                ),
+                                              ),
                                             ),
                                           ),
-                                          child: Text(
-                                            detection.className,
-                                            style: const TextStyle(
-                                              fontSize: 10,
-                                              color: Colors.white,
-                                              backgroundColor: Colors.black54,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  }),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -2102,28 +2253,52 @@ class _ManageEventsState extends State<ManageEvents>
     });
 
     try {
-      // Simulate SAM segmentation for selected objects
-      await Future.delayed(const Duration(milliseconds: 1200));
-
-      // Mock SAM segmentation results for selected objects
-      final mockObjects = <SegmentedObject>[];
-      for (final detection in _currentYOLOResult!.detections) {
-        if (_selectedYOLOIds.contains(detection.classId)) {
-          mockObjects.add(
-            SegmentedObject(
-              id: 'sam_${detection.classId}',
-              mask: Uint8List(100), // Mock mask data
-              label: detection.className,
-              boundingBox: detection.boundingBox,
-              currentColor: detection.currentColor,
-            ),
-          );
-        }
-      }
+      final segmentResponse = await EventsApi.instance.segmentThemeObjects(
+        imageBase64: base64Encode(_currentYOLOResult!.originalImage),
+        selectedClassIds: _selectedYOLOIds.toList(),
+        detections: _currentYOLOResult!.detections.map((d) {
+          return {
+            'classId': d.classId,
+            'className': d.className,
+            'confidence': d.confidence,
+            'boundingBox': {
+              'left': d.boundingBox.left,
+              'top': d.boundingBox.top,
+              'width': d.boundingBox.width,
+              'height': d.boundingBox.height,
+            },
+            'currentColorHex': d.currentColor == null
+                ? null
+                : _themeTintColorHex(d.currentColor!),
+          };
+        }).toList(),
+      );
+      final objectsRaw = (segmentResponse['objects'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      final segmentedObjects = objectsRaw.map((raw) {
+        final box = Map<String, dynamic>.from(
+          (raw['boundingBox'] as Map?) ?? const <String, dynamic>{},
+        );
+        final maskBase64 = (raw['maskBase64'] ?? '').toString();
+        return SegmentedObject(
+          id: (raw['id'] ?? '').toString(),
+          mask: maskBase64.isNotEmpty ? base64Decode(maskBase64) : Uint8List(0),
+          label: (raw['label'] ?? '').toString(),
+          boundingBox: Rect.fromLTWH(
+            (box['left'] as num?)?.toDouble() ?? 0.0,
+            (box['top'] as num?)?.toDouble() ?? 0.0,
+            (box['width'] as num?)?.toDouble() ?? 0.2,
+            (box['height'] as num?)?.toDouble() ?? 0.2,
+          ),
+          currentColor: _colorFromHexOrNull(raw['currentColorHex'] as String?),
+        );
+      }).toList();
 
       setState(() {
         _currentSegmentationResult = SamSegmentationResult(
-          objects: mockObjects,
+          objects: segmentedObjects,
           originalImage: _currentYOLOResult!.originalImage,
         );
         _isSegmenting = false;
@@ -2735,7 +2910,11 @@ class _ManageEventsState extends State<ManageEvents>
           : '${firstSlot.startTime} - ${firstSlot.endTime}';
 
       return Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: Colors.black.withOpacity(0.08)),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
@@ -2752,7 +2931,7 @@ class _ManageEventsState extends State<ManageEvents>
               Text('Contact Person: ${order.contactPerson}'),
               Text('Contact Number: ${order.contactNumber}'),
               Text('Email: ${order.emailAddress}'),
-              Text('Event Type: ${order.eventType}'),
+              if (order.eventType.isNotEmpty) Text('Event Type: ${order.eventType}'),
               if (dateLabel.isNotEmpty) Text('Event Date: $dateLabel'),
               if (timeLabel.isNotEmpty) Text('Event Time: $timeLabel'),
               const SizedBox(height: 12),
@@ -2778,7 +2957,11 @@ class _ManageEventsState extends State<ManageEvents>
     }).toList();
 
     final listSection = Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.black.withOpacity(0.08)),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -2822,7 +3005,11 @@ class _ManageEventsState extends State<ManageEvents>
     );
 
     final detailsSection = Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.black.withOpacity(0.08)),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -2839,17 +3026,21 @@ class _ManageEventsState extends State<ManageEvents>
                 style: TextStyle(color: Colors.grey.shade600),
               ),
             ] else ...[
-              Text(
-                'Event: ${_selectedOnlineInquiryOrder!.eventTitle}',
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 6),
+              if (_selectedOnlineInquiryOrder!.eventTitle.isNotEmpty)
+                Text(
+                  'Event: ${_selectedOnlineInquiryOrder!.eventTitle}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              if (_selectedOnlineInquiryOrder!.eventTitle.isNotEmpty)
+                const SizedBox(height: 6),
               Text('Customer: ${_selectedOnlineInquiryOrder!.customerName}'),
               Text('Contact: ${_selectedOnlineInquiryOrder!.contactPerson}'),
               Text('Email: ${_selectedOnlineInquiryOrder!.emailAddress}'),
               const SizedBox(height: 12),
-              Text('Event Type: ${_selectedOnlineInquiryOrder!.eventType}'),
-              Text('Formality: ${_selectedOnlineInquiryOrder!.formalityLevel}'),
+              if (_selectedOnlineInquiryOrder!.eventType.isNotEmpty)
+                Text('Event Type: ${_selectedOnlineInquiryOrder!.eventType}'),
+              if (_selectedOnlineInquiryOrder!.formalityLevel.isNotEmpty)
+                Text('Formality: ${_selectedOnlineInquiryOrder!.formalityLevel}'),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
@@ -2897,7 +3088,7 @@ class _ManageEventsState extends State<ManageEvents>
     void Function(EventOrderDto) onSelect,
   ) {
     final order = _orderToProcessingOrderSummary(dto);
-    final bgColor = isSelected ? Colors.blue.shade50 : Colors.white;
+    final bgColor = isSelected ? const Color(0xFFEFF6FF) : Colors.white;
     final borderColor = isSelected
         ? const Color(0xFF1976D2)
         : Colors.grey.shade300;
@@ -2930,8 +3121,15 @@ class _ManageEventsState extends State<ManageEvents>
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: bgColor,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: borderColor),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -3487,23 +3685,27 @@ class _ManageEventsState extends State<ManageEvents>
   ) async {
     try {
       setState(() => _paymentDialogLoading = true);
-      await EventsApi.instance.acceptOrder(orderId: order.id);
+      // Use correct API for marking payments in post-analysis
+      final paymentType = mode == PaymentConfirmationMode.fullPayment
+          ? 'full_payment'
+          : 'down_payment';
+      await EventsApi.instance.updatePaymentStatus(
+        orderId: order.id,
+        paymentType: paymentType,
+        status: 'paid',
+      );
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             mode == PaymentConfirmationMode.fullPayment
-                ? 'Full payment confirmed. Order moved to Post-Analysis.'
-                : 'Downpayment confirmed. Order moved to Post-Analysis.',
+                ? 'Full payment marked as paid.'
+                : 'Downpayment marked as paid.',
           ),
           backgroundColor: const Color(0xFF1DB954),
         ),
       );
       await _refreshOrders();
-      setState(() {
-        _selectedProcessingOrderDto = null;
-      });
-      _tabController.animateTo(EventStatus.forPostAnalysis.index);
       return true;
     } catch (e) {
       if (mounted) {
@@ -5633,12 +5835,20 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.bold,
-        color: Color(0xFF2E2E2E),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3D0),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF2E2E2E),
+          letterSpacing: 0.2,
+        ),
       ),
     );
   }
@@ -5708,7 +5918,7 @@ class _ManageEventsState extends State<ManageEvents>
                 children: [
                   _buildEventForm(),
                   const SizedBox(height: 20),
-                  _buildMenuSection(),
+                  _buildEventMenuSection(),
                   const SizedBox(height: 20),
                   _buildFoodBrowser(),
                   const SizedBox(height: 20),
@@ -5726,7 +5936,7 @@ class _ManageEventsState extends State<ManageEvents>
                         children: [
                           _buildEventForm(),
                           const SizedBox(height: 20),
-                          _buildMenuSection(),
+                          _buildEventMenuSection(),
                         ],
                       ),
                     ),
@@ -6385,7 +6595,7 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   // Menu View
-  Widget _buildMenuSection() {
+  Widget _buildEventMenuSection() {
     final isCateringOnly = _orderType == 'catering';
 
     return Column(
@@ -6555,7 +6765,8 @@ class _ManageEventsState extends State<ManageEvents>
   Widget build(BuildContext context) {
     return AppScaffold(
       showSearch: true,
-      child: Padding(
+      child: Container(
+        color: const Color(0xFFF7F8FA),
         padding: const EdgeInsets.all(20),
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -6565,22 +6776,47 @@ class _ManageEventsState extends State<ManageEvents>
               children: [
                 const Text(
                   'Manage Events',
-                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1F1F1F),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Track inquiries, process events, and finalize outcomes.',
+                  style: TextStyle(color: Colors.grey.shade700),
                 ),
                 const SizedBox(height: 16),
-                TabBar(
-                  padding: EdgeInsets.zero,
-                  controller: _tabController,
-                  isScrollable: true,
-                  labelColor: Colors.white,
-                  unselectedLabelColor: Colors.black87,
-                  indicator: BoxDecoration(
-                    color: const Color(0xFFED8845),
-                    borderRadius: BorderRadius.circular(6),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.black.withOpacity(0.08)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.03),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                  tabs: EventStatus.values
-                      .map((status) => Tab(text: _statusLabel(status)))
-                      .toList(),
+                  child: TabBar(
+                    padding: const EdgeInsets.all(6),
+                    controller: _tabController,
+                    isScrollable: true,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: const Color(0xFF2E2E2E),
+                    labelStyle: const TextStyle(fontWeight: FontWeight.w700),
+                    indicator: BoxDecoration(
+                      color: const Color(0xFFF4511E),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    dividerColor: Colors.transparent,
+                    tabs: EventStatus.values
+                        .map((status) => Tab(text: _statusLabel(status)))
+                        .toList(),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Expanded(
@@ -6719,7 +6955,6 @@ class _ManageEventsState extends State<ManageEvents>
     String paymentType,
   ) async {
     try {
-      // Update backend
       await EventsApi.instance.updatePaymentStatus(
         orderId: order.id,
         paymentType: paymentType,
