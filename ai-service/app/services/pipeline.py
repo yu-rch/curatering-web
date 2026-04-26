@@ -127,13 +127,16 @@ class AiPipeline:
         prompts: list[dict[str, Any]],
         mask_format: str,
     ) -> dict[str, Any]:
-        if self._sam_predictor is None:
-            raise RuntimeError("SAM model is not configured. Set SAM_MODEL_PATH and restart the service.")
-
         image = self._decode_image(image_base64)
         image_height = int(image.shape[0])
         image_width = int(image.shape[1])
-        self._sam_predictor.set_image(image)
+        use_sam = self._sam_predictor is not None
+        if use_sam:
+            self._sam_predictor.set_image(image)
+        else:
+            logger.warning(
+                "SAM model is not configured. Falling back to YOLO box polygons for segmentation."
+            )
         objects: list[dict[str, Any]] = []
 
         for prompt in prompts:
@@ -150,24 +153,42 @@ class AiPipeline:
             polygon_points: list[dict[str, float]] = []
             mask_base64 = ""
             score = 0.0
-            masks, scores, _ = self._sam_predictor.predict(
-                box=np.array([x1, y1, x2, y2], dtype=np.float32),
-                multimask_output=False,
-            )
-            if len(masks) > 0:
-                mask_bool = masks[0]
-                score = float(scores[0]) if len(scores) > 0 else 0.0
-                mask_arr = (mask_bool.astype(np.uint8) * 255).astype(np.uint8)
-                polygon_points = self._mask_to_polygon_points(
-                    mask_arr,
-                    image_width=image_width,
-                    image_height=image_height,
+            if use_sam:
+                masks, scores, _ = self._sam_predictor.predict(
+                    box=np.array([x1, y1, x2, y2], dtype=np.float32),
+                    multimask_output=False,
                 )
+                if len(masks) > 0:
+                    mask_bool = masks[0]
+                    score = float(scores[0]) if len(scores) > 0 else 0.0
+                    mask_arr = (mask_bool.astype(np.uint8) * 255).astype(np.uint8)
+                    polygon_points = self._mask_to_polygon_points(
+                        mask_arr,
+                        image_width=image_width,
+                        image_height=image_height,
+                    )
 
+                    if mask_format == "alpha_png":
+                        mask_base64 = self._encode_png_base64(mask_arr)
+                    else:
+                        mask_base64 = ""
+            else:
+                # Fallback: rectangle polygon from YOLO box so editing flow remains usable.
+                polygon_points = [
+                    {"x": self._clamp(x, 0.0, 1.0), "y": self._clamp(y, 0.0, 1.0)},
+                    {"x": self._clamp(x + w, 0.0, 1.0), "y": self._clamp(y, 0.0, 1.0)},
+                    {"x": self._clamp(x + w, 0.0, 1.0), "y": self._clamp(y + h, 0.0, 1.0)},
+                    {"x": self._clamp(x, 0.0, 1.0), "y": self._clamp(y + h, 0.0, 1.0)},
+                ]
+                score = float(prompt.get("confidence", 0.0))
                 if mask_format == "alpha_png":
+                    mask_arr = np.zeros((image_height, image_width), dtype=np.uint8)
+                    xi1 = int(round(x1))
+                    yi1 = int(round(y1))
+                    xi2 = int(round(x2))
+                    yi2 = int(round(y2))
+                    mask_arr[max(0, yi1):min(image_height, yi2), max(0, xi1):min(image_width, xi2)] = 255
                     mask_base64 = self._encode_png_base64(mask_arr)
-                else:
-                    mask_base64 = ""
 
             objects.append(
                 {

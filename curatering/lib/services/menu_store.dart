@@ -98,16 +98,24 @@ class MenuStore extends ChangeNotifier {
   }
 
   MenuDish _dishFromJson(Map<String, dynamic> json) {
+    final rawPrice = json['price'];
+    final normalizedPrice = rawPrice == null
+        ? '0.00'
+        : rawPrice is String
+        ? rawPrice
+        : rawPrice.toString();
+
     return MenuDish(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
-      price: json['price'] as String? ?? '0.00',
+      price: normalizedPrice,
       category: json['category'] as String? ?? 'catering',
       paxOptions: (json['pax_options'] as List<dynamic>?)?.cast<String>() ?? [],
       sauces: (json['sauces'] as List<dynamic>?)?.cast<String>() ?? [],
       ingredients: (json['ingredients'] as List<dynamic>?)?.cast<String>() ?? [],
       imageBase64: json['image_base64'] as String?,
       archived: json['archived'] as bool? ?? false,
+      available: json['available'] as bool? ?? true,
       archivedAt: json['archived_at'] != null
           ? DateTime.tryParse(json['archived_at'] as String)
           : null,
@@ -134,6 +142,7 @@ class MenuStore extends ChangeNotifier {
     List<String> sauces = const [],
     List<String> ingredients = const [],
     String type = '',
+    bool available = true,
   }) async {
     try {
       final decoded = await ApiClient.instance.postJson(
@@ -147,6 +156,7 @@ class MenuStore extends ChangeNotifier {
           'ingredients': ingredients,
           'imageBase64': imageBase64,
           'type': type,
+          'available': available,
         },
       );
       
@@ -169,6 +179,7 @@ class MenuStore extends ChangeNotifier {
     List<String>? sauces,
     List<String>? ingredients,
     String? type,
+    bool? available,
   }) async {
     try {
       final decoded = await ApiClient.instance.putJson(
@@ -182,6 +193,7 @@ class MenuStore extends ChangeNotifier {
           'ingredients': ingredients ?? [],
           'imageBase64': imageBase64,
           'type': type ?? '',
+          'available': available ?? true,
         },
       );
       
@@ -205,6 +217,7 @@ class MenuStore extends ChangeNotifier {
       sauces: dish.sauces,
       ingredients: ingredients,
       imageBase64: dish.imageBase64,
+      available: dish.available,
     );
   }
 

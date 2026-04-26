@@ -4,6 +4,7 @@ import 'api_client.dart';
 class PublicEventsApi {
   PublicEventsApi._();
   static final PublicEventsApi instance = PublicEventsApi._();
+  static const Duration _aiTimeout = Duration(seconds: 45);
 
   Future<void> submitOnlineInquiry({required Map<String, dynamic> payload}) async {
     await ApiClient.instance.postJson('/api/online-inquiries', body: payload);
@@ -15,15 +16,17 @@ class PublicEventsApi {
     int maxDetections = 30,
     String maskFormat = 'polygon',
   }) async {
-    return ApiClient.instance.postJson(
-      '/api/public/events/theme-design/yolo-sam-infer',
-      body: {
-        'imageBase64': imageBase64,
-        'confidenceThreshold': confidenceThreshold,
-        'maxDetections': maxDetections,
-        'maskFormat': maskFormat,
-      },
-    );
+    return ApiClient.instance
+        .postJson(
+          '/api/public/events/theme-design/yolo-sam-infer',
+          body: {
+            'imageBase64': imageBase64,
+            'confidenceThreshold': confidenceThreshold,
+            'maxDetections': maxDetections,
+            'maskFormat': maskFormat,
+          },
+        )
+        .timeout(_aiTimeout);
   }
 
   Future<Map<String, dynamic>> swapThemeObjectColors({
@@ -31,13 +34,15 @@ class PublicEventsApi {
     required List<Map<String, dynamic>> masks,
     required List<Map<String, dynamic>> edits,
   }) async {
-    return ApiClient.instance.postJson(
-      '/api/public/events/theme-design/swap-colors',
-      body: {
-        'imageBase64': imageBase64,
-        'masks': masks,
-        'edits': edits,
-      },
-    );
+    return ApiClient.instance
+        .postJson(
+          '/api/public/events/theme-design/swap-colors',
+          body: {
+            'imageBase64': imageBase64,
+            'masks': masks,
+            'edits': edits,
+          },
+        )
+        .timeout(_aiTimeout);
   }
 }

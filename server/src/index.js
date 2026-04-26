@@ -23,7 +23,9 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-change-me";
 const connectionString = process.env.DATABASE_URL
 const sql = postgres(connectionString)
-const AI_SERVICE_BASE_URL = String(process.env.AI_SERVICE_BASE_URL || "").replace(/\/+$/, "");
+const FASTAPI_URL = String(
+  process.env.FASTAPI_INTERNAL_URL || process.env.AI_SERVICE_BASE_URL || "",
+).replace(/\/+$/, "");
 const AI_SERVICE_TOKEN = process.env.AI_SERVICE_TOKEN || "";
 const AI_SERVICE_TIMEOUT_SEGMENT_MS = Number(process.env.AI_SERVICE_TIMEOUT_SEGMENT_MS || 10000);
 const AI_SERVICE_TIMEOUT_RECOLOR_MS = Number(process.env.AI_SERVICE_TIMEOUT_RECOLOR_MS || 8000);
@@ -123,7 +125,7 @@ function ensureHexColor(rawValue, fallback = "#f4511e") {
 }
 
 async function callFastApi({ req, routePath, timeoutMs, payload }) {
-  if (!AI_SERVICE_BASE_URL) {
+  if (!FASTAPI_URL) {
     throw toHttpError(
       "AI service is not configured",
       500,
@@ -143,7 +145,7 @@ async function callFastApi({ req, routePath, timeoutMs, payload }) {
   const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
   try {
-    const response = await fetch(`${AI_SERVICE_BASE_URL}${routePath}`, {
+    const response = await fetch(`${FASTAPI_URL}${routePath}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -155,29 +157,51 @@ async function callFastApi({ req, routePath, timeoutMs, payload }) {
     });
 
     const text = await response.text();
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const shouldParseJson = contentType.includes("application/json");
     let decoded = {};
+    let parsedJson = false;
     if (text) {
-      try {
-        decoded = JSON.parse(text);
-      } catch {
-        throw toHttpError(
-          "AI service returned invalid JSON",
-          502,
-          "upstream_bad_response",
-        );
+      if (shouldParseJson || text.trim().startsWith("{") || text.trim().startsWith("[")) {
+        try {
+          decoded = JSON.parse(text);
+          parsedJson = true;
+        } catch {
+          if (response.ok) {
+            throw toHttpError(
+              "AI service returned invalid JSON",
+              502,
+              "upstream_bad_response",
+              {
+                routePath,
+                upstreamStatus: response.status,
+                contentType,
+                snippet: text.slice(0, 300),
+              },
+            );
+          }
+        }
       }
     }
 
     if (!response.ok) {
-      const message =
-        decoded && typeof decoded.message === "string" && decoded.message
-          ? decoded.message
-          : "AI processing failed";
+      let message = "AI processing failed";
+      if (parsedJson && decoded && typeof decoded.message === "string" && decoded.message) {
+        message = decoded.message;
+      } else if (text && !parsedJson) {
+        const clean = text.replace(/\s+/g, " ").trim();
+        if (clean) message = clean.slice(0, 220);
+      }
       throw toHttpError(
         message,
         response.status >= 400 && response.status < 600 ? response.status : 502,
         "upstream_failure",
-        { upstreamStatus: response.status, routePath },
+        {
+          upstreamStatus: response.status,
+          routePath,
+          contentType,
+          parsedJson,
+        },
       );
     }
 
@@ -261,6 +285,24 @@ async function sendPasswordChangedEmail(email, fullName) {
     subject: "Your Password Has Been Changed - Curatering",
     text: `Hello ${fullName || 'Customer'},\n\nYour password for your Curatering account has been successfully changed.\n\nIf you did not make this change, please contact us immediately.\n\nBest regards,\nCuratering Team`,
   });
+}
+
+async function sendCustomerNotificationEmail({ to, subject, text }) {
+  if (!to) return;
+  if (!process.env.TRANSPORTER_EMAIL || !process.env.TRANSPORTER_PASSWORD) {
+    console.warn("Skipping customer email notification: transporter credentials missing");
+    return;
+  }
+  try {
+    await transporter.sendMail({
+      from: process.env.TRANSPORTER_EMAIL,
+      to,
+      subject,
+      text,
+    });
+  } catch (error) {
+    console.error("Failed to send customer notification email:", error?.message || error);
+  }
 }
 
 function authRequired(req, res, next) {
@@ -1406,7 +1448,10 @@ app.get(
         final_status AS "finalStatus",
         created_at
        FROM catering_orders
-       WHERE status = $1 OR (status = 'cancelled' AND $1 = 'completed')
+       WHERE
+         status = $1
+         OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')
+         OR (status = 'cancelled' AND $1 = 'completed')
        UNION ALL
        SELECT
         id,
@@ -1430,7 +1475,10 @@ app.get(
         final_status AS "finalStatus",
         created_at
        FROM event_orders
-       WHERE status = $1 OR (status = 'cancelled' AND $1 = 'completed')
+       WHERE
+         status = $1
+         OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')
+         OR (status = 'cancelled' AND $1 = 'completed')
        ORDER BY created_at DESC
        LIMIT 500;`,
       [status],
@@ -1702,6 +1750,30 @@ app.post(
         other: { orderId, changedFields },
       });
 
+      const customerEmail = emailAddress || existing.emailAddress;
+      const customerDisplayName = customerName || existing.customerName || "Customer";
+      if (normalizedAction === "post_changes") {
+        await sendCustomerNotificationEmail({
+          to: customerEmail,
+          subject: "Curatering: Your inquiry has a cost estimation update",
+          text:
+            `Hello ${customerDisplayName},\n\n` +
+            `Your catering inquiry (${orderId}) has been updated with a revised cost estimation.\n` +
+            `Estimated total: PHP ${Number(totalCost || 0).toFixed(2)}.\n\n` +
+            `Please review your inquiry details in Curatering.\n\n` +
+            `- Curatering Team`,
+        });
+      } else if (normalizedAction === "confirm_inquiry") {
+        await sendCustomerNotificationEmail({
+          to: customerEmail,
+          subject: "Curatering: Your inquiry is now for processing",
+          text:
+            `Hello ${customerDisplayName},\n\n` +
+            `Your inquiry (${orderId}) has been confirmed and is now being processed.\n\n` +
+            `- Curatering Team`,
+        });
+      }
+
       return res.json({ ok: true, id: result.rows[0].id });
     } catch (e) {
       console.error(e);
@@ -1746,7 +1818,10 @@ app.get(
         final_status AS "finalStatus",
         created_at
        FROM catering_orders
-       WHERE status = $1 OR (status = 'cancelled' AND $1 = 'completed')
+       WHERE
+         status = $1
+         OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')
+         OR (status = 'cancelled' AND $1 = 'completed')
        UNION ALL
        SELECT
         id,
@@ -1770,7 +1845,10 @@ app.get(
         final_status AS "finalStatus",
         created_at
        FROM event_orders
-       WHERE status = $1 OR (status = 'cancelled' AND $1 = 'completed')
+       WHERE
+         status = $1
+         OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')
+         OR (status = 'cancelled' AND $1 = 'completed')
        ORDER BY created_at DESC
        LIMIT 500;`,
       [status],
@@ -2018,6 +2096,16 @@ app.post("/api/online-inquiries", async (req, res) => {
       );
     }
 
+    await sendCustomerNotificationEmail({
+      to: emailAddress,
+      subject: "Curatering: Inquiry received",
+      text:
+        `Hello ${customerName || "Customer"},\n\n` +
+        `We received your inquiry (${result.rows[0].inquiry_id}).\n` +
+        `Our team will review it and contact you soon.\n\n` +
+        `- Curatering Team`,
+    });
+
     return res.json({ ok: true, id: result.rows[0].id, inquiryId: result.rows[0].inquiry_id });
   } catch (e) {
     console.error(e);
@@ -2110,6 +2198,21 @@ app.post(
         other: { orderId },
       });
 
+      const eventEmail = await pool.query(
+        "SELECT email_address, customer_name FROM event_orders WHERE id = $1 LIMIT 1",
+        [orderId],
+      );
+      if (eventEmail.rowCount > 0) {
+        await sendCustomerNotificationEmail({
+          to: eventEmail.rows[0].email_address,
+          subject: "Curatering: Order status updated",
+          text:
+            `Hello ${eventEmail.rows[0].customer_name || "Customer"},\n\n` +
+            `Your event order (${orderId}) status is now for post analysis.\n\n` +
+            `- Curatering Team`,
+        });
+      }
+
       return res.json({ ok: true, id: result.rows[0].id });
     } catch (e) {
       console.error(e);
@@ -2168,6 +2271,21 @@ app.post(
         action: "cancelled order",
         other: { orderId },
       });
+
+      const eventEmail = await pool.query(
+        "SELECT email_address, customer_name FROM event_orders WHERE id = $1 LIMIT 1",
+        [orderId],
+      );
+      if (eventEmail.rowCount > 0) {
+        await sendCustomerNotificationEmail({
+          to: eventEmail.rows[0].email_address,
+          subject: "Curatering: Order status updated",
+          text:
+            `Hello ${eventEmail.rows[0].customer_name || "Customer"},\n\n` +
+            `Your event order (${orderId}) has been cancelled.\n\n` +
+            `- Curatering Team`,
+        });
+      }
 
       return res.json({ ok: true, id: result.rows[0].id });
     } catch (e) {
@@ -2494,7 +2612,7 @@ initDb()
         try {
           const result = await pool.query(
             `SELECT id, name, price, category, pax_options, sauces, ingredients,
-                    image_base64, archived, archived_at, created_at, updated_at, type, set_menus
+                    image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus
              FROM menu_dishes
              WHERE archived = false
              ORDER BY category, name`
@@ -2525,7 +2643,7 @@ initDb()
         try {
           const result = await pool.query(
             `SELECT id, name, price, category, pax_options, sauces, ingredients,
-                    image_base64, archived, archived_at, created_at, updated_at, type, set_menus
+                    image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus
              FROM menu_dishes
              WHERE archived = false
              ORDER BY category, name`
@@ -2557,7 +2675,7 @@ initDb()
           const { id } = req.params;
           const result = await pool.query(
             `SELECT id, name, price, category, pax_options, sauces, ingredients,
-                    image_base64, archived, archived_at, created_at, updated_at, type, set_menus
+                    image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus
              FROM menu_dishes
              WHERE id = $1 AND archived = false`,
             [id]
@@ -2590,7 +2708,7 @@ initDb()
       try {
         const result = await pool.query(
           `SELECT id, name, price, category, pax_options, sauces, ingredients,
-                  image_base64, archived, archived_at, created_at, updated_at, type, set_menus
+                  image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus
            FROM menu_dishes
            ORDER BY category, name`
         );
@@ -2603,17 +2721,38 @@ initDb()
 
     app.post('/api/menu/dishes', authRequired, async (req, res) => {
       try {
-        const { name, price, category, paxOptions, sauces, ingredients, imageBase64, type } = req.body || {};
+        const {
+          name,
+          price,
+          category,
+          paxOptions,
+          sauces,
+          ingredients,
+          imageBase64,
+          type,
+          available,
+        } = req.body || {};
         
         if (!name || !price) {
           return res.status(400).json({ error: 'Name and price are required' });
         }
 
         const result = await pool.query(
-          `INSERT INTO menu_dishes (name, price, category, pax_options, sauces, ingredients, image_base64, type, set_menus)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          `INSERT INTO menu_dishes (name, price, category, pax_options, sauces, ingredients, image_base64, type, set_menus, available)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING *`,
-          [name, price, category || 'catering', JSON.stringify(paxOptions || []), JSON.stringify(sauces || []), JSON.stringify(ingredients || []), imageBase64 || null, type || '', JSON.stringify([])]
+          [
+            name,
+            price,
+            category || 'catering',
+            JSON.stringify(paxOptions || []),
+            JSON.stringify(sauces || []),
+            JSON.stringify(ingredients || []),
+            imageBase64 || null,
+            type || '',
+            JSON.stringify([]),
+            available !== false,
+          ]
         );
         
         res.status(201).json({ dish: result.rows[0] });
@@ -2626,15 +2765,38 @@ initDb()
     app.put('/api/menu/dishes/:dishId', authRequired, async (req, res) => {
       try {
         const { dishId } = req.params;
-        const { name, price, category, paxOptions, sauces, ingredients, imageBase64, type } = req.body || {};
+        const {
+          name,
+          price,
+          category,
+          paxOptions,
+          sauces,
+          ingredients,
+          imageBase64,
+          type,
+          available,
+        } = req.body || {};
         
         const result = await pool.query(
           `UPDATE menu_dishes
            SET name = $1, price = $2, category = $3, pax_options = $4, 
-               sauces = $5, ingredients = $6, image_base64 = $7, type = $8, set_menus = $9, updated_at = now()
-           WHERE id = $10
+               sauces = $5, ingredients = $6, image_base64 = $7, type = $8, set_menus = $9,
+               available = $10, updated_at = now()
+           WHERE id = $11
            RETURNING *`,
-          [name, price, category, JSON.stringify(paxOptions), JSON.stringify(sauces), JSON.stringify(ingredients), imageBase64, type, JSON.stringify(req.body.setMenus || []), dishId]
+          [
+            name,
+            price,
+            category,
+            JSON.stringify(paxOptions),
+            JSON.stringify(sauces),
+            JSON.stringify(ingredients),
+            imageBase64,
+            type,
+            JSON.stringify(req.body.setMenus || []),
+            available !== false,
+            dishId,
+          ]
         );
         
         if (result.rows.length === 0) {
@@ -2938,6 +3100,16 @@ initDb()
           { expiresIn: '7d' }
         );
 
+        await sendCustomerNotificationEmail({
+          to: customer.email,
+          subject: "Curatering: Login detected",
+          text:
+            `Hello ${customer.full_name || "Customer"},\n\n` +
+            `Your account was just used to log in.\n` +
+            `If this wasn't you, please reset your password immediately.\n\n` +
+            `- Curatering Team`,
+        });
+
         res.json({ 
           token,
           customer: {
@@ -3090,13 +3262,29 @@ initDb()
           return res.status(400).json({ error: 'Delivery address is required' });
         }
 
-        // TODO: Fix customer_id column issue - using id for testing
         const result = await pool.query(
-          `INSERT INTO restaurant_orders (id, full_name, phone, items, total_amount, delivery_address, delivery_lat, delivery_lng, delivery_notes)
+          `INSERT INTO restaurant_orders (customer_id, full_name, phone, items, total_amount, delivery_address, delivery_lat, delivery_lng, delivery_notes)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            RETURNING *`,
           [customerId, fullName || null, phone || null, JSON.stringify(items), totalAmount || 0, deliveryAddress, deliveryLat, deliveryLng, deliveryNotes || null]
         );
+
+        const customerResult = await pool.query(
+          "SELECT email, full_name FROM customer_accounts WHERE id = $1 LIMIT 1",
+          [customerId],
+        );
+        if (customerResult.rowCount > 0) {
+          await sendCustomerNotificationEmail({
+            to: customerResult.rows[0].email,
+            subject: "Curatering: Checkout received",
+            text:
+              `Hello ${customerResult.rows[0].full_name || "Customer"},\n\n` +
+              `Your checkout has been received successfully.\n` +
+              `Order ID: ${result.rows[0].id}\n` +
+              `Total: PHP ${Number(totalAmount || 0).toFixed(2)}\n\n` +
+              `- Curatering Team`,
+          });
+        }
 
         res.status(201).json({ order: result.rows[0] });
       } catch (error) {
@@ -3116,11 +3304,10 @@ initDb()
           return res.status(400).json({ error: 'Payment reference is required' });
         }
 
-        // TODO: Fix customer_id column issue - using id for testing
         const result = await pool.query(
           `UPDATE restaurant_orders
            SET payment_reference = $1, payment_status = 'paid', status = 'confirmed', updated_at = now()
-           WHERE id = $2 AND id = $3
+           WHERE id = $2 AND (customer_id = $3 OR id::text = $3)
            RETURNING *`,
           [paymentReference, orderId, req.customer.id]
         );
@@ -3140,9 +3327,8 @@ initDb()
       try {
         const { orderId } = req.params;
         
-        // TODO: Fix customer_id column issue - using id for testing
         const result = await pool.query(
-          'SELECT * FROM restaurant_orders WHERE id = $1 AND id = $2',
+          'SELECT * FROM restaurant_orders WHERE id = $1 AND (customer_id = $2 OR id::text = $2)',
           [orderId, req.customer.id]
         );
 
@@ -3159,13 +3345,15 @@ initDb()
 
     app.get('/api/restaurant/orders', customerAuthRequired, async (req, res) => {
       try {
-        // TODO: Fix customer_id column issue - using id for testing
         const result = await pool.query(
-          'SELECT * FROM restaurant_orders WHERE id = $1 ORDER BY created_at DESC',
+          'SELECT * FROM restaurant_orders WHERE (customer_id = $1 OR id::text = $1) ORDER BY created_at DESC',
           [req.customer.id]
         );
-
-        res.json({ orders: result.rows });
+        const orders = result.rows.map((order) => ({
+          ...order,
+          items: typeof order.items === 'string' ? JSON.parse(order.items) : order.items,
+        }));
+        res.json({ orders });
       } catch (error) {
         console.error('Error fetching orders:', error);
         res.status(500).json({ error: 'Failed to fetch orders' });
@@ -3333,6 +3521,23 @@ initDb()
           return res.status(404).json({ error: 'Order not found' });
         }
 
+        const customerResult = await pool.query(
+          "SELECT email, full_name FROM customer_accounts WHERE id = $1 LIMIT 1",
+          [orderId],
+        );
+        if (customerResult.rowCount > 0) {
+          await sendCustomerNotificationEmail({
+            to: customerResult.rows[0].email,
+            subject: "Curatering: Restaurant order status updated",
+            text:
+              `Hello ${customerResult.rows[0].full_name || "Customer"},\n\n` +
+              `Your restaurant order (${orderId}) has a status update.\n` +
+              `${status ? `New status: ${status}\n` : ""}` +
+              `${payment_status ? `Payment status: ${payment_status}\n` : ""}\n` +
+              `- Curatering Team`,
+          });
+        }
+
         res.json({ order: result.rows[0] });
       } catch (error) {
         console.error('Error updating restaurant order:', error);
@@ -3390,6 +3595,83 @@ initDb()
       } catch (error) {
         console.error('Error fetching customer event orders:', error);
         res.status(500).json({ error: 'Failed to fetch event orders' });
+      }
+    });
+
+    app.post('/api/customer/events/orders/:orderId/respond', customerAuthRequired, async (req, res) => {
+      try {
+        const customerId = req.customer.id;
+        const { orderId } = req.params;
+        const { action } = req.body || {};
+
+        const normalizedAction = String(action || '').trim().toLowerCase();
+        if (!['confirm_inquiry', 'cancel_inquiry'].includes(normalizedAction)) {
+          return res.status(400).json({
+            error: "Invalid action. Allowed: confirm_inquiry, cancel_inquiry",
+          });
+        }
+
+        const customerResult = await pool.query(
+          `SELECT email, full_name FROM customer_accounts WHERE id = $1 LIMIT 1;`,
+          [customerId]
+        );
+        if (customerResult.rowCount === 0) {
+          return res.status(404).json({ error: 'Customer not found' });
+        }
+
+        const customerEmail = customerResult.rows[0].email;
+        const customerName = customerResult.rows[0].full_name || "Customer";
+        const nextStatus = normalizedAction === 'confirm_inquiry' ? 'for_processing' : 'cancelled';
+
+        const tryUpdateByTable = async (tableName) => {
+          const result = await pool.query(
+            `UPDATE ${tableName}
+             SET status = $1, updated_at = now()
+             WHERE id::text = $2
+               AND lower(email_address) = lower($3)
+               AND status = 'online_inquiries'
+             RETURNING id, inquiry_id as "inquiryId", status, updated_at as "updatedAt"`,
+            [nextStatus, orderId, customerEmail]
+          );
+          return result.rows[0] || null;
+        };
+
+        let updatedOrder = await tryUpdateByTable('event_orders');
+        let orderType = 'event';
+        if (!updatedOrder) {
+          updatedOrder = await tryUpdateByTable('catering_orders');
+          orderType = 'catering';
+        }
+
+        if (!updatedOrder) {
+          return res.status(404).json({
+            error: 'Inquiry not found, not owned by customer, or no longer actionable.',
+          });
+        }
+
+        await sendCustomerNotificationEmail({
+          to: customerEmail,
+          subject: normalizedAction === 'confirm_inquiry'
+            ? 'Curatering: Inquiry confirmed'
+            : 'Curatering: Inquiry cancelled',
+          text:
+            `Hello ${customerName},\n\n` +
+            (normalizedAction === 'confirm_inquiry'
+              ? 'You confirmed your catering inquiry. It is now moved to for processing.\n'
+              : 'You cancelled your catering inquiry.\n') +
+            `Order ID: ${updatedOrder.id}\n\n` +
+            `- Curatering Team`,
+        });
+
+        return res.json({
+          success: true,
+          orderType,
+          action: normalizedAction,
+          order: updatedOrder,
+        });
+      } catch (error) {
+        console.error('Error responding to customer inquiry:', error);
+        res.status(500).json({ error: 'Failed to update inquiry response' });
       }
     });
 

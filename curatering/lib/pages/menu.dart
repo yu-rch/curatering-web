@@ -177,7 +177,6 @@ class _MenuState extends State<Menu> {
   final TextEditingController _setMenuNameController = TextEditingController();
   final TextEditingController _typeController = TextEditingController();
 
-  String? _pendingImageBase64;
   String? _editingImageBase64;
   String _editingType = ''; // For restaurant dish type grouping
   Map<String, String> _editingPaxPrices = {};
@@ -185,25 +184,15 @@ class _MenuState extends State<Menu> {
   int _activeTabIndex = 0;
   List<String> _editingPaxOptions = ['1 pax'];
   List<String> _editingSauces = [];
-  MenuDish? _editingDish;
-  String _editingCategory = 'catering';
+  bool _editingAvailable = true;
   List<String> _selectedSetDishIds = [];
   String? _selectedSetMenuId;
-  String? _dishCategoryFilter; // 'all', 'catering', 'restaurant'
   bool _isModifyingSet = false; 
-
-  List<MenuDish> get _filteredDishes {
+  
+  bool _matchesSearch(MenuDish dish) {
     final query = _searchController.text.trim().toLowerCase();
-    var dishes = MenuStore.instance.activeDishes;
-    
-    // Apply category filter
-    if (_dishCategoryFilter != null && _dishCategoryFilter != 'all') {
-      dishes = dishes.where((d) => d.category == _dishCategoryFilter).toList();
-    }
-    
-    // Apply search filter
-    if (query.isEmpty) return dishes;
-    return dishes.where((dish) => dish.name.toLowerCase().contains(query)).toList();
+    if (query.isEmpty) return true;
+    return dish.name.toLowerCase().contains(query);
   }
 
   String _normalizeRestaurantMealType(String raw) {
@@ -277,17 +266,12 @@ class _MenuState extends State<Menu> {
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return null;
     final bytes = await picked.readAsBytes();
-    final base64 = base64Encode(bytes);
-    setState(() {
-      _pendingImageBase64 = base64;
-    });
-    return base64;
+    return base64Encode(bytes);
   }
 
   
   void _resetEditorState({String category = 'catering'}) {
-    _editingDish = null;
-    _editingCategory = category;
+    _editingAvailable = true;
     _editingImageBase64 = null;
     _editingType = '';
     _typeController.clear();
@@ -308,8 +292,7 @@ class _MenuState extends State<Menu> {
   }
 
   void _startEditingDish(MenuDish dish) {
-    _editingDish = dish;
-    _editingCategory = dish.category;
+    _editingAvailable = dish.available;
     _editingImageBase64 = dish.imageBase64;
     _editingType = _normalizeRestaurantMealType(dish.type);
     _typeController.text = _editingType;
@@ -346,16 +329,6 @@ class _MenuState extends State<Menu> {
     setState(() {
       _editingSauces.add(value);
       _newSauceController.clear();
-    });
-  }
-
-  void _toggleSetDish(String dishId) {
-    setState(() {
-      if (_selectedSetDishIds.contains(dishId)) {
-        _selectedSetDishIds.remove(dishId);
-      } else {
-        _selectedSetDishIds.add(dishId);
-      }
     });
   }
 
@@ -405,44 +378,6 @@ class _MenuState extends State<Menu> {
         SnackBar(content: Text('Error: $e')),
       );
     }
-  }
-
-  Future<void> _openSetMenuSelector() async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Existing Set Menus'),
-          content: SizedBox(
-            width: 420,
-            height: 320,
-            child: SetMenuStore.instance.activeSetMenus.isEmpty
-                ? const Center(child: Text('No existing set menus yet.'))
-                : ListView(
-                    children: SetMenuStore.instance.activeSetMenus.map((setMenu) {
-                      return ListTile(
-                        title: Text(setMenu.name),
-                        subtitle: Text('${setMenu.dishIds.length} dishes'),
-                        trailing: ElevatedButton(
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            _applySetMenu(setMenu);
-                          },
-                          child: const Text('Use'),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   Future<void> _openDishDialog({
@@ -508,7 +443,12 @@ class _MenuState extends State<Menu> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      _buildPaxEditor(dialogSetState),
+                      if (category != 'catering') _buildPaxEditor(dialogSetState),
+                      if (category == 'catering')
+                        Text(
+                          'PAX options are disabled for catering dishes. Pricing is guest-count based.',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                        ),
                       if (category == 'restaurant') ...[
                         const SizedBox(height: 16),
                         _buildSauceEditor(dialogSetState),
@@ -556,6 +496,18 @@ class _MenuState extends State<Menu> {
                           decimal: true,
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Available for ordering'),
+                        subtitle: const Text('Unavailable dishes are visible but cannot be added to cart.'),
+                        value: _editingAvailable,
+                        onChanged: (value) {
+                          dialogSetState(() {
+                            _editingAvailable = value;
+                          });
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -586,6 +538,7 @@ class _MenuState extends State<Menu> {
                               ? _editingSauces
                               : const [],
                           type: _editingType,
+                          available: _editingAvailable,
                         );
                       } else {
                         await MenuStore.instance.updateDish(
@@ -599,6 +552,7 @@ class _MenuState extends State<Menu> {
                               ? _editingSauces
                               : const [],
                           type: _editingType,
+                          available: _editingAvailable,
                         );
                       }
                       if (context.mounted) {
@@ -928,9 +882,25 @@ class _MenuState extends State<Menu> {
                         'PHP${dish.price}',
                         style: TextStyle(color: Colors.grey.shade600),
                       ),
+                      const SizedBox(height: 4),
+                      Text(
+                        dish.available ? 'Available' : 'Not Available',
+                        style: TextStyle(
+                          color: dish.available ? Colors.green.shade700 : Colors.red.shade700,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ],
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
                 _buildIconLabelButton(
                   icon: Icons.list_alt,
                   label: 'Ingredients',
@@ -940,6 +910,32 @@ class _MenuState extends State<Menu> {
                   icon: Icons.edit,
                   label: 'Edit',
                   onPressed: () => _openDishDialog(dish: dish, category: dish.category),
+                ),
+                _buildIconLabelButton(
+                  icon: dish.available ? Icons.visibility_off : Icons.visibility,
+                  label: dish.available ? 'Not Available' : 'Available',
+                  onPressed: () async {
+                    try {
+                      await MenuStore.instance.updateDish(
+                        id: dish.id,
+                        name: dish.name,
+                        price: dish.price,
+                        paxOptions: dish.paxOptions,
+                        imageBase64: dish.imageBase64,
+                        category: dish.category,
+                        sauces: dish.sauces,
+                        ingredients: dish.ingredients,
+                        type: dish.type,
+                        available: !dish.available,
+                      );
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Error: $e')),
+                        );
+                      }
+                    }
+                  },
                 ),
                 _buildIconLabelButton(
                   icon: Icons.delete_outline,
@@ -1007,7 +1003,8 @@ class _MenuState extends State<Menu> {
     return InkWell(
       onTap: onPressed,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        constraints: const BoxConstraints(minWidth: 64, maxWidth: 82),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1015,8 +1012,11 @@ class _MenuState extends State<Menu> {
             const SizedBox(height: 2),
             Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 10,
+                fontSize: 9,
                 color: Colors.grey.shade700,
               ),
             ),
@@ -1091,7 +1091,10 @@ class _MenuState extends State<Menu> {
   }
 
   Widget _buildCateringTab() {
-    final cateringDishes = _filteredDishes.where((d) => d.category == 'catering').toList();
+    final cateringDishes = MenuStore.instance.activeDishes
+        .where((d) => d.category == 'catering')
+        .where(_matchesSearch)
+        .toList();
 
     return Column(
       children: [
@@ -1155,9 +1158,10 @@ class _MenuState extends State<Menu> {
   }
 
   Widget _buildRestaurantTab() {
-    // Set category filter to 'restaurant' when viewing restaurant tab
-    _dishCategoryFilter = 'restaurant';
-    final restaurantDishes = _filteredDishes;
+    final restaurantDishes = MenuStore.instance.activeDishes
+        .where((d) => d.category == 'restaurant')
+        .where(_matchesSearch)
+        .toList();
 
     return Column(
       children: [
@@ -1885,7 +1889,12 @@ class _MenuState extends State<Menu> {
                     ? _buildCateringTab()
                     : _activeTabIndex == 1
                         ? _buildRestaurantTab()
-                        : _buildSetMenuTab(_filteredDishes.where((d) => d.category == 'catering').toList()),
+                        : _buildSetMenuTab(
+                            MenuStore.instance.activeDishes
+                                .where((d) => d.category == 'catering')
+                                .where(_matchesSearch)
+                                .toList(),
+                          ),
               ),
             ],
           ),

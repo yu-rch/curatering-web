@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config.dart';
 import '../widgets/customer_pages_top_bar.dart';
+import 'customer_website.dart';
 import 'my_order_tracking_page.dart';
 import 'my_orders_page.dart';
 import 'my_profile_page.dart';
@@ -22,8 +24,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
   Map<String, dynamic>? _customerData;
 
   String get _apiBaseUrl {
-    const url = String.fromEnvironment('API_BASE_URL');
-    return url.isEmpty ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/' : url;
+    return apiBaseUrl;
   }
 
   @override
@@ -189,9 +190,204 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     return {};
   }
 
+  List<dynamic> _parseDynamicList(dynamic raw) {
+    if (raw is List) return raw;
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final parsed = jsonDecode(raw);
+        if (parsed is List) return parsed;
+      } catch (_) {}
+    }
+    return const [];
+  }
+
+  String _formatPeso(dynamic value) {
+    final n = num.tryParse((value ?? '').toString()) ?? 0;
+    return 'PHP ${n.toStringAsFixed(2)}';
+  }
+
+  Future<void> _respondToInquiry({
+    required String orderId,
+    required String action, // confirm_inquiry | cancel_inquiry
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('customer_token');
+    if (token == null || token.isEmpty) return;
+
+    final response = await http.post(
+      Uri.parse('$_apiBaseUrl/api/customer/events/orders/$orderId/respond'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'action': action}),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to update inquiry (${response.statusCode})');
+    }
+  }
+
+  Future<void> _showCateringDetailsDialog(Map<String, dynamic> catering) async {
+    final status = (catering['status'] ?? '').toString();
+    final isInquiry = status == 'online_inquiries';
+    final themeDesign = _parseThemeDesign(
+      catering['themeDesign'] ?? catering['theme_design'],
+    );
+    final menuList = _parseDynamicList(catering['menu']);
+    final slots = _parseDynamicList(
+      catering['scheduleSlots'] ?? catering['schedule_slots'],
+    );
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(
+            catering['event_title'] ?? catering['eventTitle'] ?? 'Catering Details',
+          ),
+          content: SizedBox(
+            width: 720,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Status: ${_formatStatus(status)}'),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Total Cost: ${_formatPeso(catering['total_cost'] ?? catering['totalCost'])}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFF4511E),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text('Event Type: ${_getEventTypeDisplay(catering['event_type'] ?? catering['eventType'])}'),
+                  Text('Guests: ${(catering['guest_count'] ?? catering['guestCount'] ?? 'N/A')}'),
+                  Text('Created: ${_formatDate(catering['created_at'] ?? catering['createdAt'])}'),
+                  const SizedBox(height: 12),
+                  const Text('Schedule', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  if (slots.isEmpty)
+                    const Text('- No schedule provided')
+                  else
+                    ...slots.map((slot) {
+                      final s = slot is Map ? Map<String, dynamic>.from(slot) : <String, dynamic>{};
+                      final date = (s['date'] ?? '').toString();
+                      final start = (s['startTime'] ?? s['start_time'] ?? '').toString();
+                      final end = (s['endTime'] ?? s['end_time'] ?? '').toString();
+                      return Text('- $date  $start - $end');
+                    }),
+                  const SizedBox(height: 12),
+                  const Text('Menu', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  if (menuList.isEmpty)
+                    const Text('- No menu provided')
+                  else
+                    ...menuList.map((item) {
+                      final m = item is Map ? Map<String, dynamic>.from(item) : <String, dynamic>{};
+                      final dish = (m['dishName'] ?? m['dish_name'] ?? 'Dish').toString();
+                      final pax = (m['paxOption'] ?? m['pax_option'] ?? '').toString();
+                      final price = _formatPeso(m['price']);
+                      return Text('- $dish ${pax.isEmpty ? '' : '($pax)'}  $price');
+                    }),
+                  const SizedBox(height: 12),
+                  const Text('Cost Breakdown', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  Builder(
+                    builder: (_) {
+                      final breakdown = themeDesign['costBreakdown'];
+                      if (breakdown is! Map) return const Text('- No breakdown available');
+                      final b = Map<String, dynamic>.from(breakdown);
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('- Dish Cost: ${_formatPeso(b['dishCost'])}'),
+                          Text('- Labor Cost: ${_formatPeso(b['laborCost'])}'),
+                          Text('- Travel Cost: ${_formatPeso(b['travelCost'])}'),
+                        ],
+                      );
+                    },
+                  ),
+                  if (themeDesign['managerUpdateNotice'] is Map) ...[
+                    const SizedBox(height: 12),
+                    const Text('Manager Notes', style: TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    Text(
+                      (themeDesign['managerUpdateNotice']['message'] ?? 'Your inquiry was updated.').toString(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            if (isInquiry)
+              TextButton(
+                onPressed: () async {
+                  try {
+                    await _respondToInquiry(
+                      orderId: catering['id'].toString(),
+                      action: 'cancel_inquiry',
+                    );
+                    if (!mounted) return;
+                    Navigator.of(context).pop();
+                    await _loadCaterings();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Inquiry cancelled.')),
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Cancel failed: $e')),
+                    );
+                  }
+                },
+                child: const Text('Cancel Inquiry'),
+              ),
+            if (isInquiry)
+              ElevatedButton(
+                onPressed: () async {
+                  try {
+                    await _respondToInquiry(
+                      orderId: catering['id'].toString(),
+                      action: 'confirm_inquiry',
+                    );
+                    if (!mounted) return;
+                    Navigator.of(context).pop();
+                    await _loadCaterings();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Order confirmed.')),
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Confirm failed: $e')),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1DB954),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Confirm Order'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _navigateFromTopBar(CustomerPageTab tab) {
     if (tab == CustomerPageTab.caterings) return;
     final route = switch (tab) {
+      CustomerPageTab.home => const CustomerWebsiteScreen(),
       CustomerPageTab.profile => const MyProfilePage(),
       CustomerPageTab.orders => const MyOrdersPage(),
       CustomerPageTab.tracking => const MyOrderTrackingPage(),
@@ -304,7 +500,10 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                             managerNotice is Map &&
                             managerNotice['preferencesChanged'] == true;
 
-                        return Card(
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: () => _showCateringDetailsDialog(catering),
+                          child: Card(
                           margin: const EdgeInsets.only(bottom: 16),
                           elevation: 0,
                           shape: RoundedRectangleBorder(
@@ -470,6 +669,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                               ],
                             ),
                           ),
+                        ),
                         );
                       },
                     ),

@@ -402,7 +402,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       );
     }
 
-    return Container(
+    return SingleChildScrollView(
       padding: appPagePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -473,6 +473,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               ],
             ),
           ),
+          const SizedBox(height: 16),
         ],
       ),
     );
@@ -499,7 +500,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       );
     }
 
-    return Container(
+    return SingleChildScrollView(
       padding: appPagePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -570,6 +571,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               ],
             ),
           ),
+          const SizedBox(height: 16),
         ],
       ),
     );
@@ -596,7 +598,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       );
     }
 
-    return Container(
+    return SingleChildScrollView(
       padding: appPagePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -673,6 +675,45 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                 }).toList(),
               ],
             ),
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
+  void _showOrderItemsDialog(Map<String, dynamic> order) {
+    final items = (order['items'] as List<dynamic>? ?? []);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Order #${order['id']?.toString().substring(0, 8).toUpperCase() ?? 'N/A'}'),
+        content: SizedBox(
+          width: 420,
+          child: items.isEmpty
+              ? const Text('No dishes found for this order.')
+              : ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) => const Divider(height: 12),
+                  itemBuilder: (context, i) {
+                    final item = items[i] as Map<String, dynamic>;
+                    final name = item['name'] ?? item['dishName'] ?? 'Unknown dish';
+                    final qty = item['quantity'] ?? 1;
+                    final price = item['price'] ?? '0';
+                    return Row(
+                      children: [
+                        Expanded(child: Text('$name x$qty')),
+                        Text('$_currencySymbol$price'),
+                      ],
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
           ),
         ],
       ),
@@ -756,25 +797,34 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     );
   }
 
+  String _shortOrderId(dynamic rawId) {
+    final value = (rawId ?? '').toString();
+    if (value.isEmpty) return 'N/A';
+    final shortened = value.length <= 8 ? value : value.substring(0, 8);
+    return '#${shortened.toUpperCase()}';
+  }
+
   Widget _buildOrderTableRow(Map<String, dynamic> order, int index) {
     final items = (order['items'] as List<dynamic>?) ?? [];
     final isEven = index % 2 == 0;
     
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: isEven ? Colors.white : Colors.grey.shade50,
-        border: Border(
-          bottom: BorderSide(
-            color: Colors.grey.shade200,
-            width: 0.5,
+    return InkWell(
+      onTap: () => _showOrderItemsDialog(order),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: isEven ? Colors.white : Colors.grey.shade50,
+          border: Border(
+            bottom: BorderSide(
+              color: Colors.grey.shade200,
+              width: 0.5,
+            ),
           ),
         ),
-      ),
-      child: IntrinsicHeight(
-        child: Row(
+        child: IntrinsicHeight(
+          child: Row(
           children: [
-            Expanded(flex: 1, child: _buildTableCell('#${order['id'].toString().substring(0, 8).toUpperCase()}')),
+            Expanded(flex: 1, child: _buildTableCell(_shortOrderId(order['id']))),
             Expanded(flex: 2, child: _buildTableCell(order['full_name'] ?? 'N/A')),
             Expanded(flex: 1, child: _buildTableCell(order['phone'] ?? 'N/A')),
             Expanded(flex: 1, child: _buildTableCell('${items.length}')),
@@ -782,8 +832,32 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             Expanded(flex: 1, child: _buildTableCell('${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}')),
             Expanded(
               flex: 2,
-              child: Row(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 6,
                 children: [
+                  GestureDetector(
+                    onTap: () => _showOrderItemsDialog(order),
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade600,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.visibility, color: Colors.white, size: 16),
+                            SizedBox(width: 4),
+                            Text('View Dishes', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   GestureDetector(
                     onTap: () => _confirmOrder(order['id']),
                     child: MouseRegion(
@@ -831,6 +905,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               ),
             ),
           ],
+          ),
         ),
       ),
     );
@@ -872,21 +947,23 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     final status = order['status'] as String? ?? 'processing';
     final isEven = index % 2 == 0;
     
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: isEven ? Colors.white : Colors.grey.shade50,
-        border: Border(
-          bottom: BorderSide(
-            color: Colors.grey.shade200,
-            width: 0.5,
+    return InkWell(
+      onTap: () => _showOrderItemsDialog(order),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: isEven ? Colors.white : Colors.grey.shade50,
+          border: Border(
+            bottom: BorderSide(
+              color: Colors.grey.shade200,
+              width: 0.5,
+            ),
           ),
         ),
-      ),
-      child: IntrinsicHeight(
-        child: Row(
+        child: IntrinsicHeight(
+          child: Row(
           children: [
-            Expanded(flex: 1, child: _buildTableCell('#${order['id'].toString().substring(0, 8).toUpperCase()}')),
+            Expanded(flex: 1, child: _buildTableCell(_shortOrderId(order['id']))),
             Expanded(flex: 2, child: _buildTableCell(order['full_name'] ?? 'N/A')),
             Expanded(flex: 1, child: _buildStatusBadge(status, null)),
             Expanded(flex: 1, child: _buildTableCell('${items.length}')),
@@ -894,8 +971,32 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             Expanded(flex: 1, child: _buildTableCell('${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}')),
             Expanded(
               flex: 2,
-              child: Row(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 6,
                 children: [
+                  GestureDetector(
+                    onTap: () => _showOrderItemsDialog(order),
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade600,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.visibility, color: Colors.white, size: 16),
+                            SizedBox(width: 4),
+                            Text('View Dishes', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   if (status == 'confirmed' || status == 'preparing') ...[
                     GestureDetector(
                       onTap: () => _showDeliveryUrlDialog(order['id']),
@@ -946,6 +1047,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               ),
             ),
           ],
+          ),
         ),
       ),
     );
@@ -957,21 +1059,23 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     final paymentStatus = order['payment_status'] as String? ?? 'pending';
     final isEven = index % 2 == 0;
     
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: isEven ? Colors.white : Colors.grey.shade50,
-        border: Border(
-          bottom: BorderSide(
-            color: Colors.grey.shade200,
-            width: 0.5,
+    return InkWell(
+      onTap: () => _showOrderItemsDialog(order),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: isEven ? Colors.white : Colors.grey.shade50,
+          border: Border(
+            bottom: BorderSide(
+              color: Colors.grey.shade200,
+              width: 0.5,
+            ),
           ),
         ),
-      ),
-      child: IntrinsicHeight(
-        child: Row(
+        child: IntrinsicHeight(
+          child: Row(
           children: [
-            Expanded(flex: 1, child: _buildTableCell('#${order['id'].toString().substring(0, 8).toUpperCase()}')),
+            Expanded(flex: 1, child: _buildTableCell(_shortOrderId(order['id']))),
             Expanded(flex: 2, child: _buildTableCell(order['full_name'] ?? 'N/A')),
             Expanded(flex: 1, child: _buildStatusBadge(status, null)),
             Expanded(flex: 1, child: _buildTableCell('${items.length}')),
@@ -979,9 +1083,38 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             Expanded(flex: 1, child: _buildTableCell('${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}')),
             Expanded(
               flex: 2,
-              child: _buildPaymentStatusBadge(paymentStatus),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  GestureDetector(
+                    onTap: () => _showOrderItemsDialog(order),
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade600,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.visibility, color: Colors.white, size: 16),
+                            SizedBox(width: 4),
+                            Text('View Dishes', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: _buildPaymentStatusBadge(paymentStatus)),
+                ],
+              ),
             ),
           ],
+          ),
         ),
       ),
     );

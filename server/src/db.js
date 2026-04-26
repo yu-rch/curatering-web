@@ -450,6 +450,7 @@ export async function initDb() {
       ingredients JSONB NOT NULL DEFAULT '[]'::jsonb,
       image_base64 TEXT,
       archived BOOLEAN NOT NULL DEFAULT FALSE,
+      available BOOLEAN NOT NULL DEFAULT TRUE,
       archived_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -461,6 +462,11 @@ export async function initDb() {
   await pool.query(`
     ALTER TABLE menu_dishes
     ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT '';
+  `);
+
+  await pool.query(`
+    ALTER TABLE menu_dishes
+    ADD COLUMN IF NOT EXISTS available BOOLEAN NOT NULL DEFAULT TRUE;
   `);
 
   // Add set_menus column (JSONB array) to track which sets each dish belongs to

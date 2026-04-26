@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum CustomerPageTab { profile, orders, caterings, tracking }
+enum CustomerPageTab { home, profile, orders, caterings, tracking }
 
 class CustomerPagesTopBar extends StatelessWidget {
   const CustomerPagesTopBar({
@@ -26,6 +26,7 @@ class CustomerPagesTopBar extends StatelessWidget {
         spacing: 8,
         runSpacing: 8,
         children: [
+          _tabButton('Home', CustomerPageTab.home, Icons.home_outlined),
           _tabButton('My Profile', CustomerPageTab.profile, Icons.person_outline),
           _tabButton('My Orders', CustomerPageTab.orders, Icons.receipt_long_outlined),
           _tabButton('My Caterings', CustomerPageTab.caterings, Icons.event_outlined),

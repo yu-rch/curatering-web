@@ -7,6 +7,7 @@ class MenuDish {
   final String category;
   final List<String> sauces;
   final bool archived;
+  final bool available;
   final DateTime? archivedAt;
   final List<String> ingredients;
   final String type; // For restaurant dish grouping (RICE MEALS, PASTA, etc.)
@@ -21,6 +22,7 @@ class MenuDish {
     this.category = 'catering',
     this.sauces = const [],
     this.archived = false,
+    this.available = true,
     this.archivedAt,
     this.ingredients = const [],
     this.type = '',
@@ -36,6 +38,7 @@ class MenuDish {
     String? category,
     List<String>? sauces,
     bool? archived,
+    bool? available,
     DateTime? archivedAt,
     List<String>? ingredients,
     String? type,
@@ -50,6 +53,7 @@ class MenuDish {
       category: category ?? this.category,
       sauces: sauces ?? this.sauces,
       archived: archived ?? this.archived,
+      available: available ?? this.available,
       archivedAt: archivedAt ?? this.archivedAt,
       ingredients: ingredients ?? this.ingredients,
       type: type ?? this.type,

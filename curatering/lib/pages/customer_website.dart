@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
 
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
@@ -181,6 +183,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   void _addToCart(MenuDish dish) {
+    if (!dish.available) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${dish.name} is currently not available')),
+      );
+      return;
+    }
     CartStore.instance.addItem(dish);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -940,14 +948,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           SizedBox(
                             height: 24,
                             child: ElevatedButton.icon(
-                              onPressed: () => _addToCart(d),
-                              icon: const Icon(Icons.add, size: 14),
-                              label: const Text(
-                                'Add',
+                              onPressed: d.available ? () => _addToCart(d) : null,
+                              icon: Icon(d.available ? Icons.add : Icons.block, size: 14),
+                              label: Text(
+                                d.available ? 'Add' : 'N/A',
                                 style: TextStyle(fontSize: 10),
                               ),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF1E1E1E),
+                                backgroundColor: d.available
+                                    ? const Color(0xFF1E1E1E)
+                                    : Colors.grey.shade500,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
@@ -1617,11 +1627,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                       SizedBox(
                                         height: 28,
                                         child: ElevatedButton(
-                                          onPressed: () => _addToCart(d),
+                                          onPressed: d.available
+                                              ? () => _addToCart(d)
+                                              : null,
                                           style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(
-                                              0xFF1E1E1E,
-                                            ),
+                                            backgroundColor: d.available
+                                                ? const Color(0xFF1E1E1E)
+                                                : Colors.grey.shade500,
                                             foregroundColor: Colors.white,
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 16,
@@ -1631,8 +1643,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                                   BorderRadius.circular(6),
                                             ),
                                           ),
-                                          child: const Text(
-                                            'Add',
+                                          child: Text(
+                                            d.available ? 'Add' : 'Not Available',
                                             style: TextStyle(fontSize: 11),
                                           ),
                                         ),
@@ -2921,7 +2933,7 @@ class _InquireFormState extends State<_InquireForm> {
   int? _focusedPhotoIndex;
   final _themeRequestCtrl =
       TextEditingController(); // For Macrina's theme request
-  bool _isGeneratingAiDesign = false;
+  bool _isDetectingAiObjects = false;
 
   @override
   void initState() {
@@ -3164,8 +3176,8 @@ class _InquireFormState extends State<_InquireForm> {
                         _buildSummaryRow('Custom Design', _wantsCustomDesign ? 'Yes' : 'Standard'),
                         if (_themeRequestCtrl.text.trim().isNotEmpty)
                           _buildSummaryRow('Theme Request', _themeRequestCtrl.text.trim()),
-                        if (_designPhotoUrls.isNotEmpty)
-                          _buildSummaryRow('Reference Photos', '${_designPhotoUrls.length} photo(s)'),
+                        if (_designBoardPhotos().isNotEmpty)
+                          _buildSummaryRow('Reference Photos', '${_designBoardPhotos().length} photo(s)'),
                       ],
                     ),
                   ],
@@ -3353,7 +3365,7 @@ class _InquireFormState extends State<_InquireForm> {
           'guestCount': g,
           'menu': menuItems,
           'themeDesign': {
-            'picksBase64': _designPhotoUrls,
+            'picksBase64': _designBoardPhotos(),
             'tintEnabled': false,
             'tintColorHex': null,
             'colorPrompt': _themeRequestCtrl.text.trim(),
@@ -4245,9 +4257,9 @@ class _InquireFormState extends State<_InquireForm> {
                       ),
                     ],
                   ),
-                  if (_designPhotoUrls.isNotEmpty) ...[
+                  if (_designBoardPhotos().isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Text('${_designPhotoUrls.length} photo(s) added'),
+                    Text('${_designBoardPhotos().length} photo(s) added'),
                   ],
                   const SizedBox(height: 8),
                   TextButton(
@@ -4293,7 +4305,10 @@ class _InquireFormState extends State<_InquireForm> {
             ),
             const SizedBox(height: 12),
             TextButton(
-              onPressed: () => setState(() => _wantsCustomDesign = true),
+              onPressed: () {
+                setState(() => _wantsCustomDesign = true);
+                _showCustomDesignDialog();
+              },
               child: const Text('Change to My Design'),
             ),
           ] else ...[
@@ -4471,59 +4486,58 @@ class _InquireFormState extends State<_InquireForm> {
     );
   }
 
-  Future<String?> _askTargetColorHex() async {
-    final ctrl = TextEditingController(text: '#F4511E');
-    final selected = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Target Theme Color'),
-        content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(
-            labelText: 'Hex Color',
-            hintText: '#RRGGBB',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-            child: const Text('Apply'),
-          ),
-        ],
-      ),
-    );
-    ctrl.dispose();
-    if (selected == null || selected.isEmpty) return null;
-    final hex = selected.startsWith('#') ? selected : '#$selected';
-    if (!RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(hex)) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invalid hex color. Use format #RRGGBB')),
-        );
-      }
-      return null;
-    }
-    return hex;
+  bool _isLikelyDesignBoardAsset(String value) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized.isEmpty) return true;
+    if (_looksLikeBase64Image(normalized)) return false;
+    return normalized.contains('logo') ||
+        normalized.contains('favicon') ||
+        normalized.contains('icon') ||
+        normalized.contains('brand') ||
+        normalized.contains('/assets/') ||
+        normalized.contains('\\assets\\');
   }
 
-  Future<void> _generateAiThemeDesign(void Function(void Function()) setDialogState) async {
-    if (_isGeneratingAiDesign) return;
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
+  List<String> _designBoardPhotos() {
+    return _designPhotoUrls.where((photo) => !_isLikelyDesignBoardAsset(photo)).toList();
+  }
 
-    final targetHex = await _askTargetColorHex();
-    if (targetHex == null) return;
+  Future<Uint8List> _resolveDesignPhotoBytes(String value) async {
+    final trimmed = value.trim();
+    if (_looksLikeBase64Image(trimmed)) {
+      final payload = trimmed.startsWith('data:image/')
+          ? trimmed.substring(trimmed.indexOf(',') + 1)
+          : trimmed;
+      return base64Decode(payload);
+    }
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null) {
+      throw Exception('Invalid design photo source');
+    }
+    final response = await http.get(uri);
+    if (response.statusCode != 200) {
+      throw Exception('Failed to download selected design photo');
+    }
+    return response.bodyBytes;
+  }
 
-    final bytes = await picked.readAsBytes();
-    final imageBase64 = base64Encode(bytes);
-
-    setState(() => _isGeneratingAiDesign = true);
+  Future<void> _runCustomerEditObjectsFlow(void Function(void Function()) setDialogState) async {
+    final photos = _designBoardPhotos();
+    if (photos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add at least one design board photo first.')),
+      );
+      return;
+    }
+    final focusedIndex = (_focusedPhotoIndex ?? 0).clamp(0, photos.length - 1);
+    final source = photos[focusedIndex];
+    setState(() => _isDetectingAiObjects = true);
     try {
+      final bytes = await _resolveDesignPhotoBytes(source);
+      final imageBase64 = base64Encode(bytes);
       final segmented = await PublicEventsApi.instance.inferThemeObjectsWithSam(
         imageBase64: imageBase64,
-        maxDetections: 6,
+        maxDetections: 20,
         maskFormat: 'polygon',
       );
       final objects = (segmented['objects'] as List<dynamic>? ?? const [])
@@ -4531,22 +4545,253 @@ class _InquireFormState extends State<_InquireForm> {
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
       if (objects.isEmpty) {
-        throw Exception('No segmentable objects found');
+        throw Exception('No objects detected to edit.');
       }
 
-      final masks = objects.map((obj) {
-        final polygon = (obj['polygonPoints'] as List<dynamic>? ?? const [])
-            .whereType<Map>()
-            .map((p) => Map<String, dynamic>.from(p))
+      final grouped = <String, List<Map<String, dynamic>>>{};
+      for (final obj in objects) {
+        final label = (obj['label'] ?? 'Object').toString();
+        grouped.putIfAbsent(label, () => <Map<String, dynamic>>[]).add(obj);
+      }
+
+      final selection = await showDialog<Map<String, String>>(
+        context: context,
+        builder: (context) {
+          String? selectedLabel;
+          String selectedHex = '#F4511E';
+          const palette = <String>[
+            '#F4511E',
+            '#1DB954',
+            '#1976D2',
+            '#E91E63',
+            '#6A1B9A',
+            '#FFC107',
+            '#FFFFFF',
+            '#212121',
+          ];
+          return StatefulBuilder(
+            builder: (context, setLocalState) {
+              return Dialog(
+                backgroundColor: const Color(0xFFF7F8FA),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                child: Container(
+                  width: 1160,
+                  height: 760,
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Object Selection',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFF4511E),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey.shade300),
+                                  borderRadius: BorderRadius.circular(10),
+                                  color: Colors.black12,
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Image.memory(bytes, fit: BoxFit.contain),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            SizedBox(
+                              width: 340,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      border: Border.all(color: Colors.grey.shade300),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Recolor',
+                                          style: TextStyle(fontWeight: FontWeight.bold),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children: palette.map((hex) {
+                                            final color = Color(
+                                              int.parse(hex.substring(1), radix: 16) + 0xFF000000,
+                                            );
+                                            final selected = selectedHex == hex;
+                                            return GestureDetector(
+                                              onTap: () => setLocalState(() => selectedHex = hex),
+                                              child: Container(
+                                                width: 30,
+                                                height: 30,
+                                                decoration: BoxDecoration(
+                                                  color: color,
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: selected ? Colors.black : Colors.black26,
+                                                    width: selected ? 3 : 1,
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          }).toList(),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Container(
+                                    height: 220,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      border: Border.all(color: Colors.grey.shade300),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Detected Objects:',
+                                          style: TextStyle(fontWeight: FontWeight.bold),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Expanded(
+                                          child: SingleChildScrollView(
+                                            child: Wrap(
+                                              spacing: 8,
+                                              runSpacing: 8,
+                                              children: grouped.entries.map((entry) {
+                                                final label = entry.value.length > 1
+                                                    ? '${entry.key} (${entry.value.length})'
+                                                    : entry.key;
+                                                final active = selectedLabel == entry.key;
+                                                return FilterChip(
+                                                  label: Text(label),
+                                                  selected: active,
+                                                  onSelected: (_) => setLocalState(() {
+                                                    selectedLabel = entry.key;
+                                                  }),
+                                                  backgroundColor: Colors.grey.shade200,
+                                                  selectedColor: Colors.blue.withOpacity(0.3),
+                                                  checkmarkColor: Colors.blue,
+                                                );
+                                              }).toList(),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  ElevatedButton(
+                                    onPressed: selectedLabel == null
+                                        ? null
+                                        : () => Navigator.of(context).pop({
+                                            'label': selectedLabel!,
+                                            'hex': selectedHex,
+                                          }),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF1DB954),
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    child: const Text('Apply Colors to Selected'),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ElevatedButton(
+                                    onPressed: () => Navigator.of(context).pop(),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.grey.shade400,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    child: const Text('Cancel'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+      if (selection == null) return;
+      final selectedLabel = selection['label'];
+      final targetHex = selection['hex'];
+      if (selectedLabel == null || targetHex == null) return;
+
+      final selectedObjects = grouped[selectedLabel] ?? const <Map<String, dynamic>>[];
+      final masks = selectedObjects.map((obj) {
+        final rawPolygon =
+            (obj['polygonPoints'] as List<dynamic>? ??
+                    obj['polygon_points'] as List<dynamic>? ??
+                    const [])
+                .toList();
+        final polygon = rawPolygon
+            .map((point) {
+              if (point is Map) {
+                return {
+                  'x': (point['x'] as num?)?.toDouble() ?? 0.0,
+                  'y': (point['y'] as num?)?.toDouble() ?? 0.0,
+                };
+              }
+              if (point is List && point.length >= 2) {
+                final x = point[0];
+                final y = point[1];
+                if (x is num && y is num) {
+                  return {'x': x.toDouble(), 'y': y.toDouble()};
+                }
+              }
+              return null;
+            })
+            .whereType<Map<String, double>>()
             .toList();
+        final maskBase64 =
+            (obj['maskBase64'] ?? obj['mask_base64'] ?? '').toString().trim();
         return {
           'objectId': (obj['id'] ?? '').toString(),
           if (polygon.isNotEmpty) 'polygonPoints': polygon,
-          if ((obj['maskBase64'] ?? '').toString().isNotEmpty) 'maskBase64': obj['maskBase64'],
+          if (maskBase64.isNotEmpty) 'maskBase64': maskBase64,
         };
       }).toList();
-      final edits = objects
-          .map((obj) => {'objectId': (obj['id'] ?? '').toString(), 'targetHex': targetHex, 'intensity': 0.75})
+      final edits = selectedObjects
+          .map((obj) => {
+                'objectId': (obj['id'] ?? '').toString(),
+                'targetHex': targetHex,
+                'intensity': 1.0,
+              })
           .toList();
 
       final recolor = await PublicEventsApi.instance.swapThemeObjectColors(
@@ -4556,27 +4801,43 @@ class _InquireFormState extends State<_InquireForm> {
       );
       final recoloredBase64 = (recolor['imageBase64'] ?? '').toString().trim();
       if (recoloredBase64.isEmpty) {
-        throw Exception('AI recolor did not return an image');
+        throw Exception('AI recolor did not return an image.');
       }
 
       setDialogState(() {
-        _designPhotoUrls.add(recoloredBase64);
-        _focusedPhotoIndex = _designPhotoUrls.length - 1;
+        final existingIndex = _designPhotoUrls.indexOf(source);
+        if (existingIndex >= 0) {
+          // Replace the original with the edited version to avoid duplicate previews.
+          _designPhotoUrls[existingIndex] = recoloredBase64;
+          _focusedPhotoIndex = existingIndex;
+        } else {
+          _designPhotoUrls.add(recoloredBase64);
+          _focusedPhotoIndex = _designPhotoUrls.length - 1;
+        }
       });
       setState(() {});
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('AI theme design generated successfully')),
+          const SnackBar(content: Text('AI edit applied.')),
         );
       }
     } catch (e) {
+      final msg = e.toString().toLowerCase();
+      final timeout = msg.contains('timeout') || msg.contains('timed out') || msg.contains('upstream_timeout');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to generate AI design: $e')),
+          SnackBar(
+            content: Text(
+              timeout
+                  ? 'AI service timed out. Please try one clear image and retry.'
+                  : 'Failed to edit objects: $e',
+            ),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
-      if (mounted) setState(() => _isGeneratingAiDesign = false);
+      if (mounted) setState(() => _isDetectingAiObjects = false);
     }
   }
 
@@ -4584,113 +4845,266 @@ class _InquireFormState extends State<_InquireForm> {
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Create Your Event Design'),
+        builder: (context, setDialogState) {
+          final designBoardPhotos = _designBoardPhotos();
+          final screenWidth = MediaQuery.of(context).size.width;
+          final isNarrow = screenWidth < 720;
+          final dialogWidth = isNarrow ? screenWidth * 0.92 : 620.0;
+          final previewHeight = isNarrow ? 160.0 : 200.0;
+          final thumbSize = isNarrow ? 64.0 : 80.0;
+          final thumbStripHeight = isNarrow ? 64.0 : 80.0;
+          return AlertDialog(
+          backgroundColor: const Color(0xFFF7F8FA),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Row(
+            children: const [
+              Icon(Icons.palette_outlined, color: Color(0xFFF4511E)),
+              SizedBox(width: 8),
+              Text('Events Theme Design'),
+            ],
+          ),
           content: SizedBox(
-            width: 500,
+            width: dialogWidth,
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isGeneratingAiDesign
-                          ? null
-                          : () => _generateAiThemeDesign(setDialogState),
-                      icon: _isGeneratingAiDesign
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.auto_awesome),
-                      label: Text(
-                        _isGeneratingAiDesign ? 'Generating AI Design...' : 'Generate AI Theme Design',
-                      ),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.black.withOpacity(0.08)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 14,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Upload or link inspiration photos for your event design:',
-                    style: TextStyle(fontSize: 13),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _designPhotoCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Photo URL',
-                            hintText: 'Paste image link here...',
-                            border: OutlineInputBorder(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3D0),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: const Text(
+                            'AI EDIT TOOLS',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                              color: Color(0xFF7A4E00),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: () {
-                          if (_designPhotoCtrl.text.trim().isEmpty) return;
-                          setDialogState(() {
-                            _designPhotoUrls.add(_designPhotoCtrl.text.trim());
-                            _designPhotoCtrl.clear();
-                          });
-                          setState(() {});
-                        },
-                        child: const Text('Add'),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Flow: EDIT OBJECTS -> choose grouped object -> pick color -> apply.',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _isDetectingAiObjects
+                                ? null
+                                : () => _runCustomerEditObjectsFlow(setDialogState),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFF4511E),
+                              foregroundColor: Colors.white,
+                            ),
+                            child: _isDetectingAiObjects
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    ),
+                                  )
+                                : const Text('EDIT OBJECTS'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.black.withOpacity(0.08)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Add reference photos (upload or URL).:',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                        const SizedBox(height: 10),
+                        if (isNarrow)
+                          Column(
+                            children: [
+                              TextField(
+                                controller: _designPhotoCtrl,
+                                decoration: const InputDecoration(
+                                  labelText: 'Photo URL',
+                                  hintText: 'Paste image link here...',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                width: double.infinity,
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    ElevatedButton(
+                                      onPressed: () async {
+                                        final picked = await ImagePicker().pickImage(
+                                          source: ImageSource.gallery,
+                                        );
+                                        if (picked == null) return;
+                                        final bytes = await picked.readAsBytes();
+                                        final encoded = base64Encode(bytes);
+                                        setDialogState(() {
+                                          _designPhotoUrls.add(encoded);
+                                          _focusedPhotoIndex = _designPhotoUrls.length - 1;
+                                        });
+                                        setState(() {});
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF1976D2),
+                                        foregroundColor: Colors.white,
+                                      ),
+                                      child: const Text('Upload Photo'),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        final input = _designPhotoCtrl.text.trim();
+                                        if (input.isEmpty) return;
+                                        if (_isLikelyDesignBoardAsset(input)) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Logo/asset links are not added to the design board. Please use event inspiration photos.',
+                                              ),
+                                            ),
+                                          );
+                                          return;
+                                        }
+                                        setDialogState(() {
+                                          _designPhotoUrls.add(input);
+                                          _designPhotoCtrl.clear();
+                                        });
+                                        setState(() {});
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFFFFC024),
+                                        foregroundColor: Colors.black87,
+                                      ),
+                                      child: const Text('Add URL'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          )
+                        else
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _designPhotoCtrl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Photo URL',
+                                    hintText: 'Paste image link here...',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton(
+                                onPressed: () async {
+                                  final picked = await ImagePicker().pickImage(
+                                    source: ImageSource.gallery,
+                                  );
+                                  if (picked == null) return;
+                                  final bytes = await picked.readAsBytes();
+                                  final encoded = base64Encode(bytes);
+                                  setDialogState(() {
+                                    _designPhotoUrls.add(encoded);
+                                    _focusedPhotoIndex = _designPhotoUrls.length - 1;
+                                  });
+                                  setState(() {});
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF1976D2),
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: const Text('Upload Photo'),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton(
+                                onPressed: () {
+                                  final input = _designPhotoCtrl.text.trim();
+                                  if (input.isEmpty) return;
+                                  if (_isLikelyDesignBoardAsset(input)) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Logo/asset links are not added to the design board. Please use event inspiration photos.',
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  setDialogState(() {
+                                    _designPhotoUrls.add(input);
+                                    _designPhotoCtrl.clear();
+                                  });
+                                  setState(() {});
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFFFC024),
+                                  foregroundColor: Colors.black87,
+                                ),
+                                child: const Text('Add URL'),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 16),
-                  Text(
-                    '${_designPhotoUrls.length} photo(s) added',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3D0),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                    '${designBoardPhotos.length} design board photo(s)',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: Color(0xFF7A4E00),
+                    ),
+                    ),
                   ),
                   const SizedBox(height: 8),
-                  if (_designPhotoUrls.isNotEmpty) ...[
+                  if (designBoardPhotos.isNotEmpty) ...[
+                    const SizedBox(height: 8),
                     Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: _designPhotoUrls.asMap().entries.map((entry) {
-                          final idx = entry.key;
-                          final url = entry.value;
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            child: Row(
-                              children: [
-                                Text(
-                                  '${idx + 1}. ',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade600,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    url.length > 50 ? '${url.substring(0, 50)}...' : url,
-                                    style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      height: 200,
+                      height: previewHeight,
                       decoration: BoxDecoration(
                         border: Border.all(color: Colors.grey.shade300),
                         borderRadius: BorderRadius.circular(8),
@@ -4698,19 +5112,19 @@ class _InquireFormState extends State<_InquireForm> {
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: _designImagePreview(
-                          _focusedPhotoIndex != null && _focusedPhotoIndex! < _designPhotoUrls.length
-                              ? _designPhotoUrls[_focusedPhotoIndex!]
-                              : _designPhotoUrls.first,
+                          _focusedPhotoIndex != null && _focusedPhotoIndex! < designBoardPhotos.length
+                              ? designBoardPhotos[_focusedPhotoIndex!]
+                              : designBoardPhotos.first,
                           fit: BoxFit.contain,
                         ),
                       ),
                     ),
                     const SizedBox(height: 8),
                     SizedBox(
-                      height: 80,
+                      height: thumbStripHeight,
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
-                        itemCount: _designPhotoUrls.length,
+                        itemCount: designBoardPhotos.length,
                         itemBuilder: (ctx, index) {
                           final isFocused =
                               _focusedPhotoIndex == index || (_focusedPhotoIndex == null && index == 0);
@@ -4721,7 +5135,7 @@ class _InquireFormState extends State<_InquireForm> {
                               });
                             },
                             child: Container(
-                              width: 80,
+                              width: thumbSize,
                               margin: const EdgeInsets.only(right: 8),
                               decoration: BoxDecoration(
                                 border: Border.all(
@@ -4735,14 +5149,15 @@ class _InquireFormState extends State<_InquireForm> {
                                 child: Stack(
                                   fit: StackFit.expand,
                                   children: [
-                                    _designImagePreview(_designPhotoUrls[index], fit: BoxFit.cover),
+                                    _designImagePreview(designBoardPhotos[index], fit: BoxFit.cover),
                                     Positioned(
                                       top: 2,
                                       right: 2,
                                       child: GestureDetector(
                                         onTap: () {
+                                          final photoToRemove = designBoardPhotos[index];
                                           setDialogState(() {
-                                            _designPhotoUrls.removeAt(index);
+                                            _designPhotoUrls.remove(photoToRemove);
                                             if (_focusedPhotoIndex != null && _focusedPhotoIndex! >= index) {
                                               _focusedPhotoIndex =
                                                   _focusedPhotoIndex! > 0 ? _focusedPhotoIndex! - 1 : null;
@@ -4778,12 +5193,31 @@ class _InquireFormState extends State<_InquireForm> {
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Done'),
+            SizedBox(
+              width: 140,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1DB954),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('DONE'),
+              ),
+            ),
+            SizedBox(
+              width: 140,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey.shade400,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('CANCEL'),
+              ),
             ),
           ],
-        ),
+        );
+        },
       ),
     );
   }

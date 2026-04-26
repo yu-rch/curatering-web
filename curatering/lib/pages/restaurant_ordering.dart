@@ -16,7 +16,6 @@ class RestaurantOrderingPage extends StatefulWidget {
 
 class _RestaurantOrderingPageState extends State<RestaurantOrderingPage> {
   final TextEditingController _searchController = TextEditingController();
-  int _activeTabIndex = 0;
 
   @override
   void initState() {
@@ -46,6 +45,15 @@ class _RestaurantOrderingPageState extends State<RestaurantOrderingPage> {
   }
 
   void _addToCart(MenuDish dish) {
+    if (!dish.available) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${dish.name} is currently not available'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
     CartStore.instance.addItem(dish);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -214,11 +222,12 @@ class _RestaurantOrderingPageState extends State<RestaurantOrderingPage> {
             ),
             const SizedBox(width: 8),
             ElevatedButton.icon(
-              onPressed: () => _addToCart(dish),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add'),
+              onPressed: dish.available ? () => _addToCart(dish) : null,
+              icon: Icon(dish.available ? Icons.add : Icons.block, size: 18),
+              label: Text(dish.available ? 'Add' : 'N/A'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1E1E1E),
+                backgroundColor:
+                    dish.available ? const Color(0xFF1E1E1E) : Colors.grey.shade500,
                 foregroundColor: Colors.white,
                 minimumSize: const Size(70, 36),
               ),

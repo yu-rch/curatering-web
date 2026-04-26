@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config.dart';
 import '../widgets/customer_pages_top_bar.dart';
+import 'customer_website.dart';
 import 'my_caterings_page.dart';
 import 'my_order_tracking_page.dart';
 import 'my_profile_page.dart';
@@ -21,8 +23,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   String? _error;
 
   String get _apiBaseUrl {
-    const url = String.fromEnvironment('API_BASE_URL');
-    return url.isEmpty ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/' : url;
+    return apiBaseUrl;
   }
 
   @override
@@ -66,9 +67,28 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
       }
 
       final data = jsonDecode(response.body);
+      final rawOrders = (data['orders'] as List<dynamic>? ?? const []);
+      final parsedOrders = rawOrders
+          .whereType<Map>()
+          .map((entry) {
+            final order = Map<String, dynamic>.from(entry);
+            final rawItems = order['items'];
+            if (rawItems is String) {
+              try {
+                order['items'] = jsonDecode(rawItems);
+              } catch (_) {
+                order['items'] = <dynamic>[];
+              }
+            }
+            if (order['items'] is! List) {
+              order['items'] = <dynamic>[];
+            }
+            return order;
+          })
+          .toList();
       if (mounted) {
         setState(() {
-          _orders = data['orders'] ?? [];
+          _orders = parsedOrders;
           _isLoading = false;
         });
       }
@@ -80,6 +100,14 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
         });
       }
     }
+  }
+
+  List<Map<String, dynamic>> _normalizeOrderItems(dynamic rawItems) {
+    if (rawItems is! List) return const <Map<String, dynamic>>[];
+    return rawItems
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
   }
 
   void _showSessionExpiredDialog() {
@@ -154,9 +182,16 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
     }
   }
 
+  String _shortOrderId(dynamic rawId) {
+    final value = (rawId ?? '').toString();
+    if (value.isEmpty) return 'N/A';
+    return value.length <= 8 ? value : value.substring(0, 8);
+  }
+
   void _navigateFromTopBar(CustomerPageTab tab) {
     if (tab == CustomerPageTab.orders) return;
     final route = switch (tab) {
+      CustomerPageTab.home => const CustomerWebsiteScreen(),
       CustomerPageTab.profile => const MyProfilePage(),
       CustomerPageTab.caterings => const MyCateringsPage(),
       CustomerPageTab.tracking => const MyOrderTrackingPage(),
@@ -259,7 +294,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                       itemCount: _orders.length,
                       itemBuilder: (context, index) {
                         final order = _orders[index];
-                        final items = order['items'] as List<dynamic>? ?? [];
+                        final items = _normalizeOrderItems(order['items']);
                         final status = order['status'] ?? 'pending';
                         final paymentStatus = order['payment_status'] ?? 'pending';
 
@@ -279,7 +314,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      'Order #${order['id']?.toString().substring(0, 8) ?? 'N/A'}',
+                                      'Order #${_shortOrderId(order['id'])}',
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 16,

@@ -12,9 +12,6 @@ import 'customer_login.dart';
 import 'payment_page.dart';
 import '../utils/responsive_layout.dart';
 
-// Runtime fallback for dev mode
-String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/' : apiBaseUrl;
-
 class CheckoutPage extends StatefulWidget {
   const CheckoutPage({super.key});
 
@@ -78,7 +75,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       if (token == null || token.isEmpty) return;
       
       final response = await http.get(
-        Uri.parse('$_apiBaseUrl/api/customer/profile'),
+        Uri.parse('${apiBaseUrl}/api/customer/profile'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -110,7 +107,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       if (token == null || token.isEmpty) return;
       
       await http.put(
-        Uri.parse('$_apiBaseUrl/api/customer/profile'),
+        Uri.parse('${apiBaseUrl}/api/customer/profile'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -216,7 +213,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       };
 
       final response = await http.post(
-        Uri.parse('$_apiBaseUrl/api/restaurant/orders'),
+        Uri.parse('${apiBaseUrl}/api/restaurant/orders'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',

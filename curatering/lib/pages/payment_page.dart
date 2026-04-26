@@ -8,9 +8,6 @@ import '../config.dart';
 import 'order_tracking_page.dart';
 import '../utils/responsive_layout.dart';
 
-// Runtime fallback for dev mode (String.fromEnvironment defaultValue doesn't work in JIT mode)
-String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/' : apiBaseUrl;
-
 class PaymentPage extends StatefulWidget {
   final Map<String, dynamic> orderData;
   const PaymentPage({super.key, required this.orderData});
@@ -51,7 +48,7 @@ class _PaymentPageState extends State<PaymentPage> {
       final token = prefs.getString('customer_token');
 
       final response = await http.post(
-        Uri.parse('$_apiBaseUrl/api/restaurant/orders/${widget.orderData['id']}/payment'),
+        Uri.parse('${apiBaseUrl}/api/restaurant/orders/${widget.orderData['id']}/payment'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',

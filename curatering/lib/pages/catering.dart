@@ -13,33 +13,10 @@ import '../models/menu_dish.dart';
 import '../services/events_api.dart';
 import '../services/menu_store.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/map_picker.dart';
 import '../utils/order_calculations.dart';
 import '../utils/web_html.dart' as html;
 // import 'package:segment_anything/segment_anything.dart';
-
-// Data structures for YOLO Detection
-class YOLODetection {
-  final String classId;
-  final String className;
-  final double confidence;
-  final Rect boundingBox;
-  final Color? currentColor;
-
-  YOLODetection({
-    required this.classId,
-    required this.className,
-    required this.confidence,
-    required this.boundingBox,
-    this.currentColor,
-  });
-}
-
-class YOLOResult {
-  final List<YOLODetection> detections;
-  final Uint8List originalImage;
-
-  YOLOResult({required this.detections, required this.originalImage});
-}
 
 // SAM Segmentation Classes (existing)
 class SegmentedObject {
@@ -247,53 +224,6 @@ class _ManageEventsState extends State<ManageEvents>
   final TextEditingController _eventAddressController = TextEditingController();
   final TextEditingController _guestCountController = TextEditingController();
 
-  /// Selects the best matching pax option based on guest count.
-  /// Example: 15 guests → "10-20 pax", 35 guests → "25-40 pax"
-  String _selectPaxForGuests(int guestCount, List<String> paxOptions) {
-    if (paxOptions.isEmpty) return '';
-    if (guestCount <= 0) return paxOptions.first;
-
-    // Try to match by parsing range bounds from strings like "10-20 pax"
-    for (final option in paxOptions) {
-      final lower = _extractLowerBound(option);
-      final upper = _extractUpperBound(option);
-      if (lower != null && upper != null) {
-        if (guestCount >= lower && guestCount <= upper) return option;
-      } else if (option.contains('+')) {
-        final min = _extractLowerBound(option);
-        if (min != null && guestCount >= min) return option;
-      }
-    }
-
-    // Fallback: find closest lower bound
-    String? closest;
-    int? closestDiff;
-    for (final option in paxOptions) {
-      final lower = _extractLowerBound(option);
-      if (lower != null) {
-        final diff = (guestCount - lower).abs();
-        if (closestDiff == null || diff < closestDiff) {
-          closestDiff = diff;
-          closest = option;
-        }
-      }
-    }
-
-    return closest ?? paxOptions.first;
-  }
-
-  int? _extractLowerBound(String pax) {
-    // Matches "10-20 pax" -> 10, "100+ pax" -> 100
-    final match = RegExp(r'(\d+)').firstMatch(pax);
-    return match != null ? int.tryParse(match.group(1)!) : null;
-  }
-
-  int? _extractUpperBound(String pax) {
-    // Matches "10-20 pax" -> 20
-    final matches = RegExp(r'(\d+)').allMatches(pax).toList();
-    return matches.length >= 2 ? int.tryParse(matches[1].group(1)!) : null;
-  }
-
   EventStatus _selectedStatus = EventStatus.newEvent;
   String? _eventType;
   EventFormalityLevel? _formalityLevel;
@@ -308,6 +238,7 @@ class _ManageEventsState extends State<ManageEvents>
   List<EventOrderDto> _completedOrdersDto = const <EventOrderDto>[];
   List<EventOrderDto> _newEventOrdersDto = const <EventOrderDto>[];
   EventOrderDto? _selectedOnlineInquiryOrder;
+  Role? _lastLoadedRole;
 
   @override
   void initState() {
@@ -337,12 +268,14 @@ class _ManageEventsState extends State<ManageEvents>
         });
 
     _loadThemeTemplates();
+    AuthSession.instance.currentUser.addListener(_handleAuthSessionChange);
     _refreshOrders();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    AuthSession.instance.currentUser.removeListener(_handleAuthSessionChange);
     MenuStore.instance.removeListener(_onMenuStoreChanged);
     _eventSearchController.dispose();
     _inquirySearchController.dispose();
@@ -356,10 +289,20 @@ class _ManageEventsState extends State<ManageEvents>
     super.dispose();
   }
 
+  void _handleAuthSessionChange() {
+    if (!mounted || _ordersLoading) return;
+    final role = AuthSession.instance.currentRole;
+    if (role != null && role != _lastLoadedRole) {
+      _refreshOrders();
+    }
+  }
+
   bool get _isSupervisor => AuthSession.instance.currentRole == Role.supervisor;
 
   bool get _isManager =>
-      AuthSession.instance.currentRole == Role.manager;
+      AuthSession.instance.currentRole == Role.manager ||
+      AuthSession.instance.currentRole == Role.admin ||
+      AuthSession.instance.currentRole == Role.superAdmin;
 
   void _onMenuStoreChanged() {
     if (!mounted) return;
@@ -406,16 +349,12 @@ class _ManageEventsState extends State<ManageEvents>
   // SAM Integration variables
   SamSegmentationResult? _currentSegmentationResult;
   final Set<String> _selectedObjectIds = <String>{};
+  Color _objectSelectionColor = const Color(0xFFF4511E);
   bool _isSegmenting = false;
   bool _showSegmentationOverlay = false;
-  bool _segmentationSuccess = false;
 
   // YOLO detection state variables
   bool _isDetecting = false;
-  bool _showYOLOOverlay = false;
-  YOLOResult? _currentYOLOResult;
-  final Set<String> _selectedYOLOIds = <String>{};
-  List<Map<String, dynamic>> _latestYoloSamObjects = <Map<String, dynamic>>[];
 
   final List<MenuItem> _menuItems = [];
   final Map<String, String> _selectedPaxPerDish = {};
@@ -538,56 +477,8 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Future<void> _loadThemeTemplates() async {
-    // Prototype templates (replace with real “company theme” assets later).
-    final raw = <_ThemeTemplate>[
-      _ThemeTemplate(
-        id: 'tpl_wedding',
-        label: 'Wedding Night',
-        eventTypes: const ['Wedding'],
-        imageBytes: Uint8List(0), // replaced below
-      ),
-      _ThemeTemplate(
-        id: 'tpl_birthday',
-        label: 'Birthday Glow',
-        eventTypes: const ['Birthday'],
-        imageBytes: Uint8List(0), // replaced below
-      ),
-      _ThemeTemplate(
-        id: 'tpl_corporate',
-        label: 'Corporate Elegance',
-        eventTypes: const ['Corporate', 'Private Party'],
-        imageBytes: Uint8List(0), // replaced below
-      ),
-      _ThemeTemplate(
-        id: 'tpl_private',
-        label: 'Private Celebration',
-        eventTypes: const ['Private Party', 'Other'],
-        imageBytes: Uint8List(0), // replaced below
-      ),
-    ];
-
-    final loadMap = <String, String>{
-      'tpl_wedding': 'lib/assets/login-1.png',
-      'tpl_birthday': 'lib/assets/login-2.png',
-      'tpl_corporate': 'lib/assets/main.png',
-      'tpl_private': 'lib/assets/main-2.png',
-    };
-
+    // Design board intentionally starts empty to avoid showing website branding assets.
     final templates = <_ThemeTemplate>[];
-    for (final t in raw) {
-      final assetPath = loadMap[t.id];
-      if (assetPath == null) continue;
-      final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
-      templates.add(
-        _ThemeTemplate(
-          id: t.id,
-          label: t.label,
-          eventTypes: t.eventTypes,
-          imageBytes: bytes,
-        ),
-      );
-    }
-
     if (!mounted) return;
     setState(() => _themeTemplates = templates);
   }
@@ -600,6 +491,7 @@ class _ManageEventsState extends State<ManageEvents>
 
     try {
       final role = AuthSession.instance.currentRole;
+      _lastLoadedRole = role;
       // print('DEBUG: Current role = $role'); // Debug line
 
       if (role == null) {
@@ -636,10 +528,6 @@ class _ManageEventsState extends State<ManageEvents>
           status: 'completed',
           roleType: 'supervisor',
         );
-        _newEventOrdersDto = await EventsApi.instance.listOrders(
-          status: 'new_event',
-          roleType: 'supervisor',
-        );
       } else if (role == Role.manager || role == Role.admin || role == Role.superAdmin) {
         // print('DEBUG: Calling manager API for for_processing orders');
         _onlineInquiryOrders = await EventsApi.instance.listOrders(
@@ -666,10 +554,6 @@ class _ManageEventsState extends State<ManageEvents>
           status: 'completed',
           roleType: 'manager',
         );
-        _newEventOrdersDto = await EventsApi.instance.listOrders(
-          status: 'new_event',
-          roleType: 'manager',
-        );
       } else {
         // print('DEBUG: Unknown role, returning empty lists');
         _onlineInquiryOrders = const <EventOrderDto>[];
@@ -688,6 +572,14 @@ class _ManageEventsState extends State<ManageEvents>
       _completedOrdersDto = const <EventOrderDto>[];
       _newEventOrdersDto = const <EventOrderDto>[];
       _selectedOnlineInquiryOrder = null;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load Manage Events orders: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _ordersLoading = false);
@@ -739,13 +631,24 @@ class _ManageEventsState extends State<ManageEvents>
     return Color(int.parse(match.group(1)!, radix: 16) + 0xFF000000);
   }
 
+  DateTime? _tryParseDate(String? raw) {
+    if (raw == null) return null;
+    final value = raw.trim();
+    if (value.isEmpty) return null;
+    return DateTime.tryParse(value);
+  }
+
+  String _formatDateYyyyMmDd(DateTime date) {
+    final mm = date.month.toString().padLeft(2, '0');
+    final dd = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$mm-$dd';
+  }
+
   ProcessingOrder _orderToProcessingOrderSummary(EventOrderDto order) {
     final firstSlot = order.scheduleSlots.isNotEmpty
         ? order.scheduleSlots.first
         : null;
-    final date = firstSlot == null
-        ? DateTime.now()
-        : DateTime.parse(firstSlot.date);
+    final date = _tryParseDate(firstSlot?.date) ?? DateTime.now();
     final timeLabel = firstSlot == null
         ? ''
         : '${firstSlot.startTime} - ${firstSlot.endTime}';
@@ -776,7 +679,7 @@ class _ManageEventsState extends State<ManageEvents>
   void _applyOrderToForm(EventOrderDto order) {
     setState(() {
       _eventTitleController.text = order.eventTitle;
-      _eventType = order.eventType;
+      _eventType = _eventTypes.contains(order.eventType) ? order.eventType : null;
       _formalityLevel = _formalityFromString(order.formalityLevel);
 
       _customerController.text = order.customerName;
@@ -789,7 +692,7 @@ class _ManageEventsState extends State<ManageEvents>
         ..addAll(
           order.scheduleSlots.map((s) {
             return EventScheduleSlot(
-              date: DateTime.parse(s.date),
+              date: _tryParseDate(s.date) ?? DateTime.now(),
               startTime: _timeOfDayFromHhmm(s.startTime),
               endTime: _timeOfDayFromHhmm(s.endTime),
             );
@@ -882,9 +785,35 @@ class _ManageEventsState extends State<ManageEvents>
     _applyOrderToForm(order);
 
     // Determine initial service type from order data
-    final initialServiceType = order.themeDesign.picksBase64.isNotEmpty
+    String serviceType = order.themeDesign.picksBase64.isNotEmpty
         ? 'catering+event'
         : 'catering';
+    String menuChoice = order.menu.isNotEmpty ? 'yes' : 'suggest';
+    String? selectedSetMenuId;
+    final selectedDishIds = <String>[];
+    final dateController = TextEditingController(
+      text: order.scheduleSlots.isNotEmpty ? order.scheduleSlots.first.date : '',
+    );
+    final addressController = TextEditingController(text: order.address);
+    final timeController = TextEditingController(
+      text: order.scheduleSlots.isNotEmpty ? order.scheduleSlots.first.startTime : '',
+    );
+    final costController = TextEditingController(
+      text: order.totalCost > 0 ? order.totalCost.toString() : '',
+    );
+    final laborCostController = TextEditingController(text: '0');
+    final travelCostController = TextEditingController(text: '0');
+
+    // Pre-populate menu selections once (do not reset on rebuild)
+    if (order.menu.isNotEmpty && MenuStore.instance.allDishes.isNotEmpty) {
+      for (final item in order.menu) {
+        final dish = MenuStore.instance.allDishes.firstWhere(
+          (d) => d.name == item.dishName,
+          orElse: () => MenuStore.instance.allDishes.first,
+        );
+        selectedDishIds.add(dish.id);
+      }
+    }
 
     await showDialog<void>(
       context: context,
@@ -892,44 +821,6 @@ class _ManageEventsState extends State<ManageEvents>
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            // Local state for dialog
-            String serviceType = initialServiceType;
-            String menuChoice = order.menu.isNotEmpty ? 'yes' : 'suggest';
-            String? selectedSetMenuId;
-            final selectedDishIds = <String>[];
-            final selectedPaxOptions = <String, String>{};
-            final dateController = TextEditingController(
-              text: order.scheduleSlots.isNotEmpty
-                  ? order.scheduleSlots.first.date
-                  : '',
-            );
-            final timeController = TextEditingController(
-              text: order.scheduleSlots.isNotEmpty
-                  ? order.scheduleSlots.first.startTime
-                  : '',
-            );
-            final costController = TextEditingController(
-              text: order.totalCost > 0 ? order.totalCost.toString() : '',
-            );
-
-            // Pre-populate menu selections
-            if (order.menu.isNotEmpty) {
-              for (final item in order.menu) {
-                // Use dishName as identifier for pre-selection
-                final dish = MenuStore.instance.allDishes.firstWhere(
-                  (d) => d.name == item.dishName,
-                  orElse: () => MenuStore.instance.allDishes.first,
-                );
-                selectedDishIds.add(dish.id);
-                // Auto-select pax based on guest count, but keep original if valid
-                if (dish.paxOptions.contains(item.paxOption)) {
-                  selectedPaxOptions[dish.id] = item.paxOption;
-                } else {
-                  selectedPaxOptions[dish.id] = _selectPaxForGuests(order.guestCount, dish.paxOptions);
-                }
-              }
-            }
-
             return AlertDialog(
               title: const Text('Finalize Online Inquiry'),
               content: SizedBox(
@@ -955,6 +846,7 @@ class _ManageEventsState extends State<ManageEvents>
                           Expanded(
                             child: _buildOnlineInquiryEventInfo(
                               order,
+                              addressController,
                               dateController,
                               timeController,
                               context,
@@ -971,7 +863,6 @@ class _ManageEventsState extends State<ManageEvents>
                               (value) =>
                                   setDialogState(() => menuChoice = value),
                               selectedDishIds,
-                              selectedPaxOptions,
                               selectedSetMenuId,
                               (setId) => setDialogState(
                                 () => selectedSetMenuId = setId,
@@ -1005,14 +896,65 @@ class _ManageEventsState extends State<ManageEvents>
                               style: TextStyle(fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: 10),
-                            TextField(
-                              controller: costController,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'Estimated total (PHP)',
-                                prefixText: 'PHP ',
-                                border: OutlineInputBorder(),
-                              ),
+                            Builder(
+                              builder: (context) {
+                                double parseCost(TextEditingController c) =>
+                                    double.tryParse(c.text.trim()) ?? 0.0;
+                                final dishCost = _calculateOnlineInquiryDishCost(
+                                  menuChoice: menuChoice,
+                                  selectedDishIds: selectedDishIds,
+                                  selectedSetMenuId: selectedSetMenuId,
+                                  guestCount: order.guestCount,
+                                );
+                                final laborCost = parseCost(laborCostController);
+                                final travelCost = parseCost(travelCostController);
+                                final totalCost = dishCost + laborCost + travelCost;
+                                costController.text = totalCost.toStringAsFixed(2);
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    _buildLabeledReadonlyCost(
+                                      'Dish Cost (500 x PAX per dish)',
+                                      dishCost,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: TextField(
+                                            controller: laborCostController,
+                                            keyboardType: TextInputType.number,
+                                            onChanged: (_) => setDialogState(() {}),
+                                            decoration: const InputDecoration(
+                                              labelText: 'Labor Cost',
+                                              prefixText: 'PHP ',
+                                              border: OutlineInputBorder(),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: TextField(
+                                            controller: travelCostController,
+                                            keyboardType: TextInputType.number,
+                                            onChanged: (_) => setDialogState(() {}),
+                                            decoration: const InputDecoration(
+                                              labelText: 'Travel Cost',
+                                              prefixText: 'PHP ',
+                                              border: OutlineInputBorder(),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _buildLabeledReadonlyCost(
+                                      'Total Estimated Cost',
+                                      totalCost,
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
                             const SizedBox(height: 8),
                             Text(
@@ -1036,14 +978,16 @@ class _ManageEventsState extends State<ManageEvents>
                                 try {
                                   final payload = _buildOnlineInquiryPayload(
                                     order,
+                                    addressController.text,
                                     dateController.text,
                                     timeController.text,
                                     serviceType,
                                     menuChoice,
                                     selectedDishIds,
-                                    selectedPaxOptions,
                                     selectedSetMenuId,
-                                    costController.text,
+                                    double.tryParse(laborCostController.text) ?? 0.0,
+                                    double.tryParse(travelCostController.text) ?? 0.0,
+                                    double.tryParse(costController.text) ?? 0.0,
                                     'post_changes',
                                   );
                                   await EventsApi.instance.managerFinalizeOnlineInquiry(
@@ -1072,10 +1016,17 @@ class _ManageEventsState extends State<ManageEvents>
                                 }
                               },
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF1976D2),
+                                backgroundColor: const Color(0xFFF4511E),
+                                foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                               ),
-                              child: const Text('POST CHANGES'),
+                              child: const Text(
+                                'POST CHANGES',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -1105,14 +1056,16 @@ class _ManageEventsState extends State<ManageEvents>
                                   // Build payload with modifications
                                   final payload = _buildOnlineInquiryPayload(
                                     order,
+                                    addressController.text,
                                     dateController.text,
                                     timeController.text,
                                     serviceType,
                                     menuChoice,
                                     selectedDishIds,
-                                    selectedPaxOptions,
                                     selectedSetMenuId,
-                                    costController.text,
+                                    double.tryParse(laborCostController.text) ?? 0.0,
+                                    double.tryParse(travelCostController.text) ?? 0.0,
+                                    double.tryParse(costController.text) ?? 0.0,
                                     'confirm_inquiry',
                                   );
                                   await EventsApi.instance
@@ -1145,11 +1098,18 @@ class _ManageEventsState extends State<ManageEvents>
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF1DB954),
+                                foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 16,
                                 ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                               ),
-                              child: const Text('CONFIRM INQUIRY'),
+                              child: const Text(
+                                'CONFIRM INQUIRY',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -1159,14 +1119,16 @@ class _ManageEventsState extends State<ManageEvents>
                                 try {
                                   final payload = _buildOnlineInquiryPayload(
                                     order,
+                                    addressController.text,
                                     dateController.text,
                                     timeController.text,
                                     serviceType,
                                     menuChoice,
                                     selectedDishIds,
-                                    selectedPaxOptions,
                                     selectedSetMenuId,
-                                    costController.text,
+                                    double.tryParse(laborCostController.text) ?? 0.0,
+                                    double.tryParse(travelCostController.text) ?? 0.0,
+                                    double.tryParse(costController.text) ?? 0.0,
                                     'cancel_event',
                                   );
                                   await EventsApi.instance.managerFinalizeOnlineInquiry(
@@ -1195,9 +1157,13 @@ class _ManageEventsState extends State<ManageEvents>
                                 }
                               },
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.red,
-                                side: const BorderSide(color: Colors.red),
+                                backgroundColor: const Color(0xFFFFC107),
+                                foregroundColor: Colors.black87,
+                                side: const BorderSide(color: Color(0xFFFFC107)),
                                 padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                               ),
                               child: const Text('CANCEL EVENT'),
                             ),
@@ -1213,6 +1179,13 @@ class _ManageEventsState extends State<ManageEvents>
         );
       },
     );
+
+    dateController.dispose();
+    addressController.dispose();
+    timeController.dispose();
+    costController.dispose();
+    laborCostController.dispose();
+    travelCostController.dispose();
   }
 
   Widget _buildOnlineInquiryServiceType(
@@ -1288,6 +1261,7 @@ class _ManageEventsState extends State<ManageEvents>
 
   Widget _buildOnlineInquiryEventInfo(
     EventOrderDto order,
+    TextEditingController addressController,
     TextEditingController dateController,
     TextEditingController timeController,
     BuildContext context,
@@ -1314,6 +1288,23 @@ class _ManageEventsState extends State<ManageEvents>
       if (picked != null) {
         timeController.text =
             '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+      }
+    }
+
+    Future<void> selectDateThenTime() async {
+      await selectDate();
+      await selectTime();
+    }
+
+    Future<void> pickAddressFromMap() async {
+      final picked = await showMapPicker(
+        context: context,
+        initialAddress: addressController.text.trim().isEmpty
+            ? order.address
+            : addressController.text.trim(),
+      );
+      if (picked != null) {
+        addressController.text = picked.address;
       }
     }
 
@@ -1360,33 +1351,37 @@ class _ManageEventsState extends State<ManageEvents>
           const SizedBox(height: 12),
           _buildReadOnlyField('CUSTOMER', order.customerName),
           const SizedBox(height: 12),
-          _buildReadOnlyField('CITY OF EVENT', order.address),
+          TextField(
+            controller: addressController,
+            readOnly: true,
+            onTap: pickAddressFromMap,
+            decoration: InputDecoration(
+              labelText: 'CITY OF EVENT',
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.map_outlined),
+                onPressed: pickAddressFromMap,
+              ),
+            ),
+          ),
           const SizedBox(height: 12),
 
           // Editable Date/Time
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: dateController,
-                  readOnly: true,
-                  onTap: selectDate,
-                  decoration: InputDecoration(
-                    labelText: 'DATE/TIME OF EVENT',
-                    border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.calendar_today),
-                      onPressed: selectDate,
-                    ),
-                  ),
-                ),
+          TextField(
+            controller: dateController,
+            readOnly: true,
+            onTap: selectDateThenTime,
+            decoration: InputDecoration(
+              labelText: 'DATE OF EVENT (time prompted right after)',
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.edit_calendar_outlined),
+                onPressed: selectDateThenTime,
               ),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: selectTime,
-                icon: const Icon(Icons.access_time),
-              ),
-            ],
+              helperText: timeController.text.trim().isEmpty
+                  ? 'Time not selected yet'
+                  : 'Time: ${timeController.text.trim()}',
+            ),
           ),
           const SizedBox(height: 12),
           _buildReadOnlyField('NO OF GUESTS', order.guestCount.toString()),
@@ -1425,7 +1420,6 @@ class _ManageEventsState extends State<ManageEvents>
     String menuChoice,
     Function(String) onMenuChoiceChanged,
     List<String> selectedDishIds,
-    Map<String, String> selectedPaxOptions,
     String? selectedSetMenuId,
     Function(String?) onSetMenuChanged,
     VoidCallback onStateChanged,
@@ -1481,7 +1475,7 @@ class _ManageEventsState extends State<ManageEvents>
 
           // Menu Content
           if (menuChoice == 'yes')
-            _buildDishSelector(selectedDishIds, selectedPaxOptions, onStateChanged, order)
+            _buildDishSelector(selectedDishIds, onStateChanged, order)
           else
             _buildSetMenuSelector(selectedSetMenuId, onSetMenuChanged),
         ],
@@ -1519,7 +1513,6 @@ class _ManageEventsState extends State<ManageEvents>
 
   Widget _buildDishSelector(
     List<String> selectedDishIds,
-    Map<String, String> selectedPaxOptions,
     VoidCallback onStateChanged,
     EventOrderDto order,
   ) {
@@ -1558,11 +1551,10 @@ class _ManageEventsState extends State<ManageEvents>
               onTap: () {
                 if (isSelected) {
                   selectedDishIds.remove(dish.id);
-                  selectedPaxOptions.remove(dish.id);
                 } else {
                   selectedDishIds.add(dish.id);
-                  selectedPaxOptions[dish.id] = '';
                 }
+                onStateChanged();
               },
               selected: isSelected,
               selectedTileColor: Colors.green.shade50,
@@ -1577,25 +1569,7 @@ class _ManageEventsState extends State<ManageEvents>
     String? selectedSetMenuId,
     Function(String?) onChanged,
   ) {
-    final setMenus = [
-      {
-        'id': 'set_1',
-        'name': 'Filipino Feast Set',
-        'description': 'Bistek, Sinigang, Lechon Kawali, Kare-Kare',
-        'dishes': [
-          'dish_bistek',
-          'dish_sinigang',
-          'dish_lechon_kawali',
-          'dish_kare_kare',
-        ],
-      },
-      {
-        'id': 'set_2',
-        'name': 'Classic Party Set',
-        'description': 'Bistek, Sinigang, Lechon Kawali',
-        'dishes': ['dish_bistek', 'dish_sinigang', 'dish_lechon_kawali'],
-      },
-    ];
+    final setMenus = _onlineInquirySetMenus();
 
     return Column(
       children: setMenus.map((setMenu) {
@@ -1629,6 +1603,49 @@ class _ManageEventsState extends State<ManageEvents>
         );
       }).toList(),
     );
+  }
+
+  List<Map<String, dynamic>> _onlineInquirySetMenus() {
+    return [
+      {
+        'id': 'set_1',
+        'name': 'Filipino Feast Set',
+        'description': 'Bistek, Sinigang, Lechon Kawali, Kare-Kare',
+        'dishes': [
+          'dish_bistek',
+          'dish_sinigang',
+          'dish_lechon_kawali',
+          'dish_kare_kare',
+        ],
+      },
+      {
+        'id': 'set_2',
+        'name': 'Classic Party Set',
+        'description': 'Bistek, Sinigang, Lechon Kawali',
+        'dishes': ['dish_bistek', 'dish_sinigang', 'dish_lechon_kawali'],
+      },
+    ];
+  }
+
+  double _calculateOnlineInquiryDishCost({
+    required String menuChoice,
+    required List<String> selectedDishIds,
+    required String? selectedSetMenuId,
+    required int guestCount,
+  }) {
+    final pax = guestCount > 0 ? guestCount : 1;
+    if (menuChoice == 'yes') {
+      return selectedDishIds.length * 500.0 * pax;
+    }
+    if (selectedSetMenuId != null) {
+      final setMenu = _onlineInquirySetMenus().firstWhere(
+        (s) => s['id'] == selectedSetMenuId,
+        orElse: () => {'dishes': const <String>[]},
+      );
+      final dishes = (setMenu['dishes'] as List<dynamic>? ?? const []).length;
+      return dishes * 500.0 * pax;
+    }
+    return 0.0;
   }
 
   Widget _buildOnlineInquiryEventDesign(EventOrderDto order) {
@@ -1694,16 +1711,39 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
+  Widget _buildLabeledReadonlyCost(String label, double value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(
+            'PHP ${value.toStringAsFixed(2)}',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+
   Map<String, dynamic> _buildOnlineInquiryPayload(
     EventOrderDto order,
+    String address,
     String date,
     String time,
     String serviceType,
     String menuChoice,
     List<String> selectedDishIds,
-    Map<String, String> selectedPaxOptions,
     String? selectedSetMenuId,
-    String costText,
+    double laborCost,
+    double travelCost,
+    double totalCost,
     String action,
   ) {
     List<Map<String, dynamic>> menuItems = [];
@@ -1713,44 +1753,30 @@ class _ManageEventsState extends State<ManageEvents>
         final dish = MenuStore.instance.allDishes.firstWhere(
           (d) => d.id == dishId,
         );
+        final paxCount = order.guestCount > 0 ? order.guestCount : 1;
+        final computedPrice = 500 * paxCount;
         menuItems.add({
           'dishId': dishId,
           'dishName': dish.name,
-          'paxOption': '',
-          'price': '0',
+          'paxOption': '${paxCount} pax',
+          'price': computedPrice.toString(),
         });
       }
     } else if (selectedSetMenuId != null) {
-      final setMenus = [
-        {
-          'id': 'set_1',
-          'name': 'Filipino Feast Set',
-          'description': 'Bistek, Sinigang, Lechon Kawali, Kare-Kare',
-          'dishes': [
-            'dish_bistek',
-            'dish_sinigang',
-            'dish_lechon_kawali',
-            'dish_kare_kare',
-          ],
-        },
-        {
-          'id': 'set_2',
-          'name': 'Classic Party Set',
-          'description': 'Bistek, Sinigang, Lechon Kawali',
-          'dishes': ['dish_bistek', 'dish_sinigang', 'dish_lechon_kawali'],
-        },
-      ];
+      final setMenus = _onlineInquirySetMenus();
       final setMenu = setMenus.firstWhere((s) => s['id'] == selectedSetMenuId);
       final dishes = setMenu['dishes'] as List<String>;
       for (final dishId in dishes) {
         final dish = MenuStore.instance.allDishes.firstWhere(
           (d) => d.id == dishId,
         );
+        final paxCount = order.guestCount > 0 ? order.guestCount : 1;
+        final computedPrice = 500 * paxCount;
         menuItems.add({
           'dishId': dishId,
           'dishName': dish.name,
-          'paxOption': '',
-          'price': '0',
+          'paxOption': '$paxCount pax',
+          'price': computedPrice.toString(),
         });
       }
     }
@@ -1766,7 +1792,7 @@ class _ManageEventsState extends State<ManageEvents>
       'scheduleSlots': [
         {'date': date, 'startTime': time, 'endTime': '14:00'},
       ],
-      'address': order.address,
+      'address': address,
       'guestCount': order.guestCount,
       'serviceType': serviceType,
       'menu': menuItems,
@@ -1775,8 +1801,16 @@ class _ManageEventsState extends State<ManageEvents>
         'tintEnabled': order.themeDesign.tintEnabled,
         'tintColorHex': order.themeDesign.tintColorHex,
         'colorPrompt': order.themeDesign.colorPrompt,
+        'costBreakdown': {
+          'dishCost': menuItems.fold<double>(
+            0.0,
+            (sum, row) => sum + (double.tryParse('${row['price']}') ?? 0.0),
+          ),
+          'laborCost': laborCost,
+          'travelCost': travelCost,
+        },
       },
-      'totalCost': double.tryParse(costText) ?? 0.0,
+      'totalCost': totalCost,
       'action': action,
     };
   }
@@ -1850,435 +1884,37 @@ class _ManageEventsState extends State<ManageEvents>
     return _themeTintColor;
   }
 
-  Future<void> _swapThemeColorsAi() async {
-    if (_themePicks.isEmpty) return;
-    final prompt = _themeColorPromptController.text;
-
-    setState(() {
-      _isAiProcessingTheme = true;
-    });
-
-    try {
-      final response = await EventsApi.instance.processThemeColor(
-        picksBase64: _themePicks.map((b) => base64Encode(b)).toList(),
-        prompt: prompt.trim(),
-        currentTintColorHex: _themeTintColorHex(_themeTintColor),
-      );
-      final tintColorHex = response['tintColorHex'] as String?;
-      final resolvedColor =
-          _colorFromHexOrNull(tintColorHex) ?? _colorFromThemePrompt(prompt);
-      if (!mounted) return;
-      setState(() {
-        _isAiProcessingTheme = false;
-        _themeTintEnabled = true;
-        _themeTintColor = resolvedColor;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isAiProcessingTheme = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Theme color processing failed: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  // Combined YOLO and SAM Integration Methods
-  Future<void> _runYOLOAndSAM(Uint8List imageBytes) async {
-    if (_themePicks.isEmpty) return;
-
-    // Step 1: Run YOLO detection first
+  Future<bool> _runEditObjectsFlow(Uint8List imageBytes) async {
     setState(() {
       _isDetecting = true;
-      _showYOLOOverlay = true;
+      _isSegmenting = true;
     });
-
     try {
+      double toDouble(dynamic value, [double fallback = 0.0]) {
+        if (value is num) return value.toDouble();
+        if (value == null) return fallback;
+        return double.tryParse(value.toString().trim()) ?? fallback;
+      }
+
       final response = await EventsApi.instance.inferThemeObjectsWithSam(
         imageBase64: base64Encode(imageBytes),
         maskFormat: 'polygon',
       );
-      final detectionsRaw = (response['detections'] as List<dynamic>? ?? const [])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
       final objectsRaw = (response['objects'] as List<dynamic>? ?? const [])
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
-      final parsedDetections = detectionsRaw.map((raw) {
-        final box = Map<String, dynamic>.from(
-          (raw['boundingBox'] as Map?) ??
-              (raw['box'] as Map?) ??
-              const <String, dynamic>{},
-        );
-        final classId = (raw['classId'] ?? raw['id'] ?? '').toString();
-        final className = (raw['className'] ?? raw['label'] ?? classId).toString();
-        return YOLODetection(
-          classId: classId,
-          className: className,
-          confidence: (raw['confidence'] as num?)?.toDouble() ?? 0.0,
-          boundingBox: Rect.fromLTWH(
-            (box['left'] as num?)?.toDouble() ??
-                (box['x'] as num?)?.toDouble() ??
-                0.0,
-            (box['top'] as num?)?.toDouble() ??
-                (box['y'] as num?)?.toDouble() ??
-                0.0,
-            (box['width'] as num?)?.toDouble() ?? 0.2,
-            (box['height'] as num?)?.toDouble() ?? 0.2,
-          ),
-          currentColor: _colorFromHexOrNull(raw['currentColorHex'] as String?),
-        );
-      }).toList();
-
-      setState(() {
-        _currentYOLOResult = YOLOResult(
-          detections: parsedDetections,
-          originalImage: imageBytes,
-        );
-        _latestYoloSamObjects = objectsRaw;
-        _selectedYOLOIds.clear();
-        _isDetecting = false;
-      });
-
-      // Step 2: Show YOLO results and allow user to select objects for SAM refinement
-      await _showYOLOSelectionDialog();
-    } catch (e) {
-      setState(() {
-        _isDetecting = false;
-        _showYOLOOverlay = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('YOLO detection failed: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _showYOLOSelectionDialog() async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setStateDialog) {
-            return Dialog(
-              child: Container(
-                width: 900,
-                height: 650,
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'YOLO Object Detection - Select for SAM Refinement',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () {
-                            setState(() {
-                              _showYOLOOverlay = false;
-                              _currentYOLOResult = null;
-                              _selectedYOLOIds.clear();
-                              _latestYoloSamObjects = <Map<String, dynamic>>[];
-                            });
-                            Navigator.of(context).pop();
-                          },
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Main content area
-                    Expanded(
-                      child: Row(
-                        children: [
-                          // Left: Image with YOLO detections
-                          Expanded(
-                            flex: 2,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey.shade300),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Stack(
-                                children: [
-                                  // Original image - wrapped in RepaintBoundary
-                                  RepaintBoundary(
-                                    child: Image.memory(
-                                      _currentYOLOResult!.originalImage,
-                                      fit: BoxFit.contain,
-                                      gaplessPlayback: true,
-                                    ),
-                                  ),
-
-                                  // YOLO detection overlays - isolated in RepaintBoundary
-                                  RepaintBoundary(
-                                    child: Stack(
-                                      children: _currentYOLOResult!.detections.map((
-                                        detection,
-                                      ) {
-                                        final isSelected = _selectedYOLOIds
-                                            .contains(detection.classId);
-                                        return Positioned(
-                                          left:
-                                              detection.boundingBox.left *
-                                              400, // Scale to container width
-                                          top:
-                                              detection.boundingBox.top *
-                                              600, // Scale to container height
-                                          width: detection.boundingBox.width * 400,
-                                          height:
-                                              detection.boundingBox.height * 600,
-                                          child: GestureDetector(
-                                            onTap: () {
-                                              setStateDialog(() {
-                                                if (isSelected) {
-                                                  _selectedYOLOIds.remove(
-                                                    detection.classId,
-                                                  );
-                                                } else {
-                                                  _selectedYOLOIds.add(
-                                                    detection.classId,
-                                                  );
-                                                }
-                                              });
-                                            },
-                                            child: Container(
-                                              decoration: BoxDecoration(
-                                                border: Border.all(
-                                                  color:
-                                                      detection.currentColor ??
-                                                      Colors.blue,
-                                                  width: isSelected ? 3 : 2,
-                                                ),
-                                                borderRadius: BorderRadius.circular(
-                                                  4,
-                                                ),
-                                              ),
-                                              child: Text(
-                                                detection.className,
-                                                style: const TextStyle(
-                                                  fontSize: 10,
-                                                  color: Colors.white,
-                                                  backgroundColor: Colors.black54,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        );
-                                      }).toList(),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          // Right: Controls and detected objects list
-                          Expanded(
-                            child: Column(
-                              children: [
-                                // Detection info
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade50,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Colors.grey.shade300,
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'YOLO Detection Results',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Objects detected: ${_currentYOLOResult!.detections.length}',
-                                        style: TextStyle(
-                                          color: Colors.grey.shade600,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Select objects for SAM refinement',
-                                        style: TextStyle(
-                                          color: Colors.grey.shade600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-
-                                const SizedBox(height: 16),
-
-                                // Detected objects list
-                                Expanded(
-                                  child: Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      border: Border.all(
-                                        color: Colors.grey.shade300,
-                                      ),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Detected Objects:',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Expanded(
-                                          child: ListView(
-                                            children: _currentYOLOResult!
-                                                .detections
-                                                .map((detection) {
-                                                  final isSelected =
-                                                      _selectedYOLOIds.contains(
-                                                        detection.classId,
-                                                      );
-                                                  return CheckboxListTile(
-                                                    title: Text(
-                                                      detection.className,
-                                                    ),
-                                                    subtitle: Text(
-                                                      'Confidence: ${(detection.confidence * 100).toStringAsFixed(1)}%',
-                                                    ),
-                                                    value: isSelected,
-                                                    onChanged: (value) {
-                                                      setStateDialog(() {
-                                                        if (value == true) {
-                                                          _selectedYOLOIds.add(
-                                                            detection.classId,
-                                                          );
-                                                        } else {
-                                                          _selectedYOLOIds
-                                                              .remove(
-                                                                detection
-                                                                    .classId,
-                                                              );
-                                                        }
-                                                      });
-                                                    },
-                                                    secondary: isSelected
-                                                        ? IconButton(
-                                                            icon: const Icon(
-                                                              Icons.palette,
-                                                            ),
-                                                            onPressed: () =>
-                                                                _showColorPicker(
-                                                                  detection,
-                                                                ),
-                                                          )
-                                                        : null,
-                                                  );
-                                                })
-                                                .toList(),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Action buttons
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: _selectedYOLOIds.isEmpty
-                                ? null
-                                : () async {
-                                    Navigator.of(context).pop();
-                                    await _segmentSelectedObjectsWithSAM();
-                                  },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1DB954),
-                            ),
-                            child: const Text('REFINE SELECTED WITH SAM'),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () {
-                              setState(() {
-                                _showYOLOOverlay = false;
-                                _currentYOLOResult = null;
-                                _selectedYOLOIds.clear();
-                                _latestYoloSamObjects = <Map<String, dynamic>>[];
-                              });
-                              Navigator.of(context).pop();
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.grey.shade400,
-                            ),
-                            child: const Text('CANCEL'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _segmentSelectedObjectsWithSAM() async {
-    if (_currentYOLOResult == null || _selectedYOLOIds.isEmpty) return;
-
-    setState(() {
-      _isSegmenting = true;
-      _showSegmentationOverlay = true;
-      _segmentationSuccess = false;
-    });
-
-    try {
-      final objectsRaw = _latestYoloSamObjects
-          .where((obj) => _selectedYOLOIds.contains((obj['id'] ?? '').toString()))
-          .toList();
       if (objectsRaw.isEmpty) {
-        throw Exception('No SAM objects matched the selected detections');
+        throw Exception('No objects detected to edit.');
       }
+      final responseImageWidth =
+          toDouble(response['imageWidth'], 0.0) > 0
+          ? toDouble(response['imageWidth'], 1.0)
+          : toDouble(response['image_width'], 1.0);
+      final responseImageHeight =
+          toDouble(response['imageHeight'], 0.0) > 0
+          ? toDouble(response['imageHeight'], 1.0)
+          : toDouble(response['image_height'], 1.0);
       final segmentedObjects = objectsRaw.map((raw) {
         final box = Map<String, dynamic>.from(
           (raw['boundingBox'] as Map?) ??
@@ -2289,29 +1925,45 @@ class _ManageEventsState extends State<ManageEvents>
         final rawPolygon =
             (raw['polygonPoints'] as List<dynamic>? ?? raw['polygon_points'] as List<dynamic>? ?? const []);
         final polygonPoints = rawPolygon
-            .whereType<Map>()
             .map((point) {
-              final p = Map<String, dynamic>.from(point);
-              return Offset(
-                (p['x'] as num?)?.toDouble() ?? 0.0,
-                (p['y'] as num?)?.toDouble() ?? 0.0,
-              );
+              if (point is Map) {
+                final p = Map<String, dynamic>.from(point);
+                return Offset(
+                  toDouble(p['x']),
+                  toDouble(p['y']),
+                );
+              }
+              if (point is List && point.length >= 2) {
+                return Offset(
+                  toDouble(point[0]),
+                  toDouble(point[1]),
+                );
+              }
+              return null;
             })
+            .whereType<Offset>()
             .toList();
+        final rawLeft =
+            toDouble(box['left'], double.nan).isNaN ? toDouble(box['x']) : toDouble(box['left']);
+        final rawTop =
+            toDouble(box['top'], double.nan).isNaN ? toDouble(box['y']) : toDouble(box['top']);
+        final rawWidth = toDouble(box['width'], 0.2);
+        final rawHeight = toDouble(box['height'], 0.2);
+        final isNormalized = rawWidth <= 1.0 && rawHeight <= 1.0;
+        final boxLeft = isNormalized ? rawLeft * responseImageWidth : rawLeft;
+        final boxTop = isNormalized ? rawTop * responseImageHeight : rawTop;
+        final boxWidth = isNormalized ? rawWidth * responseImageWidth : rawWidth;
+        final boxHeight = isNormalized ? rawHeight * responseImageHeight : rawHeight;
 
         return SegmentedObject(
           id: (raw['id'] ?? '').toString(),
           mask: maskBase64.isNotEmpty ? base64Decode(maskBase64) : Uint8List(0),
           label: (raw['label'] ?? '').toString(),
           boundingBox: Rect.fromLTWH(
-            (box['left'] as num?)?.toDouble() ??
-                (box['x'] as num?)?.toDouble() ??
-                0.0,
-            (box['top'] as num?)?.toDouble() ??
-                (box['y'] as num?)?.toDouble() ??
-                0.0,
-            (box['width'] as num?)?.toDouble() ?? 0.2,
-            (box['height'] as num?)?.toDouble() ?? 0.2,
+            boxLeft,
+            boxTop,
+            boxWidth,
+            boxHeight,
           ),
           polygonPoints: polygonPoints,
           currentColor: _colorFromHexOrNull(raw['currentColorHex'] as String?),
@@ -2321,57 +1973,34 @@ class _ManageEventsState extends State<ManageEvents>
       setState(() {
         _currentSegmentationResult = SamSegmentationResult(
           objects: segmentedObjects,
-          previewImage: _currentYOLOResult!.originalImage,
+          previewImage: imageBytes,
         );
-        _isSegmenting = false;
-        _segmentationSuccess = true;
-        _showYOLOOverlay = false;
-        _currentYOLOResult = null;
-        _selectedYOLOIds.clear();
-        _latestYoloSamObjects = <Map<String, dynamic>>[];
       });
-
+      return true;
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      final timeout = msg.contains('timeout') || msg.contains('timed out');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              _segmentationSuccess
-                  ? 'SAM refinement completed successfully!'
-                  : 'SAM refinement failed',
+              timeout
+                  ? 'AI service timed out. Please try again with one clear photo.'
+                  : 'AI edit setup failed: ${e.toString()}',
             ),
-            backgroundColor: _segmentationSuccess ? Colors.green : Colors.red,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _isSegmenting = false;
-        _showSegmentationOverlay = false;
-        _showYOLOOverlay = false;
-        _currentYOLOResult = null;
-        _selectedYOLOIds.clear();
-        _latestYoloSamObjects = <Map<String, dynamic>>[];
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('SAM refinement failed: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
       }
-    }
-  }
-
-  void _toggleObjectSelection(String objectId) {
-    setState(() {
-      if (_selectedObjectIds.contains(objectId)) {
-        _selectedObjectIds.remove(objectId);
-      } else {
-        _selectedObjectIds.add(objectId);
+      return false;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDetecting = false;
+          _isSegmenting = false;
+        });
       }
-    });
+    }
   }
 
   double _getCalculatedDownPaymentAmount() {
@@ -2412,265 +2041,61 @@ class _ManageEventsState extends State<ManageEvents>
     });
   }
 
-  void _showColorPickerForObject(SegmentedObject obj) async {
-    final selectedColor = await showDialog<Color>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Select Color for ${obj.label}'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Predefined color options
-                ...[
-                  Colors.red,
-                  Colors.blue,
-                  Colors.green,
-                  Colors.orange,
-                  Colors.purple,
-                  Colors.yellow,
-                  Colors.pink,
-                  Colors.teal,
-                  Colors.indigo,
-                ].map((color) {
-                  return GestureDetector(
-                    onTap: () => Navigator.of(context).pop(color),
-                    child: Container(
-                      width: 50,
-                      height: 50,
-                      margin: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: color,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: color == obj.currentColor
-                          ? const Icon(
-                              Icons.check,
-                              color: Colors.white,
-                              size: 24,
-                            )
-                          : null,
-                    ),
-                  );
-                }),
-
-                const SizedBox(height: 16),
-
-                // Custom color input
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Custom Color',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.all(12),
-                        ),
-                        style: const TextStyle(fontSize: 24),
-                        autofocus: true,
-                        textAlign: TextAlign.center,
-                        keyboardType: TextInputType.text,
-                        maxLength: 7,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.deny(
-                            RegExp('[^0-9a-fA-F]'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    if (selectedColor != null) {
-      // Update the object with the selected color
-      final updatedObjects = _currentSegmentationResult!.objects.map((o) {
-        if (o.id == obj.id) {
-          return SegmentedObject(
-            id: o.id,
-            mask: o.mask,
-            label: o.label,
-            boundingBox: o.boundingBox,
-            polygonPoints: o.polygonPoints,
-            currentColor: selectedColor,
-          );
-        }
-        return o;
-      }).toList();
-
-      setState(() {
-        _currentSegmentationResult = SamSegmentationResult(
-          objects: updatedObjects,
-          previewImage: _currentSegmentationResult!.previewImage,
-        );
-      });
-    }
-  }
-
-  void _showColorPicker(YOLODetection detection) async {
-    final selectedColor = await showDialog<Color>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Select Color for ${detection.className}'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Predefined color options
-                ...[
-                  Colors.red,
-                  Colors.blue,
-                  Colors.green,
-                  Colors.orange,
-                  Colors.purple,
-                  Colors.yellow,
-                  Colors.pink,
-                  Colors.teal,
-                  Colors.indigo,
-                ].map((color) {
-                  return GestureDetector(
-                    onTap: () => Navigator.of(context).pop(color),
-                    child: Container(
-                      width: 50,
-                      height: 50,
-                      margin: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: color,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: color == detection.currentColor
-                          ? const Icon(
-                              Icons.check,
-                              color: Colors.white,
-                              size: 24,
-                            )
-                          : null,
-                    ),
-                  );
-                }),
-
-                const SizedBox(height: 16),
-
-                // Custom color picker
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Custom Color',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.all(12),
-                        ),
-                        style: const TextStyle(fontSize: 24),
-                        autofocus: true,
-                        textAlign: TextAlign.center,
-                        keyboardType: TextInputType.text,
-                        maxLength: 7,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.deny(
-                            RegExp('[^0-9a-fA-F]'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    if (selectedColor != null) {
-      // Update the detection with the selected color
-      final updatedDetections = _currentYOLOResult!.detections.map((d) {
-        if (d.classId == detection.classId) {
-          return YOLODetection(
-            classId: d.classId,
-            className: d.className,
-            confidence: d.confidence,
-            boundingBox: d.boundingBox,
-            currentColor: selectedColor,
-          );
-        }
-        return d;
-      }).toList();
-
-      setState(() {
-        _currentYOLOResult = YOLOResult(
-          detections: updatedDetections,
-          originalImage: _currentYOLOResult!.originalImage,
-        );
-      });
-    }
-  }
-
-  Future<void> _applyColorToSelectedObjects() async {
+  Future<void> _applyColorToSelectedObjects({Color? targetColor}) async {
     if (_currentSegmentationResult == null || _selectedObjectIds.isEmpty) {
       return;
     }
 
-    final prompt = _themeColorPromptController.text;
-    final targetColor = _colorFromThemePrompt(prompt);
+    final resolvedTargetColor =
+        targetColor ??
+        _colorFromThemePrompt(_themeColorPromptController.text.trim());
 
     setState(() {
       _isAiProcessingTheme = true;
       _themeTintEnabled = true;
-      _themeTintColor = targetColor;
+      _themeTintColor = resolvedTargetColor;
+      _objectSelectionColor = resolvedTargetColor;
     });
 
     try {
       final selectedObjects = _currentSegmentationResult!.objects
           .where((obj) => _selectedObjectIds.contains(obj.id))
           .toList();
+      if (selectedObjects.isEmpty) {
+        setState(() {
+          _isAiProcessingTheme = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No valid selected objects found. Please select again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
       final masksPayload = selectedObjects.map((obj) {
+        final normalizedPolygon = obj.polygonPoints
+            .map((point) => {'x': point.dx.toDouble(), 'y': point.dy.toDouble()})
+            .toList();
+        final fallbackBoxPolygon = <Map<String, double>>[
+          {'x': obj.boundingBox.left.toDouble(), 'y': obj.boundingBox.top.toDouble()},
+          {'x': obj.boundingBox.right.toDouble(), 'y': obj.boundingBox.top.toDouble()},
+          {'x': obj.boundingBox.right.toDouble(), 'y': obj.boundingBox.bottom.toDouble()},
+          {'x': obj.boundingBox.left.toDouble(), 'y': obj.boundingBox.bottom.toDouble()},
+        ];
+        final maskBase64 = obj.mask.isNotEmpty ? base64Encode(obj.mask) : '';
         return {
           'objectId': obj.id,
-          if (obj.polygonPoints.isNotEmpty)
-            'polygonPoints': obj.polygonPoints
-                .map((point) => {'x': point.dx, 'y': point.dy})
-                .toList(),
-          if (obj.mask.isNotEmpty) 'maskBase64': base64Encode(obj.mask),
+          'polygonPoints': normalizedPolygon.isNotEmpty ? normalizedPolygon : fallbackBoxPolygon,
+          if (maskBase64.isNotEmpty) 'maskBase64': maskBase64,
         };
       }).toList();
       final editsPayload = selectedObjects.map((obj) {
         return {
           'objectId': obj.id,
-          'targetHex': _themeTintColorHex(targetColor),
+          'targetHex': _themeTintColorHex(resolvedTargetColor),
           'intensity': 1.0,
         };
       }).toList();
@@ -2694,7 +2119,7 @@ class _ManageEventsState extends State<ManageEvents>
             label: obj.label,
             boundingBox: obj.boundingBox,
             polygonPoints: obj.polygonPoints,
-            currentColor: targetColor,
+            currentColor: resolvedTargetColor,
           );
         }
         return obj;
@@ -2737,6 +2162,9 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   void _closeSegmentationOverlay() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
     setState(() {
       _showSegmentationOverlay = false;
       _currentSegmentationResult = null;
@@ -2751,8 +2179,8 @@ class _ManageEventsState extends State<ManageEvents>
 
     return Dialog(
       child: Container(
-        width: 800,
-        height: 600,
+        width: 1160,
+        height: 760,
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2772,152 +2200,237 @@ class _ManageEventsState extends State<ManageEvents>
             ),
             const SizedBox(height: 16),
 
-            // Image with segmentation overlay
+            // Main layout: left photo, right controls
             Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Stack(
-                  children: [
-                    // Original image
-                    Image.memory(
-                      _currentSegmentationResult!.previewImage,
-                      fit: BoxFit.contain,
-                    ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Left: larger image preview
+                  Expanded(
+                    flex: 3,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(10),
+                        color: Colors.black12,
+                      ),
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: Image.memory(
+                              _currentSegmentationResult!.previewImage,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
 
-                    // Segmentation overlays
-                    if (_isSegmenting)
-                      const Center(child: CircularProgressIndicator())
-                    else
-                      ..._currentSegmentationResult!.objects.map((obj) {
-                        final isSelected = _selectedObjectIds.contains(obj.id);
-                        return Positioned(
-                          left: obj.boundingBox.left,
-                          top: obj.boundingBox.top,
-                          width: obj.boundingBox.width,
-                          height: obj.boundingBox.height,
-                          child: GestureDetector(
-                            onTap: () => _toggleObjectSelection(obj.id),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: isSelected ? Colors.blue : Colors.red,
-                                  width: 2,
-                                ),
-                                color: isSelected
-                                    ? Colors.blue.withOpacity(0.2)
-                                    : Colors.transparent,
-                              ),
-                              child: Center(
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? Colors.blue
-                                        : Colors.red,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    obj.label,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
+                          if (_isSegmenting)
+                            const Center(child: CircularProgressIndicator())
+                          else
+                            ..._currentSegmentationResult!.objects.map((obj) {
+                              final isSelected = _selectedObjectIds.contains(obj.id);
+                              return Positioned(
+                                left: obj.boundingBox.left,
+                                top: obj.boundingBox.top,
+                                width: obj.boundingBox.width,
+                                height: obj.boundingBox.height,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    final groupIds = _currentSegmentationResult!.objects
+                                        .where((o) => o.label == obj.label)
+                                        .map((o) => o.id)
+                                        .toSet();
+                                    setState(() {
+                                      _selectedObjectIds
+                                        ..clear()
+                                        ..addAll(groupIds);
+                                    });
+                                  },
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: isSelected ? Colors.blue : Colors.red,
+                                        width: 2,
+                                      ),
+                                      color: isSelected
+                                          ? Colors.blue.withOpacity(0.2)
+                                          : Colors.transparent,
+                                    ),
+                                    child: Center(
+                                      child: Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: BoxDecoration(
+                                          color: isSelected ? Colors.blue : Colors.red,
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          obj.label,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Object list
-            Container(
-              height: 120,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Detected Objects:',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                              );
+                            }),
+                        ],
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: _currentSegmentationResult!.objects.map((obj) {
-                        final isSelected = _selectedObjectIds.contains(obj.id);
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: FilterChip(
-                            label: Text(obj.label),
-                            selected: isSelected,
-                            onSelected: (selected) =>
-                                _toggleObjectSelection(obj.id),
-                            backgroundColor: Colors.grey.shade200,
-                            selectedColor: Colors.blue.withOpacity(0.3),
-                            checkmarkColor: Colors.blue,
+                  const SizedBox(width: 16),
+
+                  // Right: top color picker, bottom detected objects + actions
+                  SizedBox(
+                    width: 340,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                        );
-                      }).toList(),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Recolor',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  const Color(0xFFF4511E),
+                                  const Color(0xFF1DB954),
+                                  const Color(0xFF1976D2),
+                                  const Color(0xFFE91E63),
+                                  const Color(0xFF6A1B9A),
+                                  const Color(0xFFFFC107),
+                                  const Color(0xFFFFFFFF),
+                                  const Color(0xFF212121),
+                                ].map((c) {
+                                  final isSelected = c.value == _objectSelectionColor.value;
+                                  return GestureDetector(
+                                    onTap: () {
+                                      setState(() {
+                                        _objectSelectionColor = c;
+                                      });
+                                    },
+                                    child: Container(
+                                      width: 30,
+                                      height: 30,
+                                      decoration: BoxDecoration(
+                                        color: c,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: isSelected ? Colors.black : Colors.black26,
+                                          width: isSelected ? 3 : 1,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          height: 220,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Detected Objects:',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 8),
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  child: Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: (() {
+                                      final grouped = <String, List<SegmentedObject>>{};
+                                      for (final obj in _currentSegmentationResult!.objects) {
+                                        grouped.putIfAbsent(
+                                          obj.label,
+                                          () => <SegmentedObject>[],
+                                        ).add(obj);
+                                      }
+                                      return grouped.entries.map((entry) {
+                                        final ids = entry.value.map((o) => o.id).toSet();
+                                        final isSelected = ids.any(_selectedObjectIds.contains);
+                                        final label = entry.value.length > 1
+                                            ? '${entry.key} (${entry.value.length})'
+                                            : entry.key;
+                                        return FilterChip(
+                                          label: Text(label),
+                                          selected: isSelected,
+                                          onSelected: (_) {
+                                            setState(() {
+                                              _selectedObjectIds
+                                                ..clear()
+                                                ..addAll(ids);
+                                            });
+                                          },
+                                          backgroundColor: Colors.grey.shade200,
+                                          selectedColor: Colors.blue.withOpacity(0.3),
+                                          checkmarkColor: Colors.blue,
+                                        );
+                                      }).toList();
+                                    })(),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: _selectedObjectIds.isEmpty
+                              ? null
+                              : () => _applyColorToSelectedObjects(
+                                  targetColor: _objectSelectionColor,
+                                ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1DB954),
+                          ),
+                          child: _isAiProcessingTheme
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  ),
+                                )
+                              : const Text('Apply Colors to Selected'),
+                        ),
+                        const SizedBox(height: 8),
+                        ElevatedButton(
+                          onPressed: _closeSegmentationOverlay,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey.shade400,
+                          ),
+                          child: const Text('Cancel'),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Action buttons
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _selectedObjectIds.isEmpty
-                        ? null
-                        : _applyColorToSelectedObjects,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1DB954),
-                    ),
-                    child: _isAiProcessingTheme
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white,
-                              ),
-                            ),
-                          )
-                        : const Text('Apply Colors to Selected'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _closeSegmentationOverlay,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey.shade400,
-                    ),
-                    child: const Text('Cancel'),
-                  ),
-                ),
-              ],
             ),
           ],
         ),
@@ -2961,7 +2474,9 @@ class _ManageEventsState extends State<ManageEvents>
           : null;
       final dateLabel = firstSlot == null
           ? ''
-          : DateTime.parse(firstSlot.date).toString().split(' ')[0];
+          : (_tryParseDate(firstSlot.date) == null
+                ? firstSlot.date
+                : _formatDateYyyyMmDd(_tryParseDate(firstSlot.date)!));
       final timeLabel = firstSlot == null
           ? ''
           : '${firstSlot.startTime} - ${firstSlot.endTime}';
@@ -4768,7 +4283,15 @@ class _ManageEventsState extends State<ManageEvents>
             }
 
             return AlertDialog(
-              title: const Text('Events Theme Design'),
+              backgroundColor: const Color(0xFFF7F8FA),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              title: Row(
+                children: const [
+                  Icon(Icons.palette_outlined, color: Color(0xFFF4511E)),
+                  SizedBox(width: 8),
+                  Text('Events Theme Design'),
+                ],
+              ),
               content: SizedBox(
                 width: 900,
                 height: 520,
@@ -4782,9 +4305,20 @@ class _ManageEventsState extends State<ManageEvents>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'DESIGN BOARD',
-                                style: TextStyle(fontWeight: FontWeight.bold),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFF3D0),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: const Text(
+                                  'DESIGN BOARD',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: Color(0xFF7A4E00),
+                                  ),
+                                ),
                               ),
                               const SizedBox(height: 12),
                               Expanded(
@@ -4850,7 +4384,11 @@ class _ManageEventsState extends State<ManageEvents>
                                     });
                                   },
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFFF4511E),
+                                    backgroundColor: const Color(0xFFFFC024),
+                                    foregroundColor: Colors.black87,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
                                   ),
                                   child: const Text('UPLOAD IMAGES'),
                                 ),
@@ -4866,9 +4404,20 @@ class _ManageEventsState extends State<ManageEvents>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'YOUR PICKS',
-                                style: TextStyle(fontWeight: FontWeight.bold),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFF3D0),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: const Text(
+                                  'YOUR PICKS',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: Color(0xFF7A4E00),
+                                  ),
+                                ),
                               ),
                               const SizedBox(height: 12),
                               Expanded(
@@ -4891,7 +4440,7 @@ class _ManageEventsState extends State<ManageEvents>
                               TextField(
                                 controller: _themeColorPromptController,
                                 decoration: InputDecoration(
-                                  labelText: 'What colors would like to have?',
+                                  labelText: 'What colors would you like to have?',
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(10),
                                   ),
@@ -4909,70 +4458,6 @@ class _ManageEventsState extends State<ManageEvents>
                                       : null,
                                 ),
                               ),
-                              const SizedBox(height: 8),
-
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: ElevatedButton(
-                                      onPressed:
-                                          _themePicks.isEmpty ||
-                                              _isAiProcessingTheme
-                                          ? null
-                                          : () async {
-                                              await _swapThemeColorsAi();
-                                              setStateDialog(() {});
-                                            },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(
-                                          0xFF1DB954,
-                                        ),
-                                      ),
-                                      child: const Text('SWAP COLORS'),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: ElevatedButton(
-                                      onPressed:
-                                          _themePicks.isEmpty ||
-                                              _isAiProcessingTheme ||
-                                              _isSegmenting ||
-                                              _isDetecting
-                                          ? null
-                                          : () async {
-                                              if (_themePicks.isNotEmpty) {
-                                                await _runYOLOAndSAM(
-                                                  _themePicks.first,
-                                                );
-                                              }
-                                            },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color.fromARGB(
-                                          255,
-                                          193,
-                                          169,
-                                          66,
-                                        ),
-                                      ),
-                                      child: _isSegmenting || _isDetecting
-                                          ? const SizedBox(
-                                              width: 20,
-                                              height: 20,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                valueColor:
-                                                    AlwaysStoppedAnimation<
-                                                      Color
-                                                    >(Colors.white),
-                                              ),
-                                            )
-                                          : const Text('DETECT & SEGMENT'),
-                                    ),
-                                  ),
-                                ],
-                              ),
-
                               const SizedBox(height: 8),
 
                               Row(
@@ -5016,20 +4501,40 @@ class _ManageEventsState extends State<ManageEvents>
                                   Expanded(
                                     child: ElevatedButton(
                                       onPressed:
-                                          _currentSegmentationResult != null
-                                          ? () {
+                                          _themePicks.isEmpty || _isDetecting || _isSegmenting
+                                          ? null
+                                          : () async {
+                                              final focusedIndex = _focusedPickIndex
+                                                  .clamp(0, _themePicks.length - 1)
+                                                  .toInt();
+                                              final ok = await _runEditObjectsFlow(
+                                                _themePicks[focusedIndex],
+                                              );
+                                              if (!ok || !mounted || _currentSegmentationResult == null) {
+                                                return;
+                                              }
+                                              setState(() {
+                                                _showSegmentationOverlay = true;
+                                                _selectedObjectIds.clear();
+                                                _objectSelectionColor = _themeTintColor;
+                                              });
                                               Navigator.of(context).pop();
                                               showDialog(
-                                                context: context,
-                                                builder: (context) =>
-                                                    _buildSegmentationOverlay(),
+                                                context: this.context,
+                                                builder: (context) => _buildSegmentationOverlay(),
                                               );
-                                            }
-                                          : null,
+                                            },
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.orange,
+                                        backgroundColor: const Color(0xFFF4511E),
+                                        foregroundColor: Colors.white,
                                       ),
-                                      child: const Text('EDIT OBJECTS'),
+                                      child: _isSegmenting || _isDetecting
+                                          ? const SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                            )
+                                          : const Text('EDIT OBJECTS'),
                                     ),
                                   ),
                                 ],
@@ -5073,7 +4578,8 @@ class _ManageEventsState extends State<ManageEvents>
                                         Navigator.of(context).pop();
                                       },
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.red.shade400,
+                                        backgroundColor: Colors.grey.shade500,
+                                        foregroundColor: Colors.white,
                                       ),
                                       child: const Text('CANCEL'),
                                     ),
@@ -5678,7 +5184,8 @@ class _ManageEventsState extends State<ManageEvents>
     final oneMonthAgo = DateTime.now().subtract(const Duration(days: 30));
     final orderDtos = _completedOrdersDto.where((dto) {
       if (dto.scheduleSlots.isEmpty) return false;
-      final eventDate = DateTime.parse(dto.scheduleSlots.first.date);
+      final eventDate = _tryParseDate(dto.scheduleSlots.first.date);
+      if (eventDate == null) return false;
       return eventDate.isAfter(oneMonthAgo) || eventDate.isAtSameMomentAs(oneMonthAgo);
     }).toList();
 
@@ -6348,7 +5855,7 @@ class _ManageEventsState extends State<ManageEvents>
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      value: _eventType,
+                      value: _eventTypes.contains(_eventType) ? _eventType : null,
                       items: _eventTypes
                           .map(
                             (type) => DropdownMenuItem(
@@ -7005,40 +6512,6 @@ class _ManageEventsState extends State<ManageEvents>
         ),
       ],
     );
-  }
-
-  Future<void> _markPaymentAsPaid(
-    EventOrderDto order,
-    String paymentType,
-  ) async {
-    try {
-      await EventsApi.instance.updatePaymentStatus(
-        orderId: order.id,
-        paymentType: paymentType,
-        status: 'paid',
-      );
-
-      // Refresh orders
-      await _refreshOrders();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Payment status updated successfully'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to update payment status'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 
   Future<void> _uploadEventPhotos(EventOrderDto order) async {

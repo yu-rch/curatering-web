@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../models/event_order.dart';
 import 'api_client.dart';
+import 'public_events_api.dart';
 
 class EventsApi {
   EventsApi._();
@@ -19,6 +20,7 @@ class EventsApi {
     final decoded = await ApiClient.instance.getJson(
       path,
       queryParameters: {'status': status},
+      useCache: false,
     );
 
     final raw = decoded['orders'] ?? decoded['data'];
@@ -198,15 +200,31 @@ class EventsApi {
     int maxDetections = 30,
     String maskFormat = 'polygon',
   }) async {
-    return ApiClient.instance.postJson(
-      '/api/events/theme-design/yolo-sam-infer',
-      body: {
-        'imageBase64': imageBase64,
-        'confidenceThreshold': confidenceThreshold,
-        'maxDetections': maxDetections,
-        'maskFormat': maskFormat,
-      },
-    );
+    try {
+      return await ApiClient.instance.postJson(
+        '/api/events/theme-design/yolo-sam-infer',
+        body: {
+          'imageBase64': imageBase64,
+          'confidenceThreshold': confidenceThreshold,
+          'maxDetections': maxDetections,
+          'maskFormat': maskFormat,
+        },
+      );
+    } on ApiError catch (e) {
+      final msg = e.message.toLowerCase();
+      // Fallback for local setups where internal AI token is missing.
+      if (msg.contains('ai service token') ||
+          msg.contains('not configured') ||
+          e.statusCode == 500) {
+        return PublicEventsApi.instance.inferThemeObjectsWithSam(
+          imageBase64: imageBase64,
+          confidenceThreshold: confidenceThreshold,
+          maxDetections: maxDetections,
+          maskFormat: maskFormat,
+        );
+      }
+      rethrow;
+    }
   }
 
   Future<Map<String, dynamic>> swapThemeObjectColors({
@@ -214,14 +232,42 @@ class EventsApi {
     required List<Map<String, dynamic>> masks,
     required List<Map<String, dynamic>> edits,
   }) async {
-    return ApiClient.instance.postJson(
-      '/api/events/theme-design/swap-colors',
-      body: {
-        'imageBase64': imageBase64,
-        'masks': masks,
-        'edits': edits,
-      },
-    );
+    try {
+      return await ApiClient.instance.postJson(
+        '/api/events/theme-design/swap-colors',
+        body: {
+          'imageBase64': imageBase64,
+          'masks': masks,
+          'edits': edits,
+        },
+      );
+    } on ApiError catch (e) {
+      final msg = e.message.toLowerCase();
+      if (msg.contains('ai service token') ||
+          msg.contains('not configured') ||
+          e.statusCode == 500) {
+        return PublicEventsApi.instance.swapThemeObjectColors(
+          imageBase64: imageBase64,
+          masks: masks,
+          edits: edits,
+        );
+      }
+      rethrow;
+    }
+  }
+
+  int _toInt(dynamic value, {int fallback = 0}) {
+    if (value == null) return fallback;
+    if (value is num) return value.toInt();
+    final parsed = num.tryParse(value.toString().trim());
+    return parsed?.toInt() ?? fallback;
+  }
+
+  double _toDouble(dynamic value, {double fallback = 0.0}) {
+    if (value == null) return fallback;
+    if (value is num) return value.toDouble();
+    final parsed = num.tryParse(value.toString().trim());
+    return parsed?.toDouble() ?? fallback;
   }
 
   EventOrderDto _orderFromJson(dynamic raw) {
@@ -314,9 +360,13 @@ class EventsApi {
     if (paRaw != null && paRaw is Map) {
       final pm = Map<String, dynamic>.from(paRaw);
       postAnalysis = PostAnalysisDto(
-        businessCardsGivenAway: (pm['businessCardsGivenAway'] as num?)?.toInt() ?? 0,
-        onTheSpotInquiries: (pm['onTheSpotInquiries'] as num?)?.toInt() ?? 0,
-        complaints: (pm['complaints'] as num?)?.toInt() ?? 0,
+        businessCardsGivenAway: _toInt(
+          pm['businessCardsGivenAway'] ?? pm['business_cards_given_away'],
+        ),
+        onTheSpotInquiries: _toInt(
+          pm['onTheSpotInquiries'] ?? pm['on_the_spot_inquiries'],
+        ),
+        complaints: _toInt(pm['complaints']),
       );
     }
 
@@ -330,7 +380,7 @@ class EventsApi {
             id: cc['id'] as String? ?? '',
             title: cc['title'] as String? ?? '',
             description: cc['description'] as String? ?? '',
-            price: (cc['price'] as num?)?.toDouble() ?? 0.0,
+            price: _toDouble(cc['price']),
             isCompleted: cc['isCompleted'] as bool? ?? false,
             assignedTo: cc['assignedTo'] as String? ?? '',
           ),
@@ -357,18 +407,27 @@ class EventsApi {
       emailAddress: (map['emailAddress'] ?? map['email_address'] ?? '').toString(),
       scheduleSlots: scheduleSlots,
       address: (map['address'] ?? '').toString(),
-      guestCount: ((map['guestCount'] ?? map['guest_count']) as num?)?.toInt() ?? 0,
+      guestCount: _toInt(map['guestCount'] ?? map['guest_count']),
       menu: menu,
       themeDesign: themeDesign,
       postAnalysis: postAnalysis,
-      downPaymentAmount: (map['downPaymentAmount'] as num?)?.toDouble() ?? 0.0,
-      downPaymentStatus: map['downPaymentStatus'] as String? ?? 'pending',
-      fullPaymentAmount: (map['fullPaymentAmount'] as num?)?.toDouble() ?? 0.0,
-      fullPaymentStatus: map['fullPaymentStatus'] as String? ?? 'pending',
-      totalCost: (map['totalCost'] as num?)?.toDouble() ?? 0.0,
+      downPaymentAmount: _toDouble(
+        map['downPaymentAmount'] ?? map['down_payment_amount'],
+      ),
+      downPaymentStatus:
+          (map['downPaymentStatus'] ?? map['down_payment_status'] ?? 'pending')
+              .toString(),
+      fullPaymentAmount: _toDouble(
+        map['fullPaymentAmount'] ?? map['full_payment_amount'],
+      ),
+      fullPaymentStatus:
+          (map['fullPaymentStatus'] ?? map['full_payment_status'] ?? 'pending')
+              .toString(),
+      totalCost: _toDouble(map['totalCost'] ?? map['total_cost']),
       checklist: checklist,
       actualEventImages: actualEventImages,
-      finalStatus: map['finalStatus'] as String? ?? 'successful',
+      finalStatus:
+          (map['finalStatus'] ?? map['final_status'] ?? 'successful').toString(),
     );
   }
 }

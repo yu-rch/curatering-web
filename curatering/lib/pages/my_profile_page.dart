@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import '../widgets/customer_pages_top_bar.dart';
 import '../widgets/map_picker.dart';
+import 'customer_website.dart';
 import 'my_caterings_page.dart';
 import 'my_order_tracking_page.dart';
 import 'my_orders_page.dart';
@@ -651,6 +652,7 @@ class _MyProfilePageState extends State<MyProfilePage> {
   void _navigateFromTopBar(CustomerPageTab tab) {
     if (tab == CustomerPageTab.profile) return;
     final route = switch (tab) {
+      CustomerPageTab.home => const CustomerWebsiteScreen(),
       CustomerPageTab.orders => const MyOrdersPage(),
       CustomerPageTab.caterings => const MyCateringsPage(),
       CustomerPageTab.tracking => const MyOrderTrackingPage(),
