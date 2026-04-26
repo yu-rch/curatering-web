@@ -47,6 +47,7 @@ class SegmentedObject {
   final Uint8List mask;
   final String label;
   final Rect boundingBox;
+  final List<Offset> polygonPoints;
   final Color? currentColor;
 
   SegmentedObject({
@@ -54,15 +55,16 @@ class SegmentedObject {
     required this.mask,
     required this.label,
     required this.boundingBox,
+    this.polygonPoints = const <Offset>[],
     this.currentColor,
   });
 }
 
 class SamSegmentationResult {
   final List<SegmentedObject> objects;
-  final Uint8List originalImage;
+  final Uint8List previewImage;
 
-  SamSegmentationResult({required this.objects, required this.originalImage});
+  SamSegmentationResult({required this.objects, required this.previewImage});
 }
 
 class ChecklistItem {
@@ -413,6 +415,7 @@ class _ManageEventsState extends State<ManageEvents>
   bool _showYOLOOverlay = false;
   YOLOResult? _currentYOLOResult;
   final Set<String> _selectedYOLOIds = <String>{};
+  List<Map<String, dynamic>> _latestYoloSamObjects = <Map<String, dynamic>>[];
 
   final List<MenuItem> _menuItems = [];
   final Map<String, String> _selectedPaxPerDish = {};
@@ -1895,24 +1898,37 @@ class _ManageEventsState extends State<ManageEvents>
     });
 
     try {
-      final response = await EventsApi.instance.detectThemeObjects(
+      final response = await EventsApi.instance.inferThemeObjectsWithSam(
         imageBase64: base64Encode(imageBytes),
+        maskFormat: 'polygon',
       );
       final detectionsRaw = (response['detections'] as List<dynamic>? ?? const [])
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
+      final objectsRaw = (response['objects'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
       final parsedDetections = detectionsRaw.map((raw) {
         final box = Map<String, dynamic>.from(
-          (raw['boundingBox'] as Map?) ?? const <String, dynamic>{},
+          (raw['boundingBox'] as Map?) ??
+              (raw['box'] as Map?) ??
+              const <String, dynamic>{},
         );
+        final classId = (raw['classId'] ?? raw['id'] ?? '').toString();
+        final className = (raw['className'] ?? raw['label'] ?? classId).toString();
         return YOLODetection(
-          classId: (raw['classId'] ?? '').toString(),
-          className: (raw['className'] ?? '').toString(),
+          classId: classId,
+          className: className,
           confidence: (raw['confidence'] as num?)?.toDouble() ?? 0.0,
           boundingBox: Rect.fromLTWH(
-            (box['left'] as num?)?.toDouble() ?? 0.0,
-            (box['top'] as num?)?.toDouble() ?? 0.0,
+            (box['left'] as num?)?.toDouble() ??
+                (box['x'] as num?)?.toDouble() ??
+                0.0,
+            (box['top'] as num?)?.toDouble() ??
+                (box['y'] as num?)?.toDouble() ??
+                0.0,
             (box['width'] as num?)?.toDouble() ?? 0.2,
             (box['height'] as num?)?.toDouble() ?? 0.2,
           ),
@@ -1925,6 +1941,8 @@ class _ManageEventsState extends State<ManageEvents>
           detections: parsedDetections,
           originalImage: imageBytes,
         );
+        _latestYoloSamObjects = objectsRaw;
+        _selectedYOLOIds.clear();
         _isDetecting = false;
       });
 
@@ -1976,6 +1994,7 @@ class _ManageEventsState extends State<ManageEvents>
                               _showYOLOOverlay = false;
                               _currentYOLOResult = null;
                               _selectedYOLOIds.clear();
+                              _latestYoloSamObjects = <Map<String, dynamic>>[];
                             });
                             Navigator.of(context).pop();
                           },
@@ -2222,6 +2241,7 @@ class _ManageEventsState extends State<ManageEvents>
                                 _showYOLOOverlay = false;
                                 _currentYOLOResult = null;
                                 _selectedYOLOIds.clear();
+                                _latestYoloSamObjects = <Map<String, dynamic>>[];
                               });
                               Navigator.of(context).pop();
                             },
@@ -2253,45 +2273,47 @@ class _ManageEventsState extends State<ManageEvents>
     });
 
     try {
-      final segmentResponse = await EventsApi.instance.segmentThemeObjects(
-        imageBase64: base64Encode(_currentYOLOResult!.originalImage),
-        selectedClassIds: _selectedYOLOIds.toList(),
-        detections: _currentYOLOResult!.detections.map((d) {
-          return {
-            'classId': d.classId,
-            'className': d.className,
-            'confidence': d.confidence,
-            'boundingBox': {
-              'left': d.boundingBox.left,
-              'top': d.boundingBox.top,
-              'width': d.boundingBox.width,
-              'height': d.boundingBox.height,
-            },
-            'currentColorHex': d.currentColor == null
-                ? null
-                : _themeTintColorHex(d.currentColor!),
-          };
-        }).toList(),
-      );
-      final objectsRaw = (segmentResponse['objects'] as List<dynamic>? ?? const [])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
+      final objectsRaw = _latestYoloSamObjects
+          .where((obj) => _selectedYOLOIds.contains((obj['id'] ?? '').toString()))
           .toList();
+      if (objectsRaw.isEmpty) {
+        throw Exception('No SAM objects matched the selected detections');
+      }
       final segmentedObjects = objectsRaw.map((raw) {
         final box = Map<String, dynamic>.from(
-          (raw['boundingBox'] as Map?) ?? const <String, dynamic>{},
+          (raw['boundingBox'] as Map?) ??
+              (raw['box'] as Map?) ??
+              const <String, dynamic>{},
         );
-        final maskBase64 = (raw['maskBase64'] ?? '').toString();
+        final maskBase64 = (raw['maskBase64'] ?? raw['mask_base64'] ?? '').toString();
+        final rawPolygon =
+            (raw['polygonPoints'] as List<dynamic>? ?? raw['polygon_points'] as List<dynamic>? ?? const []);
+        final polygonPoints = rawPolygon
+            .whereType<Map>()
+            .map((point) {
+              final p = Map<String, dynamic>.from(point);
+              return Offset(
+                (p['x'] as num?)?.toDouble() ?? 0.0,
+                (p['y'] as num?)?.toDouble() ?? 0.0,
+              );
+            })
+            .toList();
+
         return SegmentedObject(
           id: (raw['id'] ?? '').toString(),
           mask: maskBase64.isNotEmpty ? base64Decode(maskBase64) : Uint8List(0),
           label: (raw['label'] ?? '').toString(),
           boundingBox: Rect.fromLTWH(
-            (box['left'] as num?)?.toDouble() ?? 0.0,
-            (box['top'] as num?)?.toDouble() ?? 0.0,
+            (box['left'] as num?)?.toDouble() ??
+                (box['x'] as num?)?.toDouble() ??
+                0.0,
+            (box['top'] as num?)?.toDouble() ??
+                (box['y'] as num?)?.toDouble() ??
+                0.0,
             (box['width'] as num?)?.toDouble() ?? 0.2,
             (box['height'] as num?)?.toDouble() ?? 0.2,
           ),
+          polygonPoints: polygonPoints,
           currentColor: _colorFromHexOrNull(raw['currentColorHex'] as String?),
         );
       }).toList();
@@ -2299,13 +2321,14 @@ class _ManageEventsState extends State<ManageEvents>
       setState(() {
         _currentSegmentationResult = SamSegmentationResult(
           objects: segmentedObjects,
-          originalImage: _currentYOLOResult!.originalImage,
+          previewImage: _currentYOLOResult!.originalImage,
         );
         _isSegmenting = false;
         _segmentationSuccess = true;
         _showYOLOOverlay = false;
         _currentYOLOResult = null;
         _selectedYOLOIds.clear();
+        _latestYoloSamObjects = <Map<String, dynamic>>[];
       });
 
       if (mounted) {
@@ -2328,6 +2351,7 @@ class _ManageEventsState extends State<ManageEvents>
         _showYOLOOverlay = false;
         _currentYOLOResult = null;
         _selectedYOLOIds.clear();
+        _latestYoloSamObjects = <Map<String, dynamic>>[];
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2486,6 +2510,7 @@ class _ManageEventsState extends State<ManageEvents>
             mask: o.mask,
             label: o.label,
             boundingBox: o.boundingBox,
+            polygonPoints: o.polygonPoints,
             currentColor: selectedColor,
           );
         }
@@ -2495,7 +2520,7 @@ class _ManageEventsState extends State<ManageEvents>
       setState(() {
         _currentSegmentationResult = SamSegmentationResult(
           objects: updatedObjects,
-          originalImage: _currentSegmentationResult!.originalImage,
+          previewImage: _currentSegmentationResult!.previewImage,
         );
       });
     }
@@ -2629,11 +2654,38 @@ class _ManageEventsState extends State<ManageEvents>
     });
 
     try {
-      // In a real implementation, this would apply the color to selected objects
-      // For now, we'll simulate the color application
-      await Future.delayed(const Duration(seconds: 1));
+      final selectedObjects = _currentSegmentationResult!.objects
+          .where((obj) => _selectedObjectIds.contains(obj.id))
+          .toList();
+      final masksPayload = selectedObjects.map((obj) {
+        return {
+          'objectId': obj.id,
+          if (obj.polygonPoints.isNotEmpty)
+            'polygonPoints': obj.polygonPoints
+                .map((point) => {'x': point.dx, 'y': point.dy})
+                .toList(),
+          if (obj.mask.isNotEmpty) 'maskBase64': base64Encode(obj.mask),
+        };
+      }).toList();
+      final editsPayload = selectedObjects.map((obj) {
+        return {
+          'objectId': obj.id,
+          'targetHex': _themeTintColorHex(targetColor),
+          'intensity': 1.0,
+        };
+      }).toList();
+      final recolorResponse = await EventsApi.instance.swapThemeObjectColors(
+        imageBase64: base64Encode(_currentSegmentationResult!.previewImage),
+        masks: masksPayload,
+        edits: editsPayload,
+      );
+      final recoloredImageBase64 =
+          (recolorResponse['imageBase64'] ?? '').toString().trim();
+      final skippedObjects = (recolorResponse['skipped'] as List<dynamic>? ?? const []);
+      final updatedPreviewImage = recoloredImageBase64.isNotEmpty
+          ? base64Decode(recoloredImageBase64)
+          : _currentSegmentationResult!.previewImage;
 
-      // Update the currentColor for selected objects
       final updatedObjects = _currentSegmentationResult!.objects.map((obj) {
         if (_selectedObjectIds.contains(obj.id)) {
           return SegmentedObject(
@@ -2641,6 +2693,7 @@ class _ManageEventsState extends State<ManageEvents>
             mask: obj.mask,
             label: obj.label,
             boundingBox: obj.boundingBox,
+            polygonPoints: obj.polygonPoints,
             currentColor: targetColor,
           );
         }
@@ -2650,7 +2703,7 @@ class _ManageEventsState extends State<ManageEvents>
       setState(() {
         _currentSegmentationResult = SamSegmentationResult(
           objects: updatedObjects,
-          originalImage: _currentSegmentationResult!.originalImage,
+          previewImage: updatedPreviewImage,
         );
         _isAiProcessingTheme = false;
         _selectedObjectIds.clear();
@@ -2658,8 +2711,12 @@ class _ManageEventsState extends State<ManageEvents>
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Colors applied to selected objects'),
+          SnackBar(
+            content: Text(
+              skippedObjects.isEmpty
+                  ? 'Colors applied to selected objects'
+                  : 'Colors applied with ${skippedObjects.length} skipped object(s)',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -2726,7 +2783,7 @@ class _ManageEventsState extends State<ManageEvents>
                   children: [
                     // Original image
                     Image.memory(
-                      _currentSegmentationResult!.originalImage,
+                      _currentSegmentationResult!.previewImage,
                       fit: BoxFit.contain,
                     ),
 

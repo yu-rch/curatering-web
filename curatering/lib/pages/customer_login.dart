@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
+import '../utils/responsive_layout.dart';
 
 // Runtime fallback for dev mode (String.fromEnvironment defaultValue doesn't work in JIT mode)
 String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/' : apiBaseUrl;
@@ -290,8 +291,8 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 350),
-        padding: const EdgeInsets.all(24),
+        constraints: BoxConstraints(maxWidth: isMobileWidth(context) ? 340 : 420),
+        padding: appPagePadding(context),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

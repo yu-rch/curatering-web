@@ -192,26 +192,34 @@ class EventsApi {
     );
   }
 
-  Future<Map<String, dynamic>> detectThemeObjects({
+  Future<Map<String, dynamic>> inferThemeObjectsWithSam({
     required String imageBase64,
+    double confidenceThreshold = 0.25,
+    int maxDetections = 30,
+    String maskFormat = 'polygon',
   }) async {
     return ApiClient.instance.postJson(
-      '/api/events/theme-design/detect-objects',
-      body: {'imageBase64': imageBase64},
+      '/api/events/theme-design/yolo-sam-infer',
+      body: {
+        'imageBase64': imageBase64,
+        'confidenceThreshold': confidenceThreshold,
+        'maxDetections': maxDetections,
+        'maskFormat': maskFormat,
+      },
     );
   }
 
-  Future<Map<String, dynamic>> segmentThemeObjects({
+  Future<Map<String, dynamic>> swapThemeObjectColors({
     required String imageBase64,
-    required List<Map<String, dynamic>> detections,
-    required List<String> selectedClassIds,
+    required List<Map<String, dynamic>> masks,
+    required List<Map<String, dynamic>> edits,
   }) async {
     return ApiClient.instance.postJson(
-      '/api/events/theme-design/segment-objects',
+      '/api/events/theme-design/swap-colors',
       body: {
         'imageBase64': imageBase64,
-        'detections': detections,
-        'selectedClassIds': selectedClassIds,
+        'masks': masks,
+        'edits': edits,
       },
     );
   }

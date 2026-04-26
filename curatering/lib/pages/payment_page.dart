@@ -4,9 +4,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import '../services/cart_store.dart';
 import '../config.dart';
 import 'order_tracking_page.dart';
+import '../utils/responsive_layout.dart';
 
 // Runtime fallback for dev mode (String.fromEnvironment defaultValue doesn't work in JIT mode)
 String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/' : apiBaseUrl;
@@ -100,10 +100,10 @@ class _PaymentPageState extends State<PaymentPage> {
         title: const Text(''),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: appPagePadding(context),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1200),
+            constraints: BoxConstraints(maxWidth: appContentMaxWidth(context)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

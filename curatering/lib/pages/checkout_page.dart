@@ -10,6 +10,7 @@ import '../config.dart';
 import '../widgets/map_picker.dart';
 import 'customer_login.dart';
 import 'payment_page.dart';
+import '../utils/responsive_layout.dart';
 
 // Runtime fallback for dev mode
 String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/' : apiBaseUrl;
@@ -274,10 +275,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
         title: const Text(''),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: appPagePadding(context),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1200),
+            constraints: BoxConstraints(maxWidth: appContentMaxWidth(context)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

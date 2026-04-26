@@ -1,0 +1,26 @@
+services:
+  node-api:
+    image: node:20
+    working_dir: /workspace/server
+    command: sh -c "npm install && npm run dev"
+    env_file:
+      - ./server/.env
+    environment:
+      AI_SERVICE_BASE_URL: http://fastapi-ai:8000
+    volumes:
+      - ./server:/workspace/server
+    ports:
+      - "3000:3000"
+    depends_on:
+      - fastapi-ai
+
+  fastapi-ai:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    env_file:
+      - ./ai-service/.env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ai-service/models:/app/models

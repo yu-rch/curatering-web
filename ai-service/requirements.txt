@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pydantic
+ultralytics
+segment-anything
+opencv-python
+pillow
+matplotlib

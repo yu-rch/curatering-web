@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../widgets/app_scaffold.dart';
 import '../services/loyalty_rewards_store.dart';
+import '../utils/responsive_layout.dart';
 
 // Models are imported from the store
 
@@ -213,7 +214,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
 
   Widget _buildPointsAndRewardsView() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: appPagePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -233,7 +234,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
 
   Widget _buildCustomerTransactionsView() {
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: appPagePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

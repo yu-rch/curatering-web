@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../config.dart';
 import '../auth/auth_session.dart';
+import '../utils/responsive_layout.dart';
 
 class RestaurantTransactionsPage extends StatefulWidget {
   const RestaurantTransactionsPage({super.key});
@@ -402,7 +403,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     }
 
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: appPagePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -499,7 +500,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     }
 
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: appPagePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -596,7 +597,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     }
 
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: appPagePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -671,206 +672,6 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                   return _buildCompletedOrderTableRow(order, index);
                 }).toList(),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOrderCard({
-    required Map<String, dynamic> order,
-    List<Widget>? actions,
-    Color? statusColor,
-  }) {
-    final items = (order['items'] as List<dynamic>?) ?? [];
-    final status = order['status'] as String? ?? 'pending';
-    final deliveryUrl = order['delivery_url'] as String?;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header with Order ID and Status
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Order #${order['id'].toString().substring(0, 8).toUpperCase()}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: (statusColor ?? _getStatusColor(status)).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    status.toUpperCase(),
-                    style: TextStyle(
-                      color: statusColor ?? _getStatusColor(status),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 11,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Customer Information
-            _buildInfoRow('Customer Name', order['full_name'] ?? 'N/A'),
-            _buildInfoRow('Contact Number', order['phone'] ?? 'N/A'),
-            _buildInfoRow('Delivery Address', order['delivery_address'] ?? 'N/A'),
-            _buildInfoRow(
-              'Date & Time',
-              '${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}',
-            ),
-            const SizedBox(height: 16),
-
-            // Order Details
-            Text(
-              'ORDER DETAILS',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
-                color: Colors.grey.shade600,
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ...items.map((item) {
-              final price = (item['price'] as num?) ?? 0;
-              final quantity = (item['quantity'] as num?) ?? 1;
-              final total = price * quantity;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: Text(item['name'] ?? 'Unknown Item'),
-                    ),
-                    Expanded(
-                      child: Text(
-                        '$_currencySymbol${price.toStringAsFixed(2)}',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        'x$quantity',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        '$_currencySymbol${total.toStringAsFixed(2)}',
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-            const SizedBox(height: 16),
-
-            // Total and Payment Method
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Payment: ${order['payment_method'] ?? 'GCash'}',
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  'Total: $_currencySymbol${_parseAmount(order['total_amount']).toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
-
-            // Delivery URL if available
-            if (deliveryUrl != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.link, color: Colors.blue.shade700, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Delivery URL: $deliveryUrl',
-                        style: TextStyle(
-                          color: Colors.blue.shade700,
-                          fontSize: 12,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            // Action Buttons
-            if (actions != null && actions.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: actions,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              '$label:',
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
             ),
           ),
         ],

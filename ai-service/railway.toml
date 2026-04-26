@@ -1,0 +1,10 @@
+# Railway: set the service "Root Directory" to `ai-service` (monorepo) or deploy from this folder.
+# https://docs.railway.app/deploy/dockerfiles
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health/live"
+restartPolicyType = "ON_FAILURE"

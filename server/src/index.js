@@ -23,6 +23,11 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-change-me";
 const connectionString = process.env.DATABASE_URL
 const sql = postgres(connectionString)
+const AI_SERVICE_BASE_URL = String(process.env.AI_SERVICE_BASE_URL || "").replace(/\/+$/, "");
+const AI_SERVICE_TOKEN = process.env.AI_SERVICE_TOKEN || "";
+const AI_SERVICE_TIMEOUT_SEGMENT_MS = Number(process.env.AI_SERVICE_TIMEOUT_SEGMENT_MS || 10000);
+const AI_SERVICE_TIMEOUT_RECOLOR_MS = Number(process.env.AI_SERVICE_TIMEOUT_RECOLOR_MS || 8000);
+const AI_SERVICE_MAX_IMAGE_BYTES = Number(process.env.AI_SERVICE_MAX_IMAGE_BYTES || 8_000_000);
 
 const allowedRoles = new Set(["admin", "manager", "supervisor", "super_admin", "cashier"]);
 const allowedHelpStatuses = new Set(["unresolved", "resolved"]);
@@ -73,6 +78,140 @@ function normalizeDetections(rawDetections) {
       };
     })
     .filter((d) => d.classId);
+}
+
+function toHttpError(message, status = 500, code = "internal_error", details) {
+  const err = new Error(message);
+  err.status = status;
+  err.code = code;
+  err.details = details;
+  return err;
+}
+
+function getRequestId(req) {
+  const headerId = req.headers["x-request-id"];
+  if (typeof headerId === "string" && headerId.trim()) return headerId.trim();
+  return `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function sanitizeBase64Image(input) {
+  if (typeof input !== "string" || !input.trim()) {
+    throw toHttpError("imageBase64 is required", 400, "invalid_image_payload");
+  }
+  const value = input.trim();
+  const cleaned = value.includes(",") ? value.split(",").pop() : value;
+  if (!cleaned || !/^[A-Za-z0-9+/=\s]+$/.test(cleaned)) {
+    throw toHttpError("imageBase64 must be a valid base64 string", 400, "invalid_base64");
+  }
+  const sizeBytes = Buffer.byteLength(cleaned, "base64");
+  if (sizeBytes <= 0 || sizeBytes > AI_SERVICE_MAX_IMAGE_BYTES) {
+    throw toHttpError(
+      `imageBase64 exceeds size limit (${AI_SERVICE_MAX_IMAGE_BYTES} bytes)`,
+      400,
+      "image_too_large",
+      { maxBytes: AI_SERVICE_MAX_IMAGE_BYTES, receivedBytes: sizeBytes },
+    );
+  }
+  return cleaned;
+}
+
+function ensureHexColor(rawValue, fallback = "#f4511e") {
+  const value = String(rawValue || "").trim();
+  const match = value.match(/^#?([0-9a-f]{6})$/i);
+  if (!match) return String(fallback || "#f4511e").toLowerCase();
+  return `#${match[1].toLowerCase()}`;
+}
+
+async function callFastApi({ req, routePath, timeoutMs, payload }) {
+  if (!AI_SERVICE_BASE_URL) {
+    throw toHttpError(
+      "AI service is not configured",
+      500,
+      "ai_service_not_configured",
+    );
+  }
+  if (!AI_SERVICE_TOKEN) {
+    throw toHttpError(
+      "AI service token is not configured",
+      500,
+      "ai_service_auth_not_configured",
+    );
+  }
+
+  const requestId = getRequestId(req);
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(`${AI_SERVICE_BASE_URL}${routePath}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${AI_SERVICE_TOKEN}`,
+        "x-request-id": requestId,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    const text = await response.text();
+    let decoded = {};
+    if (text) {
+      try {
+        decoded = JSON.parse(text);
+      } catch {
+        throw toHttpError(
+          "AI service returned invalid JSON",
+          502,
+          "upstream_bad_response",
+        );
+      }
+    }
+
+    if (!response.ok) {
+      const message =
+        decoded && typeof decoded.message === "string" && decoded.message
+          ? decoded.message
+          : "AI processing failed";
+      throw toHttpError(
+        message,
+        response.status >= 400 && response.status < 600 ? response.status : 502,
+        "upstream_failure",
+        { upstreamStatus: response.status, routePath },
+      );
+    }
+
+    return decoded;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw toHttpError("AI service timeout", 504, "upstream_timeout", { routePath });
+    }
+    if (error && typeof error.status === "number") throw error;
+    throw toHttpError("AI processing failed", 502, "upstream_failure", {
+      routePath,
+      message: error?.message,
+    });
+  } finally {
+    clearTimeout(timeoutHandle);
+    const elapsedMs = Date.now() - startedAt;
+    console.log(
+      JSON.stringify({
+        level: "info",
+        feature: "events-theme-ai",
+        routePath,
+        elapsedMs,
+        requestId,
+      }),
+    );
+  }
+}
+
+function sendHttpError(res, error, fallbackMessage) {
+  const status = Number(error?.status || 500);
+  const code = error?.code || "internal_error";
+  const message = error?.message || fallbackMessage || "Request failed";
+  const details = error?.details && typeof error.details === "object" ? error.details : undefined;
+  return res.status(status).json(details ? { message, code, details } : { message, code });
 }
 
 function signToken({ userId, role }) {
@@ -915,102 +1054,322 @@ app.post(
     requireRoles(req, res, next, new Set(["manager", "supervisor", "admin", "super_admin"])),
   async (req, res) => {
     try {
-      const { picksBase64, prompt, currentTintColorHex } = req.body || {};
-      if (!Array.isArray(picksBase64) || picksBase64.length === 0) {
-        return res.status(400).json({ message: "picksBase64 is required" });
+      const {
+        imageBase64,
+        masks,
+        edits,
+        picksBase64,
+        prompt,
+        currentTintColorHex,
+      } = req.body || {};
+
+      // Backward compatibility: original tint-only flow.
+      if (!imageBase64) {
+        if (!Array.isArray(picksBase64) || picksBase64.length === 0) {
+          return res.status(400).json({ message: "picksBase64 is required" });
+        }
+        const tintColorHex = resolveThemeTintColor(prompt, currentTintColorHex);
+        return res.json({
+          ok: true,
+          tintEnabled: true,
+          tintColorHex,
+          colorPrompt: String(prompt || "").trim(),
+        });
       }
-      const tintColorHex = resolveThemeTintColor(prompt, currentTintColorHex);
+
+      const cleanedImageBase64 = sanitizeBase64Image(imageBase64);
+      if (!Array.isArray(masks) || masks.length === 0) {
+        throw toHttpError("masks is required", 400, "invalid_masks");
+      }
+      if (!Array.isArray(edits) || edits.length === 0) {
+        throw toHttpError("edits is required", 400, "invalid_edits");
+      }
+
+      const normalizedEdits = edits
+        .filter((e) => e && typeof e === "object")
+        .map((e) => ({
+          object_id: String(e.objectId || e.object_id || ""),
+          target_hex: ensureHexColor(e.targetHex || e.target_hex || currentTintColorHex),
+          intensity: Number(e.intensity ?? 1),
+        }))
+        .filter((e) => e.object_id);
+      if (!normalizedEdits.length) {
+        throw toHttpError("No valid edits provided", 400, "invalid_edits");
+      }
+
+      const normalizedMasks = masks
+        .filter((m) => m && typeof m === "object")
+        .map((m) => ({
+          object_id: String(m.objectId || m.object_id || ""),
+          polygon_points: Array.isArray(m.polygonPoints)
+            ? m.polygonPoints
+            : Array.isArray(m.polygon_points)
+              ? m.polygon_points
+              : undefined,
+          mask_rle: m.maskRle || m.mask_rle || undefined,
+          mask_base64: m.maskBase64 || m.mask_base64 || undefined,
+        }))
+        .filter((m) => m.object_id);
+      if (!normalizedMasks.length) {
+        throw toHttpError("No valid masks provided", 400, "invalid_masks");
+      }
+
+      const fastApiResponse = await callFastApi({
+        req,
+        routePath: "/v1/edit/recolor",
+        timeoutMs: AI_SERVICE_TIMEOUT_RECOLOR_MS,
+        payload: {
+          image_base64: cleanedImageBase64,
+          masks: normalizedMasks,
+          edits: normalizedEdits,
+        },
+      });
+
+      const applied = Array.isArray(fastApiResponse.applied)
+        ? fastApiResponse.applied.map((row) => ({
+            objectId: String(row.object_id || row.objectId || ""),
+            targetHex: ensureHexColor(row.target_hex || row.targetHex || currentTintColorHex),
+          }))
+        : [];
+      const skipped = Array.isArray(fastApiResponse.skipped)
+        ? fastApiResponse.skipped.map((row) => ({
+            objectId: String(row.object_id || row.objectId || ""),
+            reason: String(row.reason || "Skipped by AI service"),
+          }))
+        : [];
+
       return res.json({
         ok: true,
-        tintEnabled: true,
-        tintColorHex,
-        colorPrompt: String(prompt || "").trim(),
+        imageBase64: String(fastApiResponse.image_base64 || fastApiResponse.imageBase64 || ""),
+        applied,
+        skipped,
       });
     } catch (e) {
       console.error(e);
-      return res.status(500).json({ message: "Failed to process theme color" });
+      return sendHttpError(res, e, "Failed to process theme color");
     }
   },
 );
 
 app.post(
-  "/api/events/theme-design/detect-objects",
+  "/api/events/theme-design/yolo-sam-infer",
   authRequired,
   (req, res, next) =>
     requireRoles(req, res, next, new Set(["manager", "supervisor", "admin", "super_admin"])),
   async (req, res) => {
     try {
-      const { imageBase64 } = req.body || {};
-      if (!imageBase64 || typeof imageBase64 !== "string") {
-        return res.status(400).json({ message: "imageBase64 is required" });
-      }
+      const { imageBase64, confidenceThreshold, maxDetections, maskFormat } = req.body || {};
+      const cleanedImageBase64 = sanitizeBase64Image(imageBase64);
+      const fastApiResponse = await callFastApi({
+        req,
+        routePath: "/v1/infer/yolo-sam",
+        timeoutMs: AI_SERVICE_TIMEOUT_SEGMENT_MS,
+        payload: {
+          image_base64: cleanedImageBase64,
+          confidence_threshold: Number.isFinite(Number(confidenceThreshold))
+            ? Number(confidenceThreshold)
+            : 0.25,
+          max_detections: Number.isFinite(Number(maxDetections))
+            ? Number(maxDetections)
+            : 30,
+          mask_format: ["polygon", "rle", "alpha_png"].includes(String(maskFormat))
+            ? String(maskFormat)
+            : "polygon",
+        },
+      });
 
-      const detections = [
-        {
-          classId: "person",
-          className: "Person",
-          confidence: 0.92,
-          boundingBox: { left: 0.12, top: 0.08, width: 0.3, height: 0.52 },
-          currentColorHex: "#1976d2",
-        },
-        {
-          classId: "table",
-          className: "Table",
-          confidence: 0.87,
-          boundingBox: { left: 0.45, top: 0.4, width: 0.36, height: 0.24 },
-          currentColorHex: "#1db954",
-        },
-        {
-          classId: "chair",
-          className: "Chair",
-          confidence: 0.79,
-          boundingBox: { left: 0.42, top: 0.54, width: 0.2, height: 0.3 },
-          currentColorHex: "#f4511e",
-        },
-      ];
+      const detections = normalizeDetections(
+        (fastApiResponse.detections || []).map((d, index) => ({
+          classId: d.id || d.classId || d.class_id || `det_${index}`,
+          className: d.label || d.className || d.class_name || "Object",
+          confidence: d.confidence,
+          boundingBox: {
+            left: Number(d.box?.x ?? d.box?.left ?? 0),
+            top: Number(d.box?.y ?? d.box?.top ?? 0),
+            width: Number(d.box?.width ?? 0),
+            height: Number(d.box?.height ?? 0),
+          },
+        })),
+      );
 
-      return res.json({ ok: true, detections });
+      const objects = Array.isArray(fastApiResponse.objects)
+        ? fastApiResponse.objects.map((d, index) => ({
+            id: String(d.id || d.object_id || `sam_${index}`),
+            label: String(d.label || "Object"),
+            score: Number(d.score || 0),
+            boundingBox: {
+              left: Number(d.box?.x ?? d.box?.left ?? detections[index]?.boundingBox?.left ?? 0),
+              top: Number(d.box?.y ?? d.box?.top ?? detections[index]?.boundingBox?.top ?? 0),
+              width: Number(d.box?.width ?? detections[index]?.boundingBox?.width ?? 0),
+              height: Number(d.box?.height ?? detections[index]?.boundingBox?.height ?? 0),
+            },
+            polygonPoints: Array.isArray(d.polygon_points)
+              ? d.polygon_points
+              : Array.isArray(d.polygonPoints)
+                ? d.polygonPoints
+                : [],
+            maskRle: d.mask_rle || d.maskRle || null,
+            maskBase64: d.mask_base64 || d.maskBase64 || "",
+          }))
+        : [];
+
+      return res.json({
+        ok: true,
+        imageWidth: Number(fastApiResponse.image_width || fastApiResponse.imageWidth || 0),
+        imageHeight: Number(fastApiResponse.image_height || fastApiResponse.imageHeight || 0),
+        detections,
+        objects,
+      });
     } catch (e) {
       console.error(e);
-      return res.status(500).json({ message: "Failed to detect theme objects" });
+      return sendHttpError(res, e, "Failed to run combined YOLO+SAM inference");
     }
   },
 );
 
-app.post(
-  "/api/events/theme-design/segment-objects",
-  authRequired,
-  (req, res, next) =>
-    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin", "super_admin"])),
-  async (req, res) => {
-    try {
-      const { imageBase64, detections, selectedClassIds } = req.body || {};
-      if (!imageBase64 || typeof imageBase64 !== "string") {
-        return res.status(400).json({ message: "imageBase64 is required" });
-      }
-      if (!Array.isArray(selectedClassIds) || selectedClassIds.length === 0) {
-        return res.status(400).json({ message: "selectedClassIds is required" });
-      }
+app.post("/api/public/events/theme-design/yolo-sam-infer", async (req, res) => {
+  try {
+    const { imageBase64, confidenceThreshold, maxDetections, maskFormat } = req.body || {};
+    const cleanedImageBase64 = sanitizeBase64Image(imageBase64);
+    const fastApiResponse = await callFastApi({
+      req,
+      routePath: "/v1/infer/yolo-sam",
+      timeoutMs: AI_SERVICE_TIMEOUT_SEGMENT_MS,
+      payload: {
+        image_base64: cleanedImageBase64,
+        confidence_threshold: Number.isFinite(Number(confidenceThreshold))
+          ? Number(confidenceThreshold)
+          : 0.25,
+        max_detections: Number.isFinite(Number(maxDetections)) ? Number(maxDetections) : 30,
+        mask_format: ["polygon", "rle", "alpha_png"].includes(String(maskFormat))
+          ? String(maskFormat)
+          : "polygon",
+      },
+    });
 
-      const normalizedDetections = normalizeDetections(detections);
-      const selectedSet = new Set(selectedClassIds.map((id) => String(id)));
-      const objects = normalizedDetections
-        .filter((d) => selectedSet.has(d.classId))
-        .map((d) => ({
-          id: `sam_${d.classId}`,
-          label: d.className,
-          boundingBox: d.boundingBox,
-          currentColorHex: d.currentColorHex,
-          maskBase64: "",
-        }));
+    const detections = normalizeDetections(
+      (fastApiResponse.detections || []).map((d, index) => ({
+        classId: d.id || d.classId || d.class_id || `det_${index}`,
+        className: d.label || d.className || d.class_name || "Object",
+        confidence: d.confidence,
+        boundingBox: {
+          left: Number(d.box?.x ?? d.box?.left ?? 0),
+          top: Number(d.box?.y ?? d.box?.top ?? 0),
+          width: Number(d.box?.width ?? 0),
+          height: Number(d.box?.height ?? 0),
+        },
+      })),
+    );
 
-      return res.json({ ok: true, objects });
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ message: "Failed to segment theme objects" });
+    const objects = Array.isArray(fastApiResponse.objects)
+      ? fastApiResponse.objects.map((d, index) => ({
+          id: String(d.id || d.object_id || `sam_${index}`),
+          label: String(d.label || "Object"),
+          score: Number(d.score || 0),
+          boundingBox: {
+            left: Number(d.box?.x ?? d.box?.left ?? detections[index]?.boundingBox?.left ?? 0),
+            top: Number(d.box?.y ?? d.box?.top ?? detections[index]?.boundingBox?.top ?? 0),
+            width: Number(d.box?.width ?? detections[index]?.boundingBox?.width ?? 0),
+            height: Number(d.box?.height ?? detections[index]?.boundingBox?.height ?? 0),
+          },
+          polygonPoints: Array.isArray(d.polygon_points)
+            ? d.polygon_points
+            : Array.isArray(d.polygonPoints)
+              ? d.polygonPoints
+              : [],
+          maskRle: d.mask_rle || d.maskRle || null,
+          maskBase64: d.mask_base64 || d.maskBase64 || "",
+        }))
+      : [];
+
+    return res.json({
+      ok: true,
+      imageWidth: Number(fastApiResponse.image_width || fastApiResponse.imageWidth || 0),
+      imageHeight: Number(fastApiResponse.image_height || fastApiResponse.imageHeight || 0),
+      detections,
+      objects,
+    });
+  } catch (e) {
+    console.error(e);
+    return sendHttpError(res, e, "Failed to run combined public YOLO+SAM inference");
+  }
+});
+
+app.post("/api/public/events/theme-design/swap-colors", async (req, res) => {
+  try {
+    const { imageBase64, masks, edits, currentTintColorHex } = req.body || {};
+    const cleanedImageBase64 = sanitizeBase64Image(imageBase64);
+    if (!Array.isArray(masks) || masks.length === 0) {
+      throw toHttpError("masks is required", 400, "invalid_masks");
     }
-  },
-);
+    if (!Array.isArray(edits) || edits.length === 0) {
+      throw toHttpError("edits is required", 400, "invalid_edits");
+    }
+
+    const normalizedEdits = edits
+      .filter((e) => e && typeof e === "object")
+      .map((e) => ({
+        object_id: String(e.objectId || e.object_id || ""),
+        target_hex: ensureHexColor(e.targetHex || e.target_hex || currentTintColorHex),
+        intensity: Number(e.intensity ?? 1),
+      }))
+      .filter((e) => e.object_id);
+    if (!normalizedEdits.length) {
+      throw toHttpError("No valid edits provided", 400, "invalid_edits");
+    }
+
+    const normalizedMasks = masks
+      .filter((m) => m && typeof m === "object")
+      .map((m) => ({
+        object_id: String(m.objectId || m.object_id || ""),
+        polygon_points: Array.isArray(m.polygonPoints)
+          ? m.polygonPoints
+          : Array.isArray(m.polygon_points)
+            ? m.polygon_points
+            : undefined,
+        mask_rle: m.maskRle || m.mask_rle || undefined,
+        mask_base64: m.maskBase64 || m.mask_base64 || undefined,
+      }))
+      .filter((m) => m.object_id);
+    if (!normalizedMasks.length) {
+      throw toHttpError("No valid masks provided", 400, "invalid_masks");
+    }
+
+    const fastApiResponse = await callFastApi({
+      req,
+      routePath: "/v1/edit/recolor",
+      timeoutMs: AI_SERVICE_TIMEOUT_RECOLOR_MS,
+      payload: {
+        image_base64: cleanedImageBase64,
+        masks: normalizedMasks,
+        edits: normalizedEdits,
+      },
+    });
+
+    const applied = Array.isArray(fastApiResponse.applied)
+      ? fastApiResponse.applied.map((row) => ({
+          objectId: String(row.object_id || row.objectId || ""),
+          targetHex: ensureHexColor(row.target_hex || row.targetHex || currentTintColorHex),
+        }))
+      : [];
+    const skipped = Array.isArray(fastApiResponse.skipped)
+      ? fastApiResponse.skipped.map((row) => ({
+          objectId: String(row.object_id || row.objectId || ""),
+          reason: String(row.reason || "Skipped by AI service"),
+        }))
+      : [];
+
+    return res.json({
+      ok: true,
+      imageBase64: String(fastApiResponse.image_base64 || fastApiResponse.imageBase64 || ""),
+      applied,
+      skipped,
+    });
+  } catch (e) {
+    console.error(e);
+    return sendHttpError(res, e, "Failed to process public theme color");
+  }
+});
 
 app.get(
   "/api/manager/events/orders",

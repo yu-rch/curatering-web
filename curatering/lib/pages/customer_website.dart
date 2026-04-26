@@ -85,6 +85,23 @@ bool isTablet(BuildContext context) =>
 bool isDesktop(BuildContext context) =>
     MediaQuery.of(context).size.width >= 1100;
 
+double websiteContentMaxWidth(BuildContext context) {
+  final width = MediaQuery.of(context).size.width;
+  if (width >= 1800) return 1680;
+  if (width >= 1400) return 1440;
+  if (width >= 1100) return 1280;
+  return double.infinity;
+}
+
+EdgeInsets websitePagePadding(BuildContext context, {double vertical = 24}) {
+  final horizontal = isDesktop(context)
+      ? 40.0
+      : isTablet(context)
+      ? 24.0
+      : 16.0;
+  return EdgeInsets.symmetric(horizontal: horizontal, vertical: vertical);
+}
+
 class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _navIndex = 0;
@@ -641,9 +658,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 padding: const EdgeInsets.all(24),
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: isDesktop(context) ? 1100 : double.infinity,
-                    ),
+                    constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
                     child: Column(
                       children: [
                         Text(
@@ -1081,12 +1096,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       listenable: w,
       builder: (context, _) {
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: websitePagePadding(context),
           child: Center(
             child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: isDesktop(context) ? 1100 : double.infinity,
-              ),
+              constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
               child: Column(
                 children: [
                   Text(
@@ -1257,12 +1270,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         allDishes.where((d) => d.category == 'catering').toList();
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: websitePagePadding(context),
       child: Center(
         child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: isDesktop(context) ? 1100 : double.infinity,
-          ),
+          constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
           child: Column(
             children: [
               Text(
@@ -1403,7 +1414,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         Expanded(
           flex: 3,
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: websitePagePadding(context, vertical: 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -2536,12 +2547,10 @@ class _ContactSectionState extends State<_ContactSection> {
       listenable: widget.store,
       builder: (context, _) {
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(32),
+          padding: websitePagePadding(context, vertical: 32),
           child: Center(
             child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: isDesktop(context) ? 1100 : double.infinity,
-              ),
+              constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
               child: Column(
                 children: [
                   Text(
@@ -2912,6 +2921,7 @@ class _InquireFormState extends State<_InquireForm> {
   int? _focusedPhotoIndex;
   final _themeRequestCtrl =
       TextEditingController(); // For Macrina's theme request
+  bool _isGeneratingAiDesign = false;
 
   @override
   void initState() {
@@ -3412,13 +3422,15 @@ class _InquireFormState extends State<_InquireForm> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.symmetric(
+        horizontal: isDesktop(context) ? 40 : 16,
+        vertical: isDesktop(context) ? 24 : 16,
+      ),
       child: Center(
         child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: isDesktop(context) ? 1200 : double.infinity,
-          ),
+          constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -3458,12 +3470,12 @@ class _InquireFormState extends State<_InquireForm> {
                   ? Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: _buildEventInfoColumn()),
+                      Expanded(flex: 5, child: _buildEventInfoColumn()),
                       const SizedBox(width: 16),
-                      Expanded(child: _buildMenuColumn()),
+                      Expanded(flex: 5, child: _buildMenuColumn()),
                       const SizedBox(width: 16),
                       if (_serviceType == 'catering+event')
-                        Expanded(child: _buildEventDesignColumn()),
+                        Expanded(flex: 4, child: _buildEventDesignColumn()),
                     ],
                   )
                   : Column(
@@ -3481,7 +3493,7 @@ class _InquireFormState extends State<_InquireForm> {
               // Submit Button
               Center(
                 child: SizedBox(
-                  width: 300,
+                  width: screenWidth < 600 ? double.infinity : 360,
                   child: ElevatedButton(
                     onPressed: _submitting ? null : _showOrderSummaryDialog,
                     style: ElevatedButton.styleFrom(
@@ -4300,7 +4312,7 @@ class _InquireFormState extends State<_InquireForm> {
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              child: const Text('CREATE MY EVENT DESIGN'),
+              child: const Text('I WANT TO CREATE MY OWN DESIGN'),
             ),
             const SizedBox(height: 12),
             ElevatedButton(
@@ -4427,246 +4439,352 @@ class _InquireFormState extends State<_InquireForm> {
     );
   }
 
+  bool _looksLikeBase64Image(String value) {
+    final t = value.trim();
+    return t.startsWith('data:image/') || (!t.startsWith('http://') && !t.startsWith('https://') && t.length > 200);
+  }
+
+  Widget _designImagePreview(String value, {BoxFit fit = BoxFit.cover}) {
+    final trimmed = value.trim();
+    if (_looksLikeBase64Image(trimmed)) {
+      try {
+        final payload = trimmed.startsWith('data:image/')
+            ? trimmed.substring(trimmed.indexOf(',') + 1)
+            : trimmed;
+        return Image.memory(
+          base64Decode(payload),
+          fit: fit,
+          errorBuilder: (ctx, err, stack) => const Center(
+            child: Icon(Icons.broken_image, color: Colors.grey),
+          ),
+        );
+      } catch (_) {
+        return const Center(child: Icon(Icons.broken_image, color: Colors.grey));
+      }
+    }
+    return Image.network(
+      trimmed,
+      fit: fit,
+      errorBuilder: (ctx, err, stack) => const Center(
+        child: Icon(Icons.broken_image, color: Colors.grey),
+      ),
+    );
+  }
+
+  Future<String?> _askTargetColorHex() async {
+    final ctrl = TextEditingController(text: '#F4511E');
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Target Theme Color'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(
+            labelText: 'Hex Color',
+            hintText: '#RRGGBB',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (selected == null || selected.isEmpty) return null;
+    final hex = selected.startsWith('#') ? selected : '#$selected';
+    if (!RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(hex)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invalid hex color. Use format #RRGGBB')),
+        );
+      }
+      return null;
+    }
+    return hex;
+  }
+
+  Future<void> _generateAiThemeDesign(void Function(void Function()) setDialogState) async {
+    if (_isGeneratingAiDesign) return;
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+
+    final targetHex = await _askTargetColorHex();
+    if (targetHex == null) return;
+
+    final bytes = await picked.readAsBytes();
+    final imageBase64 = base64Encode(bytes);
+
+    setState(() => _isGeneratingAiDesign = true);
+    try {
+      final segmented = await PublicEventsApi.instance.inferThemeObjectsWithSam(
+        imageBase64: imageBase64,
+        maxDetections: 6,
+        maskFormat: 'polygon',
+      );
+      final objects = (segmented['objects'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      if (objects.isEmpty) {
+        throw Exception('No segmentable objects found');
+      }
+
+      final masks = objects.map((obj) {
+        final polygon = (obj['polygonPoints'] as List<dynamic>? ?? const [])
+            .whereType<Map>()
+            .map((p) => Map<String, dynamic>.from(p))
+            .toList();
+        return {
+          'objectId': (obj['id'] ?? '').toString(),
+          if (polygon.isNotEmpty) 'polygonPoints': polygon,
+          if ((obj['maskBase64'] ?? '').toString().isNotEmpty) 'maskBase64': obj['maskBase64'],
+        };
+      }).toList();
+      final edits = objects
+          .map((obj) => {'objectId': (obj['id'] ?? '').toString(), 'targetHex': targetHex, 'intensity': 0.75})
+          .toList();
+
+      final recolor = await PublicEventsApi.instance.swapThemeObjectColors(
+        imageBase64: imageBase64,
+        masks: masks,
+        edits: edits,
+      );
+      final recoloredBase64 = (recolor['imageBase64'] ?? '').toString().trim();
+      if (recoloredBase64.isEmpty) {
+        throw Exception('AI recolor did not return an image');
+      }
+
+      setDialogState(() {
+        _designPhotoUrls.add(recoloredBase64);
+        _focusedPhotoIndex = _designPhotoUrls.length - 1;
+      });
+      setState(() {});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('AI theme design generated successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to generate AI design: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isGeneratingAiDesign = false);
+    }
+  }
+
   void _showCustomDesignDialog() {
     showDialog(
       context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder:
-                (context, setDialogState) => AlertDialog(
-                  title: const Text('Create Your Event Design'),
-                  content: SizedBox(
-                    width: 500,
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Upload or link inspiration photos for your event design:',
-                            style: TextStyle(fontSize: 13),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Create Your Event Design'),
+          content: SizedBox(
+            width: 500,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isGeneratingAiDesign
+                          ? null
+                          : () => _generateAiThemeDesign(setDialogState),
+                      icon: _isGeneratingAiDesign
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.auto_awesome),
+                      label: Text(
+                        _isGeneratingAiDesign ? 'Generating AI Design...' : 'Generate AI Theme Design',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Upload or link inspiration photos for your event design:',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _designPhotoCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Photo URL',
+                            hintText: 'Paste image link here...',
+                            border: OutlineInputBorder(),
                           ),
-                          const SizedBox(height: 16),
-                          // Photo URL input
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _designPhotoCtrl,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Photo URL',
-                                    hintText: 'Paste image link here...',
-                                    border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          if (_designPhotoCtrl.text.trim().isEmpty) return;
+                          setDialogState(() {
+                            _designPhotoUrls.add(_designPhotoCtrl.text.trim());
+                            _designPhotoCtrl.clear();
+                          });
+                          setState(() {});
+                        },
+                        child: const Text('Add'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    '${_designPhotoUrls.length} photo(s) added',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_designPhotoUrls.isNotEmpty) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: _designPhotoUrls.asMap().entries.map((entry) {
+                          final idx = entry.key;
+                          final url = entry.value;
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Row(
+                              children: [
+                                Text(
+                                  '${idx + 1}. ',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              ElevatedButton(
-                                onPressed: () {
-                                  if (_designPhotoCtrl.text.trim().isNotEmpty) {
-                                    setDialogState(() {
-                                      _designPhotoUrls.add(
-                                        _designPhotoCtrl.text.trim(),
-                                      );
-                                      _designPhotoCtrl.clear();
-                                    });
-                                    setState(() {});
-                                  }
-                                },
-                                child: const Text('Add'),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          // Photo count
-                          Text(
-                            '${_designPhotoUrls.length} photo(s) added',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 8),
-                          // List of added URLs (for verification)
-                          if (_designPhotoUrls.isNotEmpty) ...[
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.grey.shade300),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: _designPhotoUrls.asMap().entries.map((entry) {
-                                  final idx = entry.key;
-                                  final url = entry.value;
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 2),
-                                    child: Row(
-                                      children: [
-                                        Text(
-                                          '${idx + 1}. ',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.grey.shade600,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            url.length > 50 ? '${url.substring(0, 50)}...' : url,
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.grey.shade700,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
-                              ),
+                                Expanded(
+                                  child: Text(
+                                    url.length > 50 ? '${url.substring(0, 50)}...' : url,
+                                    style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 16),
-                          ],
-                          // Focused photo display (larger)
-                          if (_designPhotoUrls.isNotEmpty) ...[
-                            Container(
-                              height: 200,
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      height: 200,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: _designImagePreview(
+                          _focusedPhotoIndex != null && _focusedPhotoIndex! < _designPhotoUrls.length
+                              ? _designPhotoUrls[_focusedPhotoIndex!]
+                              : _designPhotoUrls.first,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 80,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _designPhotoUrls.length,
+                        itemBuilder: (ctx, index) {
+                          final isFocused =
+                              _focusedPhotoIndex == index || (_focusedPhotoIndex == null && index == 0);
+                          return GestureDetector(
+                            onTap: () {
+                              setDialogState(() {
+                                _focusedPhotoIndex = index;
+                              });
+                            },
+                            child: Container(
+                              width: 80,
+                              margin: const EdgeInsets.only(right: 8),
                               decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey.shade300),
+                                border: Border.all(
+                                  color: isFocused ? const Color(0xFFFFC024) : Colors.grey.shade300,
+                                  width: isFocused ? 3 : 1,
+                                ),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: Image.network(
-                                  _focusedPhotoIndex != null &&
-                                          _focusedPhotoIndex! <
-                                              _designPhotoUrls.length
-                                      ? _designPhotoUrls[_focusedPhotoIndex!]
-                                      : _designPhotoUrls.first,
-                                  fit: BoxFit.contain,
-                                  errorBuilder:
-                                      (ctx, err, stack) => const Center(
-                                        child: Icon(
-                                          Icons.broken_image,
-                                          size: 48,
-                                          color: Colors.grey,
-                                        ),
-                                      ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            // Photo carousel (smaller thumbnails)
-                            SizedBox(
-                              height: 80,
-                              child: ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _designPhotoUrls.length,
-                                itemBuilder: (ctx, index) {
-                                  final isFocused =
-                                      _focusedPhotoIndex == index ||
-                                      (_focusedPhotoIndex == null &&
-                                          index == 0);
-                                  return GestureDetector(
-                                    onTap: () {
-                                      setDialogState(() {
-                                        _focusedPhotoIndex = index;
-                                      });
-                                    },
-                                    child: Container(
-                                      width: 80,
-                                      margin: const EdgeInsets.only(right: 8),
-                                      decoration: BoxDecoration(
-                                        border: Border.all(
-                                          color:
-                                              isFocused
-                                                  ? const Color(0xFFFFC024)
-                                                  : Colors.grey.shade300,
-                                          width: isFocused ? 3 : 1,
-                                        ),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Stack(
-                                          fit: StackFit.expand,
-                                          children: [
-                                            Image.network(
-                                              _designPhotoUrls[index],
-                                              fit: BoxFit.cover,
-                                              errorBuilder:
-                                                  (ctx, err, stack) =>
-                                                      const Center(
-                                                        child: Icon(
-                                                          Icons.broken_image,
-                                                          color: Colors.grey,
-                                                        ),
-                                                      ),
-                                            ),
-                                            // Delete button
-                                            Positioned(
-                                              top: 2,
-                                              right: 2,
-                                              child: GestureDetector(
-                                                onTap: () {
-                                                  setDialogState(() {
-                                                    _designPhotoUrls.removeAt(
-                                                      index,
-                                                    );
-                                                    if (_focusedPhotoIndex !=
-                                                            null &&
-                                                        _focusedPhotoIndex! >=
-                                                            index) {
-                                                      _focusedPhotoIndex =
-                                                          _focusedPhotoIndex! >
-                                                                  0
-                                                              ? _focusedPhotoIndex! -
-                                                                  1
-                                                              : null;
-                                                    }
-                                                  });
-                                                  setState(() {});
-                                                },
-                                                child: Container(
-                                                  padding: const EdgeInsets.all(
-                                                    2,
-                                                  ),
-                                                  decoration:
-                                                      const BoxDecoration(
-                                                        color: Colors.red,
-                                                        shape: BoxShape.circle,
-                                                      ),
-                                                  child: const Icon(
-                                                    Icons.close,
-                                                    size: 14,
-                                                    color: Colors.white,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    _designImagePreview(_designPhotoUrls[index], fit: BoxFit.cover),
+                                    Positioned(
+                                      top: 2,
+                                      right: 2,
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          setDialogState(() {
+                                            _designPhotoUrls.removeAt(index);
+                                            if (_focusedPhotoIndex != null && _focusedPhotoIndex! >= index) {
+                                              _focusedPhotoIndex =
+                                                  _focusedPhotoIndex! > 0 ? _focusedPhotoIndex! - 1 : null;
+                                            }
+                                          });
+                                          setState(() {});
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.all(2),
+                                          decoration: const BoxDecoration(
+                                            color: Colors.red,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(
+                                            Icons.close,
+                                            size: 14,
+                                            color: Colors.white,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  );
-                                },
+                                  ],
+                                ),
                               ),
                             ),
-                          ],
-                        ],
+                          );
+                        },
                       ),
                     ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Done'),
-                    ),
                   ],
-                ),
+                ],
+              ),
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
