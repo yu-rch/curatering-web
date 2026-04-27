@@ -1,4 +1,9 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
 import 'api_client.dart';
+import '../config.dart';
 
 /// Unauthenticated public endpoints (no login required).
 class PublicEventsApi {
@@ -7,7 +12,19 @@ class PublicEventsApi {
   static const Duration _aiTimeout = Duration(seconds: 45);
 
   Future<void> submitOnlineInquiry({required Map<String, dynamic> payload}) async {
-    await ApiClient.instance.postJson('/api/online-inquiries', body: payload);
+    // Public inquiry submit should not include Authorization header from any
+    // active staff/customer session; keep this endpoint anonymous.
+    final res = await http.post(
+      Uri.parse('$apiBaseUrl/api/online-inquiries'),
+      headers: const <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(payload),
+    );
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw ApiError(
+        message: 'Failed to submit online inquiry',
+        statusCode: res.statusCode,
+      );
+    }
   }
 
   Future<Map<String, dynamic>> inferThemeObjectsWithSam({

@@ -27,12 +27,22 @@ class EventThemeDesignDto {
   final bool tintEnabled;
   final String? tintColorHex; // #RRGGBB
   final String? colorPrompt;
+  final bool wantsCustomDesign;
+  final String? customerThemeRequest;
+  final double? dishCost;
+  final double? laborCost;
+  final double? travelCost;
 
   const EventThemeDesignDto({
     required this.picksBase64,
     required this.tintEnabled,
     this.tintColorHex,
     this.colorPrompt,
+    this.wantsCustomDesign = false,
+    this.customerThemeRequest,
+    this.dishCost,
+    this.laborCost,
+    this.travelCost,
   });
 }
 

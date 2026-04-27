@@ -263,7 +263,7 @@ async function sendOtpEmail(email, otp) {
     from: process.env.TRANSPORTER_EMAIL,
     to: email,
     subject: "Verify your Curatering account.",
-    text: `Welcome to Curatering! \n If you did not request this email, please ignore this message. \n Your OTP is ${otp}. \n This OTP will expire in 10 minutes`,
+    text: `Welcome to Curatering! \n\n If you did not request this email, please ignore this message. \n\n Your OTP is ${otp}. \n This OTP will expire in 10 minutes`,
   });
 }
 
@@ -1753,25 +1753,33 @@ app.post(
       const customerEmail = emailAddress || existing.emailAddress;
       const customerDisplayName = customerName || existing.customerName || "Customer";
       if (normalizedAction === "post_changes") {
-        await sendCustomerNotificationEmail({
-          to: customerEmail,
-          subject: "Curatering: Your inquiry has a cost estimation update",
-          text:
-            `Hello ${customerDisplayName},\n\n` +
-            `Your catering inquiry (${orderId}) has been updated with a revised cost estimation.\n` +
-            `Estimated total: PHP ${Number(totalCost || 0).toFixed(2)}.\n\n` +
-            `Please review your inquiry details in Curatering.\n\n` +
-            `- Curatering Team`,
-        });
+        try {
+          await sendCustomerNotificationEmail({
+            to: customerEmail,
+            subject: "Curatering: Your inquiry has a cost estimation update",
+            text:
+              `Hello ${customerDisplayName},\n\n` +
+              `Your catering inquiry (${orderId}) has been updated with a revised cost estimation.\n` +
+              `Estimated total: PHP ${Number(totalCost || 0).toFixed(2)}.\n\n` +
+              `Please review your inquiry details in Curatering.\n\n` +
+              `- Curatering Team`,
+          });
+        } catch (mailError) {
+          console.error('Finalize email failed (post_changes, non-fatal):', mailError);
+        }
       } else if (normalizedAction === "confirm_inquiry") {
-        await sendCustomerNotificationEmail({
-          to: customerEmail,
-          subject: "Curatering: Your inquiry is now for processing",
-          text:
-            `Hello ${customerDisplayName},\n\n` +
-            `Your inquiry (${orderId}) has been confirmed and is now being processed.\n\n` +
-            `- Curatering Team`,
-        });
+        try {
+          await sendCustomerNotificationEmail({
+            to: customerEmail,
+            subject: "Curatering: Your inquiry is now for processing",
+            text:
+              `Hello ${customerDisplayName},\n\n` +
+              `Your inquiry (${orderId}) has been confirmed and is now being processed.\n\n` +
+              `- Curatering Team`,
+          });
+        } catch (mailError) {
+          console.error('Finalize email failed (confirm_inquiry, non-fatal):', mailError);
+        }
       }
 
       return res.json({ ok: true, id: result.rows[0].id });
@@ -3567,6 +3575,8 @@ initDb()
             event_type as "eventType", 
             status, 
             guest_count as "guestCount",
+            schedule_slots as "scheduleSlots",
+            menu,
             total_cost as "totalCost",
             theme_design as "themeDesign",
             created_at as "createdAt",
@@ -3581,6 +3591,8 @@ initDb()
             'catering' as "eventType",
             status,
             guest_count as "guestCount",
+            schedule_slots as "scheduleSlots",
+            menu,
             total_cost as "totalCost",
             theme_design as "themeDesign",
             created_at as "createdAt",
@@ -3649,19 +3661,23 @@ initDb()
           });
         }
 
-        await sendCustomerNotificationEmail({
-          to: customerEmail,
-          subject: normalizedAction === 'confirm_inquiry'
-            ? 'Curatering: Inquiry confirmed'
-            : 'Curatering: Inquiry cancelled',
-          text:
-            `Hello ${customerName},\n\n` +
-            (normalizedAction === 'confirm_inquiry'
-              ? 'You confirmed your catering inquiry. It is now moved to for processing.\n'
-              : 'You cancelled your catering inquiry.\n') +
-            `Order ID: ${updatedOrder.id}\n\n` +
-            `- Curatering Team`,
-        });
+        try {
+          await sendCustomerNotificationEmail({
+            to: customerEmail,
+            subject: normalizedAction === 'confirm_inquiry'
+              ? 'Curatering: Inquiry confirmed'
+              : 'Curatering: Inquiry cancelled',
+            text:
+              `Hello ${customerName},\n\n` +
+              (normalizedAction === 'confirm_inquiry'
+                ? 'You confirmed your catering inquiry. It is now moved to for processing.\n'
+                : 'You cancelled your catering inquiry.\n') +
+              `Order ID: ${updatedOrder.id}\n\n` +
+              `- Curatering Team`,
+          });
+        } catch (mailError) {
+          console.error('Inquiry response email failed (non-fatal):', mailError);
+        }
 
         return res.json({
           success: true,

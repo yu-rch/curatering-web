@@ -270,13 +270,55 @@ class EventsApi {
     return parsed?.toDouble() ?? fallback;
   }
 
+  double? _toNullableDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    final parsed = num.tryParse(value.toString().trim());
+    return parsed?.toDouble();
+  }
+
+  bool _toBool(dynamic value, {bool fallback = false}) {
+    if (value == null) return fallback;
+    if (value is bool) return value;
+    final raw = value.toString().trim().toLowerCase();
+    if (raw == 'true' || raw == '1' || raw == 'yes') return true;
+    if (raw == 'false' || raw == '0' || raw == 'no') return false;
+    return fallback;
+  }
+
+  Map<String, dynamic> _toMap(dynamic value) {
+    if (value is Map) return Map<String, dynamic>.from(value);
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return const <String, dynamic>{};
+      try {
+        final parsed = jsonDecode(trimmed);
+        if (parsed is Map) return Map<String, dynamic>.from(parsed);
+      } catch (_) {}
+    }
+    return const <String, dynamic>{};
+  }
+
+  List<dynamic> _toList(dynamic value) {
+    if (value is List) return value;
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return const <dynamic>[];
+      try {
+        final parsed = jsonDecode(trimmed);
+        if (parsed is List) return parsed;
+      } catch (_) {}
+    }
+    return const <dynamic>[];
+  }
+
   EventOrderDto _orderFromJson(dynamic raw) {
-    final map = Map<String, dynamic>.from(raw as Map);
+    final map = _toMap(raw);
     final scheduleRaw = map['scheduleSlots'] ?? map['schedule_slots'];
     final scheduleSlots = <EventScheduleSlotDto>[];
-    if (scheduleRaw is List) {
-      for (final s in scheduleRaw) {
-        final sm = Map<String, dynamic>.from(s as Map);
+    for (final s in _toList(scheduleRaw)) {
+      final sm = _toMap(s);
+      if (sm.isEmpty) continue;
         scheduleSlots.add(
           EventScheduleSlotDto(
             date: (sm['date'] ?? '').toString(),
@@ -284,30 +326,13 @@ class EventsApi {
             endTime: (sm['endTime'] ?? sm['end_time'] ?? '').toString(),
           ),
         );
-      }
-    } else if (scheduleRaw is String && scheduleRaw.isNotEmpty) {
-      try {
-        final parsed = jsonDecode(scheduleRaw);
-        if (parsed is List) {
-          for (final s in parsed) {
-            final sm = Map<String, dynamic>.from(s as Map);
-            scheduleSlots.add(
-              EventScheduleSlotDto(
-                date: (sm['date'] ?? '').toString(),
-                startTime: (sm['startTime'] ?? sm['start_time'] ?? '').toString(),
-                endTime: (sm['endTime'] ?? sm['end_time'] ?? '').toString(),
-              ),
-            );
-          }
-        }
-      } catch (_) {}
     }
 
     final menuRaw = map['menu'];
     final menu = <EventMenuItemDto>[];
-    if (menuRaw is List) {
-      for (final m in menuRaw) {
-        final mm = Map<String, dynamic>.from(m as Map);
+    for (final m in _toList(menuRaw)) {
+      final mm = _toMap(m);
+      if (mm.isEmpty) continue;
         menu.add(
           EventMenuItemDto(
             dishName: (mm['dishName'] ?? mm['dish_name'] ?? '').toString(),
@@ -315,50 +340,33 @@ class EventsApi {
             price: mm['price']?.toString() ?? '0',
           ),
         );
-      }
-    } else if (menuRaw is String && menuRaw.isNotEmpty) {
-      try {
-        final parsed = jsonDecode(menuRaw);
-        if (parsed is List) {
-          for (final m in parsed) {
-            final mm = Map<String, dynamic>.from(m as Map);
-            menu.add(
-              EventMenuItemDto(
-                dishName: (mm['dishName'] ?? mm['dish_name'] ?? '').toString(),
-                paxOption: (mm['paxOption'] ?? mm['pax_option'] ?? '').toString(),
-                price: mm['price']?.toString() ?? '0',
-              ),
-            );
-          }
-        }
-      } catch (_) {}
     }
 
-    Map<String, dynamic> themeRaw = <String, dynamic>{};
     final rawTheme = map['themeDesign'] ?? map['theme_design'];
-    if (rawTheme is Map) {
-      themeRaw = Map<String, dynamic>.from(rawTheme);
-    } else if (rawTheme is String && rawTheme.isNotEmpty) {
-      try {
-        final parsed = jsonDecode(rawTheme);
-        if (parsed is Map) {
-          themeRaw = Map<String, dynamic>.from(parsed);
-        }
-      } catch (_) {}
-    }
+    final themeRaw = _toMap(rawTheme);
+    final costBreakdown = _toMap(themeRaw['costBreakdown'] ?? themeRaw['cost_breakdown']);
     final themeDesign = EventThemeDesignDto(
-      picksBase64: (themeRaw['picksBase64'] as List<dynamic>? ?? const <dynamic>[])
+      picksBase64: _toList(themeRaw['picksBase64'])
           .map((e) => e.toString())
           .toList(),
-      tintEnabled: themeRaw['tintEnabled'] as bool? ?? false,
+      tintEnabled: _toBool(themeRaw['tintEnabled']),
       tintColorHex: themeRaw['tintColorHex'] as String?,
       colorPrompt: themeRaw['colorPrompt'] as String?,
+      wantsCustomDesign: _toBool(
+        themeRaw['wantsCustomDesign'] ?? themeRaw['wants_custom_design'],
+      ),
+      customerThemeRequest:
+          (themeRaw['customerThemeRequest'] ?? themeRaw['customer_theme_request'])
+              ?.toString(),
+      dishCost: _toNullableDouble(costBreakdown['dishCost'] ?? costBreakdown['dish_cost']),
+      laborCost: _toNullableDouble(costBreakdown['laborCost'] ?? costBreakdown['labor_cost']),
+      travelCost: _toNullableDouble(costBreakdown['travelCost'] ?? costBreakdown['travel_cost']),
     );
 
     PostAnalysisDto? postAnalysis;
     final paRaw = map['postAnalysis'] ?? map['post_analysis'];
-    if (paRaw != null && paRaw is Map) {
-      final pm = Map<String, dynamic>.from(paRaw);
+    final pm = _toMap(paRaw);
+    if (pm.isNotEmpty) {
       postAnalysis = PostAnalysisDto(
         businessCardsGivenAway: _toInt(
           pm['businessCardsGivenAway'] ?? pm['business_cards_given_away'],
@@ -372,9 +380,9 @@ class EventsApi {
 
     final checklistRaw = map['checklist'];
     final checklist = <ChecklistItemDto>[];
-    if (checklistRaw is List) {
-      for (final c in checklistRaw) {
-        final cc = c as Map<String, dynamic>;
+    for (final c in _toList(checklistRaw)) {
+      final cc = _toMap(c);
+      if (cc.isEmpty) continue;
         checklist.add(
           ChecklistItemDto(
             id: cc['id'] as String? ?? '',
@@ -385,12 +393,12 @@ class EventsApi {
             assignedTo: cc['assignedTo'] as String? ?? '',
           ),
         );
-      }
     }
 
     final actualEventImages = <String>[];
-    if (map['actualEventImages'] is List) {
-      actualEventImages.addAll((map['actualEventImages'] as List).map((e) => e as String));
+    for (final img in _toList(map['actualEventImages'])) {
+      final value = img.toString().trim();
+      if (value.isNotEmpty) actualEventImages.add(value);
     }
 
     return EventOrderDto(

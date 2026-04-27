@@ -587,6 +587,10 @@ class _ManageEventsState extends State<ManageEvents>
     }
   }
 
+  Future<void> _refreshOrdersFromButton() async {
+    await _refreshOrders();
+  }
+
   String _hhmmFromTimeOfDay(TimeOfDay t) {
     final h = t.hour.toString().padLeft(2, '0');
     final m = t.minute.toString().padLeft(2, '0');
@@ -801,8 +805,12 @@ class _ManageEventsState extends State<ManageEvents>
     final costController = TextEditingController(
       text: order.totalCost > 0 ? order.totalCost.toString() : '',
     );
-    final laborCostController = TextEditingController(text: '0');
-    final travelCostController = TextEditingController(text: '0');
+    final laborCostController = TextEditingController(
+      text: (order.themeDesign.laborCost ?? 0).toStringAsFixed(2),
+    );
+    final travelCostController = TextEditingController(
+      text: (order.themeDesign.travelCost ?? 0).toStringAsFixed(2),
+    );
 
     // Pre-populate menu selections once (do not reset on rebuild)
     if (order.menu.isNotEmpty && MenuStore.instance.allDishes.isNotEmpty) {
@@ -822,7 +830,16 @@ class _ManageEventsState extends State<ManageEvents>
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: const Text('Finalize Online Inquiry'),
+              title: Row(
+                children: [
+                  const Expanded(child: Text('Finalize Online Inquiry')),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
               content: SizedBox(
                 width: 1100,
                 height: 700,
@@ -1649,6 +1666,23 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Widget _buildOnlineInquiryEventDesign(EventOrderDto order) {
+    Uint8List? decodePick(String raw) {
+      try {
+        return base64Decode(raw);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final previewImages = order.themeDesign.picksBase64
+        .map(decodePick)
+        .whereType<Uint8List>()
+        .toList();
+    final customerNote = (order.themeDesign.customerThemeRequest ??
+            order.themeDesign.colorPrompt ??
+            '')
+        .trim();
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1656,56 +1690,106 @@ class _ManageEventsState extends State<ManageEvents>
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
             'EVENT DESIGN',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
           ),
-          const SizedBox(height: 16),
-          const Text(
-            'WE CAN SUGGEST SOME DESIGNS FOR\nINSPIRATION FOR YOU TO PUT TOGETHER!\n\nJUST LET US KNOW HOW YOU\'D LIKE YOUR\nEVENT TO LOOK!',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () {
-              // Open event design dialog
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
-              side: const BorderSide(color: Color(0xFF4CAF50), width: 2),
-              elevation: 0,
-              minimumSize: const Size(double.infinity, 48),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF3D0),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              '${previewImages.length} custom design photo(s)',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: Color(0xFF7A4E00),
               ),
             ),
-            child: const Text('CREATE MY EVENT DESIGN'),
           ),
           const SizedBox(height: 12),
-          ElevatedButton(
-            onPressed: () {
-              // Let Macrinas create design
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
-              side: BorderSide(color: Colors.red.shade300, width: 2),
-              elevation: 0,
-              minimumSize: const Size(double.infinity, 48),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+          if (previewImages.isEmpty)
+            Text(
+              order.themeDesign.wantsCustomDesign
+                  ? 'Customer asked Macrinas to create the event design.'
+                  : 'No custom design photos submitted.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+          if (previewImages.isNotEmpty)
+            SizedBox(
+              height: 110,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: previewImages.length,
+                itemBuilder: (context, index) {
+                  return GestureDetector(
+                    onTap: () {
+                      showDialog<void>(
+                        context: context,
+                        builder: (dialogContext) {
+                          return Dialog(
+                            insetPadding: const EdgeInsets.all(24),
+                            child: Stack(
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: InteractiveViewer(
+                                    minScale: 0.5,
+                                    maxScale: 4.0,
+                                    child: Image.memory(
+                                      previewImages[index],
+                                      fit: BoxFit.contain,
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 6,
+                                  right: 6,
+                                  child: IconButton(
+                                    tooltip: 'Close preview',
+                                    onPressed: () =>
+                                        Navigator.of(dialogContext).pop(),
+                                    icon: const Icon(Icons.close),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      );
+                    },
+                    child: Container(
+                      width: 110,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(previewImages[index], fit: BoxFit.cover),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
-            child: const Text(
-              'NO I\'D LIKE MACRINAS TO CREATE MY\nEVENT DESIGN INSTEAD',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11),
+          if (customerNote.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Customer design request',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
             ),
-          ),
+            const SizedBox(height: 6),
+            Text(customerNote, style: const TextStyle(fontSize: 12)),
+          ],
         ],
       ),
     );
@@ -1747,6 +1831,7 @@ class _ManageEventsState extends State<ManageEvents>
     String action,
   ) {
     List<Map<String, dynamic>> menuItems = [];
+    final schedulePayload = <Map<String, dynamic>>[];
 
     if (menuChoice == 'yes') {
       for (final dishId in selectedDishIds) {
@@ -1781,6 +1866,39 @@ class _ManageEventsState extends State<ManageEvents>
       }
     }
 
+    // Keep existing menu when posting estimate without changing menu selection.
+    if (menuItems.isEmpty && order.menu.isNotEmpty) {
+      menuItems = order.menu
+          .map(
+            (m) => <String, dynamic>{
+              'dishName': m.dishName,
+              'paxOption': m.paxOption,
+              'price': m.price,
+            },
+          )
+          .toList();
+    }
+
+    final dateValue = date.trim();
+    final timeValue = time.trim();
+    if (dateValue.isNotEmpty || timeValue.isNotEmpty) {
+      schedulePayload.add({
+        'date': dateValue,
+        'startTime': timeValue,
+        'endTime': '14:00',
+      });
+    } else if (order.scheduleSlots.isNotEmpty) {
+      schedulePayload.addAll(
+        order.scheduleSlots.map(
+          (slot) => <String, dynamic>{
+            'date': slot.date,
+            'startTime': slot.startTime,
+            'endTime': slot.endTime,
+          },
+        ),
+      );
+    }
+
     return {
       'eventTitle': order.eventTitle,
       'eventType': order.eventType,
@@ -1789,9 +1907,7 @@ class _ManageEventsState extends State<ManageEvents>
       'contactPerson': order.contactPerson,
       'contactNumber': order.contactNumber,
       'emailAddress': order.emailAddress,
-      'scheduleSlots': [
-        {'date': date, 'startTime': time, 'endTime': '14:00'},
-      ],
+      'scheduleSlots': schedulePayload,
       'address': address,
       'guestCount': order.guestCount,
       'serviceType': serviceType,
@@ -1801,6 +1917,8 @@ class _ManageEventsState extends State<ManageEvents>
         'tintEnabled': order.themeDesign.tintEnabled,
         'tintColorHex': order.themeDesign.tintColorHex,
         'colorPrompt': order.themeDesign.colorPrompt,
+        'wantsCustomDesign': order.themeDesign.wantsCustomDesign,
+        'customerThemeRequest': order.themeDesign.customerThemeRequest,
         'costBreakdown': {
           'dishCost': menuItems.fold<double>(
             0.0,
@@ -1896,13 +2014,43 @@ class _ManageEventsState extends State<ManageEvents>
         return double.tryParse(value.toString().trim()) ?? fallback;
       }
 
+      dynamic decodeIfJsonString(dynamic value) {
+        if (value is String) {
+          final trimmed = value.trim();
+          if (trimmed.isEmpty) return null;
+          if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+              (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+            try {
+              return jsonDecode(trimmed);
+            } catch (_) {
+              return value;
+            }
+          }
+        }
+        return value;
+      }
+
+      List<dynamic> asDynamicList(dynamic value) {
+        final decoded = decodeIfJsonString(value);
+        if (decoded is List) return decoded;
+        return const <dynamic>[];
+      }
+
+      Map<String, dynamic> asStringDynamicMap(dynamic value) {
+        final decoded = decodeIfJsonString(value);
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+        return const <String, dynamic>{};
+      }
+
       final response = await EventsApi.instance.inferThemeObjectsWithSam(
         imageBase64: base64Encode(imageBytes),
         maskFormat: 'polygon',
       );
-      final objectsRaw = (response['objects'] as List<dynamic>? ?? const [])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
+      final objectsRaw = asDynamicList(response['objects'])
+          .map((e) => asStringDynamicMap(e))
+          .where((e) => e.isNotEmpty)
           .toList();
       if (objectsRaw.isEmpty) {
         throw Exception('No objects detected to edit.');
@@ -1916,18 +2064,17 @@ class _ManageEventsState extends State<ManageEvents>
           ? toDouble(response['imageHeight'], 1.0)
           : toDouble(response['image_height'], 1.0);
       final segmentedObjects = objectsRaw.map((raw) {
-        final box = Map<String, dynamic>.from(
-          (raw['boundingBox'] as Map?) ??
-              (raw['box'] as Map?) ??
-              const <String, dynamic>{},
-        );
+        final box = asStringDynamicMap(raw['boundingBox']).isNotEmpty
+            ? asStringDynamicMap(raw['boundingBox'])
+            : asStringDynamicMap(raw['box']);
         final maskBase64 = (raw['maskBase64'] ?? raw['mask_base64'] ?? '').toString();
-        final rawPolygon =
-            (raw['polygonPoints'] as List<dynamic>? ?? raw['polygon_points'] as List<dynamic>? ?? const []);
+        final rawPolygon = asDynamicList(
+          raw['polygonPoints'] ?? raw['polygon_points'],
+        );
         final polygonPoints = rawPolygon
             .map((point) {
-              if (point is Map) {
-                final p = Map<String, dynamic>.from(point);
+              final p = asStringDynamicMap(point);
+              if (p.isNotEmpty) {
                 return Offset(
                   toDouble(p['x']),
                   toDouble(p['y']),
@@ -2539,9 +2686,25 @@ class _ManageEventsState extends State<ManageEvents>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Online Inquiries',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                const Text(
+                  'Online Inquiries',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Refresh online inquiries',
+                  onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
+                  icon: _ordersLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             TextField(
@@ -2801,7 +2964,23 @@ class _ManageEventsState extends State<ManageEvents>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildSectionTitle('ORDERS FOR PROCESSING'),
+                    Row(
+                      children: [
+                        _buildSectionTitle('ORDERS FOR PROCESSING'),
+                        const Spacer(),
+                        IconButton(
+                          tooltip: 'Refresh processing orders',
+                          onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
+                          icon: _ordersLoading
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.refresh),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 16),
                     TextField(
                       controller: _eventSearchController,
@@ -2881,7 +3060,23 @@ class _ManageEventsState extends State<ManageEvents>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildSectionTitle('ORDERS FOR PROCESSING'),
+                  Row(
+                    children: [
+                      _buildSectionTitle('ORDERS FOR PROCESSING'),
+                      const Spacer(),
+                      IconButton(
+                        tooltip: 'Refresh processing orders',
+                        onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
+                        icon: _ordersLoading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.refresh),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: _eventSearchController,
