@@ -132,6 +132,8 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     return status.replaceAll('_', ' ').toUpperCase();
   }
 
+  bool _isEditableInquiryStatus(String? status) => status == 'online_inquiries';
+
   Color _getStatusColor(String? status) {
     switch (status) {
       case 'online_inquiries':
@@ -228,9 +230,471 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     }
   }
 
+  Future<void> _editInquiry({
+    required String orderId,
+    required int guestCount,
+    required String address,
+    required List<Map<String, dynamic>> scheduleSlots,
+    required List<Map<String, dynamic>> menu,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('customer_token');
+    if (token == null || token.isEmpty) return;
+
+    final response = await http.patch(
+      Uri.parse('$_apiBaseUrl/api/customer/events/orders/$orderId/edit'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'guestCount': guestCount,
+        'address': address,
+        'scheduleSlots': scheduleSlots,
+        'menu': menu,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to edit inquiry (${response.statusCode})');
+    }
+  }
+
+  Map<String, String> _extractPrimarySlot(List<dynamic> slots) {
+    if (slots.isEmpty) {
+      return {
+        'date': '',
+        'startTime': '',
+        'endTime': '',
+      };
+    }
+    final first = slots.first;
+    if (first is! Map) {
+      return {
+        'date': '',
+        'startTime': '',
+        'endTime': '',
+      };
+    }
+    final s = Map<String, dynamic>.from(first);
+    return {
+      'date': (s['date'] ?? '').toString(),
+      'startTime': (s['startTime'] ?? s['start_time'] ?? '').toString(),
+      'endTime': (s['endTime'] ?? s['end_time'] ?? '').toString(),
+    };
+  }
+
+  Future<void> _showEditCateringDialog(Map<String, dynamic> catering) async {
+    final status = (catering['status'] ?? '').toString();
+    if (!_isEditableInquiryStatus(status)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'This catering is no longer editable because it is already finalized for processing.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    final slots = _parseDynamicList(
+      catering['scheduleSlots'] ?? catering['schedule_slots'],
+    );
+    final primarySlot = _extractPrimarySlot(slots);
+    final menuList = _parseDynamicList(catering['menu']);
+    final initialDishNames = menuList
+        .map((item) {
+          if (item is! Map) return '';
+          final m = Map<String, dynamic>.from(item);
+          return (m['dishName'] ?? m['dish_name'] ?? m['name'] ?? '').toString().trim();
+        })
+        .where((name) => name.isNotEmpty)
+        .toList();
+
+    final guestCtrl = TextEditingController(
+      text: (catering['guestCount'] ?? catering['guest_count'] ?? '').toString(),
+    );
+    final venueCtrl = TextEditingController(
+      text: (catering['address'] ?? '').toString(),
+    );
+    final dateCtrl = TextEditingController(text: primarySlot['date'] ?? '');
+    final startCtrl = TextEditingController(text: primarySlot['startTime'] ?? '');
+    final endCtrl = TextEditingController(text: primarySlot['endTime'] ?? '');
+    final dishCtrl = TextEditingController();
+    final editableDishes = List<String>.from(initialDishNames);
+    final presetMenus = <Map<String, dynamic>>[
+      {
+        'id': 'filipino_feast',
+        'name': 'Filipino Feast',
+        'dishes': ['Bistek', 'Sinigang', 'Lechon Kawali', 'Kare-Kare'],
+      },
+      {
+        'id': 'classic_party',
+        'name': 'Classic Party Set',
+        'dishes': ['Bistek', 'Sinigang', 'Lechon Kawali'],
+      },
+      {
+        'id': 'light_refreshments',
+        'name': 'Light Refreshments',
+        'dishes': ['Vegetable Salad', 'Shrimp Croquette', 'Lemon Iced Tea'],
+      },
+    ];
+    String menuSelectionType = 'custom';
+    String? selectedPresetMenuId;
+    for (final preset in presetMenus) {
+      final dishes = (preset['dishes'] as List<dynamic>).map((e) => e.toString().toLowerCase()).toSet();
+      final existing = editableDishes.map((e) => e.toLowerCase()).toSet();
+      if (existing.isNotEmpty && dishes.length == existing.length && dishes.difference(existing).isEmpty) {
+        menuSelectionType = 'preset';
+        selectedPresetMenuId = preset['id'].toString();
+        break;
+      }
+    }
+    bool isSubmitting = false;
+
+    TimeOfDay? parseTime(String value) {
+      final parts = value.split(':');
+      if (parts.length < 2) return null;
+      final hour = int.tryParse(parts[0]);
+      final minute = int.tryParse(parts[1]);
+      if (hour == null || minute == null) return null;
+      if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+      return TimeOfDay(hour: hour, minute: minute);
+    }
+
+    String formatTime(TimeOfDay time) {
+      final h = time.hour.toString().padLeft(2, '0');
+      final m = time.minute.toString().padLeft(2, '0');
+      return '$h:$m';
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setLocalState) {
+            return AlertDialog(
+              title: const Text('Edit Catering Inquiry'),
+              content: SizedBox(
+                width: 760,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: guestCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Guest Count',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: venueCtrl,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Venue / Address',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: dateCtrl,
+                              readOnly: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Event Date',
+                                border: OutlineInputBorder(),
+                              ),
+                              onTap: () async {
+                                final now = DateTime.now();
+                                final selected = await showDatePicker(
+                                  context: context,
+                                  initialDate: now,
+                                  firstDate: now.subtract(const Duration(days: 1)),
+                                  lastDate: now.add(const Duration(days: 3650)),
+                                );
+                                if (selected != null) {
+                                  dateCtrl.text =
+                                      '${selected.year}-${selected.month.toString().padLeft(2, '0')}-${selected.day.toString().padLeft(2, '0')}';
+                                  setLocalState(() {});
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: startCtrl,
+                              readOnly: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Start Time',
+                                border: OutlineInputBorder(),
+                              ),
+                              onTap: () async {
+                                final initial = parseTime(startCtrl.text) ?? const TimeOfDay(hour: 9, minute: 0);
+                                final selected = await showTimePicker(
+                                  context: context,
+                                  initialTime: initial,
+                                );
+                                if (selected != null) {
+                                  startCtrl.text = formatTime(selected);
+                                  setLocalState(() {});
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: endCtrl,
+                              readOnly: true,
+                              decoration: const InputDecoration(
+                                labelText: 'End Time',
+                                border: OutlineInputBorder(),
+                              ),
+                              onTap: () async {
+                                final initial = parseTime(endCtrl.text) ?? const TimeOfDay(hour: 12, minute: 0);
+                                final selected = await showTimePicker(
+                                  context: context,
+                                  initialTime: initial,
+                                );
+                                if (selected != null) {
+                                  endCtrl.text = formatTime(selected);
+                                  setLocalState(() {});
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      const Text(
+                        'Requested Dishes',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ChoiceChip(
+                            label: const Text('Custom Menu'),
+                            selected: menuSelectionType == 'custom',
+                            onSelected: (_) {
+                              setLocalState(() {
+                                menuSelectionType = 'custom';
+                              });
+                            },
+                          ),
+                          ChoiceChip(
+                            label: const Text('Catering Set Menu'),
+                            selected: menuSelectionType == 'preset',
+                            onSelected: (_) {
+                              setLocalState(() {
+                                menuSelectionType = 'preset';
+                                selectedPresetMenuId ??=
+                                    presetMenus.isNotEmpty ? presetMenus.first['id'].toString() : null;
+                                if (selectedPresetMenuId != null) {
+                                  final selectedPreset = presetMenus.firstWhere(
+                                    (m) => m['id'].toString() == selectedPresetMenuId,
+                                    orElse: () => presetMenus.first,
+                                  );
+                                  editableDishes
+                                    ..clear()
+                                    ..addAll((selectedPreset['dishes'] as List<dynamic>).map((e) => e.toString()));
+                                }
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                      if (menuSelectionType == 'preset') ...[
+                        const SizedBox(height: 10),
+                        DropdownButtonFormField<String>(
+                          value: selectedPresetMenuId,
+                          decoration: const InputDecoration(
+                            labelText: 'Select Catering Menu',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: presetMenus
+                              .map(
+                                (menu) => DropdownMenuItem<String>(
+                                  value: menu['id'].toString(),
+                                  child: Text(menu['name'].toString()),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setLocalState(() {
+                              selectedPresetMenuId = value;
+                              final selectedPreset = presetMenus.firstWhere(
+                                (m) => m['id'].toString() == value,
+                                orElse: () => presetMenus.first,
+                              );
+                              editableDishes
+                                ..clear()
+                                ..addAll((selectedPreset['dishes'] as List<dynamic>).map((e) => e.toString()));
+                            });
+                          },
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      if (menuSelectionType == 'custom')
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: dishCtrl,
+                                decoration: const InputDecoration(
+                                  hintText: 'Add dish name',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton(
+                              onPressed: () {
+                                final value = dishCtrl.text.trim();
+                                if (value.isEmpty) return;
+                                setLocalState(() {
+                                  editableDishes.add(value);
+                                  dishCtrl.clear();
+                                });
+                              },
+                              child: const Text('Add'),
+                            ),
+                          ],
+                        )
+                      else
+                        Text(
+                          'Set menu dishes are auto-filled. Switch to Custom Menu to edit manually.',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                        ),
+                      const SizedBox(height: 10),
+                      if (editableDishes.isEmpty)
+                        Text(
+                          'No dishes yet. Add at least one dish.',
+                          style: TextStyle(color: Colors.grey.shade600),
+                        )
+                      else
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: List.generate(editableDishes.length, (i) {
+                            return Chip(
+                              label: Text(editableDishes[i]),
+                              onDeleted: () {
+                                setLocalState(() {
+                                  editableDishes.removeAt(i);
+                                });
+                              },
+                            );
+                          }),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSubmitting ? null : () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          final guestCount = int.tryParse(guestCtrl.text.trim()) ?? 0;
+                          final venue = venueCtrl.text.trim();
+                          final date = dateCtrl.text.trim();
+                          final start = startCtrl.text.trim();
+                          final end = endCtrl.text.trim();
+                          if (guestCount <= 0 ||
+                              venue.isEmpty ||
+                              date.isEmpty ||
+                              start.isEmpty ||
+                              end.isEmpty ||
+                              editableDishes.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please complete all required fields.'),
+                              ),
+                            );
+                            return;
+                          }
+
+                          setLocalState(() => isSubmitting = true);
+                          try {
+                            await _editInquiry(
+                              orderId: catering['id'].toString(),
+                              guestCount: guestCount,
+                              address: venue,
+                              scheduleSlots: [
+                                {
+                                  'date': date,
+                                  'startTime': start,
+                                  'endTime': end,
+                                },
+                              ],
+                              menu: editableDishes
+                                  .map((dish) => {'dishName': dish})
+                                  .toList(),
+                            );
+                            if (!mounted) return;
+                            Navigator.of(context).pop();
+                            await _loadCaterings();
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Inquiry updated successfully.'),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+                            setLocalState(() => isSubmitting = false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Update failed: $e')),
+                            );
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E1E1E),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Save Changes'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    guestCtrl.dispose();
+    venueCtrl.dispose();
+    dateCtrl.dispose();
+    startCtrl.dispose();
+    endCtrl.dispose();
+    dishCtrl.dispose();
+  }
+
   Future<void> _showCateringDetailsDialog(Map<String, dynamic> catering) async {
     final status = (catering['status'] ?? '').toString();
-    final isInquiry = status == 'online_inquiries';
+    final isInquiry = _isEditableInquiryStatus(status);
     final themeDesign = _parseThemeDesign(
       catering['themeDesign'] ?? catering['theme_design'],
     );
@@ -322,6 +786,15 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
             ),
           ),
           actions: [
+            if (isInquiry)
+              OutlinedButton.icon(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  await _showEditCateringDialog(catering);
+                },
+                icon: const Icon(Icons.edit),
+                label: const Text('Edit Inquiry'),
+              ),
             if (isInquiry)
               TextButton(
                 onPressed: () async {

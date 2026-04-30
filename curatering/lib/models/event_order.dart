@@ -95,6 +95,9 @@ class EventOrderDto {
   // Final status
   final String finalStatus; // successful | cancelled
 
+  /// True when [listSummaryOnly] was returned: theme image payloads omitted; use [EventsApi.getEventOrder] for full data.
+  final bool themeAssetsDeferred;
+
   const EventOrderDto({
     required this.id,
     required this.source,
@@ -121,6 +124,7 @@ class EventOrderDto {
     this.checklist = const [],
     this.actualEventImages = const [],
     this.finalStatus = 'successful',
+    this.themeAssetsDeferred = false,
   });
 }
 

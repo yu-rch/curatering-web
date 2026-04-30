@@ -68,8 +68,11 @@ class _TransactionsState extends State<Transactions> {
     });
 
     try {
-      final orders =
-          await EventsApi.instance.listOrders(status: 'completed', roleType: roleType);
+      final orders = await EventsApi.instance.listOrders(
+        status: 'completed',
+        roleType: roleType,
+        compact: true,
+      );
 
       final dates = <DateTime>{};
       for (final o in orders) {

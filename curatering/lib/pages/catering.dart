@@ -44,6 +44,84 @@ class SamSegmentationResult {
   SamSegmentationResult({required this.objects, required this.previewImage});
 }
 
+class _SoftObjectOverlay extends StatelessWidget {
+  const _SoftObjectOverlay({
+    required this.object,
+    required this.isSelected,
+  });
+
+  final SegmentedObject object;
+  final bool isSelected;
+
+  Path _shapePath(Size size) {
+    if (object.polygonPoints.length >= 3) {
+      final path = Path();
+      final first = object.polygonPoints.first;
+      path.moveTo(first.dx * size.width, first.dy * size.height);
+      for (final pt in object.polygonPoints.skip(1)) {
+        path.lineTo(pt.dx * size.width, pt.dy * size.height);
+      }
+      path.close();
+      return path;
+    }
+    final rrect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        object.boundingBox.left,
+        object.boundingBox.top,
+        object.boundingBox.width,
+        object.boundingBox.height,
+      ),
+      const Radius.circular(10),
+    );
+    return Path()..addRRect(rrect);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strokeColor = isSelected ? Colors.blue : Colors.red.withOpacity(0.75);
+    final fillColor = isSelected ? Colors.blue.withOpacity(0.20) : Colors.red.withOpacity(0.06);
+    return CustomPaint(
+      size: Size.infinite,
+      painter: _SoftObjectOverlayPainter(
+        pathBuilder: _shapePath,
+        strokeColor: strokeColor,
+        fillColor: fillColor,
+      ),
+    );
+  }
+}
+
+class _SoftObjectOverlayPainter extends CustomPainter {
+  _SoftObjectOverlayPainter({
+    required this.pathBuilder,
+    required this.strokeColor,
+    required this.fillColor,
+  });
+
+  final Path Function(Size size) pathBuilder;
+  final Color strokeColor;
+  final Color fillColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = pathBuilder(size);
+    final fill = Paint()
+      ..color = fillColor
+      ..style = PaintingStyle.fill;
+    final stroke = Paint()
+      ..color = strokeColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    canvas.drawPath(path, fill);
+    canvas.drawPath(path, stroke);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SoftObjectOverlayPainter oldDelegate) {
+    return strokeColor != oldDelegate.strokeColor || fillColor != oldDelegate.fillColor;
+  }
+}
+
 class ChecklistItem {
   ChecklistItem({
     required this.item,
@@ -506,54 +584,66 @@ class _ManageEventsState extends State<ManageEvents>
       }
 
       if (role == Role.supervisor) {
-        //print('DEBUG: Calling supervisor API for for_processing orders');
-        _processingOrdersDto = await EventsApi.instance.listOrders(
-          status: 'for_processing',
-          roleType: 'supervisor',
-        );
-        // print('DEBUG: Supervisor API returned ${_processingOrdersDto.length} orders',);
-        _newEventOrdersDto = await EventsApi.instance.listOrders(
-          status: 'new_event',
-          roleType: 'supervisor',
-        );
-        // Add new events to processing orders
-        _processingOrdersDto = [..._processingOrdersDto, ..._newEventOrdersDto];
+        final lists = await Future.wait<List<EventOrderDto>>([
+          EventsApi.instance.listOrders(
+            status: 'for_processing',
+            roleType: 'supervisor',
+            compact: true,
+          ),
+          EventsApi.instance.listOrders(
+            status: 'new_event',
+            roleType: 'supervisor',
+            compact: true,
+          ),
+          EventsApi.instance.listOrders(
+            status: 'for_post_analysis',
+            roleType: 'supervisor',
+            compact: true,
+          ),
+          EventsApi.instance.listOrders(
+            status: 'completed',
+            roleType: 'supervisor',
+            compact: true,
+          ),
+        ]);
+        _processingOrdersDto = [...lists[0], ...lists[1]];
+        _newEventOrdersDto = lists[1];
         _onlineInquiryOrders = const <EventOrderDto>[];
-
-        _postAnalysisOrdersDto = await EventsApi.instance.listOrders(
-          status: 'for_post_analysis',
-          roleType: 'supervisor',
-        );
-        _completedOrdersDto = await EventsApi.instance.listOrders(
-          status: 'completed',
-          roleType: 'supervisor',
-        );
+        _postAnalysisOrdersDto = lists[2];
+        _completedOrdersDto = lists[3];
       } else if (role == Role.manager || role == Role.admin || role == Role.superAdmin) {
-        // print('DEBUG: Calling manager API for for_processing orders');
-        _onlineInquiryOrders = await EventsApi.instance.listOrders(
-          status: 'online_inquiries',
-          roleType: 'manager',
-        );
-        _processingOrdersDto = await EventsApi.instance.listOrders(
-          status: 'for_processing',
-          roleType: 'manager',
-        );
-        // print('DEBUG: Manager API returned ${_processingOrdersDto.length} orders',);
-        _newEventOrdersDto = await EventsApi.instance.listOrders(
-          status: 'new_event',
-          roleType: 'manager',
-        );
-        // Add new events to processing orders
-        _processingOrdersDto = [..._processingOrdersDto, ..._newEventOrdersDto];
-
-        _postAnalysisOrdersDto = await EventsApi.instance.listOrders(
-          status: 'for_post_analysis',
-          roleType: 'manager',
-        );
-        _completedOrdersDto = await EventsApi.instance.listOrders(
-          status: 'completed',
-          roleType: 'manager',
-        );
+        final lists = await Future.wait<List<EventOrderDto>>([
+          EventsApi.instance.listOrders(
+            status: 'online_inquiries',
+            roleType: 'manager',
+            compact: true,
+          ),
+          EventsApi.instance.listOrders(
+            status: 'for_processing',
+            roleType: 'manager',
+            compact: true,
+          ),
+          EventsApi.instance.listOrders(
+            status: 'new_event',
+            roleType: 'manager',
+            compact: true,
+          ),
+          EventsApi.instance.listOrders(
+            status: 'for_post_analysis',
+            roleType: 'manager',
+            compact: true,
+          ),
+          EventsApi.instance.listOrders(
+            status: 'completed',
+            roleType: 'manager',
+            compact: true,
+          ),
+        ]);
+        _onlineInquiryOrders = lists[0];
+        _processingOrdersDto = [...lists[1], ...lists[2]];
+        _newEventOrdersDto = lists[2];
+        _postAnalysisOrdersDto = lists[3];
+        _completedOrdersDto = lists[4];
       } else {
         // print('DEBUG: Unknown role, returning empty lists');
         _onlineInquiryOrders = const <EventOrderDto>[];
@@ -585,6 +675,14 @@ class _ManageEventsState extends State<ManageEvents>
         setState(() => _ordersLoading = false);
       }
     }
+  }
+
+  /// List responses may omit theme board base64; load full order when opening detail.
+  Future<EventOrderDto> _resolveOrderForSelection(EventOrderDto dto) async {
+    if (!dto.themeAssetsDeferred) return dto;
+    final role = AuthSession.instance.currentRole;
+    final roleType = role == Role.supervisor ? 'supervisor' : 'manager';
+    return EventsApi.instance.getEventOrder(orderId: dto.id, roleType: roleType);
   }
 
   Future<void> _refreshOrdersFromButton() async {
@@ -792,6 +890,9 @@ class _ManageEventsState extends State<ManageEvents>
     String serviceType = order.themeDesign.picksBase64.isNotEmpty
         ? 'catering+event'
         : 'catering';
+    // Pre-fill the menu editor based on the order's existing `menu` rows.
+    // If those dishes match one of the known "online inquiry" set menus, we set
+    // the menu choice to `suggest` and select the matching set menu.
     String menuChoice = order.menu.isNotEmpty ? 'yes' : 'suggest';
     String? selectedSetMenuId;
     final selectedDishIds = <String>[];
@@ -819,7 +920,26 @@ class _ManageEventsState extends State<ManageEvents>
           (d) => d.name == item.dishName,
           orElse: () => MenuStore.instance.allDishes.first,
         );
-        selectedDishIds.add(dish.id);
+        if (dish.id.isNotEmpty) selectedDishIds.add(dish.id);
+      }
+
+      // Try to infer whether the current dishes represent a known set menu.
+      // This lets the UI show the correct catering menu vs set menu selection.
+      final setMenus = _onlineInquirySetMenus();
+      final selectedDishSet = selectedDishIds.toSet();
+      for (final setMenu in setMenus) {
+        final setDishIds = (setMenu['dishes'] as List<dynamic>? ?? const <dynamic>[])
+            .map((e) => e.toString())
+            .toSet();
+
+        if (setDishIds.isNotEmpty && setDishIds.length == selectedDishSet.length) {
+          final same = setDishIds.difference(selectedDishSet).isEmpty;
+          if (same) {
+            selectedSetMenuId = setMenu['id'] as String?;
+            menuChoice = 'suggest';
+            break;
+          }
+        }
       }
     }
 
@@ -1666,18 +1786,24 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Widget _buildOnlineInquiryEventDesign(EventOrderDto order) {
-    Uint8List? decodePick(String raw) {
+    final previewSources = order.themeDesign.picksBase64
+        .where((s) => s.trim().isNotEmpty)
+        .map((s) => s.trim())
+        .toList();
+    Widget previewWidget(String source, {BoxFit fit = BoxFit.cover}) {
+      if (source.startsWith('http://') || source.startsWith('https://')) {
+        return Image.network(
+          source,
+          fit: fit,
+          errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image)),
+        );
+      }
       try {
-        return base64Decode(raw);
+        return Image.memory(base64Decode(source), fit: fit);
       } catch (_) {
-        return null;
+        return const Center(child: Icon(Icons.broken_image));
       }
     }
-
-    final previewImages = order.themeDesign.picksBase64
-        .map(decodePick)
-        .whereType<Uint8List>()
-        .toList();
     final customerNote = (order.themeDesign.customerThemeRequest ??
             order.themeDesign.colorPrompt ??
             '')
@@ -1705,7 +1831,7 @@ class _ManageEventsState extends State<ManageEvents>
               borderRadius: BorderRadius.circular(999),
             ),
             child: Text(
-              '${previewImages.length} custom design photo(s)',
+              '${previewSources.length} custom design photo(s)',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
@@ -1715,19 +1841,19 @@ class _ManageEventsState extends State<ManageEvents>
             ),
           ),
           const SizedBox(height: 12),
-          if (previewImages.isEmpty)
+          if (previewSources.isEmpty)
             Text(
               order.themeDesign.wantsCustomDesign
                   ? 'Customer asked Macrinas to create the event design.'
                   : 'No custom design photos submitted.',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
             ),
-          if (previewImages.isNotEmpty)
+          if (previewSources.isNotEmpty)
             SizedBox(
               height: 110,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                itemCount: previewImages.length,
+                itemCount: previewSources.length,
                 itemBuilder: (context, index) {
                   return GestureDetector(
                     onTap: () {
@@ -1743,8 +1869,8 @@ class _ManageEventsState extends State<ManageEvents>
                                   child: InteractiveViewer(
                                     minScale: 0.5,
                                     maxScale: 4.0,
-                                    child: Image.memory(
-                                      previewImages[index],
+                                    child: previewWidget(
+                                      previewSources[index],
                                       fit: BoxFit.contain,
                                     ),
                                   ),
@@ -1774,7 +1900,7 @@ class _ManageEventsState extends State<ManageEvents>
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: Image.memory(previewImages[index], fit: BoxFit.cover),
+                        child: previewWidget(previewSources[index], fit: BoxFit.cover),
                       ),
                     ),
                   );
@@ -2392,33 +2518,22 @@ class _ManageEventsState extends State<ManageEvents>
                                         ..addAll(groupIds);
                                     });
                                   },
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      border: Border.all(
-                                        color: isSelected ? Colors.blue : Colors.red,
-                                        width: 2,
-                                      ),
-                                      color: isSelected
-                                          ? Colors.blue.withOpacity(0.2)
-                                          : Colors.transparent,
-                                    ),
-                                    child: Center(
-                                      child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          color: isSelected ? Colors.blue : Colors.red,
-                                          borderRadius: BorderRadius.circular(4),
+                                  child: Stack(
+                                    children: [
+                                      Positioned.fill(
+                                        child: _SoftObjectOverlay(
+                                          object: obj,
+                                          isSelected: isSelected,
                                         ),
-                                        child: Text(
-                                          obj.label,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
+                                      ),
+                                      Positioned.fill(
+                                        child: IgnorePointer(
+                                          child: Container(
+                                            color: Colors.transparent,
                                           ),
                                         ),
                                       ),
-                                    ),
+                                    ],
                                   ),
                                 ),
                               );
@@ -2469,15 +2584,17 @@ class _ManageEventsState extends State<ManageEvents>
                                         _objectSelectionColor = c;
                                       });
                                     },
-                                    child: Container(
-                                      width: 30,
-                                      height: 30,
-                                      decoration: BoxDecoration(
-                                        color: c,
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: isSelected ? Colors.black : Colors.black26,
-                                          width: isSelected ? 3 : 1,
+                                    child: Center(
+                                      child: Container(
+                                        width: 30,
+                                        height: 30,
+                                        decoration: BoxDecoration(
+                                          color: c,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: isSelected ? Colors.black : Colors.black26,
+                                            width: isSelected ? 3 : 1,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -2657,8 +2774,20 @@ class _ManageEventsState extends State<ManageEvents>
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
-                    setState(() => _selectedOnlineInquiryOrder = order);
+                  onPressed: () async {
+                    try {
+                      final full = await _resolveOrderForSelection(order);
+                      if (!mounted) return;
+                      setState(() => _selectedOnlineInquiryOrder = full);
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Could not load inquiry: $e'),
+                          backgroundColor: Colors.red.shade800,
+                        ),
+                      );
+                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFF4511E),
@@ -2846,10 +2975,22 @@ class _ManageEventsState extends State<ManageEvents>
     }
 
     return InkWell(
-      onTap: () {
-        setState(() {
-          onSelect(dto);
-        });
+      onTap: () async {
+        try {
+          final resolved = await _resolveOrderForSelection(dto);
+          if (!context.mounted) return;
+          setState(() {
+            onSelect(resolved);
+          });
+        } catch (e) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Could not load full order: $e'),
+              backgroundColor: Colors.red.shade800,
+            ),
+          );
+        }
       },
       borderRadius: BorderRadius.circular(8),
       child: Container(
@@ -3497,7 +3638,7 @@ class _ManageEventsState extends State<ManageEvents>
   ) async {
     var selectedPaymentService = PaymentService.cash;
     final title = mode == PaymentConfirmationMode.downpayment
-        ? 'Enter Downpayment'
+        ? 'Confirm Downpayment'
         : 'Confirm Full Payment';
     final subtitle = mode == PaymentConfirmationMode.downpayment
         ? 'Downpayment Amount Due (50%)'
@@ -3532,7 +3673,7 @@ class _ManageEventsState extends State<ManageEvents>
                     ),
                     const SizedBox(height: 24),
                     const Text(
-                      'Payment Type',
+                      'Payment Method',
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
@@ -4030,7 +4171,6 @@ class _ManageEventsState extends State<ManageEvents>
                       ),
                     ),
                     const SizedBox(height: 8),
-                    // Add Item button (aligned left like in reference)
                     if (_isManager) ...[
                       Row(
                         children: [
@@ -4257,6 +4397,79 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Future<void> _showThemeDesignDialog() async {
+    final selectedOrder = _selectedProcessingOrderDto;
+    final isForProcessingReadOnly = selectedOrder?.status == 'for_processing';
+    if (isForProcessingReadOnly && selectedOrder != null) {
+      final previewSources = selectedOrder.themeDesign.picksBase64
+          .where((s) => s.trim().isNotEmpty)
+          .map((s) => s.trim())
+          .toList();
+      Widget previewWidget(String source, {BoxFit fit = BoxFit.cover}) {
+        if (source.startsWith('http://') || source.startsWith('https://')) {
+          return Image.network(
+            source,
+            fit: fit,
+            errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image)),
+          );
+        }
+        try {
+          return Image.memory(base64Decode(source), fit: fit);
+        } catch (_) {
+          return const Center(child: Icon(Icons.broken_image));
+        }
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFFF7F8FA),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            title: const Text('Events Theme Design'),
+            content: SizedBox(
+              width: 760,
+              height: 520,
+              child: previewSources.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No event theme design image available.',
+                        style: TextStyle(color: Colors.grey.shade600),
+                      ),
+                    )
+                  : GridView.builder(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        childAspectRatio: 1.1,
+                      ),
+                      itemCount: previewSources.length,
+                      itemBuilder: (context, index) {
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: previewWidget(
+                            previewSources[index],
+                            fit: BoxFit.cover,
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      );
+      return;
+    }
+
     final picksBefore = _themePicks.toList();
     final pickHashesBefore = _themePickHashes.toSet();
     final collageBefore = _collageOrder.toList();

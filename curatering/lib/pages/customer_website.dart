@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
@@ -15,6 +19,8 @@ import '../services/public_events_api.dart';
 import '../services/website_content_store.dart';
 import '../services/cart_store.dart';
 import '../services/loyalty_rewards_store.dart';
+import '../widgets/map_picker.dart';
+import '../widgets/pexels_attribution_badge.dart';
 import 'customer_login.dart';
 import 'checkout_page.dart';
 import 'my_orders_page.dart';
@@ -22,6 +28,33 @@ import 'my_caterings_page.dart';
 import 'my_order_tracking_page.dart';
 import 'my_profile_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+part 'customer_website_theme_editor.dart';
+
+/// Letterboxing for placement editor: map between canvas coords and image bitmap (BoxFit.contain).
+class _PlacementContainLayout {
+  const _PlacementContainLayout({
+    required this.offX,
+    required this.offY,
+    required this.dispW,
+    required this.dispH,
+    required this.scale,
+  });
+  final double offX;
+  final double offY;
+  final double dispW;
+  final double dispH;
+  final double scale;
+}
+
+_PlacementContainLayout _placementContainLayout(double cw, double ch, double iw, double ih) {
+  final scale = math.min(cw / iw, ch / ih);
+  final dispW = iw * scale;
+  final dispH = ih * scale;
+  final offX = (cw - dispW) / 2;
+  final offY = (ch - dispH) / 2;
+  return _PlacementContainLayout(offX: offX, offY: offY, dispW: dispW, dispH: dispH, scale: scale);
+}
 
 class _SetDish {
   final String name;
@@ -61,6 +94,81 @@ class _SetMenuOption {
     required this.description,
     required this.dishes,
   });
+}
+
+class _InquiryScheduleSlot {
+  final DateTime date;
+  final TimeOfDay startTime;
+  final TimeOfDay endTime;
+
+  const _InquiryScheduleSlot({
+    required this.date,
+    required this.startTime,
+    required this.endTime,
+  });
+
+  String label(BuildContext context) {
+    final dateStr =
+        '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    return '$dateStr · ${startTime.format(context)}-${endTime.format(context)}';
+  }
+}
+
+class _SoftCustomerOverlayPainter extends CustomPainter {
+  _SoftCustomerOverlayPainter({
+    required this.polygonPoints,
+    required this.boundingBox,
+    required this.selected,
+  });
+
+  final List<Map<String, dynamic>> polygonPoints;
+  final Rect boundingBox;
+  final bool selected;
+
+  Path _buildPath(Size size) {
+    if (polygonPoints.length >= 3) {
+      final path = Path();
+      final first = polygonPoints.first;
+      final fx = (first['x'] as num?)?.toDouble() ?? 0;
+      final fy = (first['y'] as num?)?.toDouble() ?? 0;
+      path.moveTo(fx * size.width, fy * size.height);
+      for (final pt in polygonPoints.skip(1)) {
+        final x = (pt['x'] as num?)?.toDouble() ?? 0;
+        final y = (pt['y'] as num?)?.toDouble() ?? 0;
+        path.lineTo(x * size.width, y * size.height);
+      }
+      path.close();
+      return path;
+    }
+    return Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          boundingBox,
+          const Radius.circular(10),
+        ),
+      );
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = _buildPath(size);
+    final stroke = Paint()
+      ..color = selected ? Colors.blue : Colors.orange
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    final fill = Paint()
+      ..color = selected ? Colors.blue.withOpacity(0.20) : Colors.orange.withOpacity(0.08)
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(path, fill);
+    canvas.drawPath(path, stroke);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SoftCustomerOverlayPainter oldDelegate) {
+    return selected != oldDelegate.selected ||
+        polygonPoints.length != oldDelegate.polygonPoints.length ||
+        boundingBox != oldDelegate.boundingBox;
+  }
 }
 
 class CustomerWebsiteScreen extends StatefulWidget {
@@ -108,6 +216,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _navIndex = 0;
   int? _galleryDetailIndex;
+  String _gallerySearchQuery = '';
   Map<String, dynamic>? _customerData;
   bool _isCustomerLoggedIn = false;
   String _selectedRestaurantType = 'RICE MEALS'; // Default selected category
@@ -277,10 +386,22 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     return base64Encode(bytes);
   }
 
+  Future<List<String>> _pickMultipleImageB64() async {
+    final picked = await ImagePicker().pickMultiImage();
+    if (picked.isEmpty) return const [];
+    final out = <String>[];
+    for (final x in picked) {
+      final bytes = await x.readAsBytes();
+      out.add(base64Encode(bytes));
+    }
+    return out;
+  }
+
   Widget _b64Image(
     String? b64, {
     double? height,
     BoxFit fit = BoxFit.cover,
+    Alignment alignment = Alignment.center,
     Widget? placeholder,
   }) {
     final ph =
@@ -304,6 +425,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         height: height,
         width: double.infinity,
         fit: fit,
+        alignment: alignment,
         gaplessPlayback: true,
       );
     } catch (_) {
@@ -311,22 +433,204 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     }
   }
 
+  List<InlineSpan> _simpleMarkupSpans(String text, TextStyle baseStyle) {
+    final spans = <InlineSpan>[];
+    final exp = RegExp(r'\[(\/?)(b|i|u)\]');
+    var cursor = 0;
+    var bold = false;
+    var italic = false;
+    var underline = false;
+    TextStyle active() => baseStyle.copyWith(
+      fontWeight: bold ? FontWeight.w700 : baseStyle.fontWeight,
+      fontStyle: italic ? FontStyle.italic : baseStyle.fontStyle,
+      decoration: underline ? TextDecoration.underline : baseStyle.decoration,
+    );
+    for (final m in exp.allMatches(text)) {
+      if (m.start > cursor) {
+        spans.add(TextSpan(text: text.substring(cursor, m.start), style: active()));
+      }
+      final closing = m.group(1) == '/';
+      final tag = m.group(2);
+      if (tag == 'b') bold = !closing;
+      if (tag == 'i') italic = !closing;
+      if (tag == 'u') underline = !closing;
+      cursor = m.end;
+    }
+    if (cursor < text.length) {
+      spans.add(TextSpan(text: text.substring(cursor), style: active()));
+    }
+    if (spans.isEmpty) spans.add(TextSpan(text: text, style: baseStyle));
+    return spans;
+  }
+
+  Widget _richTextLabel(
+    String value, {
+    required TextStyle style,
+    TextAlign textAlign = TextAlign.start,
+    int? maxLines,
+    TextOverflow overflow = TextOverflow.clip,
+  }) {
+    return Text.rich(
+      TextSpan(children: _simpleMarkupSpans(value, style)),
+      textAlign: textAlign,
+      maxLines: maxLines,
+      overflow: overflow,
+    );
+  }
+
+  Future<String?> _showRichTextEditorDialog({
+    required String title,
+    required String initialValue,
+  }) async {
+    final ctrl = TextEditingController(text: initialValue);
+    void wrapSelection(String open, String close) {
+      final sel = ctrl.selection;
+      if (!sel.isValid) return;
+      final start = sel.start;
+      final end = sel.end;
+      if (start < 0 || end < 0 || start > end) return;
+      final text = ctrl.text;
+      final selected = text.substring(start, end);
+      final replaced = '${text.substring(0, start)}$open$selected$close${text.substring(end)}';
+      ctrl.text = replaced;
+      ctrl.selection = TextSelection.collapsed(offset: start + open.length + selected.length + close.length);
+    }
+
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 620,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton(onPressed: () => wrapSelection('[b]', '[/b]'), child: const Text('Bold')),
+                  OutlinedButton(onPressed: () => wrapSelection('[i]', '[/i]'), child: const Text('Italic')),
+                  OutlinedButton(onPressed: () => wrapSelection('[u]', '[/u]'), child: const Text('Underline')),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: ctrl,
+                maxLines: 8,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Use toolbar for rich formatting',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Save')),
+        ],
+      ),
+    );
+  }
+
+  String _imageKey(String? b64) {
+    final v = (b64 ?? '').trim();
+    if (v.isEmpty) return '';
+    return v.length <= 48 ? v : v.substring(0, 48);
+  }
+
+  Alignment _imageAlignmentFor(WebsiteContentStore w, String? b64) {
+    final key = _imageKey(b64);
+    final row = w.imageAlignments[key];
+    if (row == null) return Alignment.center;
+    return Alignment(
+      (row['x'] ?? 0).clamp(-1.0, 1.0),
+      (row['y'] ?? 0).clamp(-1.0, 1.0),
+    );
+  }
+
+  Future<void> _editImagePosition({
+    required WebsiteContentStore w,
+    required String? b64,
+  }) async {
+    if (b64 == null || b64.isEmpty) return;
+    final key = _imageKey(b64);
+    var current = _imageAlignmentFor(w, b64);
+    final next = await showDialog<Alignment>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Adjust image position'),
+        content: StatefulBuilder(
+          builder: (ctx, setLocal) => SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AspectRatio(
+                  aspectRatio: 1.8,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: _b64Image(b64, fit: BoxFit.cover, alignment: current),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Align(alignment: Alignment.centerLeft, child: Text('Horizontal')),
+                Slider(
+                  value: current.x,
+                  min: -1,
+                  max: 1,
+                  onChanged: (v) => setLocal(() => current = Alignment(v, current.y)),
+                ),
+                const Align(alignment: Alignment.centerLeft, child: Text('Vertical')),
+                Slider(
+                  value: current.y,
+                  min: -1,
+                  max: 1,
+                  onChanged: (v) => setLocal(() => current = Alignment(current.x, v)),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, current), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (next == null) return;
+    w.imageAlignments[key] = {'x': next.x, 'y': next.y};
+    await w.save();
+    if (mounted) setState(() {});
+  }
+
   Widget _publicHeader() {
     return Container(
       color: const Color(0xFF1E1E1E),
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: Colors.white,
-            child: Icon(Icons.restaurant, color: Colors.amber.shade800),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xFFFFC024).withValues(alpha: 0.6)),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              'MKC',
+              style: GoogleFonts.playfairDisplay(
+                color: const Color(0xFFFFC024),
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1,
+              ),
+            ),
           ),
-          const SizedBox(width: 20),
+          const SizedBox(width: 16),
           Expanded(
             child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: 2,
+              runSpacing: 4,
               alignment: WrapAlignment.center,
               children: [
                 _navLink('Home', 0),
@@ -338,40 +642,41 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               ],
             ),
           ),
-          // Cart Icon
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.shopping_cart, color: Colors.white),
-                onPressed: _openCartSidebar,
-              ),
-              if (CartStore.instance.itemCount > 0)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    child: Text(
-                      '${CartStore.instance.itemCount}',
-                      style: const TextStyle(color: Colors.white, fontSize: 10),
-                      textAlign: TextAlign.center,
+          if (!widget.contentEditable) ...[
+            // Cart Icon
+            Stack(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.shopping_cart, color: Colors.white),
+                  onPressed: _openCartSidebar,
+                ),
+                if (CartStore.instance.itemCount > 0)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 18,
+                        minHeight: 18,
+                      ),
+                      child: Text(
+                        '${CartStore.instance.itemCount}',
+                        style: const TextStyle(color: Colors.white, fontSize: 10),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                   ),
-                ),
-            ],
-          ),
-          const SizedBox(width: 8),
-          // Login/Logout Button
-          if (_isCustomerLoggedIn)
-            PopupMenuButton<String>(
+              ],
+            ),
+            const SizedBox(width: 8),
+            // Login/Logout Button
+            if (_isCustomerLoggedIn)
+              PopupMenuButton<String>(
               onSelected: (value) async {
                 switch (value) {
                   case 'my_profile':
@@ -456,13 +761,14 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       ),
                     ),
                   ],
-            )
-          else
-            TextButton.icon(
-              onPressed: _handleLogin,
-              icon: const Icon(Icons.login, color: Colors.white, size: 18),
-              label: const Text('Login', style: TextStyle(color: Colors.white)),
-            ),
+              )
+            else
+              TextButton.icon(
+                onPressed: _handleLogin,
+                icon: const Icon(Icons.login, color: Colors.white, size: 18),
+                label: const Text('Login', style: TextStyle(color: Colors.white)),
+              ),
+          ],
         ],
       ),
     );
@@ -477,7 +783,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             _navIndex = index;
           }),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -486,12 +792,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: on ? FontWeight.w700 : FontWeight.w400,
-                fontSize: 13,
+                fontSize: 11.5,
+                letterSpacing: 0.5,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             if (on)
-              Container(height: 2, width: 36, color: const Color(0xFFFFC024)),
+              Container(height: 2, width: 32, color: const Color(0xFFFFC024)),
           ],
         ),
       ),
@@ -501,7 +808,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Widget _footer(WebsiteContentStore w) {
     return Container(
       color: const Color(0xFFFFC107),
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 24),
       child: Wrap(
         spacing: 32,
         runSpacing: 16,
@@ -514,12 +821,27 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               children: [
                 TextButton(
                   onPressed: () {},
-                  child: const Text('PRIVACY POLICY'),
+                  child: const Text('PRIVACY POLICY', style: TextStyle(color: Colors.black)),
                 ),
-                Text(
+                _richTextLabel(
                   w.footerCopyright,
                   style: const TextStyle(fontSize: 11, height: 1.4),
                 ),
+                if (widget.contentEditable)
+                  TextButton.icon(
+                    onPressed: () async {
+                      final value = await _showRichTextEditorDialog(
+                        title: 'Edit footer copyright',
+                        initialValue: w.footerCopyright,
+                      );
+                      if (value == null || value.isEmpty) return;
+                      w.footerCopyright = value;
+                      await w.save();
+                      setState(() {});
+                    },
+                    icon: const Icon(Icons.edit, size: 14),
+                    label: const Text('Edit'),
+                  ),
               ],
             ),
           ),
@@ -528,15 +850,15 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             children: [
               TextButton(
                 onPressed: () => setState(() => _navIndex = 1),
-                child: const Text('GALLERY'),
+                child: const Text('GALLERY', style: TextStyle(color: Colors.black)),
               ),
               TextButton(
                 onPressed: () => setState(() => _navIndex = 2),
-                child: const Text('CATERING MENU'),
+                child: const Text('CATERING MENU', style: TextStyle(color: Colors.black)),
               ),
               TextButton(
                 onPressed: () => setState(() => _navIndex = 3),
-                child: const Text('RESTAURANT'),
+                child: const Text('RESTAURANT', style: TextStyle(color: Colors.black)),
               ),
             ],
           ),
@@ -545,17 +867,17 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             children: [
               TextButton(
                 onPressed: () => setState(() => _navIndex = 4),
-                child: const Text('INQUIRE NOW'),
+                child: const Text('INQUIRE NOW', style: TextStyle(color: Colors.black)),
               ),
               TextButton(
                 onPressed: () => setState(() => _navIndex = 5),
-                child: const Text('CONTACT US'),
+                child: const Text('CONTACT US', style: TextStyle(color: Colors.black)),
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pushNamed('/login'),
                 child: const Text(
                   'STAFF LOGIN',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
                 ),
               ),
             ],
@@ -635,12 +957,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               Stack(
                 children: [
                   SizedBox(
-                    height: 280,
+                    height: 360,
                     width: double.infinity,
                     child:
                         w.homeHeroImageBase64.isEmpty
                             ? Container(
-                              color: Colors.grey.shade400,
+                              color: Colors.grey.shade700,
                               alignment: Alignment.center,
                               child: Text(
                                 'Macrina\'s Kitchen and Catering',
@@ -650,7 +972,49 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                 ),
                               ),
                             )
-                            : _b64Image(w.homeHeroImageBase64, height: 280),
+                            : _b64Image(
+                              w.homeHeroImageBase64,
+                              height: 360,
+                              alignment: _imageAlignmentFor(w, w.homeHeroImageBase64),
+                            ),
+                  ),
+                  Positioned.fill(
+                    child: Container(color: Colors.black.withValues(alpha: 0.35)),
+                  ),
+                  Positioned.fill(
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 18),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.25),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'MACRINA\'S',
+                              style: GoogleFonts.playfairDisplay(
+                                fontSize: isMobile(context) ? 34 : 54,
+                                color: Colors.white,
+                                letterSpacing: 1.6,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'KITCHEN AND CATERING',
+                              style: GoogleFonts.cormorantGaramond(
+                                fontSize: isMobile(context) ? 16 : 24,
+                                color: const Color(0xFFFFC024),
+                                letterSpacing: 2.4,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                   _editChip(() async {
                     final b64 = await _pickImageB64();
@@ -659,27 +1023,53 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     await w.save();
                     setState(() {});
                   }),
+                  if (widget.contentEditable && w.homeHeroImageBase64.isNotEmpty)
+                    Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: FilledButton.tonalIcon(
+                        onPressed: () => _editImagePosition(w: w, b64: w.homeHeroImageBase64),
+                        icon: const Icon(Icons.open_with, size: 16),
+                        label: const Text('Position'),
+                      ),
+                    ),
                 ],
               ),
               Container(
                 color: const Color(0xFFF5F5F5),
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
                 child: Center(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
                     child: Column(
                       children: [
-                        Text(
+                        _richTextLabel(
                           w.redBannerText,
                           style: GoogleFonts.dancingScript(
-                            fontSize: 26,
+                            fontSize: 24,
                             color: Colors.red.shade700,
                             fontWeight: FontWeight.w700,
                           ),
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 24),
-                        Row(
+                        if (widget.contentEditable)
+                          TextButton.icon(
+                            onPressed: () async {
+                              final value = await _showRichTextEditorDialog(
+                                title: 'Edit red banner text',
+                                initialValue: w.redBannerText,
+                              );
+                              if (value == null || value.isEmpty) return;
+                              w.redBannerText = value;
+                              await w.save();
+                              setState(() {});
+                            },
+                            icon: const Icon(Icons.edit, size: 16),
+                            label: const Text('Edit banner text'),
+                          ),
+                        const SizedBox(height: 18),
+                        Flex(
+                          direction: isMobile(context) ? Axis.vertical : Axis.horizontal,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
@@ -687,7 +1077,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                               child: Stack(
                                 children: [
                                   Container(
-                                    padding: const EdgeInsets.all(20),
+                                    padding: const EdgeInsets.all(18),
                                     decoration: BoxDecoration(
                                       color: Colors.white,
                                       borderRadius: BorderRadius.circular(12),
@@ -712,130 +1102,110 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                             ),
                                           ),
                                         ),
-                                        const SizedBox(height: 12),
-                                        Text(
+                                        const SizedBox(height: 10),
+                                        _richTextLabel(
                                           w.latestEventTitle,
                                           style: GoogleFonts.dancingScript(
-                                            fontSize: 32,
-                                            color: Colors.pink.shade300,
+                                            fontSize: 42,
+                                            color: const Color(0xFFB0305A),
                                           ),
                                         ),
-                                        Text(
+                                        _richTextLabel(
                                           w.latestEventSubtitle,
                                           style: const TextStyle(
                                             fontSize: 12,
                                             letterSpacing: 1.2,
                                           ),
                                         ),
+                                        const SizedBox(height: 14),
+                                        Container(
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF7F7F7),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: Colors.grey.shade300),
+                                          ),
+                                          child: _richTextLabel(
+                                            w.latestEventBody,
+                                            style: const TextStyle(height: 1.35),
+                                          ),
+                                        ),
                                         const SizedBox(height: 12),
-                                        Text(w.latestEventBody),
-                                        const SizedBox(height: 12),
-                                        TextButton(
-                                          onPressed:
-                                              () =>
-                                                  setState(() => _navIndex = 3),
-                                          child: const Text('INQUIRE NOW!'),
+                                        Align(
+                                          alignment: Alignment.center,
+                                          child: FilledButton(
+                                            style: FilledButton.styleFrom(
+                                              backgroundColor: const Color(0xFFFFC024),
+                                              foregroundColor: Colors.black,
+                                              textStyle: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                letterSpacing: 0.4,
+                                              ),
+                                            ),
+                                            onPressed: widget.contentEditable ? null : () => setState(() => _navIndex = 4),
+                                            child: const Text('INQUIRE NOW!'),
+                                          ),
                                         ),
                                       ],
                                     ),
                                   ),
                                   _editChip(() async {
-                                    final title = TextEditingController(
-                                      text: w.latestEventTitle,
+                                    final nextTitle = await _showRichTextEditorDialog(
+                                      title: 'Edit latest event title',
+                                      initialValue: w.latestEventTitle,
                                     );
-                                    final sub = TextEditingController(
-                                      text: w.latestEventSubtitle,
+                                    if (nextTitle == null) return;
+                                    final nextSubtitle = await _showRichTextEditorDialog(
+                                      title: 'Edit latest event subtitle',
+                                      initialValue: w.latestEventSubtitle,
                                     );
-                                    final body = TextEditingController(
-                                      text: w.latestEventBody,
+                                    if (nextSubtitle == null) return;
+                                    final nextBody = await _showRichTextEditorDialog(
+                                      title: 'Edit latest event body',
+                                      initialValue: w.latestEventBody,
                                     );
-                                    await showDialog<void>(
-                                      context: context,
-                                      builder:
-                                          (ctx) => AlertDialog(
-                                            title: const Text(
-                                              'Edit latest event',
-                                            ),
-                                            content: SingleChildScrollView(
-                                              child: Column(
-                                                children: [
-                                                  TextField(
-                                                    controller: title,
-                                                    decoration:
-                                                        const InputDecoration(
-                                                          labelText: 'Title',
-                                                        ),
-                                                  ),
-                                                  TextField(
-                                                    controller: sub,
-                                                    decoration:
-                                                        const InputDecoration(
-                                                          labelText: 'Subtitle',
-                                                        ),
-                                                  ),
-                                                  TextField(
-                                                    controller: body,
-                                                    maxLines: 4,
-                                                    decoration:
-                                                        const InputDecoration(
-                                                          labelText: 'Body',
-                                                        ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed:
-                                                    () => Navigator.pop(ctx),
-                                                child: const Text('Cancel'),
-                                              ),
-                                              TextButton(
-                                                onPressed: () {
-                                                  w.latestEventTitle =
-                                                      title.text;
-                                                  w.latestEventSubtitle =
-                                                      sub.text;
-                                                  w.latestEventBody = body.text;
-                                                  w.save();
-                                                  Navigator.pop(ctx);
-                                                  setState(() {});
-                                                },
-                                                child: const Text('Save'),
-                                              ),
-                                            ],
-                                          ),
-                                    );
+                                    if (nextBody == null) return;
+                                    w.latestEventTitle = nextTitle;
+                                    w.latestEventSubtitle = nextSubtitle;
+                                    w.latestEventBody = nextBody;
+                                    await w.save();
+                                    setState(() {});
                                   }),
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 20),
+                            SizedBox(width: isMobile(context) ? 0 : 20, height: isMobile(context) ? 16 : 0),
                             Expanded(
                               flex: 5,
                               child: Stack(
                                 children: [
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: List.generate(4, (i) {
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final totalW = constraints.maxWidth;
+                                      final gap = 10.0;
+                                      final halfW = (totalW - gap) / 2;
                                       final list = w.latestEventCollageBase64;
-                                      final b64 =
-                                          i < list.length ? list[i] : null;
-                                      return SizedBox(
-                                        width: 160,
-                                        height: 120,
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            10,
+                                      String? at(int i) => i < list.length ? list[i] : null;
+                                      return Column(
+                                        children: [
+                                          Row(
+                                            children: [
+                                              _collageTile(at(0), width: halfW, height: 170),
+                                              SizedBox(width: gap),
+                                              _collageTile(at(1), width: halfW, height: 170),
+                                            ],
                                           ),
-                                          child: _b64Image(
-                                            b64,
-                                            fit: BoxFit.cover,
+                                          const SizedBox(height: 10),
+                                          Row(
+                                            children: [
+                                              _collageTile(at(2), width: halfW, height: 170),
+                                              SizedBox(width: gap),
+                                              _collageTile(at(3), width: halfW, height: 170),
+                                            ],
                                           ),
-                                        ),
+                                        ],
                                       );
-                                    }),
+                                    },
                                   ),
                                   _editChip(() async {
                                     final b64 = await _pickImageB64();
@@ -894,20 +1264,21 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: 160,
+          height: 226,
           child: ListView(
             scrollDirection: Axis.horizontal,
             children:
                 dishes.map((d) {
                   return Padding(
-                    padding: const EdgeInsets.only(right: 12),
+                    padding: const EdgeInsets.only(right: 10),
                     child: SizedBox(
-                      width: 140,
+                      width: 178,
                       child: Column(
                         children: [
-                          Expanded(
+                          SizedBox(
+                            height: 120,
                             child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(10),
                               child:
                                   d.imageBase64 != null &&
                                           d.imageBase64!.isNotEmpty
@@ -924,35 +1295,37 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                       ),
                             ),
                           ),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 8),
                           Text(
                             d.name.toUpperCase(),
                             textAlign: TextAlign.center,
                             style: const TextStyle(
-                              fontSize: 10,
+                              fontSize: 11,
                               fontWeight: FontWeight.w600,
                             ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 4),
                           Text(
                             '₱${d.price}',
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: 12,
                               color: Colors.amber.shade800,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 6),
                           SizedBox(
-                            height: 24,
+                            height: 28,
                             child: ElevatedButton.icon(
-                              onPressed: d.available ? () => _addToCart(d) : null,
+                              onPressed: (widget.contentEditable || !d.available)
+                                  ? null
+                                  : () => _addToCart(d),
                               icon: Icon(d.available ? Icons.add : Icons.block, size: 14),
                               label: Text(
                                 d.available ? 'Add' : 'N/A',
-                                style: TextStyle(fontSize: 10),
+                                style: const TextStyle(fontSize: 10),
                               ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: d.available
@@ -991,7 +1364,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: 120,
+          height: 140,
           child: ListView(
             scrollDirection: Axis.horizontal,
             children: List.generate(
@@ -1001,7 +1374,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: SizedBox(
-                    width: 160,
+                    width: 180,
                     child:
                         i < w.eventDesignImageBase64.length
                             ? _b64Image(
@@ -1034,71 +1407,192 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
+  Widget _collageTile(String? b64, {required double width, required double height}) {
+    return SizedBox(
+      width: width,
+      height: height,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: _b64Image(b64, fit: BoxFit.cover),
+      ),
+    );
+  }
+
   Widget _buildGallery(WebsiteContentStore w) {
     if (_galleryDetailIndex != null) {
       final cat = w.galleryCategories[_galleryDetailIndex!];
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
+      return SingleChildScrollView(
+        padding: websitePagePadding(context),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                OutlinedButton(
-                  onPressed: () => setState(() => _galleryDetailIndex = null),
-                  child: const Text('GO BACK'),
+                Row(
+                  children: [
+                    FilledButton.tonal(
+                      onPressed: () => setState(() => _galleryDetailIndex = null),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF1E1E1E),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('GO BACK'),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFC024),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          cat.label,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                    if (widget.contentEditable) ...[
+                      const SizedBox(width: 10),
+                      FilledButton.icon(
+                        onPressed: () async {
+                          final b64s = await _pickMultipleImageB64();
+                          if (b64s.isEmpty) return;
+                          cat.imageBase64List.addAll(b64s);
+                          await w.save();
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.add_photo_alternate),
+                        label: const Text('Add Photos'),
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(width: 16),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 10,
-                  ),
-                  color: const Color(0xFFFFC024),
-                  child: Text(
-                    cat.label,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                const SizedBox(height: 16),
+                TextField(
+                  onChanged: (v) => setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
+                  decoration: InputDecoration(
+                    hintText: 'SEARCH',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.amber.shade700),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.amber.shade700),
+                    ),
                   ),
                 ),
-                const Spacer(),
-                if (widget.contentEditable)
-                  TextButton.icon(
-                    onPressed: () async {
-                      final b64 = await _pickImageB64();
-                      if (b64 == null) return;
-                      cat.imageBase64List.add(b64);
-                      await w.save();
-                      setState(() {});
-                    },
-                    icon: const Icon(Icons.upload),
-                    label: const Text('Upload'),
+                const SizedBox(height: 16),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: isMobile(context) ? 1 : isTablet(context) ? 2 : 3,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    childAspectRatio: 0.95,
                   ),
+                  itemCount: cat.imageBase64List.length,
+                  itemBuilder: (ctx, i) {
+                    final img = cat.imageBase64List[i];
+                    return Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          showDialog<void>(
+                            context: context,
+                            builder: (dlgCtx) => Dialog(
+                              insetPadding: const EdgeInsets.symmetric(horizontal: 120, vertical: 60),
+                              child: Stack(
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.all(18),
+                                    child: _b64Image(
+                                      img,
+                                      fit: BoxFit.contain,
+                                      alignment: _imageAlignmentFor(w, img),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: IconButton(
+                                      onPressed: () => Navigator.pop(dlgCtx),
+                                      icon: const Icon(Icons.close),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: _b64Image(
+                                    img,
+                                    fit: BoxFit.cover,
+                                    alignment: _imageAlignmentFor(w, img),
+                                  ),
+                                ),
+                              ),
+                              if (widget.contentEditable)
+                                Positioned(
+                                  right: 6,
+                                  top: 6,
+                                  child: PopupMenuButton<String>(
+                                    icon: const Icon(Icons.more_vert, color: Colors.white),
+                                    onSelected: (value) async {
+                                      if (value == 'position') {
+                                        await _editImagePosition(w: w, b64: img);
+                                        return;
+                                      } else if (value == 'delete') {
+                                        cat.imageBase64List.removeAt(i);
+                                      } else if (value == 'up' && i > 0) {
+                                        final tmp = cat.imageBase64List[i - 1];
+                                        cat.imageBase64List[i - 1] = cat.imageBase64List[i];
+                                        cat.imageBase64List[i] = tmp;
+                                      } else if (value == 'down' && i < cat.imageBase64List.length - 1) {
+                                        final tmp = cat.imageBase64List[i + 1];
+                                        cat.imageBase64List[i + 1] = cat.imageBase64List[i];
+                                        cat.imageBase64List[i] = tmp;
+                                      } else {
+                                        return;
+                                      }
+                                      await w.save();
+                                      setState(() {});
+                                    },
+                                    itemBuilder: (_) => const [
+                                      PopupMenuItem(value: 'position', child: Text('Adjust Position')),
+                                      PopupMenuItem(value: 'up', child: Text('Move Up')),
+                                      PopupMenuItem(value: 'down', child: Text('Move Down')),
+                                      PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
           ),
-          Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.all(24),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount:
-                    isMobile(context)
-                        ? 1
-                        : isTablet(context)
-                        ? 2
-                        : 3,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 1.2,
-              ),
-              itemCount: cat.imageBase64List.length,
-              itemBuilder:
-                  (ctx, i) => ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: _b64Image(cat.imageBase64List[i], fit: BoxFit.cover),
-                  ),
-            ),
-          ),
-        ],
+        ),
       );
     }
 
@@ -1121,8 +1615,24 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'WE CATER TO MANY DIFFERENT TYPES OF EVENTS. TAKE A LOOK AT OUR WORK!',
+                    'WE CATER TO MANY DIFFERENT TYPES OF EVENTS. TAKE A LOOK AT OUR WORK AND SEE SOME THINGS YOU MIGHT LIKE!',
                     textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 18),
+                  TextField(
+                    onChanged: (v) => setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
+                    decoration: InputDecoration(
+                      hintText: 'SEARCH',
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.amber.shade700),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.amber.shade700),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 24),
                   GridView.builder(
@@ -1139,22 +1649,32 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       mainAxisSpacing: 16,
                       childAspectRatio: 1.1,
                     ),
-                    itemCount: w.galleryCategories.length,
+                    itemCount: w.galleryCategories
+                        .where((c) => _gallerySearchQuery.isEmpty || c.label.toLowerCase().contains(_gallerySearchQuery))
+                        .length,
                     itemBuilder: (ctx, i) {
-                      final c = w.galleryCategories[i];
+                      final filtered = w.galleryCategories
+                          .where((c) => _gallerySearchQuery.isEmpty || c.label.toLowerCase().contains(_gallerySearchQuery))
+                          .toList();
+                      final c = filtered[i];
+                      final realIndex = w.galleryCategories.indexOf(c);
                       final thumb =
                           c.imageBase64List.isNotEmpty
                               ? c.imageBase64List.first
                               : null;
                       return InkWell(
-                        onTap: () => setState(() => _galleryDetailIndex = i),
+                        onTap: () => setState(() => _galleryDetailIndex = realIndex),
                         child: Stack(
                           children: [
                             ClipRRect(
                               borderRadius: BorderRadius.circular(12),
                               child: AspectRatio(
                                 aspectRatio: 1.1,
-                                child: _b64Image(thumb, fit: BoxFit.cover),
+                                child: _b64Image(
+                                  thumb,
+                                  fit: BoxFit.cover,
+                                  alignment: _imageAlignmentFor(w, thumb),
+                                ),
                               ),
                             ),
                             Positioned(
@@ -1176,8 +1696,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                   c.label,
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
                                   ),
                                 ),
                               ),
@@ -2898,6 +3418,7 @@ class _InquireFormState extends State<_InquireForm> {
   final _guests = TextEditingController();
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
+  final List<_InquiryScheduleSlot> _eventScheduleSlots = [];
 
   // State
   String _eventType = 'Birthday';
@@ -2930,10 +3451,46 @@ class _InquireFormState extends State<_InquireForm> {
   // Event Design State (photos and theme)
   final List<String> _designPhotoUrls = []; // For uploaded/linked photos
   final _designPhotoCtrl = TextEditingController();
+  final _linkedBaseUrlCtrl = TextEditingController();
   int? _focusedPhotoIndex;
   final _themeRequestCtrl =
-      TextEditingController(); // For Macrina's theme request
+      TextEditingController(); // For "I want to design my event" prompt
+  final _addByPromptCtrl = TextEditingController();
   bool _isDetectingAiObjects = false;
+  bool _isSearchingThemeImages = false;
+  bool _isExtractingThemeObjects = false;
+  bool _isRenderingComposite = false;
+  bool _isAddingByPrompt = false;
+  String? _selectedBaseImage;
+  String? _confirmedCompositeBase64;
+  final List<Map<String, dynamic>> _themeSuggestions = [];
+  final Set<int> _selectedSuggestionIndexes = <int>{};
+  final List<Map<String, dynamic>> _extractedThemeObjects = [];
+  final List<Map<String, dynamic>> _placedThemeObjects = [];
+  bool _isPlacementSaved = false;
+  /// Natural pixel size of the selected base image (for placement ↔ bitmap alignment).
+  double? _baseImageNaturalW;
+  double? _baseImageNaturalH;
+  final List<Map<String, dynamic>> _baseFreeSpaces = [];
+  final List<String> _baseRecommendations = [];
+  final ScrollController _objectsStripScrollCtrl = ScrollController();
+  // Avoid repeatedly base64-decoding the same images during drag/resize UI updates.
+  final Map<String, Uint8List> _base64DecodeCache = {};
+  static const Duration _aiRequestTimeout = Duration(seconds: 30);
+  /// Wizard for "Design my event": 0 = pick base, 1 = pick add-on source images, 2 = compose.
+  int _designEventWizardStep = 0;
+  int? _pendingBaseSuggestionIndex;
+  int _designEventBaseCarouselPage = 0;
+  int _designEventAddonCarouselPage = 0;
+  int _themeSearchPage = 1;
+  bool _themeSearchHasMore = false;
+  int _themeSearchTotal = 0;
+  static const int _themeSearchPerPage = 12;
+
+  int _themeSearchMaxPages() {
+    if (_themeSearchTotal <= 0) return 1;
+    return (_themeSearchTotal + _themeSearchPerPage - 1) ~/ _themeSearchPerPage;
+  }
 
   @override
   void initState() {
@@ -3002,35 +3559,58 @@ class _InquireFormState extends State<_InquireForm> {
     _customDishNameCtrl.dispose();
     _customDishDescCtrl.dispose();
     _designPhotoCtrl.dispose();
+    _linkedBaseUrlCtrl.dispose();
+    _objectsStripScrollCtrl.dispose();
     _themeRequestCtrl.dispose();
+    _addByPromptCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _selectDate() async {
-    final picked = await showDatePicker(
+  String _toHhmm(TimeOfDay time) =>
+      '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+
+  Future<void> _pickAddressFromMap() async {
+    final picked = await showMapPicker(
       context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialAddress: _address.text.trim(),
     );
     if (picked != null) {
       setState(() {
-        _dateController.text =
-            '${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}/${picked.year}';
+        _address.text = picked.address;
       });
     }
   }
 
-  Future<void> _selectTime() async {
-    final picked = await showTimePicker(
+  Future<void> _addEventScheduleSlot() async {
+    final now = DateTime.now();
+    final pickedDate = await showDatePicker(
       context: context,
-      initialTime: TimeOfDay.now(),
+      initialDate: now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
     );
-    if (picked != null) {
-      setState(() {
-        _timeController.text = picked.format(context);
-      });
-    }
+    if (pickedDate == null) return;
+
+    final start = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 9, minute: 0),
+    );
+    if (start == null) return;
+
+    final end = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: (start.hour + 1) % 24, minute: start.minute),
+    );
+    if (end == null) return;
+
+    setState(() {
+      _eventScheduleSlots.add(
+        _InquiryScheduleSlot(date: pickedDate, startTime: start, endTime: end),
+      );
+      _dateController.text =
+          '${pickedDate.month.toString().padLeft(2, '0')}/${pickedDate.day.toString().padLeft(2, '0')}/${pickedDate.year}';
+      _timeController.text = start.format(context);
+    });
   }
 
   Future<void> _showOrderSummaryDialog() async {
@@ -3046,8 +3626,7 @@ class _InquireFormState extends State<_InquireForm> {
     if (_phone.text.trim().isEmpty) missing.add('phone');
     if (_email.text.trim().isEmpty) missing.add('email');
     if (_address.text.trim().isEmpty) missing.add('city / address');
-    if (_dateController.text.trim().isEmpty) missing.add('event date');
-    if (_timeController.text.trim().isEmpty) missing.add('event time');
+    if (_eventScheduleSlots.isEmpty) missing.add('event schedule');
     final g = int.tryParse(_guests.text.trim());
     if (g == null || g < 1) missing.add('guest count');
 
@@ -3106,7 +3685,7 @@ class _InquireFormState extends State<_InquireForm> {
         });
       }
     } else {
-      menuSummaryTitle = 'Menu to be suggested by Macrina';
+      menuSummaryTitle = 'Menu to be suggested by our team';
     }
 
     final confirmed = await showDialog<bool>(
@@ -3161,7 +3740,7 @@ class _InquireFormState extends State<_InquireForm> {
                   _buildSummarySection(
                     menuSummaryTitle,
                     menuItems.isEmpty
-                        ? [_buildSummaryRow('Menu', 'Will be suggested by Macrina')]
+                        ? [_buildSummaryRow('Menu', 'Will be suggested by our team')]
                         : menuItems
                             .map((item) => _buildSummaryRow(item['dishName'], 'Selected'))
                             .toList(),
@@ -3269,8 +3848,7 @@ class _InquireFormState extends State<_InquireForm> {
     if (_phone.text.trim().isEmpty) missing.add('phone');
     if (_email.text.trim().isEmpty) missing.add('email');
     if (_address.text.trim().isEmpty) missing.add('city / address');
-    if (_dateController.text.trim().isEmpty) missing.add('event date');
-    if (_timeController.text.trim().isEmpty) missing.add('event time');
+    if (_eventScheduleSlots.isEmpty) missing.add('event schedule');
     final g = int.tryParse(_guests.text.trim());
     if (g == null || g < 1) missing.add('guest count');
 
@@ -3338,9 +3916,31 @@ class _InquireFormState extends State<_InquireForm> {
         }
       }
 
-      final now = DateTime.now();
-      final date =
-          '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      // Persist theme design picks as actual base64 payloads (not URLs),
+      // so they can be displayed in Manage Events online inquiries.
+      final sourcesForSubmission = _designBoardPhotos().toList();
+      final confirmedComposite = (_confirmedCompositeBase64 ?? '').trim();
+      final selectedBase = (_selectedBaseImage ?? '').trim();
+      if (confirmedComposite.isNotEmpty) {
+        // Keep only one final edited image in persisted inquiry records.
+        sourcesForSubmission
+          ..clear()
+          ..add(confirmedComposite);
+      } else if (selectedBase.isNotEmpty) {
+        // If no composite exists yet, avoid duplicating a selected base source.
+        sourcesForSubmission.removeWhere((src) => src.trim() == selectedBase);
+      }
+
+      final serializedDesignPicks = <String>[];
+      for (final src in sourcesForSubmission) {
+        try {
+          final bytes = await _resolveDesignPhotoBytes(src);
+          serializedDesignPicks.add(base64Encode(bytes));
+        } catch (_) {
+          // Skip unreadable photo sources; do not fail whole inquiry submission.
+        }
+      }
+      final themeRequest = _themeRequestCtrl.text.trim();
 
       await PublicEventsApi.instance.submitOnlineInquiry(
         payload: {
@@ -3354,24 +3954,24 @@ class _InquireFormState extends State<_InquireForm> {
           'contactPerson': _contactPerson.text.trim(),
           'contactNumber': _phone.text.trim(),
           'emailAddress': _email.text.trim(),
-          'scheduleSlots': [
-            {
-              'date': date,
-              'startTime': _timeController.text.trim(),
-              'endTime': '14:00',
-            },
-          ],
+          'scheduleSlots': _eventScheduleSlots
+              .map((slot) => {
+                    'date':
+                        '${slot.date.year.toString().padLeft(4, '0')}-${slot.date.month.toString().padLeft(2, '0')}-${slot.date.day.toString().padLeft(2, '0')}',
+                    'startTime': _toHhmm(slot.startTime),
+                    'endTime': _toHhmm(slot.endTime),
+                  })
+              .toList(),
           'address': _address.text.trim(),
           'guestCount': g,
           'menu': menuItems,
           'themeDesign': {
-            'picksBase64': _designBoardPhotos(),
+            'picksBase64': serializedDesignPicks,
             'tintEnabled': false,
             'tintColorHex': null,
-            'colorPrompt': _themeRequestCtrl.text.trim(),
+            'colorPrompt': themeRequest,
             'wantsCustomDesign': _wantsCustomDesign,
-            'customerThemeRequest':
-                _wantsCustomDesign ? null : _themeRequestCtrl.text.trim(),
+            'customerThemeRequest': themeRequest.isEmpty ? null : themeRequest,
           },
         },
       );
@@ -3407,6 +4007,7 @@ class _InquireFormState extends State<_InquireForm> {
       _guests.clear();
       _dateController.clear();
       _timeController.clear();
+      _eventScheduleSlots.clear();
       _themeRequestCtrl.clear();
       _designPhotoCtrl.clear();
 
@@ -3426,6 +4027,24 @@ class _InquireFormState extends State<_InquireForm> {
       _customDishes.clear();
       _designPhotoUrls.clear();
       _focusedPhotoIndex = null;
+      _selectedBaseImage = null;
+      _baseImageNaturalW = null;
+      _baseImageNaturalH = null;
+      _confirmedCompositeBase64 = null;
+      _themeSuggestions.clear();
+      _selectedSuggestionIndexes.clear();
+      _extractedThemeObjects.clear();
+      _placedThemeObjects.clear();
+      _isPlacementSaved = false;
+      _baseFreeSpaces.clear();
+      _baseRecommendations.clear();
+      _designEventWizardStep = 0;
+      _pendingBaseSuggestionIndex = null;
+      _designEventBaseCarouselPage = 0;
+      _designEventAddonCarouselPage = 0;
+      _themeSearchPage = 1;
+      _themeSearchHasMore = false;
+      _themeSearchTotal = 0;
 
       // Keep customer info if logged in (reload from saved data)
       _loadCustomerData();
@@ -3463,7 +4082,7 @@ class _InquireFormState extends State<_InquireForm> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
-                  'INQUIRY FORM',
+                  'Inquire for Catering or Event',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
@@ -3663,39 +4282,53 @@ class _InquireFormState extends State<_InquireForm> {
             keyboardType: TextInputType.emailAddress,
           ),
           const SizedBox(height: 12),
-          _buildTextField(_address, 'Address'),
-          const SizedBox(height: 12),
-          // Date/Time Row
           Row(
             children: [
-              Expanded(
-                child: TextField(
-                  controller: _dateController,
-                  readOnly: true,
-                  onTap: _selectDate,
-                  decoration: InputDecoration(
-                    labelText: 'DATE/TIME OF EVENT',
-                    border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.calendar_today),
-                      onPressed: _selectDate,
-                    ),
-                  ),
-                ),
-              ),
+              Expanded(child: _buildTextField(_address, 'Address')),
               const SizedBox(width: 8),
               IconButton(
-                onPressed: _selectTime,
-                icon: const Icon(Icons.access_time),
-              ),
-              IconButton(
-                onPressed: () {
-                  // Add another date/time slot
-                },
-                icon: const Icon(Icons.add_circle_outline),
+                tooltip: 'Pick on map',
+                onPressed: _pickAddressFromMap,
+                icon: const Icon(Icons.map_outlined),
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _addEventScheduleSlot,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF4511E),
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Event Schedule'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (_eventScheduleSlots.isEmpty)
+            Text(
+              'No schedules yet.',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _eventScheduleSlots.asMap().entries.map((entry) {
+                final index = entry.key;
+                final slot = entry.value;
+                return InputChip(
+                  label: Text(slot.label(context)),
+                  onDeleted: () {
+                    setState(() {
+                      _eventScheduleSlots.removeAt(index);
+                    });
+                  },
+                );
+              }).toList(),
+            ),
           const SizedBox(height: 12),
           TextField(
             controller: _guests,
@@ -4272,7 +4905,7 @@ class _InquireFormState extends State<_InquireForm> {
             const SizedBox(height: 12),
             TextButton(
               onPressed: () => setState(() => _wantsCustomDesign = false),
-              child: const Text('Change to Macrina\'s Design'),
+              child: const Text('Change to Assisted Design'),
             ),
           ] else if (_themeRequestCtrl.text.isNotEmpty) ...[
             Container(
@@ -4289,17 +4922,47 @@ class _InquireFormState extends State<_InquireForm> {
                       Icon(Icons.check_circle, color: Colors.red),
                       SizedBox(width: 8),
                       Text(
-                        'Macrina\'s will create your design',
+                        'Assisted event design is selected',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    'Theme: ${_themeRequestCtrl.text}',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  InkWell(
+                    onTap: _showDesignMyEventDialog,
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text(
+                        'Theme: ${_themeRequestCtrl.text}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          decoration: TextDecoration.underline,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
                   ),
+                  if ((_confirmedCompositeBase64 ?? '').trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: SizedBox(
+                        height: 84,
+                        width: double.infinity,
+                        child: _designImagePreview(
+                          _confirmedCompositeBase64!,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Tap theme text to continue editing this draft design.',
+                      style: TextStyle(fontSize: 11, color: Colors.black54),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -4332,7 +4995,7 @@ class _InquireFormState extends State<_InquireForm> {
             const SizedBox(height: 12),
             ElevatedButton(
               onPressed: () {
-                _showMacrinaDesignDialog();
+                _showDesignMyEventDialog();
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
@@ -4345,7 +5008,7 @@ class _InquireFormState extends State<_InquireForm> {
                 ),
               ),
               child: const Text(
-                'NO I\'D LIKE MACRINAS TO CREATE MY\nEVENT DESIGN INSTEAD',
+                'I WANT TO DESIGN MY EVENT',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 11),
               ),
@@ -4356,48 +5019,920 @@ class _InquireFormState extends State<_InquireForm> {
     );
   }
 
-  void _showMacrinaDesignDialog() {
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Macrina\'s Will Create Your Design'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Let us know what themes, colors, or styles you\'d like for your event.',
-                  style: TextStyle(fontSize: 13),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _themeRequestCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Theme/Style Preferences',
-                    hintText:
-                        'e.g., Rustic, Elegant, Garden theme, Pink and gold colors...',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 4,
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+  Future<void> _searchThemeSuggestions({bool loadMore = false, int? goToPage}) async {
+    final prompt = _themeRequestCtrl.text.trim();
+    if (prompt.isEmpty) return;
+    final int nextPage;
+    if (goToPage != null) {
+      nextPage = goToPage;
+    } else if (loadMore) {
+      nextPage = _themeSearchPage + 1;
+    } else {
+      nextPage = 1;
+    }
+    final isNewSearch = !loadMore && goToPage == null;
+    final isPageNav = goToPage != null;
+    setState(() => _isSearchingThemeImages = true);
+    try {
+      final response = await PublicEventsApi.instance.searchThemeImages(
+        eventTitle: _eventTitle.text.trim(),
+        eventType: _eventType,
+        formalityLevel: _formality,
+        prompt: prompt,
+        baseImageUrl: _selectedBaseImage,
+        tags: const ['decoration', 'design', 'theme'],
+        page: nextPage,
+        perPage: _themeSearchPerPage,
+      );
+      final usedFallback = response['usedFallback'] == true;
+      final warning = (response['error'] ?? '').toString().trim();
+      final hasMore = response['hasMore'] == true;
+      final rawTotal = response['total'];
+      var total = rawTotal is num ? rawTotal.toInt() : int.tryParse('$rawTotal') ?? 0;
+      final rawImages = (response['images'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      final images = rawImages.where((row) => !_isLikelyPeopleImageSuggestion(row)).toList();
+      if (total <= 0 && images.isNotEmpty) {
+        total = images.length;
+      }
+      setState(() {
+        _themeSearchPage = nextPage;
+        _themeSearchHasMore = hasMore;
+        _themeSearchTotal = total;
+        if (loadMore && goToPage == null) {
+          final seen = _themeSuggestions.map((row) => (row['imageUrl'] ?? '').toString()).toSet();
+          for (final row in images) {
+            final url = (row['imageUrl'] ?? '').toString();
+            if (url.isEmpty || seen.contains(url)) continue;
+            seen.add(url);
+            _themeSuggestions.add(row);
+          }
+        } else {
+          _themeSuggestions
+            ..clear()
+            ..addAll(images);
+          if (isNewSearch) {
+            _selectedSuggestionIndexes.clear();
+            _selectedBaseImage = null;
+            _baseImageNaturalW = null;
+            _baseImageNaturalH = null;
+            _isPlacementSaved = false;
+            _designEventWizardStep = 0;
+            _pendingBaseSuggestionIndex = null;
+            _designEventBaseCarouselPage = 0;
+            _designEventAddonCarouselPage = 0;
+          } else if (isPageNav) {
+            _selectedSuggestionIndexes.clear();
+            _pendingBaseSuggestionIndex = null;
+            _designEventBaseCarouselPage = 0;
+            _designEventAddonCarouselPage = 0;
+            if (_designEventWizardStep == 0) {
+              _selectedBaseImage = null;
+            }
+          }
+        }
+      });
+      if (mounted) {
+        if (!loadMore && !isPageNav && images.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No decor-only results found. Try a more specific prompt (e.g. "table setup, balloons, centerpieces, no people").',
               ),
-              ElevatedButton(
-                onPressed: () {
-                  if (_themeRequestCtrl.text.trim().isNotEmpty) {
-                    setState(() => _wantsCustomDesign = false);
-                  }
-                  Navigator.pop(context);
-                },
-                child: const Text('Confirm'),
+            ),
+          );
+        } else if (!loadMore && !isPageNav && usedFallback) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                warning.isNotEmpty
+                    ? 'Using fallback image suggestions: $warning'
+                    : 'Using fallback image suggestions. Check Pexels API key/config in server env.',
+              ),
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _isSearchingThemeImages = false);
+    }
+  }
+
+  bool _isLikelyPeopleImageSuggestion(Map<String, dynamic> row) {
+    final source = (row['source'] ?? '').toString().toLowerCase().trim();
+    final text = [
+      row['title'],
+      row['description'],
+      row['imageUrl'],
+      row['thumbnailUrl'],
+      row['photographer'],
+      row['pexelsUrl'],
+    ].map((v) => (v ?? '').toString().toLowerCase()).join(' ');
+
+    final hasPeopleKeyword = RegExp(
+      r'\b(person|people|human|portrait|face|selfie|man|woman|boy|girl|bride|groom|model|crowd|group)\b',
+    ).hasMatch(text);
+
+    // When backend falls back to generic stock images, aggressively filter
+    // to avoid showing people-focused references in the design workflow.
+    if (source == 'fallback' && !text.contains('decor') && !text.contains('tablescape')) {
+      return true;
+    }
+    return hasPeopleKeyword;
+  }
+
+  Future<void> _extractSelectedObjects() async {
+    if (_selectedSuggestionIndexes.isEmpty) return;
+    setState(() => _isExtractingThemeObjects = true);
+    try {
+      final selectedUrls = _selectedSuggestionIndexes
+          .map((i) => _themeSuggestions[i]['imageUrl']?.toString() ?? '')
+          .where((u) => u.isNotEmpty)
+          .toList();
+      final bytesList = await Future.wait(selectedUrls.map(_resolveDesignPhotoBytes));
+      final encoded = bytesList.map(base64Encode).toList();
+      final response = await PublicEventsApi.instance.extractThemeObjects(imagesBase64: encoded);
+      final imageGroups = (response['images'] as List<dynamic>? ?? const []).whereType<Map>();
+      final flattened = <Map<String, dynamic>>[];
+      var failedImages = 0;
+      for (final group in imageGroups) {
+        if ((group['error'] ?? '').toString().trim().isNotEmpty) {
+          failedImages += 1;
+        }
+        final objects = (group['objects'] as List<dynamic>? ?? const [])
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e));
+        flattened.addAll(objects);
+      }
+      var visibleObjects = flattened.where((row) => (row['objectImageBase64'] ?? '').toString().isNotEmpty).toList();
+      var usedSourceFallback = false;
+      if (visibleObjects.isEmpty) {
+        usedSourceFallback = true;
+        visibleObjects = encoded.take(6).toList().asMap().entries.map((entry) {
+          return <String, dynamic>{
+            'id': 'fallback_source_${entry.key}',
+            'label': 'Source image',
+            'score': 1.0,
+            'objectImageBase64': entry.value,
+          };
+        }).toList();
+      }
+      setState(() {
+        _extractedThemeObjects
+          ..clear()
+          ..addAll(visibleObjects);
+        _placedThemeObjects.clear();
+        _isPlacementSaved = false;
+      });
+      if (mounted && usedSourceFallback) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No objects were extracted. Using selected source images as fallback cutouts.'),
+          ),
+        );
+      }
+      if (mounted && failedImages > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              failedImages == 1
+                  ? 'Segmentation failed for 1 source image; others were kept if any.'
+                  : 'Segmentation failed for $failedImages source images; others were kept if any.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExtractingThemeObjects = false);
+    }
+  }
+
+  Future<void> _analyzeBaseAndRecommend() async {
+    if (_selectedBaseImage == null) return;
+    final baseBytes = await _resolveDesignPhotoBytes(_selectedBaseImage!);
+    final response = await PublicEventsApi.instance.analyzeBaseImage(
+      baseImageBase64: base64Encode(baseBytes),
+    );
+    setState(() {
+      _baseFreeSpaces
+        ..clear()
+        ..addAll((response['freeSpaces'] as List<dynamic>? ?? const []).whereType<Map>().map((e) => Map<String, dynamic>.from(e)));
+      _baseRecommendations
+        ..clear()
+        ..addAll((response['recommendations'] as List<dynamic>? ?? const []).map((e) => e.toString()));
+    });
+  }
+
+  Future<void> _autoPlaceSelectedObjects() async {
+    if (_extractedThemeObjects.isEmpty) return;
+    try {
+      final response = await PublicEventsApi.instance.autoPlaceThemeObjects(
+        freeSpaces: _baseFreeSpaces,
+        objects: _extractedThemeObjects,
+      );
+      final placements = (response['placements'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+
+      final nextPlaced = <Map<String, dynamic>>[];
+      for (var i = 0; i < placements.length; i++) {
+        final p = placements[i];
+        final pid = (p['objectId'] ?? '').toString();
+        Map<String, dynamic>? match;
+        for (final obj in _extractedThemeObjects) {
+          if ((obj['id'] ?? '').toString() == pid) {
+            match = obj;
+            break;
+          }
+        }
+        match ??= i < _extractedThemeObjects.length ? _extractedThemeObjects[i] : null;
+        if (match == null) continue;
+        final b64 = (match['objectImageBase64'] ?? '').toString();
+        if (b64.isEmpty) continue;
+        nextPlaced.add({
+          'id': p['objectId'] ?? match['id'],
+          'x': p['x'],
+          'y': p['y'],
+          'width': p['width'],
+          'height': p['height'],
+          'rotation': p['rotation'] ?? 0,
+          'zIndex': p['zIndex'] ?? i,
+          'intensity': 1.0,
+          'targetHex': '#f4511e',
+          '_checked': false,
+          'objectImageBase64': b64,
+        });
+      }
+
+      if (nextPlaced.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Auto place had nothing to apply. Your current placement was left unchanged.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      setState(() {
+        _placedThemeObjects
+          ..clear()
+          ..addAll(nextPlaced);
+        _isPlacementSaved = false;
+      });
+    } catch (e, st) {
+      debugPrint('autoPlace: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e is Exception
+                  ? e.toString().replaceFirst('Exception: ', '')
+                  : 'Auto place failed. Your placement was left unchanged.',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _renderComposite() async {
+    if (_selectedBaseImage == null) return;
+    if (_baseImageNaturalW == null ||
+        _baseImageNaturalH == null ||
+        _baseImageNaturalW! <= 0 ||
+        _baseImageNaturalH! <= 0) {
+      await _cacheBaseImageNaturalSize();
+    }
+    if (_baseImageNaturalW == null ||
+        _baseImageNaturalH == null ||
+        _baseImageNaturalW! <= 0 ||
+        _baseImageNaturalH! <= 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read base image size. Try re-selecting the base image.')),
+        );
+      }
+      return;
+    }
+    if (!_isPlacementSaved) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please click Save Placement before rendering.')),
+        );
+      }
+      return;
+    }
+    setState(() => _isRenderingComposite = true);
+    try {
+      // FastAPI validation is strict (e.g. width/height must be > 1).
+      // Sanitize current editor state before sending to render-composite.
+      final iw = _baseImageNaturalW!;
+      final ih = _baseImageNaturalH!;
+      final sanitizedObjects = _placedThemeObjects
+          .where((o) => (o['objectImageBase64'] ?? '').toString().trim().isNotEmpty)
+          .map((o) {
+        double _finite(num? v, double fallback) {
+          final d = (v ?? fallback).toDouble();
+          return d.isFinite ? d : fallback;
+        }
+
+        double x = _finite(o['x'] as num?, 0.0);
+        double y = _finite(o['y'] as num?, 0.0);
+        double width = _finite(o['width'] as num?, 0.15);
+        double height = _finite(o['height'] as num?, 0.15);
+
+        final looksNormalized =
+            x <= 1.01 && y <= 1.01 && width <= 1.01 && height <= 1.01 && x >= -0.001 && y >= -0.001;
+        if (looksNormalized) {
+          x *= iw;
+          y *= ih;
+          width *= iw;
+          height *= ih;
+        } else {
+          if (width <= 1.0) width = 2.1;
+          if (height <= 1.0) height = 2.1;
+        }
+        if (width < 2.0) width = 2.0;
+        if (height < 2.0) height = 2.0;
+        final rotation = _finite(o['rotation'] as num?, 0.0);
+        final intensity = _finite(o['intensity'] as num?, 1.0).clamp(0.0, 1.0);
+        final zIndex = (o['zIndex'] as num?)?.toInt() ?? 0;
+
+        final targetHex = (o['targetHex'] ?? '').toString().trim();
+
+        return {
+          'objectImageBase64': (o['objectImageBase64'] ?? '').toString(),
+          'x': x,
+          'y': y,
+          'width': width,
+          'height': height,
+          'rotation': rotation,
+          'zIndex': zIndex,
+          'intensity': intensity,
+          'targetHex': targetHex.isEmpty ? null : targetHex,
+        };
+      }).toList();
+
+      final baseBytes = await _resolveDesignPhotoBytes(_selectedBaseImage!);
+      final response = await PublicEventsApi.instance.renderThemeComposite(
+        baseImageBase64: base64Encode(baseBytes),
+        objects: sanitizedObjects,
+      );
+      final imageBase64 = (response['imageBase64'] ?? '').toString().trim();
+      if (imageBase64.isNotEmpty) {
+        setState(() {
+          _confirmedCompositeBase64 = imageBase64;
+        });
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Render returned no image. Try again or adjust objects.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e is Exception
+                  ? e.toString().replaceFirst('Exception: ', '')
+                  : 'Render failed. The server may be busy — try again in a moment.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRenderingComposite = false);
+    }
+  }
+
+  Future<void> _addObjectsByPromptAndRender() async {
+    final prompt = _addByPromptCtrl.text.trim();
+    if (_selectedBaseImage == null || prompt.isEmpty) return;
+    setState(() => _isAddingByPrompt = true);
+    try {
+      final baseBytes = await _resolveDesignPhotoBytes(_selectedBaseImage!);
+      final response = await PublicEventsApi.instance.addThemeObjectsByPrompt(
+        baseImageBase64: base64Encode(baseBytes),
+        eventTitle: _eventTitle.text.trim(),
+        eventType: _eventType,
+        formalityLevel: _formality,
+        prompt: prompt,
+        baseImageUrl: _selectedBaseImage,
+      );
+      final imageBase64 = (response['imageBase64'] ?? '').toString().trim();
+      final placements = (response['placements'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      if (imageBase64.isEmpty) {
+        if (mounted) {
+          final msg = (response['error'] ?? 'Prompt add returned no image.').toString();
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+        }
+        return;
+      }
+      setState(() {
+        _confirmedCompositeBase64 = imageBase64;
+        if (placements.isNotEmpty) {
+          _placedThemeObjects
+            ..clear()
+            ..addAll(placements.map((p) => {
+                  'id': p['id'] ?? 'prompt_obj',
+                  'objectImageBase64': (p['objectImageBase64'] ?? '').toString(),
+                  'x': p['x'],
+                  'y': p['y'],
+                  'width': p['width'],
+                  'height': p['height'],
+                  'rotation': p['rotation'] ?? 0,
+                  'zIndex': p['zIndex'] ?? 0,
+                  'intensity': p['intensity'] ?? 1.0,
+                  'targetHex': p['targetHex'],
+                  '_checked': true,
+                }));
+          _isPlacementSaved = true;
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Prompt objects added and rendered.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e is Exception ? e.toString().replaceFirst('Exception: ', '') : 'Failed to add by prompt.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAddingByPrompt = false);
+    }
+  }
+
+  void _showThemeImageEnlargeDialog(BuildContext dialogContext, String imageUrl) {
+    showDialog<void>(
+      context: dialogContext,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: SizedBox(
+          width: MediaQuery.of(ctx).size.width * 0.92,
+          height: MediaQuery.of(ctx).size.height * 0.88,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4,
+                  child: Center(child: _designImagePreview(imageUrl, fit: BoxFit.contain)),
+                ),
+              ),
+              Positioned(
+                top: 4,
+                right: 4,
+                child: IconButton(
+                  style: IconButton.styleFrom(backgroundColor: Colors.black54, foregroundColor: Colors.white),
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  void _showDesignMyEventDialog() {
+    _showDesignMyEventEditorPage();
+  }
+
+  Widget _buildPlacementEditor({
+    required String baseImage,
+    required List<Map<String, dynamic>> placedObjects,
+    required List<Map<String, dynamic>> extractedObjects,
+    required VoidCallback onChanged,
+    double? editorWidth,
+    double? editorMaxHeight,
+  }) {
+    final safeEditorWidth = (editorWidth != null && editorWidth.isFinite) ? editorWidth : null;
+    final safeEditorMaxHeight = (editorMaxHeight != null && editorMaxHeight.isFinite && editorMaxHeight > 0)
+        ? editorMaxHeight
+        : null;
+    final sourceCandidates = extractedObjects
+        .where((o) => (o['objectImageBase64'] ?? '').toString().isNotEmpty)
+        .toList();
+
+    Widget dragCanvas(double width, double height) {
+      final imgW = _baseImageNaturalW;
+      final imgH = _baseImageNaturalH;
+      final layoutReady = imgW != null && imgH != null && imgW > 0 && imgH > 0;
+      final L = layoutReady ? _placementContainLayout(width, height, imgW, imgH) : null;
+
+      return StatefulBuilder(
+        builder: (context, setLocalState) {
+          void notifyPlacementChanged() {
+            setLocalState(() {});
+            onChanged();
+          }
+
+          return DragTarget<Map<String, dynamic>>(
+            onAcceptWithDetails: (details) {
+              final lay = L;
+              final iw = imgW;
+              final ih = imgH;
+              if (lay == null || iw == null || ih == null) return;
+
+              final local1 = details.offset;
+              final renderBox = context.findRenderObject() as RenderBox?;
+              final local2 = renderBox != null ? renderBox.globalToLocal(details.offset) : local1;
+
+              final local1InBounds = local1.dx >= 0 &&
+                  local1.dx <= width &&
+                  local1.dy >= 0 &&
+                  local1.dy <= height;
+              final local2InBounds = local2.dx >= 0 &&
+                  local2.dx <= width &&
+                  local2.dy >= 0 &&
+                  local2.dy <= height;
+
+              final local = local1InBounds ? local1 : (local2InBounds ? local2 : local1);
+
+              const defaultCanvasPx = 120.0;
+              final nw = (defaultCanvasPx / lay.dispW).clamp(0.02, 1.0);
+              final nh = (defaultCanvasPx / lay.dispH).clamp(0.02, 1.0);
+              final ix = (local.dx - lay.offX) / lay.scale;
+              final iy = (local.dy - lay.offY) / lay.scale;
+              final nx = (ix / iw).clamp(0.0, 1.0 - nw);
+              final ny = (iy / ih).clamp(0.0, 1.0 - nh);
+
+              _placedThemeObjects.add({
+                'id': details.data['id'],
+                'objectImageBase64': (details.data['objectImageBase64'] ?? '').toString(),
+                'x': nx,
+                'y': ny,
+                'width': nw,
+                'height': nh,
+                'rotation': 0.0,
+                'zIndex': _placedThemeObjects.length,
+                'targetHex': '#f4511e',
+                'intensity': 1.0,
+                '_checked': false,
+              });
+              _isPlacementSaved = false;
+              notifyPlacementChanged();
+            },
+            builder: (context, _, __) {
+              return Container(
+                height: height,
+                width: width,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Stack(
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    Positioned.fill(child: _designImagePreview(baseImage, fit: BoxFit.contain)),
+                    if (!layoutReady)
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const CircularProgressIndicator(),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Loading image layout…',
+                                style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      ...placedObjects.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final obj = entry.value;
+                        final color = (obj['targetHex'] ?? '#f4511e').toString();
+                        final isChecked = obj['_checked'] == true;
+                        final lay = L!;
+
+                        final nx = (obj['x'] as num?)?.toDouble() ?? 0.0;
+                        final ny = (obj['y'] as num?)?.toDouble() ?? 0.0;
+                        final nw = (obj['width'] as num?)?.toDouble() ?? 0.15;
+                        final nh = (obj['height'] as num?)?.toDouble() ?? 0.15;
+
+                        return Positioned(
+                          left: lay.offX + nx * lay.dispW,
+                          top: lay.offY + ny * lay.dispH,
+                          child: GestureDetector(
+                            onPanUpdate: (d) {
+                              if (isChecked) return;
+                              if ((obj['_isResizing'] ?? false) == true) return;
+                              final onx = (obj['x'] as num?)?.toDouble() ?? 0.0;
+                              final ony = (obj['y'] as num?)?.toDouble() ?? 0.0;
+                              final ow = (obj['width'] as num?)?.toDouble() ?? 0.15;
+                              final oh = (obj['height'] as num?)?.toDouble() ?? 0.15;
+                              obj['x'] = (onx + d.delta.dx / lay.dispW).clamp(0.0, 1.0 - ow);
+                              obj['y'] = (ony + d.delta.dy / lay.dispH).clamp(0.0, 1.0 - oh);
+                              _isPlacementSaved = false;
+                              notifyPlacementChanged();
+                            },
+                            onTap: () {
+                              if (isChecked) return;
+                              final palette = ['#f4511e', '#1db954', '#1976d2', '#e91e63', '#6a1b9a', '#ffc107'];
+                              final current = palette.indexOf(color.toLowerCase());
+                              obj['targetHex'] = palette[(current + 1) % palette.length];
+                              _isPlacementSaved = false;
+                              notifyPlacementChanged();
+                            },
+                            child: Container(
+                              width: nw * lay.dispW,
+                              height: nh * lay.dispH,
+                              decoration: BoxDecoration(
+                                border: isChecked ? null : Border.all(color: Colors.white, width: 2),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.15),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              child: Stack(
+                                children: [
+                                  Positioned.fill(
+                                    child: _designImagePreview(
+                                      (obj['objectImageBase64'] ?? '').toString(),
+                                      fit: BoxFit.contain,
+                                    ),
+                                  ),
+
+                                  // Resize handle (bottom-right).
+                                  if (!isChecked)
+                                    Positioned(
+                                      right: 0,
+                                      bottom: 0,
+                                      child: GestureDetector(
+                                        onPanStart: (_) {
+                                          obj['_isResizing'] = true;
+                                        },
+                                        onPanUpdate: (d) {
+                                          final objX = (obj['x'] as num?)?.toDouble() ?? 0;
+                                          final objY = (obj['y'] as num?)?.toDouble() ?? 0;
+                                          final objW = ((obj['width'] as num?)?.toDouble() ?? 0.15);
+                                          final objH = ((obj['height'] as num?)?.toDouble() ?? 0.15);
+
+                                          const minUserSize = 40.0;
+                                          const minApiPix = 2.0;
+                                          final minWn = math.max(minUserSize / lay.dispW, minApiPix / imgW);
+                                          final minHn = math.max(minUserSize / lay.dispH, minApiPix / imgH);
+
+                                          final maxWn = (1.0 - objX).clamp(minWn, 1.0);
+                                          final maxHn = (1.0 - objY).clamp(minHn, 1.0);
+
+                                          final nextW = objW + d.delta.dx / lay.dispW;
+                                          final nextH = objH + d.delta.dy / lay.dispH;
+
+                                          obj['width'] = nextW.clamp(minWn, maxWn);
+                                          obj['height'] = nextH.clamp(minHn, maxHn);
+                                          _isPlacementSaved = false;
+                                          notifyPlacementChanged();
+                                        },
+                                        onPanEnd: (_) {
+                                          obj['_isResizing'] = false;
+                                          notifyPlacementChanged();
+                                        },
+                                        child: Container(
+                                          width: 22,
+                                          height: 22,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.95),
+                                            border: Border.all(color: Colors.black54, width: 1),
+                                          ),
+                                          child: const Icon(Icons.open_with, size: 14, color: Colors.black54),
+                                        ),
+                                      ),
+                                    ),
+
+                                  Positioned(
+                                    left: 2,
+                                    top: 2,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        obj['_checked'] = !(obj['_checked'] == true);
+                                        _isPlacementSaved = false;
+                                        notifyPlacementChanged();
+                                      },
+                                      child: CircleAvatar(
+                                        radius: 10,
+                                        backgroundColor: isChecked ? const Color(0xFF2E7D32) : Colors.black54,
+                                        child: Icon(
+                                          isChecked ? Icons.check : Icons.check_box_outline_blank,
+                                          size: 12,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  if (!isChecked)
+                                    Positioned(
+                                      right: 2,
+                                      top: 2,
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          _placedThemeObjects.removeAt(index);
+                                          _isPlacementSaved = false;
+                                          notifyPlacementChanged();
+                                        },
+                                        child: const CircleAvatar(
+                                          radius: 10,
+                                          backgroundColor: Colors.red,
+                                          child: Icon(Icons.close, size: 12, color: Colors.white),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      );
+    }
+
+    final strip = Row(
+      children: [
+        IconButton(
+          tooltip: 'Scroll left',
+          onPressed: sourceCandidates.isEmpty
+              ? null
+              : () {
+                  if (!_objectsStripScrollCtrl.hasClients) return;
+                  final target = (_objectsStripScrollCtrl.offset - 180).clamp(
+                    0.0,
+                    _objectsStripScrollCtrl.position.maxScrollExtent,
+                  );
+                  _objectsStripScrollCtrl.animateTo(
+                    target,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                  );
+                },
+          icon: const Icon(Icons.chevron_left),
+        ),
+        Expanded(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 108),
+            child: Scrollbar(
+              controller: _objectsStripScrollCtrl,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _objectsStripScrollCtrl,
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: sourceCandidates.map((obj) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8, bottom: 4),
+                      child: Draggable<Map<String, dynamic>>(
+                        data: obj,
+                        feedback: SizedBox(
+                          width: 80,
+                          height: 80,
+                          child: _designImagePreview((obj['objectImageBase64'] ?? '').toString(), fit: BoxFit.contain),
+                        ),
+                        childWhenDragging: Opacity(
+                          opacity: 0.3,
+                          child: SizedBox(
+                            width: 72,
+                            height: 72,
+                            child: _designImagePreview((obj['objectImageBase64'] ?? '').toString(), fit: BoxFit.contain),
+                          ),
+                        ),
+                        child: SizedBox(
+                          width: 72,
+                          height: 72,
+                          child: _designImagePreview((obj['objectImageBase64'] ?? '').toString(), fit: BoxFit.contain),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Scroll right',
+          onPressed: sourceCandidates.isEmpty
+              ? null
+              : () {
+                  if (!_objectsStripScrollCtrl.hasClients) return;
+                  final target = (_objectsStripScrollCtrl.offset + 180).clamp(
+                    0.0,
+                    _objectsStripScrollCtrl.position.maxScrollExtent,
+                  );
+                  _objectsStripScrollCtrl.animateTo(
+                    target,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                  );
+                },
+          icon: const Icon(Icons.chevron_right),
+        ),
+      ],
+    );
+
+    if (safeEditorMaxHeight != null) {
+      return SizedBox(
+        width: safeEditorWidth,
+        height: safeEditorMaxHeight,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Drag objects onto base image', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            if (placedObjects.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  _isPlacementSaved
+                      ? 'Placement saved. Checked objects are locked for a clear preview.'
+                      : 'Tip: tap each object check button to lock it, then click Save Placement.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+              ),
+            if (sourceCandidates.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  'Use Extract Objects on the left to load cutouts.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+              )
+            else
+              strip,
+            const SizedBox(height: 8),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final w = editorWidth ?? constraints.maxWidth;
+                  final h = constraints.maxHeight;
+                  return dragCanvas(w, h);
+                },
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Drag objects onto base image', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        if (sourceCandidates.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              'Use Extract Objects on the left to load cutouts.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+          )
+        else
+          strip,
+        const SizedBox(height: 10),
+        if (placedObjects.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              _isPlacementSaved
+                  ? 'Placement saved. Checked objects are locked for a clear preview.'
+                  : 'Tip: tap each object check button to lock it, then click Save Placement.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+          ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final width = editorWidth ?? constraints.maxWidth;
+            return dragCanvas(width, 420);
+          },
+        ),
+      ],
     );
   }
 
@@ -4454,20 +5989,39 @@ class _InquireFormState extends State<_InquireForm> {
     );
   }
 
+  String? _normalizeBase64Payload(String value) {
+    final raw = value.trim();
+    if (raw.isEmpty) return null;
+    final payload = raw.startsWith('data:image/') ? raw.substring(raw.indexOf(',') + 1) : raw;
+    final compact = payload.replaceAll(RegExp(r'\s+'), '');
+    if (compact.isEmpty) return null;
+    if (!RegExp(r'^[A-Za-z0-9+/_=-]+$').hasMatch(compact)) return null;
+    final normalized = compact.replaceAll('-', '+').replaceAll('_', '/');
+    final mod = normalized.length % 4;
+    if (mod == 0) return normalized;
+    return '$normalized${'=' * (4 - mod)}';
+  }
+
   bool _looksLikeBase64Image(String value) {
-    final t = value.trim();
-    return t.startsWith('data:image/') || (!t.startsWith('http://') && !t.startsWith('https://') && t.length > 200);
+    final t = value.trim().toLowerCase();
+    if (t.startsWith('http://') || t.startsWith('https://')) return false;
+    return _normalizeBase64Payload(value) != null;
   }
 
   Widget _designImagePreview(String value, {BoxFit fit = BoxFit.cover}) {
     final trimmed = value.trim();
     if (_looksLikeBase64Image(trimmed)) {
       try {
-        final payload = trimmed.startsWith('data:image/')
-            ? trimmed.substring(trimmed.indexOf(',') + 1)
-            : trimmed;
+        final payload = _normalizeBase64Payload(trimmed);
+        if (payload == null) {
+          return const Center(child: Icon(Icons.broken_image, color: Colors.grey));
+        }
+        final bytes = _base64DecodeCache.putIfAbsent(
+          payload,
+          () => base64Decode(payload),
+        );
         return Image.memory(
-          base64Decode(payload),
+          bytes,
           fit: fit,
           errorBuilder: (ctx, err, stack) => const Center(
             child: Icon(Icons.broken_image, color: Colors.grey),
@@ -4505,20 +6059,60 @@ class _InquireFormState extends State<_InquireForm> {
   Future<Uint8List> _resolveDesignPhotoBytes(String value) async {
     final trimmed = value.trim();
     if (_looksLikeBase64Image(trimmed)) {
-      final payload = trimmed.startsWith('data:image/')
-          ? trimmed.substring(trimmed.indexOf(',') + 1)
-          : trimmed;
+      final payload = _normalizeBase64Payload(trimmed);
+      if (payload == null) {
+        throw Exception('Invalid base64 image payload');
+      }
       return base64Decode(payload);
     }
     final uri = Uri.tryParse(trimmed);
     if (uri == null) {
       throw Exception('Invalid design photo source');
     }
-    final response = await http.get(uri);
+    final response = await http.get(uri).timeout(_aiRequestTimeout);
     if (response.statusCode != 200) {
       throw Exception('Failed to download selected design photo');
     }
     return response.bodyBytes;
+  }
+
+  Future<void> _openExternalLink(String url) async {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _cacheBaseImageNaturalSize() async {
+    final src = _selectedBaseImage;
+    if (src == null || src.trim().isEmpty) {
+      if (mounted) {
+        setState(() {
+          _baseImageNaturalW = null;
+          _baseImageNaturalH = null;
+        });
+      }
+      return;
+    }
+    try {
+      final bytes = await _resolveDesignPhotoBytes(src);
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final w = frame.image.width.toDouble();
+      final h = frame.image.height.toDouble();
+      frame.image.dispose();
+      if (!mounted) return;
+      setState(() {
+        _baseImageNaturalW = w;
+        _baseImageNaturalH = h;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _baseImageNaturalW = null;
+          _baseImageNaturalH = null;
+        });
+      }
+    }
   }
 
   Future<void> _runCustomerEditObjectsFlow(void Function(void Function()) setDialogState) async {
@@ -4535,11 +6129,13 @@ class _InquireFormState extends State<_InquireForm> {
     try {
       final bytes = await _resolveDesignPhotoBytes(source);
       final imageBase64 = base64Encode(bytes);
-      final segmented = await PublicEventsApi.instance.inferThemeObjectsWithSam(
-        imageBase64: imageBase64,
-        maxDetections: 20,
-        maskFormat: 'polygon',
-      );
+      final segmented = await PublicEventsApi.instance
+          .inferThemeObjectsWithSam(
+            imageBase64: imageBase64,
+            maxDetections: 20,
+            maskFormat: 'polygon',
+          )
+          .timeout(_aiRequestTimeout);
       final objects = (segmented['objects'] as List<dynamic>? ?? const [])
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
@@ -4613,7 +6209,50 @@ class _InquireFormState extends State<_InquireForm> {
                                 ),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(10),
-                                  child: Image.memory(bytes, fit: BoxFit.contain),
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final w = constraints.maxWidth;
+                                      final h = constraints.maxHeight;
+                                      return Stack(
+                                        children: [
+                                          Positioned.fill(child: Image.memory(bytes, fit: BoxFit.contain)),
+                                          ...objects.map((obj) {
+                                            final boxRaw = Map<String, dynamic>.from(
+                                              (obj['boundingBox'] as Map?) ?? const <String, dynamic>{},
+                                            );
+                                            final leftRaw = (boxRaw['left'] as num?)?.toDouble() ?? 0;
+                                            final topRaw = (boxRaw['top'] as num?)?.toDouble() ?? 0;
+                                            final widthRaw = (boxRaw['width'] as num?)?.toDouble() ?? 0.2;
+                                            final heightRaw = (boxRaw['height'] as num?)?.toDouble() ?? 0.2;
+                                            final isNormalized = widthRaw <= 1.0 && heightRaw <= 1.0;
+                                            final left = isNormalized ? leftRaw * w : leftRaw;
+                                            final top = isNormalized ? topRaw * h : topRaw;
+                                            final width = isNormalized ? widthRaw * w : widthRaw;
+                                            final height = isNormalized ? heightRaw * h : heightRaw;
+                                            final active = selectedLabel == (obj['label'] ?? 'Object').toString();
+                                            return Positioned(
+                                              left: left,
+                                              top: top,
+                                              width: width,
+                                              height: height,
+                                              child: GestureDetector(
+                                                onTap: () => setLocalState(
+                                                  () => selectedLabel = (obj['label'] ?? 'Object').toString(),
+                                                ),
+                                                child: CustomPaint(
+                                                  painter: _SoftCustomerOverlayPainter(
+                                                    polygonPoints: const <Map<String, dynamic>>[],
+                                                    boundingBox: Rect.fromLTWH(0, 0, width, height),
+                                                    selected: active,
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          }),
+                                        ],
+                                      );
+                                    },
+                                  ),
                                 ),
                               ),
                             ),
@@ -4794,11 +6433,13 @@ class _InquireFormState extends State<_InquireForm> {
               })
           .toList();
 
-      final recolor = await PublicEventsApi.instance.swapThemeObjectColors(
-        imageBase64: imageBase64,
-        masks: masks,
-        edits: edits,
-      );
+      final recolor = await PublicEventsApi.instance
+          .swapThemeObjectColors(
+            imageBase64: imageBase64,
+            masks: masks,
+            edits: edits,
+          )
+          .timeout(_aiRequestTimeout);
       final recoloredBase64 = (recolor['imageBase64'] ?? '').toString().trim();
       if (recoloredBase64.isEmpty) {
         throw Exception('AI recolor did not return an image.');

@@ -157,10 +157,28 @@ class ApiClient {
   Map<String, dynamic> _handleResponse(http.Response res, Uri uri) {
     final decoded = _parseResponse(res, uri);
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw ApiError(
-        message: decoded is Map && decoded['message'] is String
+      String buildMessage() {
+        final message = decoded is Map && decoded['message'] is String
             ? decoded['message'] as String
-            : 'Request failed',
+            : 'Request failed';
+        final code = decoded is Map && decoded['code'] is String
+            ? decoded['code'] as String
+            : null;
+        final details = decoded is Map ? decoded['details'] : null;
+
+        // Keep message readable; include details when backend provides them.
+        if (details != null) {
+          final detailsStr = details is String ? details : details.toString();
+          final shortDetails = detailsStr.length > 500
+              ? '${detailsStr.substring(0, 500)}…'
+              : detailsStr;
+          return code != null ? '$message (code: $code). Details: $shortDetails' : '$message. Details: $shortDetails';
+        }
+        return code != null ? '$message (code: $code)' : message;
+      }
+
+      throw ApiError(
+        message: buildMessage(),
         statusCode: res.statusCode,
       );
     }

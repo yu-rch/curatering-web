@@ -8,7 +8,13 @@ import postgres from 'postgres'
 import path from 'path'
 import fs from 'fs/promises'
 import { fileURLToPath } from 'url'
-import { initDb, pool, generateUserId, generateSequentialId } from "./db.js";
+import {
+  initDb,
+  pool,
+  poolQueryWithRetry,
+  generateUserId,
+  generateSequentialId,
+} from "./db.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,15 +27,25 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-change-me";
-const connectionString = process.env.DATABASE_URL
-const sql = postgres(connectionString)
+const connectionString = process.env.DATABASE_URL;
+const sql = postgres(connectionString);
+
+// Avoid exiting the API process on transient DB errors from async route handlers.
+process.on("unhandledRejection", (reason, p) => {
+  console.error("Unhandled Rejection:", reason, p);
+});
 const FASTAPI_URL = String(
   process.env.FASTAPI_INTERNAL_URL || process.env.AI_SERVICE_BASE_URL || "",
 ).replace(/\/+$/, "");
 const AI_SERVICE_TOKEN = process.env.AI_SERVICE_TOKEN || "";
-const AI_SERVICE_TIMEOUT_SEGMENT_MS = Number(process.env.AI_SERVICE_TIMEOUT_SEGMENT_MS || 10000);
+const AI_SERVICE_TIMEOUT_SEGMENT_MS = Number(process.env.AI_SERVICE_TIMEOUT_SEGMENT_MS || 20000);
 const AI_SERVICE_TIMEOUT_RECOLOR_MS = Number(process.env.AI_SERVICE_TIMEOUT_RECOLOR_MS || 8000);
+const AI_SERVICE_TIMEOUT_COMPOSE_MS = Number(process.env.AI_SERVICE_TIMEOUT_COMPOSE_MS || 12000);
 const AI_SERVICE_MAX_IMAGE_BYTES = Number(process.env.AI_SERVICE_MAX_IMAGE_BYTES || 8_000_000);
+const AI_SERVICE_SEGMENT_TIMEOUT_RETRIES = Math.max(
+  0,
+  Number(process.env.AI_SERVICE_SEGMENT_TIMEOUT_RETRIES || 1),
+);
 
 const allowedRoles = new Set(["admin", "manager", "supervisor", "super_admin", "cashier"]);
 const allowedHelpStatuses = new Set(["unresolved", "resolved"]);
@@ -58,6 +74,93 @@ function resolveThemeTintColor(prompt, fallback = "#f4511e") {
     if (normalized.includes(entry.keyword)) return entry.hex;
   }
   return String(fallback || "#f4511e").toLowerCase();
+}
+
+/** Large base64 theme boards — omit from list endpoints; client loads full order by id for detail. */
+function compactEventOrderRow(row) {
+  const out = { ...row };
+  const td = out.themeDesign;
+  if (td && typeof td === "object") {
+    out.themeDesign = {
+      ...td,
+      picksBase64: [],
+      picksBase64Omitted: true,
+    };
+  }
+  out.listSummaryOnly = true;
+  return out;
+}
+
+/** SQL fragment for theme column: strip picks in DB when compact (less I/O than full jsonb). */
+function themeDesignListColumn(compact) {
+  if (compact) {
+    return `jsonb_set(
+      COALESCE(theme_design::jsonb, '{}'::jsonb),
+      '{picksBase64}',
+      '[]'::jsonb,
+      true
+    ) AS "themeDesign"`;
+  }
+  return `theme_design AS "themeDesign"`;
+}
+
+async function fetchEventOrderRowById(orderId) {
+  const id = String(orderId || "").trim();
+  if (!id) return null;
+  const catering = await pool.query(
+    `SELECT
+        id,
+        source,
+        status,
+        null AS "eventTitle",
+        'catering' AS "eventType",
+        null AS "formalityLevel",
+        customer_name AS "customerName",
+        contact_person AS "contactPerson",
+        contact_number AS "contactNumber",
+        email_address AS "emailAddress",
+        schedule_slots AS "scheduleSlots",
+        address,
+        order_type AS "orderType",
+        guest_count AS "guestCount",
+        menu,
+        theme_design AS "themeDesign",
+        post_analysis AS "postAnalysis",
+        total_cost AS "totalCost",
+        final_status AS "finalStatus",
+        created_at
+       FROM catering_orders
+       WHERE id = $1`,
+    [id],
+  );
+  if (catering.rows.length > 0) return catering.rows[0];
+  const ev = await pool.query(
+    `SELECT
+        id,
+        source,
+        status,
+        event_title AS "eventTitle",
+        event_type AS "eventType",
+        formality_level AS "formalityLevel",
+        customer_name AS "customerName",
+        contact_person AS "contactPerson",
+        contact_number AS "contactNumber",
+        email_address AS "emailAddress",
+        schedule_slots AS "scheduleSlots",
+        address,
+        order_type AS "orderType",
+        guest_count AS "guestCount",
+        menu,
+        theme_design AS "themeDesign",
+        post_analysis AS "postAnalysis",
+        total_cost AS "totalCost",
+        final_status AS "finalStatus",
+        created_at
+       FROM event_orders
+       WHERE id = $1`,
+    [id],
+  );
+  return ev.rows[0] || null;
 }
 
 function normalizeDetections(rawDetections) {
@@ -124,6 +227,514 @@ function ensureHexColor(rawValue, fallback = "#f4511e") {
   return `#${match[1].toLowerCase()}`;
 }
 
+const baseFallbackThemeSuggestions = [
+  {
+    title: "Elegant Event Tablescape",
+    source: "fallback",
+    thumbnailUrl: "https://images.unsplash.com/photo-1519225421980-715cb0215aed",
+    imageUrl: "https://images.unsplash.com/photo-1519225421980-715cb0215aed",
+  },
+  {
+    title: "Floral Centerpiece Inspiration",
+    source: "fallback",
+    thumbnailUrl: "https://images.unsplash.com/photo-1478146059778-26028b07395a",
+    imageUrl: "https://images.unsplash.com/photo-1478146059778-26028b07395a",
+  },
+  {
+    title: "Modern Reception Setup",
+    source: "fallback",
+    thumbnailUrl: "https://images.unsplash.com/photo-1469371670807-013ccf25f16a",
+    imageUrl: "https://images.unsplash.com/photo-1469371670807-013ccf25f16a",
+  },
+  {
+    title: "Garden Party Decor",
+    source: "fallback",
+    thumbnailUrl: "https://images.unsplash.com/photo-1522673607200-164d1b6ce486",
+    imageUrl: "https://images.unsplash.com/photo-1522673607200-164d1b6ce486",
+  },
+  {
+    title: "Romantic Wedding Setup",
+    source: "fallback",
+    thumbnailUrl: "https://images.unsplash.com/photo-1511285560929-80b456fea0bc",
+    imageUrl: "https://images.unsplash.com/photo-1511285560929-80b456fea0bc",
+  },
+];
+
+const fallbackThemeSuggestionsByEventType = {
+  wedding: [
+    {
+      title: "Wedding Ceremony Aisle",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1520854221256-17451cc331bf",
+      imageUrl: "https://images.unsplash.com/photo-1520854221256-17451cc331bf",
+    },
+    {
+      title: "Bride and Groom Stage Decor",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1465495976277-4387d4b0b2bb",
+      imageUrl: "https://images.unsplash.com/photo-1465495976277-4387d4b0b2bb",
+    },
+  ],
+  birthday: [
+    {
+      title: "Birthday Balloon Backdrop",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1530103862676-de8c9debad1d",
+      imageUrl: "https://images.unsplash.com/photo-1530103862676-de8c9debad1d",
+    },
+    {
+      title: "Birthday Dessert Table",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1464349153735-7db50ed83c84",
+      imageUrl: "https://images.unsplash.com/photo-1464349153735-7db50ed83c84",
+    },
+  ],
+  corporate: [
+    {
+      title: "Corporate Conference Hall",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1511578314322-379afb476865",
+      imageUrl: "https://images.unsplash.com/photo-1511578314322-379afb476865",
+    },
+    {
+      title: "Business Networking Setup",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1505373877841-8d25f7d46678",
+      imageUrl: "https://images.unsplash.com/photo-1505373877841-8d25f7d46678",
+    },
+  ],
+  "private party": [
+    {
+      title: "Private Party Lighting",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30",
+      imageUrl: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30",
+    },
+    {
+      title: "Lounge Party Decor",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1429962714451-bb934ecdc4ec",
+      imageUrl: "https://images.unsplash.com/photo-1429962714451-bb934ecdc4ec",
+    },
+  ],
+  sports: [
+    {
+      title: "Sports Banquet Setup",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1461896836934-ffe607ba8211",
+      imageUrl: "https://images.unsplash.com/photo-1461896836934-ffe607ba8211",
+    },
+    {
+      title: "Team Celebration Venue",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1517649763962-0c623066013b",
+      imageUrl: "https://images.unsplash.com/photo-1517649763962-0c623066013b",
+    },
+  ],
+  government: [
+    {
+      title: "Formal Government Reception",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1475721027785-f74eccf877e2",
+      imageUrl: "https://images.unsplash.com/photo-1475721027785-f74eccf877e2",
+    },
+    {
+      title: "Official Ceremony Hall",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1431540015161-0bf868a2d407",
+      imageUrl: "https://images.unsplash.com/photo-1431540015161-0bf868a2d407",
+    },
+  ],
+  show: [
+    {
+      title: "Stage Show Lighting",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a",
+      imageUrl: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a",
+    },
+    {
+      title: "Live Performance Stage",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3",
+      imageUrl: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3",
+    },
+  ],
+  educational: [
+    {
+      title: "Educational Seminar Setup",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1523580494863-6f3031224c94",
+      imageUrl: "https://images.unsplash.com/photo-1523580494863-6f3031224c94",
+    },
+    {
+      title: "Workshop Event Space",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1513258496099-48168024aec0",
+      imageUrl: "https://images.unsplash.com/photo-1513258496099-48168024aec0",
+    },
+  ],
+  reunion: [
+    {
+      title: "Family Reunion Tablescape",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1511988617509-a57c8a288659",
+      imageUrl: "https://images.unsplash.com/photo-1511988617509-a57c8a288659",
+    },
+    {
+      title: "Homecoming Reunion Setup",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1529156069898-49953e39b3ac",
+      imageUrl: "https://images.unsplash.com/photo-1529156069898-49953e39b3ac",
+    },
+  ],
+  gala: [
+    {
+      title: "Black Tie Gala Hall",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3",
+      imageUrl: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3",
+    },
+    {
+      title: "Luxury Gala Decor",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1472653816316-3ad6f10a6592",
+      imageUrl: "https://images.unsplash.com/photo-1472653816316-3ad6f10a6592",
+    },
+  ],
+  dinner: [
+    {
+      title: "Fine Dining Event Layout",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1414235077428-338989a2e8c0",
+      imageUrl: "https://images.unsplash.com/photo-1414235077428-338989a2e8c0",
+    },
+    {
+      title: "Candlelit Dinner Setup",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1544145945-f90425340c7e",
+      imageUrl: "https://images.unsplash.com/photo-1544145945-f90425340c7e",
+    },
+  ],
+  other: [
+    {
+      title: "Creative Themed Event Setup",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1499364615650-ec38552f4f34",
+      imageUrl: "https://images.unsplash.com/photo-1499364615650-ec38552f4f34",
+    },
+    {
+      title: "Custom Celebration Decor",
+      source: "fallback",
+      thumbnailUrl: "https://images.unsplash.com/photo-1519671482749-fd09be7ccebf",
+      imageUrl: "https://images.unsplash.com/photo-1519671482749-fd09be7ccebf",
+    },
+  ],
+};
+
+function getFallbackThemeSuggestions(eventType) {
+  const normalized = String(eventType || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+  const aliasMap = new Map([
+    ["birthday party", "birthday"],
+    ["bday", "birthday"],
+    ["corporate event", "corporate"],
+    ["privateparty", "private party"],
+    ["private-party", "private party"],
+    ["sports event", "sports"],
+    ["gov", "government"],
+    ["government event", "government"],
+    ["concert", "show"],
+    ["performance", "show"],
+    ["school event", "educational"],
+    ["education", "educational"],
+    ["family reunion", "reunion"],
+    ["grand reunion", "reunion"],
+    ["gala dinner", "gala"],
+    ["formal dinner", "dinner"],
+  ]);
+  const key = aliasMap.get(normalized) || normalized;
+  const specific = sanitizeThemeSuggestions(fallbackThemeSuggestionsByEventType[key] || []);
+  const base = sanitizeThemeSuggestions(baseFallbackThemeSuggestions);
+  return [...specific, ...base].slice(0, 12);
+}
+
+function buildThemeQuery({ eventTitle, eventType, formalityLevel, prompt }) {
+  return [
+    String(eventTitle || "").trim(),
+    String(eventType || "").trim(),
+    String(formalityLevel || "").trim(),
+    String(prompt || "").trim(),
+    "event design inspiration",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function buildPexelsQuery({
+  eventTitle,
+  eventType,
+  formalityLevel,
+  prompt,
+  baseImageUrl,
+  forceNoPeople = true,
+}) {
+  const q = [
+    String(eventType || "").trim(),
+    String(formalityLevel || "").trim(),
+    String(eventTitle || "").trim(),
+    String(prompt || "").trim(),
+    baseImageUrl ? "matching style composition" : "",
+    "event decor background",
+    forceNoPeople ? "-people -person -human -portrait -face -model -selfie" : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return q;
+}
+
+function buildPromptLedPexelsQueries({
+  eventTitle,
+  eventType,
+  formalityLevel,
+  prompt,
+  baseImageUrl,
+  tags = [],
+}) {
+  const cleanPrompt = String(prompt || "").trim();
+  const cleanType = String(eventType || "").trim();
+  const cleanFormality = String(formalityLevel || "").trim();
+  const cleanTitle = String(eventTitle || "").trim();
+  const cleanTags = Array.isArray(tags)
+    ? tags.map((t) => String(t || "").trim().toLowerCase()).filter(Boolean)
+    : [];
+  const tagText = cleanTags.join(" ");
+  const queries = [
+    // Use the user's exact prompt first so results mirror direct Pexels search.
+    `${cleanPrompt} ${tagText} -people -person -human -portrait -face -model -selfie`,
+    `${cleanPrompt} ${tagText} event decor -people -person -human -portrait -face -model -selfie`,
+    buildPexelsQuery({
+      eventTitle: cleanTitle,
+      eventType: cleanType,
+      formalityLevel: cleanFormality,
+      prompt: `${cleanPrompt} ${tagText}`.trim(),
+      baseImageUrl,
+      forceNoPeople: true,
+    }),
+  ]
+    .map((q) => q.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  return [...new Set(queries)];
+}
+
+function looksPeopleCentricPexelsRow(row) {
+  const text = [
+    row?.alt,
+    row?.url,
+    row?.photographer,
+    row?.src?.original,
+    row?.src?.large2x,
+  ]
+    .map((v) => String(v || "").toLowerCase())
+    .join(" ");
+  return /\b(person|people|human|portrait|selfie|face|man|woman|model|boy|girl)\b/.test(text);
+}
+
+function looksPeopleCentricSuggestion(row) {
+  const text = [
+    row?.title,
+    row?.description,
+    row?.imageUrl,
+    row?.thumbnailUrl,
+    row?.photographer,
+    row?.pexelsUrl,
+  ]
+    .map((v) => String(v || "").toLowerCase())
+    .join(" ");
+  return /\b(person|people|human|portrait|selfie|face|man|woman|model|boy|girl|bride|groom|crowd|group)\b/.test(text);
+}
+
+function looksDecorCentricSuggestion(row) {
+  const text = [
+    row?.title,
+    row?.description,
+    row?.imageUrl,
+    row?.thumbnailUrl,
+    row?.pexelsUrl,
+  ]
+    .map((v) => String(v || "").toLowerCase())
+    .join(" ");
+  return /\b(decor|decoration|event|venue|hall|setup|tablescape|table|centerpiece|balloon|floral|flower|banquet|reception|aisle|stage|backdrop|dinner|wedding|birthday|celebration)\b/.test(
+    text,
+  );
+}
+
+function sanitizeThemeSuggestions(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((row) => row && typeof row === "object")
+    .filter((row) => !looksPeopleCentricSuggestion(row))
+    .filter((row) => looksDecorCentricSuggestion(row));
+}
+
+function hasPersonLikeObject(objects) {
+  const personExp = /\b(person|people|human|man|woman|boy|girl|face)\b/i;
+  for (const obj of Array.isArray(objects) ? objects : []) {
+    const label = String(obj?.label || obj?.name || "").trim();
+    if (personExp.test(label)) return true;
+  }
+  return false;
+}
+
+async function removePersonImagesViaAi(req, rows, { maxChecks = 14 } = {}) {
+  const candidates = rows.filter((row) => String(row?.imageUrl || "").trim());
+  const checked = candidates.slice(0, Math.max(0, maxChecks));
+  const unchecked = candidates.slice(checked.length);
+
+  const checkedResults = await Promise.all(
+    checked.map(async (row) => {
+      const url = String(row?.imageUrl || "").trim();
+      try {
+        const r = await fetch(url, { method: "GET" });
+        if (!r.ok) return row;
+        const buf = Buffer.from(await r.arrayBuffer());
+        const imageBase64 = buf.toString("base64");
+        const detected = await callFastApiWithTimeoutRetry({
+          req,
+          routePath: "/v1/infer/yolo-sam",
+          timeoutMs: 6000,
+          timeoutRetries: 0,
+          payload: {
+            image_base64: imageBase64,
+            confidence_threshold: 0.35,
+            max_detections: 12,
+            mask_format: "polygon",
+          },
+        });
+        const objects = Array.isArray(detected?.objects) ? detected.objects : [];
+        return hasPersonLikeObject(objects) ? null : row;
+      } catch (_) {
+        // Fail-open to avoid breaking search when AI service is slow.
+        return row;
+      }
+    }),
+  );
+
+  return [...checkedResults.filter(Boolean), ...unchecked];
+}
+
+async function fetchPexelsImages({
+  query,
+  perPage = 20,
+  page = 1,
+}) {
+  const pexelsKey = String(process.env.PEXELS_API_KEY || "").trim();
+  if (!pexelsKey) {
+    return { images: [], error: "PEXELS_API_KEY is not configured", rateLimited: false };
+  }
+  if (!query.trim()) {
+    return { images: [], error: "search query is empty", rateLimited: false };
+  }
+  const url = new URL("https://api.pexels.com/v1/search");
+  url.searchParams.set("query", query);
+  url.searchParams.set("per_page", String(Math.max(1, Math.min(perPage, 30))));
+  url.searchParams.set("page", String(Math.max(1, page)));
+  url.searchParams.set("orientation", "landscape");
+  const maxAttempts = Number(process.env.PEXELS_MAX_ATTEMPTS || 3);
+  let lastError = "";
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const upstream = await fetch(url, {
+        method: "GET",
+        headers: { Authorization: pexelsKey },
+      });
+      if (upstream.status === 429) {
+        const retryAfterRaw = upstream.headers.get("retry-after");
+        const retryAfterSec = Number(retryAfterRaw);
+        const jitterMs = Math.floor(Math.random() * 500);
+        const delayMs = Number.isFinite(retryAfterSec)
+          ? Math.max(500, retryAfterSec * 1000)
+          : 500 * attempt + jitterMs;
+        lastError = "Pexels rate limit reached";
+        if (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, delayMs));
+          continue;
+        }
+        return {
+          images: [],
+          error: "Pexels rate limit reached. Please wait and try again.",
+          rateLimited: true,
+        };
+      }
+    if (!upstream.ok) {
+      const t = await upstream.text().catch(() => "");
+      return {
+        images: [],
+        error: `Pexels request failed (${upstream.status})${t ? `: ${t.slice(0, 200)}` : ""}`,
+        rateLimited: false,
+      };
+    }
+    const json = await upstream.json();
+    const rows = Array.isArray(json?.photos) ? json.photos : [];
+    const images = rows
+      .filter((row) => row && typeof row === "object")
+      .filter((row) => !looksPeopleCentricPexelsRow(row))
+      .map((row) => ({
+        title: String(row.alt || "Pexels theme suggestion"),
+        source: "pexels",
+        thumbnailUrl: String(row?.src?.medium || row?.src?.small || ""),
+        imageUrl: String(row?.src?.large2x || row?.src?.large || row?.src?.original || ""),
+        photographer: String(row.photographer || ""),
+        photographerUrl: String(row.photographer_url || ""),
+        pexelsUrl: String(row.url || ""),
+      }))
+      .filter((row) => row.imageUrl)
+      .slice(0, 30);
+    return { images, error: "", rateLimited: false };
+    } catch (e) {
+      lastError = String(e?.message || "network_error");
+      if (attempt < maxAttempts) {
+        const jitterMs = Math.floor(Math.random() * 500);
+        await new Promise((r) => setTimeout(r, 350 * attempt + jitterMs));
+        continue;
+      }
+      return {
+        images: [],
+        error: `Pexels request failed: ${lastError}`,
+        rateLimited: false,
+      };
+    }
+  }
+  return {
+    images: [],
+    error: lastError || "Pexels request failed",
+    rateLimited: false,
+  };
+}
+
+function normalizePolygonPoints(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((point) => {
+      if (point && typeof point === "object") {
+        const x = Number(point.x);
+        const y = Number(point.y);
+        if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+      }
+      if (Array.isArray(point) && point.length >= 2) {
+        const x = Number(point[0]);
+        const y = Number(point[1]);
+        if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
 async function callFastApi({ req, routePath, timeoutMs, payload }) {
   if (!FASTAPI_URL) {
     throw toHttpError(
@@ -188,6 +799,14 @@ async function callFastApi({ req, routePath, timeoutMs, payload }) {
       let message = "AI processing failed";
       if (parsedJson && decoded && typeof decoded.message === "string" && decoded.message) {
         message = decoded.message;
+      } else if (parsedJson && decoded && decoded.detail) {
+        const detailText =
+          typeof decoded.detail === "string"
+            ? decoded.detail
+            : JSON.stringify(decoded.detail);
+        if (detailText && detailText.trim()) {
+          message = detailText.slice(0, 280);
+        }
       } else if (text && !parsedJson) {
         const clean = text.replace(/\s+/g, " ").trim();
         if (clean) message = clean.slice(0, 220);
@@ -227,6 +846,28 @@ async function callFastApi({ req, routePath, timeoutMs, payload }) {
         requestId,
       }),
     );
+  }
+}
+
+async function callFastApiWithTimeoutRetry({
+  req,
+  routePath,
+  timeoutMs,
+  payload,
+  timeoutRetries = 0,
+}) {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await callFastApi({ req, routePath, timeoutMs, payload });
+    } catch (error) {
+      const timedOut = error?.code === "upstream_timeout" || error?.status === 504;
+      if (!timedOut || attempt >= timeoutRetries) throw error;
+      attempt += 1;
+      console.warn(
+        `[events-theme-ai] timeout retry ${attempt}/${timeoutRetries} for ${routePath}`,
+      );
+    }
   }
 }
 
@@ -1202,10 +1843,11 @@ app.post(
     try {
       const { imageBase64, confidenceThreshold, maxDetections, maskFormat } = req.body || {};
       const cleanedImageBase64 = sanitizeBase64Image(imageBase64);
-      const fastApiResponse = await callFastApi({
+      const fastApiResponse = await callFastApiWithTimeoutRetry({
         req,
         routePath: "/v1/infer/yolo-sam",
         timeoutMs: AI_SERVICE_TIMEOUT_SEGMENT_MS,
+        timeoutRetries: AI_SERVICE_SEGMENT_TIMEOUT_RETRIES,
         payload: {
           image_base64: cleanedImageBase64,
           confidence_threshold: Number.isFinite(Number(confidenceThreshold))
@@ -1273,10 +1915,11 @@ app.post("/api/public/events/theme-design/yolo-sam-infer", async (req, res) => {
   try {
     const { imageBase64, confidenceThreshold, maxDetections, maskFormat } = req.body || {};
     const cleanedImageBase64 = sanitizeBase64Image(imageBase64);
-    const fastApiResponse = await callFastApi({
+    const fastApiResponse = await callFastApiWithTimeoutRetry({
       req,
       routePath: "/v1/infer/yolo-sam",
       timeoutMs: AI_SERVICE_TIMEOUT_SEGMENT_MS,
+      timeoutRetries: AI_SERVICE_SEGMENT_TIMEOUT_RETRIES,
       payload: {
         image_base64: cleanedImageBase64,
         confidence_threshold: Number.isFinite(Number(confidenceThreshold))
@@ -1413,6 +2056,483 @@ app.post("/api/public/events/theme-design/swap-colors", async (req, res) => {
   }
 });
 
+app.post("/api/public/events/theme-design/theme-search", async (req, res) => {
+  const fallbackThemeSuggestions = getFallbackThemeSuggestions(req.body?.eventType);
+  try {
+    const { eventTitle, eventType, formalityLevel, prompt, baseImageUrl, tags, page, perPage } = req.body || {};
+    const pageNum = Math.max(1, Number(page) || 1);
+    const sizeNum = Math.max(1, Math.min(24, Number(perPage) || 12));
+    const queryCandidates = buildPromptLedPexelsQueries({
+      eventTitle,
+      eventType,
+      formalityLevel,
+      prompt,
+      baseImageUrl,
+      tags,
+    });
+    const query = queryCandidates[0] || '';
+    if (!query.trim()) {
+      throw toHttpError("prompt is required", 400, "invalid_prompt");
+    }
+
+    let images = [];
+    let error = "";
+    let rateLimited = false;
+    const seen = new Set();
+    for (const q of queryCandidates) {
+      if (!q) continue;
+      const first = await fetchPexelsImages({ query: q, perPage: 30, page: 1 });
+      for (const row of first.images || []) {
+        const key = String(row.imageUrl || "");
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        images.push(row);
+      }
+      if (first.error) error = first.error;
+      rateLimited = first.rateLimited;
+      if (!rateLimited && images.length < 24) {
+        const second = await fetchPexelsImages({ query: q, perPage: 30, page: 2 });
+        for (const row of second.images || []) {
+          const key = String(row.imageUrl || "");
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          images.push(row);
+        }
+        if (second.error) error = second.error;
+        rateLimited = second.rateLimited;
+      }
+      if (images.length >= 36 || rateLimited) break;
+    }
+
+    let safeImages = sanitizeThemeSuggestions(images);
+    if (safeImages.length) {
+      safeImages = await removePersonImagesViaAi(req, safeImages, { maxChecks: 6 });
+    }
+    safeImages = safeImages.slice(0, 48);
+    const safeFallback = sanitizeThemeSuggestions(fallbackThemeSuggestions);
+    const source = safeImages.length ? safeImages : safeFallback;
+    const total = source.length;
+    const start = (pageNum - 1) * sizeNum;
+    const paged = source.slice(start, start + sizeNum);
+    const hasMore = start + sizeNum < total;
+    return res.json({
+      ok: true,
+      query,
+      usedFallback: safeImages.length === 0,
+      error: safeImages.length === 0 && error ? error : undefined,
+      images: paged,
+      page: pageNum,
+      perPage: sizeNum,
+      total,
+      hasMore,
+    });
+  } catch (e) {
+    console.error(e);
+    return res.json({
+      ok: true,
+      usedFallback: true,
+      images: fallbackThemeSuggestions,
+      error: String(e.message || "search_failed"),
+    });
+  }
+});
+
+app.post("/api/public/events/theme-design/add-by-prompt", async (req, res) => {
+  try {
+    const {
+      baseImageBase64,
+      eventTitle,
+      eventType,
+      formalityLevel,
+      prompt,
+      baseImageUrl,
+    } = req.body || {};
+    const cleanedBase = sanitizeBase64Image(baseImageBase64);
+    const userPrompt = String(prompt || "").trim();
+    if (!userPrompt) {
+      throw toHttpError("prompt is required", 400, "invalid_prompt");
+    }
+    const baseQuery = buildPexelsQuery({
+      eventTitle,
+      eventType,
+      formalityLevel,
+      prompt: userPrompt,
+      baseImageUrl,
+      forceNoPeople: true,
+    });
+    const pex = await fetchPexelsImages({ query: baseQuery, perPage: 30, page: 1 });
+    const selected = sanitizeThemeSuggestions(pex.images || []).slice(0, 10);
+    if (selected.length === 0) {
+      return res.json({
+        ok: true,
+        usedFallback: true,
+        error: pex.error || "No prompt images found.",
+        imageBase64: "",
+        placements: [],
+      });
+    }
+    const imageDownloads = await Promise.all(
+      selected.map(async (row) => {
+        const url = String(row.imageUrl || "").trim();
+        if (!url) return "";
+        const r = await fetch(url, { method: "GET" });
+        if (!r.ok) return "";
+        const buf = Buffer.from(await r.arrayBuffer());
+        return buf.toString("base64");
+      }),
+    );
+    const imagesBase64 = imageDownloads.filter((b) => b);
+    if (imagesBase64.length === 0) {
+      throw toHttpError("Failed to load prompt source images", 502, "prompt_source_download_failed");
+    }
+
+    let occupied = [];
+    try {
+      const baseInfo = await callFastApiWithTimeoutRetry({
+        req,
+        routePath: "/v1/infer/yolo-sam",
+        timeoutMs: AI_SERVICE_TIMEOUT_SEGMENT_MS,
+        timeoutRetries: AI_SERVICE_SEGMENT_TIMEOUT_RETRIES,
+        payload: {
+          image_base64: cleanedBase,
+          confidence_threshold: 0.35,
+          max_detections: 20,
+          mask_format: "polygon",
+        },
+      });
+      occupied = (Array.isArray(baseInfo?.objects) ? baseInfo.objects : []).map((obj) => ({
+        left: Number(obj.box?.x ?? obj.box?.left ?? 0),
+        top: Number(obj.box?.y ?? obj.box?.top ?? 0),
+        width: Number(obj.box?.width ?? 0),
+        height: Number(obj.box?.height ?? 0),
+        label: String(obj.label || "Object"),
+      }));
+    } catch (baseErr) {
+      console.warn("add-by-prompt: base analyze failed, using grid fallback:", baseErr);
+      occupied = [];
+    }
+    const freeSpaces = [];
+    const grid = 3;
+    for (let row = 0; row < grid; row += 1) {
+      for (let col = 0; col < grid; col += 1) {
+        const left = col / grid;
+        const top = row / grid;
+        const width = 1 / grid;
+        const height = 1 / grid;
+        const overlaps = occupied.some((box) => {
+          const xOverlap = Math.max(0, Math.min(left + width, box.left + box.width) - Math.max(left, box.left));
+          const yOverlap = Math.max(0, Math.min(top + height, box.top + box.height) - Math.max(top, box.top));
+          return xOverlap * yOverlap > 0.02;
+        });
+        if (!overlaps) freeSpaces.push({ left, top, width, height });
+      }
+    }
+
+    const extractedGroups = [];
+    for (let i = 0; i < imagesBase64.length; i += 1) {
+      try {
+        const fastApiResponse = await callFastApi({
+          req,
+          routePath: "/v1/infer/yolo-sam-extract",
+          timeoutMs: AI_SERVICE_TIMEOUT_SEGMENT_MS,
+          payload: {
+            image_base64: imagesBase64[i],
+            confidence_threshold: 0.35,
+            max_detections: 20,
+            mask_format: "alpha_png",
+          },
+        });
+        const objects = Array.isArray(fastApiResponse.objects)
+          ? fastApiResponse.objects.map((obj, idx) => ({
+              id: String(obj.id || obj.object_id || `obj_${i}_${idx}`),
+              label: String(obj.label || "Object"),
+              objectImageBase64: String(obj.object_image_base64 || obj.objectImageBase64 || ""),
+            }))
+          : [];
+        extractedGroups.push(...objects.filter((o) => o.objectImageBase64));
+      } catch (extractErr) {
+        console.warn(`add-by-prompt: extraction failed for source ${i}:`, extractErr);
+      }
+    }
+    let usedSourceImageFallback = false;
+    if (extractedGroups.length === 0) {
+      usedSourceImageFallback = true;
+      for (let i = 0; i < Math.min(imagesBase64.length, 6); i += 1) {
+        extractedGroups.push({
+          id: `fallback_source_${i}`,
+          label: "Source image",
+          objectImageBase64: String(imagesBase64[i] || ""),
+        });
+      }
+    }
+    if (extractedGroups.length === 0) {
+      throw toHttpError("No objects extracted from prompt sources", 422, "no_prompt_objects_extracted");
+    }
+    const placements = extractedGroups.map((obj, idx) => {
+      const slot = freeSpaces[idx % Math.max(1, freeSpaces.length)] || {
+        left: 0.1 + ((idx % 3) * 0.25),
+        top: 0.2 + ((idx % 2) * 0.25),
+        width: 0.25,
+        height: 0.25,
+      };
+      return {
+        objectImageBase64: obj.objectImageBase64,
+        x: Number(slot.left || 0),
+        y: Number(slot.top || 0),
+        width: Number(slot.width || 0.25),
+        height: Number(slot.height || 0.25),
+        rotation: 0,
+        zIndex: idx,
+        intensity: 1.0,
+        targetHex: null,
+      };
+    });
+
+    const composeResp = await callFastApi({
+      req,
+      routePath: "/v1/edit/compose",
+      timeoutMs: AI_SERVICE_TIMEOUT_COMPOSE_MS,
+      payload: {
+        base_image_base64: cleanedBase,
+        objects: placements.map((o) => ({
+          object_image_base64: o.objectImageBase64,
+          x: o.x,
+          y: o.y,
+          width: o.width,
+          height: o.height,
+          rotation: o.rotation,
+          z_index: o.zIndex,
+          intensity: o.intensity,
+          target_hex: o.targetHex,
+        })),
+      },
+    });
+
+    return res.json({
+      ok: true,
+      imageBase64: String(composeResp.image_base64 || composeResp.imageBase64 || ""),
+      placements,
+      images: selected,
+      usedSourceImageFallback,
+    });
+  } catch (e) {
+    console.error(e);
+    return sendHttpError(res, e, "Failed to add objects from prompt");
+  }
+});
+
+app.post("/api/public/events/theme-design/extract-objects", async (req, res) => {
+  try {
+    const { imagesBase64, confidenceThreshold, maxDetections } = req.body || {};
+    if (!Array.isArray(imagesBase64) || imagesBase64.length === 0) {
+      throw toHttpError("imagesBase64 is required", 400, "invalid_images");
+    }
+
+    const results = [];
+    for (let i = 0; i < imagesBase64.length; i += 1) {
+      try {
+        const imageBase64 = sanitizeBase64Image(imagesBase64[i]);
+        const fastApiResponse = await callFastApi({
+          req,
+          routePath: "/v1/infer/yolo-sam-extract",
+          timeoutMs: AI_SERVICE_TIMEOUT_SEGMENT_MS,
+          payload: {
+            image_base64: imageBase64,
+          confidence_threshold: Number.isFinite(Number(confidenceThreshold))
+              ? Number(confidenceThreshold)
+            : 0.35,
+            max_detections: Number.isFinite(Number(maxDetections)) ? Number(maxDetections) : 20,
+            mask_format: "alpha_png",
+          },
+        });
+        const objects = Array.isArray(fastApiResponse.objects)
+          ? fastApiResponse.objects.map((obj, idx) => ({
+              id: String(obj.id || obj.object_id || `obj_${i}_${idx}`),
+              label: String(obj.label || "Object"),
+              score: Number(obj.score || 0),
+              sourceImageIndex: i,
+              boundingBox: {
+                left: Number(obj.box?.x ?? obj.box?.left ?? 0),
+                top: Number(obj.box?.y ?? obj.box?.top ?? 0),
+                width: Number(obj.box?.width ?? 0),
+                height: Number(obj.box?.height ?? 0),
+              },
+              polygonPoints: normalizePolygonPoints(obj.polygon_points || obj.polygonPoints || []),
+              maskBase64: String(obj.mask_base64 || obj.maskBase64 || ""),
+              objectImageBase64: String(obj.object_image_base64 || obj.objectImageBase64 || ""),
+            }))
+          : [];
+        results.push({
+          imageIndex: i,
+          imageWidth: Number(fastApiResponse.image_width || fastApiResponse.imageWidth || 0),
+          imageHeight: Number(fastApiResponse.image_height || fastApiResponse.imageHeight || 0),
+          objects,
+        });
+      } catch (err) {
+        const msg =
+          err && typeof err === "object" && "message" in err && typeof err.message === "string"
+            ? err.message
+            : String(err || "extract_failed");
+        results.push({
+          imageIndex: i,
+          imageWidth: 0,
+          imageHeight: 0,
+          objects: [],
+          error: msg.slice(0, 400),
+        });
+      }
+    }
+    return res.json({ ok: true, images: results });
+  } catch (e) {
+    console.error(e);
+    return sendHttpError(res, e, "Failed to extract theme objects");
+  }
+});
+
+app.post("/api/public/events/theme-design/analyze-base", async (req, res) => {
+  try {
+    const { baseImageBase64 } = req.body || {};
+    const cleaned = sanitizeBase64Image(baseImageBase64);
+    let objects = [];
+    try {
+      const fastApiResponse = await callFastApiWithTimeoutRetry({
+        req,
+        routePath: "/v1/infer/yolo-sam",
+        timeoutMs: AI_SERVICE_TIMEOUT_SEGMENT_MS,
+        timeoutRetries: AI_SERVICE_SEGMENT_TIMEOUT_RETRIES,
+        payload: {
+          image_base64: cleaned,
+          confidence_threshold: 0.25,
+          max_detections: 20,
+          mask_format: "polygon",
+        },
+      });
+      objects = Array.isArray(fastApiResponse.objects) ? fastApiResponse.objects : [];
+    } catch (err) {
+      console.warn("[analyze-base] YOLO/SAM unavailable, using generic free-space fallback.");
+    }
+    const occupied = objects.map((obj) => ({
+      left: Number(obj.box?.x ?? obj.box?.left ?? 0),
+      top: Number(obj.box?.y ?? obj.box?.top ?? 0),
+      width: Number(obj.box?.width ?? 0),
+      height: Number(obj.box?.height ?? 0),
+      label: String(obj.label || "Object"),
+    }));
+    const cells = [];
+    const grid = 3;
+    for (let row = 0; row < grid; row += 1) {
+      for (let col = 0; col < grid; col += 1) {
+        const left = col / grid;
+        const top = row / grid;
+        const width = 1 / grid;
+        const height = 1 / grid;
+        const overlaps = occupied.some((box) => {
+          const xOverlap = Math.max(0, Math.min(left + width, box.left + box.width) - Math.max(left, box.left));
+          const yOverlap = Math.max(0, Math.min(top + height, box.top + box.height) - Math.max(top, box.top));
+          return xOverlap * yOverlap > 0.02;
+        });
+        if (!overlaps) cells.push({ left, top, width, height });
+      }
+    }
+    const recommendations = occupied.some((o) => /table|desk|counter|buffet/i.test(o.label))
+      ? ["flowers", "fruit platter", "plates", "napkins"]
+      : ["flowers", "lights", "decorative elements", "table setup"];
+    return res.json({ ok: true, freeSpaces: cells, recommendations });
+  } catch (e) {
+    console.error(e);
+    return sendHttpError(res, e, "Failed to analyze base image");
+  }
+});
+
+app.post("/api/public/events/theme-design/auto-place", async (req, res) => {
+  try {
+    const { freeSpaces, objects } = req.body || {};
+    const spaces = Array.isArray(freeSpaces) ? freeSpaces : [];
+    const sourceObjects = Array.isArray(objects) ? objects : [];
+    const placements = sourceObjects.map((obj, idx) => {
+      const slot = spaces[idx % Math.max(1, spaces.length)] || {
+        left: 0.1 + ((idx % 3) * 0.25),
+        top: 0.2 + ((idx % 2) * 0.25),
+        width: 0.25,
+        height: 0.25,
+      };
+      return {
+        objectId: String(obj.id || `obj_${idx}`),
+        x: Number(slot.left || 0),
+        y: Number(slot.top || 0),
+        width: Number(slot.width || 0.25),
+        height: Number(slot.height || 0.25),
+        rotation: 0,
+        zIndex: idx,
+        confidence: 0.72,
+        reason: "Placed in low-occupancy region",
+      };
+    });
+    return res.json({ ok: true, placements });
+  } catch (e) {
+    console.error(e);
+    return sendHttpError(res, e, "Failed to auto-place objects");
+  }
+});
+
+app.post("/api/public/events/theme-design/render-composite", async (req, res) => {
+  try {
+    const { baseImageBase64, objects } = req.body || {};
+    const cleanedBase = sanitizeBase64Image(baseImageBase64);
+    const normalizedObjects = (Array.isArray(objects) ? objects : [])
+      .filter((obj) => obj && typeof obj === "object")
+      .map((obj, idx) => {
+        const xRaw = Number(obj.x ?? 0);
+        const yRaw = Number(obj.y ?? 0);
+        const widthRaw = Number(obj.width ?? 120);
+        const heightRaw = Number(obj.height ?? 120);
+        const rotationRaw = Number(obj.rotation ?? 0);
+        const intensityRaw = Number(obj.intensity ?? 1);
+        const zIndexRaw = Number(obj.zIndex ?? obj.z_index ?? idx);
+
+        const x = Number.isFinite(xRaw) ? xRaw : 0;
+        const y = Number.isFinite(yRaw) ? yRaw : 0;
+        const width = Number.isFinite(widthRaw) && widthRaw > 1 ? widthRaw : 120;
+        const height = Number.isFinite(heightRaw) && heightRaw > 1 ? heightRaw : 120;
+        const rotation = Number.isFinite(rotationRaw) ? rotationRaw : 0;
+        const zIndex = Number.isFinite(zIndexRaw) ? zIndexRaw : idx;
+        const intensity = Number.isFinite(intensityRaw)
+          ? Math.max(0, Math.min(1, intensityRaw))
+          : 1;
+
+        return {
+          object_image_base64: String(obj.objectImageBase64 || obj.object_image_base64 || ""),
+          x,
+          y,
+          width,
+          height,
+          rotation,
+          z_index: zIndex,
+          target_hex: obj.targetHex ? ensureHexColor(obj.targetHex) : null,
+          intensity,
+        };
+      })
+      .filter((obj) => obj.object_image_base64);
+
+    const fastApiResponse = await callFastApi({
+      req,
+      routePath: "/v1/edit/compose",
+      timeoutMs: AI_SERVICE_TIMEOUT_COMPOSE_MS,
+      payload: {
+        base_image_base64: cleanedBase,
+        objects: normalizedObjects,
+      },
+    });
+    return res.json({
+      ok: true,
+      imageBase64: String(fastApiResponse.image_base64 || fastApiResponse.imageBase64 || ""),
+    });
+  } catch (e) {
+    console.error(e);
+    return sendHttpError(res, e, "Failed to render composite");
+  }
+});
+
 app.get(
   "/api/manager/events/orders",
   authRequired,
@@ -1424,6 +2544,9 @@ app.get(
       return res
         .status(400)
         .json({ message: "status query param is required" });
+
+    const compact = String(req.query.compact || "") === "1";
+    const themeCol = themeDesignListColumn(compact);
 
     const result = await pool.query(
       `SELECT
@@ -1442,7 +2565,7 @@ app.get(
         order_type AS "orderType",
         guest_count AS "guestCount",
         menu,
-        theme_design AS "themeDesign",
+        ${themeCol},
         post_analysis AS "postAnalysis",
         total_cost AS "totalCost",
         final_status AS "finalStatus",
@@ -1469,7 +2592,7 @@ app.get(
         order_type AS "orderType",
         guest_count AS "guestCount",
         menu,
-        theme_design AS "themeDesign",
+        ${themeCol},
         post_analysis AS "postAnalysis",
         total_cost AS "totalCost",
         final_status AS "finalStatus",
@@ -1484,7 +2607,30 @@ app.get(
       [status],
     );
 
-    return res.json({ orders: result.rows });
+    let orders = result.rows;
+    if (compact) {
+      orders = orders.map(compactEventOrderRow);
+    }
+    return res.json({ orders });
+  },
+);
+
+app.get(
+  "/api/manager/events/orders/:orderId",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "admin", "super_admin"])),
+  async (req, res) => {
+    try {
+      const row = await fetchEventOrderRowById(req.params.orderId);
+      if (!row) {
+        return res.status(404).json({ message: "Order not found" });
+      }
+      return res.json({ order: row });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ message: "Failed to load order" });
+    }
   },
 );
 
@@ -1803,6 +2949,9 @@ app.get(
         .status(400)
         .json({ message: "status query param is required" });
 
+    const compact = String(req.query.compact || "") === "1";
+    const themeCol = themeDesignListColumn(compact);
+
     const result = await pool.query(
       `SELECT
         id,
@@ -1820,7 +2969,7 @@ app.get(
         order_type AS "orderType",
         guest_count AS "guestCount",
         menu,
-        theme_design AS "themeDesign",
+        ${themeCol},
         post_analysis AS "postAnalysis",
         total_cost AS "totalCost",
         final_status AS "finalStatus",
@@ -1847,7 +2996,7 @@ app.get(
         order_type AS "orderType",
         guest_count AS "guestCount",
         menu,
-        theme_design AS "themeDesign",
+        ${themeCol},
         post_analysis AS "postAnalysis",
         total_cost AS "totalCost",
         final_status AS "finalStatus",
@@ -1862,7 +3011,30 @@ app.get(
       [status],
     );
 
-    return res.json({ orders: result.rows });
+    let orders = result.rows;
+    if (compact) {
+      orders = orders.map(compactEventOrderRow);
+    }
+    return res.json({ orders });
+  },
+);
+
+app.get(
+  "/api/supervisor/events/orders/:orderId",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["supervisor", "admin", "super_admin"])),
+  async (req, res) => {
+    try {
+      const row = await fetchEventOrderRowById(req.params.orderId);
+      if (!row) {
+        return res.status(404).json({ message: "Order not found" });
+      }
+      return res.json({ order: row });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ message: "Failed to load order" });
+    }
   },
 );
 
@@ -2345,7 +3517,43 @@ async function seedSuperAdminIfNeeded() {
   );
 }
 
-initDb()
+/** Transient DNS/network errors to Supabase are common in Docker (EAI_AGAIN). */
+async function runInitDbWithRetries() {
+  const maxAttempts = Number(process.env.DB_INIT_RETRY_ATTEMPTS || 10);
+  const delayMs = Number(process.env.DB_INIT_RETRY_DELAY_MS || 2500);
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await initDb();
+      if (attempt > 1) {
+        console.log(`initDb succeeded on attempt ${attempt}/${maxAttempts}`);
+      }
+      return;
+    } catch (e) {
+      lastErr = e;
+      const msg = String(e?.message || e || "");
+      const retryable =
+        e?.code === "EAI_AGAIN" ||
+        e?.code === "ENOTFOUND" ||
+        e?.code === "ETIMEDOUT" ||
+        e?.code === "ECONNRESET" ||
+        e?.code === "EPIPE" ||
+        /getaddrinfo/i.test(msg) ||
+        /connect/i.test(msg);
+      console.error(
+        `Database init attempt ${attempt}/${maxAttempts} failed:`,
+        msg || e,
+      );
+      if (!retryable || attempt >= maxAttempts) {
+        throw e;
+      }
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
+
+runInitDbWithRetries()
   .then(() => seedSuperAdminIfNeeded())
   .then(async () => {
     // Checklist CRUD operations
@@ -3336,7 +4544,7 @@ initDb()
         const { orderId } = req.params;
         
         const result = await pool.query(
-          'SELECT * FROM restaurant_orders WHERE id = $1 AND (customer_id = $2 OR id::text = $2)',
+          'SELECT * FROM restaurant_orders WHERE id = $1 AND (customer_id::text = $2 OR id::text = $2)',
           [orderId, req.customer.id]
         );
 
@@ -3354,13 +4562,28 @@ initDb()
     app.get('/api/restaurant/orders', customerAuthRequired, async (req, res) => {
       try {
         const result = await pool.query(
-          'SELECT * FROM restaurant_orders WHERE (customer_id = $1 OR id::text = $1) ORDER BY created_at DESC',
+          'SELECT * FROM restaurant_orders WHERE (customer_id::text = $1 OR id::text = $1) ORDER BY created_at DESC',
           [req.customer.id]
         );
-        const orders = result.rows.map((order) => ({
-          ...order,
-          items: typeof order.items === 'string' ? JSON.parse(order.items) : order.items,
-        }));
+        const orders = result.rows.map((order) => {
+          // `items` is expected to be JSON, but legacy/invalid rows can exist.
+          // Avoid crashing the whole endpoint (which leads to 500 in the client).
+          let parsedItems = order.items;
+          if (typeof order.items === 'string') {
+            const trimmed = order.items.trim();
+            if (trimmed.length > 0) {
+              try {
+                parsedItems = JSON.parse(trimmed);
+              } catch (e) {
+                parsedItems = [];
+              }
+            } else {
+              parsedItems = [];
+            }
+          }
+          if (!Array.isArray(parsedItems)) parsedItems = [];
+          return { ...order, items: parsedItems };
+        });
         res.json({ orders });
       } catch (error) {
         console.error('Error fetching orders:', error);
@@ -3688,6 +4911,120 @@ initDb()
       } catch (error) {
         console.error('Error responding to customer inquiry:', error);
         res.status(500).json({ error: 'Failed to update inquiry response' });
+      }
+    });
+
+    app.patch('/api/customer/events/orders/:orderId/edit', customerAuthRequired, async (req, res) => {
+      try {
+        const customerId = req.customer.id;
+        const { orderId } = req.params;
+        const { guestCount, address, scheduleSlots, menu } = req.body || {};
+
+        if (!Number.isFinite(Number(guestCount)) || Number(guestCount) <= 0) {
+          return res.status(400).json({ error: 'guestCount must be a positive number' });
+        }
+        if (typeof address !== 'string' || !address.trim()) {
+          return res.status(400).json({ error: 'address is required' });
+        }
+        if (!Array.isArray(scheduleSlots) || scheduleSlots.length === 0) {
+          return res.status(400).json({ error: 'At least one schedule slot is required' });
+        }
+        if (!Array.isArray(menu) || menu.length === 0) {
+          return res.status(400).json({ error: 'At least one dish is required' });
+        }
+
+        const customerResult = await pool.query(
+          `SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1;`,
+          [customerId]
+        );
+        if (customerResult.rowCount === 0) {
+          return res.status(404).json({ error: 'Customer not found' });
+        }
+        const customerEmail = customerResult.rows[0].email;
+
+        const sanitizedSlots = scheduleSlots
+          .filter((slot) => slot && typeof slot === 'object')
+          .map((slot) => ({
+            date: String(slot.date || '').trim(),
+            startTime: String(slot.startTime || slot.start_time || '').trim(),
+            endTime: String(slot.endTime || slot.end_time || '').trim(),
+          }))
+          .filter((slot) => slot.date && slot.startTime && slot.endTime);
+        if (sanitizedSlots.length === 0) {
+          return res.status(400).json({ error: 'Invalid schedule slot format' });
+        }
+
+        const sanitizedMenu = menu
+          .filter((item) => item && typeof item === 'object')
+          .map((item) => {
+            const dishName = String(
+              item.dishName || item.dish_name || item.name || '',
+            ).trim();
+            const paxOption = String(item.paxOption || item.pax_option || '').trim();
+            return {
+              dishName,
+              ...(paxOption ? { paxOption } : {}),
+            };
+          })
+          .filter((item) => item.dishName);
+        if (sanitizedMenu.length === 0) {
+          return res.status(400).json({ error: 'Invalid menu format' });
+        }
+
+        const tryUpdateByTable = async (tableName) => {
+          const result = await pool.query(
+            `UPDATE ${tableName}
+             SET
+               guest_count = $1,
+               address = $2,
+               schedule_slots = $3,
+               menu = $4,
+               updated_at = now()
+             WHERE id::text = $5
+               AND lower(email_address) = lower($6)
+               AND status = 'online_inquiries'
+             RETURNING
+               id,
+               inquiry_id as "inquiryId",
+               guest_count as "guestCount",
+               address,
+               schedule_slots as "scheduleSlots",
+               menu,
+               status,
+               updated_at as "updatedAt"`,
+            [
+              Number(guestCount),
+              address.trim(),
+              JSON.stringify(sanitizedSlots),
+              JSON.stringify(sanitizedMenu),
+              orderId,
+              customerEmail,
+            ]
+          );
+          return result.rows[0] || null;
+        };
+
+        let updatedOrder = await tryUpdateByTable('event_orders');
+        let orderType = 'event';
+        if (!updatedOrder) {
+          updatedOrder = await tryUpdateByTable('catering_orders');
+          orderType = 'catering';
+        }
+
+        if (!updatedOrder) {
+          return res.status(404).json({
+            error: 'Inquiry not found, not owned by customer, or no longer editable.',
+          });
+        }
+
+        return res.json({
+          success: true,
+          orderType,
+          order: updatedOrder,
+        });
+      } catch (error) {
+        console.error('Error editing customer inquiry:', error);
+        res.status(500).json({ error: 'Failed to edit inquiry' });
       }
     });
 

@@ -1,6 +1,8 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
+from urllib.request import urlretrieve
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -14,8 +16,29 @@ logging.basicConfig(level=LOG_LEVEL)
 logger = logging.getLogger("ai-service")
 
 
+def ensure_sam_checkpoint() -> None:
+    sam_model_path = os.getenv("SAM_MODEL_PATH", "").strip()
+    if not sam_model_path:
+        return
+
+    sam_path = Path(sam_model_path)
+    if sam_path.exists():
+        return
+
+    default_url = "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth"
+    sam_url = os.getenv("SAM_MODEL_URL", default_url).strip()
+    try:
+        sam_path.parent.mkdir(parents=True, exist_ok=True)
+        logger.info("SAM checkpoint not found at %s. Downloading from %s", sam_path, sam_url)
+        urlretrieve(sam_url, sam_path)
+        logger.info("SAM checkpoint downloaded to %s", sam_path)
+    except Exception as exc:
+        logger.warning("Failed to download SAM checkpoint to %s: %s", sam_path, exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    ensure_sam_checkpoint()
     pipeline = AiPipeline(
         yolo_model_path=os.getenv("YOLO_MODEL_PATH", ""),
         sam_model_path=os.getenv("SAM_MODEL_PATH", ""),

@@ -15,6 +15,8 @@ from ultralytics import YOLO
 
 
 logger = logging.getLogger("ai-service.pipeline")
+MIN_DETECTION_SIDE_PX = 16.0
+MIN_DETECTION_AREA_RATIO = 0.0025
 
 
 @dataclass
@@ -82,9 +84,10 @@ class AiPipeline:
         if self._yolo_model is None:
             raise RuntimeError("YOLO model is not initialized")
 
+        conf_threshold = max(0.20, float(confidence_threshold))
         result = self._yolo_model.predict(
             source=image,
-            conf=float(confidence_threshold),
+            conf=conf_threshold,
             max_det=int(limit),
             device=self.model_device,
             verbose=False,
@@ -99,11 +102,19 @@ class AiPipeline:
             label = str(names.get(class_id, f"class_{class_id}"))
             score = float(box.conf.item())
 
+            box_w = max(0.0, x2 - x1)
+            box_h = max(0.0, y2 - y1)
+            area_ratio = (box_w * box_h) / max(1.0, float(image_width * image_height))
+            if box_w < MIN_DETECTION_SIDE_PX or box_h < MIN_DETECTION_SIDE_PX:
+                continue
+            if area_ratio < MIN_DETECTION_AREA_RATIO:
+                continue
+
             # Return normalized box coordinates for existing frontend overlays.
             norm_x = max(0.0, min(1.0, x1 / image_width))
             norm_y = max(0.0, min(1.0, y1 / image_height))
-            norm_w = max(0.0, min(1.0, (x2 - x1) / image_width))
-            norm_h = max(0.0, min(1.0, (y2 - y1) / image_height))
+            norm_w = max(0.0, min(1.0, box_w / image_width))
+            norm_h = max(0.0, min(1.0, box_h / image_height))
 
             detections.append(
                 {
@@ -235,6 +246,55 @@ class AiPipeline:
             "image_height": yolo_result["image_height"],
         }
 
+    def detect_segment_extract(
+        self,
+        *,
+        image_base64: str,
+        confidence_threshold: float,
+        max_detections: int,
+    ) -> dict[str, Any]:
+        result = self.detect_and_segment(
+            image_base64=image_base64,
+            confidence_threshold=confidence_threshold,
+            max_detections=max_detections,
+            mask_format="alpha_png",
+        )
+        image = self._decode_image(image_base64)
+        image_h, image_w = image.shape[0], image.shape[1]
+
+        extracted_objects: list[dict[str, Any]] = []
+        for obj in result["objects"]:
+            mask_b64 = str(obj.get("mask_base64", "")).strip()
+            alpha_mask = None
+            if mask_b64:
+                try:
+                    mask_img = Image.open(BytesIO(base64.b64decode(mask_b64))).convert("L")
+                    if mask_img.size != (image_w, image_h):
+                        mask_img = mask_img.resize((image_w, image_h), Image.Resampling.BILINEAR)
+                    alpha_mask = np.array(mask_img, dtype=np.uint8)
+                except Exception:
+                    alpha_mask = None
+            if alpha_mask is None:
+                alpha_mask = self._resolve_alpha_mask(
+                    {"polygon_points": obj.get("polygon_points", [])},
+                    image_width=image_w,
+                    image_height=image_h,
+                )
+            obj_image = self._extract_object_cutout_base64(image, alpha_mask)
+            extracted_objects.append(
+                {
+                    **obj,
+                    "object_image_base64": obj_image,
+                }
+            )
+
+        return {
+            "detections": result["detections"],
+            "objects": extracted_objects,
+            "image_width": result["image_width"],
+            "image_height": result["image_height"],
+        }
+
     def recolor_image(
         self,
         *,
@@ -294,6 +354,72 @@ class AiPipeline:
         output_base64 = self._encode_rgb_png_base64(np.clip(image, 0, 255).astype(np.uint8))
         return {"image_base64": output_base64, "applied": applied, "skipped": skipped}
 
+    def compose_image(
+        self,
+        *,
+        base_image_base64: str,
+        objects: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        base_rgb = self._decode_image(base_image_base64)
+        base = Image.fromarray(base_rgb, mode="RGB").convert("RGBA")
+
+        def _z(row: dict[str, Any]) -> int:
+            try:
+                return int(row.get("z_index", 0))
+            except Exception:
+                return 0
+
+        for row in sorted(objects, key=_z):
+            payload = str(row.get("object_image_base64", "")).strip()
+            if not payload:
+                continue
+            if payload.startswith("data:image"):
+                payload = payload.partition(",")[2]
+            try:
+                object_img = Image.open(BytesIO(base64.b64decode(payload))).convert("RGBA")
+            except Exception:
+                continue
+
+            width_raw = float(row.get("width", object_img.width))
+            height_raw = float(row.get("height", object_img.height))
+            x_raw = float(row.get("x", 0))
+            y_raw = float(row.get("y", 0))
+
+            # Accept either normalized (0..1) or pixel coordinates.
+            # Auto-place currently returns normalized values, while manual drag
+            # from the editor sends pixel values.
+            if 0.0 <= width_raw <= 1.0:
+                width_raw *= float(base.width)
+            if 0.0 <= height_raw <= 1.0:
+                height_raw *= float(base.height)
+            if 0.0 <= x_raw <= 1.0:
+                x_raw *= float(base.width)
+            if 0.0 <= y_raw <= 1.0:
+                y_raw *= float(base.height)
+
+            width = max(1, int(width_raw))
+            height = max(1, int(height_raw))
+            x = int(x_raw)
+            y = int(y_raw)
+            rotation = float(row.get("rotation", 0.0))
+            target_hex = row.get("target_hex")
+            intensity = self._clamp(float(row.get("intensity", 1.0)), 0.0, 1.0)
+
+            object_img = object_img.resize((width, height), Image.Resampling.LANCZOS)
+            if target_hex:
+                try:
+                    object_img = self._tint_rgba(object_img, str(target_hex), intensity)
+                except Exception:
+                    pass
+            if abs(rotation) > 0.01:
+                object_img = object_img.rotate(rotation, expand=True, resample=Image.Resampling.BICUBIC)
+
+            base.alpha_composite(object_img, dest=(x, y))
+
+        output = BytesIO()
+        base.convert("RGB").save(output, format="PNG")
+        return {"image_base64": base64.b64encode(output.getvalue()).decode("utf-8")}
+
     def _decode_image(self, image_base64: str) -> np.ndarray:
         payload = image_base64.strip()
         if payload.startswith("data:image"):
@@ -301,6 +427,36 @@ class AiPipeline:
         image_bytes = base64.b64decode(payload)
         image = Image.open(BytesIO(image_bytes)).convert("RGB")
         return np.array(image)
+
+    def _extract_object_cutout_base64(
+        self,
+        image_rgb: np.ndarray,
+        alpha_mask: np.ndarray | None,
+    ) -> str:
+        if alpha_mask is None or not np.any(alpha_mask > 0):
+            return ""
+        y_idx, x_idx = np.where(alpha_mask > 0)
+        if len(x_idx) == 0 or len(y_idx) == 0:
+            return ""
+        x1, x2 = int(np.min(x_idx)), int(np.max(x_idx))
+        y1, y2 = int(np.min(y_idx)), int(np.max(y_idx))
+        rgb_crop = image_rgb[y1:y2 + 1, x1:x2 + 1]
+        alpha_crop = alpha_mask[y1:y2 + 1, x1:x2 + 1]
+        rgba = np.dstack((rgb_crop, alpha_crop)).astype(np.uint8)
+        image = Image.fromarray(rgba, mode="RGBA")
+        output = BytesIO()
+        image.save(output, format="PNG")
+        return base64.b64encode(output.getvalue()).decode("utf-8")
+
+    def _tint_rgba(self, image: Image.Image, target_hex: str, intensity: float) -> Image.Image:
+        arr = np.array(image).astype(np.float32)
+        if arr.shape[-1] != 4:
+            return image
+        target_rgb = self._hex_to_rgb(target_hex)
+        alpha = (arr[..., 3] / 255.0) * intensity
+        for channel, value in enumerate(target_rgb):
+            arr[..., channel] = arr[..., channel] * (1.0 - alpha) + float(value) * alpha
+        return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), mode="RGBA")
 
     def _resolve_alpha_mask(
         self,

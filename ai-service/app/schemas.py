@@ -54,6 +54,7 @@ class SamObjectDto(BaseModel):
     polygon_points: list[PolygonPointDto] = Field(default_factory=list)
     mask_rle: str | None = None
     mask_base64: str | None = None
+    object_image_base64: str | None = None
 
 
 class SamInferResponse(BaseModel):
@@ -117,4 +118,25 @@ class RecolorResponse(BaseModel):
     image_base64: str
     applied: list[RecolorAppliedDto] = Field(default_factory=list)
     skipped: list[RecolorSkippedDto] = Field(default_factory=list)
+
+
+class ComposeObjectDto(BaseModel):
+    object_image_base64: str = Field(min_length=1)
+    x: float
+    y: float
+    width: float = Field(gt=1)
+    height: float = Field(gt=1)
+    rotation: float = 0.0
+    z_index: int = 0
+    target_hex: str | None = None
+    intensity: float = Field(default=1.0, ge=0, le=1)
+
+
+class ComposeRequest(BaseModel):
+    base_image_base64: str = Field(min_length=1)
+    objects: list[ComposeObjectDto] = Field(default_factory=list)
+
+
+class ComposeResponse(BaseModel):
+    image_base64: str
 

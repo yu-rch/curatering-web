@@ -51,6 +51,7 @@ class WebsiteContentStore extends ChangeNotifier {
   final List<String> popularDishLabels = <String>[];
 
   final List<String> eventDesignImageBase64 = <String>[];
+  final Map<String, Map<String, double>> imageAlignments = <String, Map<String, double>>{};
 
   final List<GalleryCategoryData> galleryCategories = [
     GalleryCategoryData(id: 'c1', label: 'FIRST BIRTHDAYS'),
@@ -161,6 +162,16 @@ class WebsiteContentStore extends ChangeNotifier {
     replaceList('popularDishImageBase64', popularDishImageBase64);
     replaceList('popularDishLabels', popularDishLabels);
     replaceList('eventDesignImageBase64', eventDesignImageBase64);
+    final align = map['imageAlignments'];
+    imageAlignments.clear();
+    if (align is Map) {
+      align.forEach((k, v) {
+        if (k is! String || v is! Map) return;
+        final x = (v['x'] as num?)?.toDouble() ?? 0;
+        final y = (v['y'] as num?)?.toDouble() ?? 0;
+        imageAlignments[k] = {'x': x, 'y': y};
+      });
+    }
 
     final g = map['galleryCategories'];
     if (g is List) {
@@ -188,6 +199,7 @@ class WebsiteContentStore extends ChangeNotifier {
         'popularDishImageBase64': popularDishImageBase64,
         'popularDishLabels': popularDishLabels,
         'eventDesignImageBase64': eventDesignImageBase64,
+        'imageAlignments': imageAlignments,
         'galleryCategories': galleryCategories.map((e) => e.toJson()).toList(),
         'contactFacebook': contactFacebook,
         'contactAddress': contactAddress,

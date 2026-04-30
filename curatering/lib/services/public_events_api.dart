@@ -10,6 +10,8 @@ class PublicEventsApi {
   PublicEventsApi._();
   static final PublicEventsApi instance = PublicEventsApi._();
   static const Duration _aiTimeout = Duration(seconds: 45);
+  /// Composite rendering often runs longer than search/extract.
+  static const Duration _compositeTimeout = Duration(seconds: 120);
 
   Future<void> submitOnlineInquiry({required Map<String, dynamic> payload}) async {
     // Public inquiry submit should not include Authorization header from any
@@ -61,5 +63,113 @@ class PublicEventsApi {
           },
         )
         .timeout(_aiTimeout);
+  }
+
+  Future<Map<String, dynamic>> searchThemeImages({
+    required String eventTitle,
+    required String eventType,
+    required String formalityLevel,
+    required String prompt,
+    String? baseImageUrl,
+    List<String> tags = const [],
+    int page = 1,
+    int perPage = 12,
+  }) async {
+    return ApiClient.instance
+        .postJson(
+          '/api/public/events/theme-design/theme-search',
+          body: {
+            'eventTitle': eventTitle,
+            'eventType': eventType,
+            'formalityLevel': formalityLevel,
+            'prompt': prompt,
+            'baseImageUrl': baseImageUrl,
+            'tags': tags,
+            'page': page,
+            'perPage': perPage,
+          },
+        )
+        .timeout(_aiTimeout);
+  }
+
+  Future<Map<String, dynamic>> addThemeObjectsByPrompt({
+    required String baseImageBase64,
+    required String eventTitle,
+    required String eventType,
+    required String formalityLevel,
+    required String prompt,
+    String? baseImageUrl,
+  }) async {
+    return ApiClient.instance
+        .postJson(
+          '/api/public/events/theme-design/add-by-prompt',
+          body: {
+            'baseImageBase64': baseImageBase64,
+            'eventTitle': eventTitle,
+            'eventType': eventType,
+            'formalityLevel': formalityLevel,
+            'prompt': prompt,
+            'baseImageUrl': baseImageUrl,
+          },
+        )
+        .timeout(_compositeTimeout);
+  }
+
+  Future<Map<String, dynamic>> extractThemeObjects({
+    required List<String> imagesBase64,
+    double confidenceThreshold = 0.25,
+    int maxDetections = 20,
+  }) async {
+    return ApiClient.instance
+        .postJson(
+          '/api/public/events/theme-design/extract-objects',
+          body: {
+            'imagesBase64': imagesBase64,
+            'confidenceThreshold': confidenceThreshold,
+            'maxDetections': maxDetections,
+          },
+        )
+        .timeout(_aiTimeout);
+  }
+
+  Future<Map<String, dynamic>> analyzeBaseImage({
+    required String baseImageBase64,
+  }) async {
+    return ApiClient.instance
+        .postJson(
+          '/api/public/events/theme-design/analyze-base',
+          body: {'baseImageBase64': baseImageBase64},
+        )
+        .timeout(_aiTimeout);
+  }
+
+  Future<Map<String, dynamic>> autoPlaceThemeObjects({
+    required List<Map<String, dynamic>> freeSpaces,
+    required List<Map<String, dynamic>> objects,
+  }) async {
+    return ApiClient.instance
+        .postJson(
+          '/api/public/events/theme-design/auto-place',
+          body: {
+            'freeSpaces': freeSpaces,
+            'objects': objects,
+          },
+        )
+        .timeout(_aiTimeout);
+  }
+
+  Future<Map<String, dynamic>> renderThemeComposite({
+    required String baseImageBase64,
+    required List<Map<String, dynamic>> objects,
+  }) async {
+    return ApiClient.instance
+        .postJson(
+          '/api/public/events/theme-design/render-composite',
+          body: {
+            'baseImageBase64': baseImageBase64,
+            'objects': objects,
+          },
+        )
+        .timeout(_compositeTimeout);
   }
 }

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, Request
 
 from ..schemas import (
+    ComposeRequest,
+    ComposeResponse,
     RecolorRequest,
     RecolorResponse,
     SamInferRequest,
@@ -53,6 +55,18 @@ def infer_yolo_sam(payload: YoloSamInferRequest, request: Request):
     )
 
 
+@router.post("/infer/yolo-sam-extract", response_model=YoloSamInferResponse)
+def infer_yolo_sam_extract(payload: YoloSamInferRequest, request: Request):
+    pipeline: AiPipeline = request.app.state.pipeline
+    if not pipeline.models_loaded:
+        raise HTTPException(status_code=503, detail="Models are not ready")
+    return pipeline.detect_segment_extract(
+        image_base64=payload.image_base64,
+        confidence_threshold=payload.confidence_threshold,
+        max_detections=payload.max_detections,
+    )
+
+
 @router.post("/edit/recolor", response_model=RecolorResponse)
 def recolor(payload: RecolorRequest, request: Request):
     pipeline: AiPipeline = request.app.state.pipeline
@@ -62,5 +76,16 @@ def recolor(payload: RecolorRequest, request: Request):
         image_base64=payload.image_base64,
         masks=[mask.model_dump() for mask in payload.masks],
         edits=[edit.model_dump() for edit in payload.edits],
+    )
+
+
+@router.post("/edit/compose", response_model=ComposeResponse)
+def compose(payload: ComposeRequest, request: Request):
+    pipeline: AiPipeline = request.app.state.pipeline
+    if not pipeline.models_loaded:
+        raise HTTPException(status_code=503, detail="Models are not ready")
+    return pipeline.compose_image(
+        base_image_base64=payload.base_image_base64,
+        objects=[obj.model_dump() for obj in payload.objects],
     )
 

@@ -46,8 +46,11 @@ class _ReportsState extends State<Reports> {
     });
 
     try {
-      final orders =
-          await EventsApi.instance.listOrders(status: 'completed', roleType: roleType);
+      final orders = await EventsApi.instance.listOrders(
+        status: 'completed',
+        roleType: roleType,
+        compact: true,
+      );
       final months = <DateTime>{};
       for (final o in orders) {
         if (o.scheduleSlots.isEmpty) continue;

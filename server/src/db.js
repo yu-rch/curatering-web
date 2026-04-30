@@ -1,20 +1,98 @@
 import { Pool } from "pg";
 
-const pool = new Pool(
-  process.env.DATABASE_URL
-    ? { connectionString: process.env.DATABASE_URL }
-    : {
-        host: process.env.PGHOST || process.env.DB_HOST,
-        port: process.env.PGPORT
-          ? Number(process.env.PGPORT)
-          : process.env.DB_PORT
-            ? Number(process.env.DB_PORT)
-            : undefined,
-        user: process.env.PGUSER || process.env.DB_USER,
-        password: process.env.PGPASSWORD || process.env.DB_PASSWORD,
-        database: process.env.PGDATABASE || process.env.DB_NAME,
-      },
-);
+function buildPgPoolConfig() {
+  const cs = process.env.DATABASE_URL?.trim();
+  if (!cs) {
+    const statementTimeout =
+      process.env.PG_STATEMENT_TIMEOUT?.trim() || "120s";
+    return {
+      host: process.env.PGHOST || process.env.DB_HOST,
+      port: process.env.PGPORT
+        ? Number(process.env.PGPORT)
+        : process.env.DB_PORT
+          ? Number(process.env.DB_PORT)
+          : undefined,
+      user: process.env.PGUSER || process.env.DB_USER,
+      password: process.env.PGPASSWORD || process.env.DB_PASSWORD,
+      database: process.env.PGDATABASE || process.env.DB_NAME,
+      max: Number(process.env.PG_POOL_MAX || 10),
+      idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 30000),
+      connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 20000),
+      options: `-c statement_timeout=${statementTimeout}`,
+    };
+  }
+
+  const lower = cs.toLowerCase();
+  const isSupabase =
+    lower.includes("supabase.co") || lower.includes("pooler.supabase.com");
+
+  // Default 120s — Supabase default statement_timeout is often ~8s; heavy list queries need more.
+  const statementTimeout =
+    process.env.PG_STATEMENT_TIMEOUT?.trim() || "120s";
+
+  return {
+    connectionString: cs,
+    max: Number(process.env.PG_POOL_MAX || 10),
+    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 30000),
+    connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 20000),
+    keepAlive: true,
+    options: `-c statement_timeout=${statementTimeout}`,
+    // Supabase / managed Postgres: TLS required; pooler may drop idle sockets — keepAlive + timeouts help.
+    ...(isSupabase || process.env.PG_SSL === "1"
+      ? { ssl: { rejectUnauthorized: false } }
+      : {}),
+  };
+}
+
+const pool = new Pool(buildPgPoolConfig());
+
+pool.on("error", (err) => {
+  console.error("PostgreSQL pool idle client error:", err?.message || err);
+});
+
+function isTransientPgNetworkError(err) {
+  const c = err?.code;
+  const msg = String(err?.message || "");
+  return (
+    c === "EAI_AGAIN" ||
+    c === "ENOTFOUND" ||
+    c === "ETIMEDOUT" ||
+    c === "ECONNRESET" ||
+    c === "EPIPE" ||
+    c === "ECONNREFUSED" ||
+    (typeof c === "string" && c.startsWith("08")) ||
+    /getaddrinfo/i.test(msg)
+  );
+}
+
+/**
+ * Retry pool queries when DNS / TCP flakes (common with Docker + Supabase pooler).
+ */
+export async function poolQueryWithRetry(text, values, opts = {}) {
+  const max = Number(
+    opts.maxAttempts ?? process.env.PG_QUERY_RETRY_ATTEMPTS ?? 5,
+  );
+  const baseDelay = Number(
+    opts.delayMs ?? process.env.PG_QUERY_RETRY_DELAY_MS ?? 500,
+  );
+  let last;
+  for (let attempt = 1; attempt <= max; attempt += 1) {
+    try {
+      return await pool.query(text, values);
+    } catch (e) {
+      last = e;
+      if (!isTransientPgNetworkError(e) || attempt >= max) {
+        throw e;
+      }
+      const wait = baseDelay * attempt;
+      console.warn(
+        `pool.query retry ${attempt}/${max} after transient error (${e?.code || e?.message}): waiting ${wait}ms`,
+      );
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  throw last;
+}
 
 // Function to generate CTR-4 random ID
 function generateUserId() {
@@ -437,6 +515,18 @@ export async function initDb() {
     ALTER TABLE catering_orders
     ADD COLUMN IF NOT EXISTS inquiry_id TEXT UNIQUE;
   `);
+
+  // List queries filter by status and sort by created_at (manager/supervisor order APIs).
+  try {
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_event_orders_status_created_at ON event_orders (status, created_at DESC)`,
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_catering_orders_status_created_at ON catering_orders (status, created_at DESC)`,
+    );
+  } catch (err) {
+    console.log("Index create (event/catering orders status):", err.message);
+  }
 
   // Create menu_dishes table
   await pool.query(`

@@ -12,14 +12,18 @@ class EventsApi {
   Future<List<EventOrderDto>> listOrders({
     required String status,
     required String roleType, // manager | supervisor
+    bool compact = false,
   }) async {
     final path = roleType == 'manager'
         ? '/api/manager/events/orders'
         : '/api/supervisor/events/orders';
 
+    final qp = <String, String>{'status': status};
+    if (compact) qp['compact'] = '1';
+
     final decoded = await ApiClient.instance.getJson(
       path,
-      queryParameters: {'status': status},
+      queryParameters: qp,
       useCache: false,
     );
 
@@ -29,6 +33,23 @@ class EventsApi {
     }
 
     return raw.map(_orderFromJson).toList();
+  }
+
+  Future<EventOrderDto> getEventOrder({
+    required String orderId,
+    required String roleType,
+  }) async {
+    final encoded = Uri.encodeComponent(orderId);
+    final path = roleType == 'manager'
+        ? '/api/manager/events/orders/$encoded'
+        : '/api/supervisor/events/orders/$encoded';
+
+    final decoded = await ApiClient.instance.getJson(path, useCache: false);
+    final raw = decoded['order'];
+    if (raw is! Map) {
+      throw Exception('Invalid order response');
+    }
+    return _orderFromJson(raw);
   }
 
   Future<void> managerSubmitNewEventToProcessing({
@@ -405,6 +426,7 @@ class EventsApi {
       id: (map['id'] ?? '').toString(),
       source: (map['source'] ?? '').toString(),
       status: (map['status'] ?? '').toString(),
+      themeAssetsDeferred: _toBool(map['listSummaryOnly']),
       eventTitle: map['eventTitle'] as String? ?? '',
       orderType: map['orderType'] as String? ?? 'catering',
       eventType: map['eventType'] as String? ?? '',

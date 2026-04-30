@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -21,6 +22,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
   List<dynamic> _activeOrders = [];
   bool _isLoading = true;
   String? _error;
+  static const Duration _requestTimeout = Duration(seconds: 20);
 
   String get _apiBaseUrl {
     return apiBaseUrl;
@@ -33,6 +35,12 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
   }
 
   Future<void> _loadActiveOrders() async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
@@ -45,13 +53,15 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
       }
 
 
-      final response = await http.get(
+      final response = await http
+          .get(
         Uri.parse('$_apiBaseUrl/api/restaurant/orders'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
-      );
+      )
+          .timeout(_requestTimeout);
 
       if (response.statusCode == 401) {
         await prefs.remove('customer_token');
@@ -95,6 +105,13 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
       if (mounted) {
         setState(() {
           _activeOrders = activeOrders;
+          _isLoading = false;
+        });
+      }
+    } on TimeoutException {
+      if (mounted) {
+        setState(() {
+          _error = 'Request timed out. Please check your connection and try again.';
           _isLoading = false;
         });
       }
