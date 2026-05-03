@@ -7,10 +7,14 @@ services:
     dns:
       - 8.8.8.8
       - 8.8.4.4
+      - 1.1.1.1
+      - 1.0.0.1
     env_file:
       - ./server/.env
     environment:
       AI_SERVICE_BASE_URL: http://fastapi-ai:8000
+      PG_POOL_MAX: 25
+      DATABASE_URL: postgresql://postgres.ffgifzwwqdjeyyedaciu:SEJKhvkLLJOZXLwv@aws-1-ap-southeast-2.supabase.com:5432/postgres
     volumes:
       - ./server:/workspace/server
       - node-node_modules:/workspace/server/node_modules
@@ -33,6 +37,18 @@ services:
       - ./ai-service/app:/app/app
       - ./ai-service/models:/app/models
     init: true
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '2.0'
+        reservations:
+          memory: 4G
+          cpus: '1.0'
+    environment:
+      - PYTHONUNBUFFERED=1
+      - UVICORN_WORKERS=1
+      - UVICORN_WORKER_CONNECTIONS=10
 
 volumes:
   node-node_modules:

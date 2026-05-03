@@ -2927,15 +2927,6 @@ class _ManageEventsState extends State<ManageEvents>
       ),
     );
 
-    if (isNarrow) {
-      return SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [listSection, const SizedBox(height: 20), detailsSection],
-        ),
-      );
-    }
-
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -5765,21 +5756,6 @@ class _ManageEventsState extends State<ManageEvents>
         ),
       ),
     );
-
-    if (isNarrow) {
-      return SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            listSection,
-            const SizedBox(height: 20),
-            menuSection,
-            const SizedBox(height: 20),
-            infoSection,
-          ],
-        ),
-      );
-    }
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,

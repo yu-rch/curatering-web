@@ -1,8 +1,7 @@
-// ignore_for_file: invalid_use_of_protected_member
-
 part of 'customer_website.dart';
 
 extension _ThemeEditorPageExtraction on _InquireFormState {
+  static const Duration _aiRequestTimeout = Duration(seconds: 180);
   void _showDesignMyEventEditorPage() {
     final baseCarouselCtrl = PageController(
       viewportFraction: 0.86,
@@ -107,6 +106,12 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
       _selectedBaseImage = url;
       _designEventWizardStep = 1;
       _selectedSuggestionIndexes.clear();
+      // Clear theme search to allow separate source image searching
+      _themeSuggestions.clear();
+      _themeSearchPage = 1;
+      _themeSearchHasMore = false;
+      _themeSearchTotal = 0;
+      _isSearchingThemeImages = false;
     });
     await _cacheBaseImageNaturalSize();
     await _analyzeBaseAndRecommend();
@@ -281,103 +286,235 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Event: ${_eventTitle.text.trim().isEmpty ? "(not set)" : _eventTitle.text.trim()}'),
-          Text('Type: $_eventType'),
-          Text('Formality: $_formality'),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _themeRequestCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Theme prompt',
-              hintText: 'e.g. debut purple sea theme',
-              border: OutlineInputBorder(),
-              isDense: true,
+          // Event Info Section
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade200),
             ),
-          ),
-          if ((_selectedBaseImage ?? '').isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              'Base context linked for search: ${_selectedBaseImage!.length > 90 ? "${_selectedBaseImage!.substring(0, 90)}..." : _selectedBaseImage!}',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
-            ),
-          ],
-          const SizedBox(height: 8),
-          ElevatedButton.icon(
-            onPressed: _isSearchingThemeImages
-                ? null
-                : () async => _themeEditorSearchThemeImages(refreshDialog),
-            icon: _isSearchingThemeImages
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.search, size: 18),
-            label: Text(_isSearchingThemeImages ? 'Searching...' : 'Search Theme Images'),
-          ),
-          if (_themeSuggestions.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              _themeSearchTotal > 0
-                  ? 'Page $_themeSearchPage of ${_themeSearchMaxPages()} · ${_themeSuggestions.length} on this page · $_themeSearchTotal total'
-                  : 'Page $_themeSearchPage · ${_themeSuggestions.length} image(s) shown',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 6),
-            Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                OutlinedButton.icon(
-                  onPressed: (_isSearchingThemeImages || _themeSearchPage <= 1)
-                      ? null
-                      : () async {
-                          await _searchThemeSuggestions(goToPage: _themeSearchPage - 1);
-                          if (mounted) refreshDialog();
-                        },
-                  icon: const Icon(Icons.chevron_left, size: 20),
-                  label: const Text('Previous'),
+                const Text(
+                  'Event Details',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                 ),
-                const Spacer(),
-                OutlinedButton.icon(
-                  onPressed: (_isSearchingThemeImages || !_themeSearchHasMore)
-                      ? null
-                      : () async {
-                          await _searchThemeSuggestions(goToPage: _themeSearchPage + 1);
-                          if (mounted) refreshDialog();
-                        },
-                  icon: const Icon(Icons.chevron_right, size: 20),
-                  label: const Text('Next'),
-                ),
+                const SizedBox(height: 8),
+                Text('Event: ${_eventTitle.text.trim().isEmpty ? "(not set)" : _eventTitle.text.trim()}'),
+                Text('Type: $_eventType'),
+                Text('Formality: $_formality'),
               ],
             ),
-            const SizedBox(height: 6),
-            OutlinedButton.icon(
-              onPressed: (_isSearchingThemeImages || !_themeSearchHasMore)
-                  ? null
-                  : () async {
-                      await _searchThemeSuggestions(loadMore: true);
-                      if (mounted) refreshDialog();
-                    },
-              icon: const Icon(Icons.expand_more, size: 18),
-              label: Text(_themeSearchHasMore ? 'Load more (append next page)' : 'No more to load'),
-            ),
-          ],
-          const SizedBox(height: 12),
+          ),
+          const SizedBox(height: 16),
+          
+          // Step 1: Template Selection (Base Image)
           if (_designEventWizardStep == 0) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _linkedBaseUrlCtrl,
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.image, color: Colors.blue, size: 20),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Step 1: Choose Template',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Search for a base template or paste a URL',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _themeRequestCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Paste base image URL',
-                      hintText: 'https://...',
+                      labelText: 'Template search',
+                      hintText: 'e.g. wedding flowers, birthday party',
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(onPressed: addLinkedBaseImage, child: const Text('Add URL')),
-              ],
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    onPressed: _isSearchingThemeImages
+                        ? null
+                        : () async => _themeEditorSearchThemeImages(refreshDialog),
+                    icon: _isSearchingThemeImages
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.search, size: 18),
+                    label: Text(_isSearchingThemeImages ? 'Searching...' : 'Search Templates'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _linkedBaseUrlCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Or paste template URL',
+                            hintText: 'https://...',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: addLinkedBaseImage,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey.shade600,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Add URL'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 10),
           ],
+          
+          // Step 2: Element Selection
+          if (_designEventWizardStep == 1) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.widgets, color: Colors.green, size: 20),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Step 2: Add Elements',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Search for decorative elements to enhance your template',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _themeRequestCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Element search',
+                      hintText: 'e.g. flowers, candles, decorations',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    onPressed: _isSearchingThemeImages
+                        ? null
+                        : () async => _themeEditorSearchThemeImages(refreshDialog),
+                    icon: _isSearchingThemeImages
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.search, size: 18),
+                    label: Text(_isSearchingThemeImages ? 'Searching...' : 'Search Elements'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          
+          // Search Results Section
+          if (_themeSuggestions.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _designEventWizardStep == 0 ? 'Templates' : 'Elements',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _themeSearchTotal > 0
+                        ? 'Page $_themeSearchPage of ${_themeSearchMaxPages()} · ${_themeSuggestions.length} on this page · $_themeSearchTotal total'
+                        : 'Page $_themeSearchPage · ${_themeSuggestions.length} item(s) shown',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: (_isSearchingThemeImages || _themeSearchPage <= 1)
+                            ? null
+                            : () async {
+                                await _searchThemeSuggestions(goToPage: _themeSearchPage - 1);
+                                if (mounted) refreshDialog();
+                              },
+                        icon: const Icon(Icons.chevron_left, size: 20),
+                        label: const Text('Previous'),
+                      ),
+                      const Spacer(),
+                      OutlinedButton.icon(
+                        onPressed: (_isSearchingThemeImages || !_themeSearchHasMore)
+                            ? null
+                            : () async {
+                                await _searchThemeSuggestions(goToPage: _themeSearchPage + 1);
+                                if (mounted) refreshDialog();
+                              },
+                        icon: const Icon(Icons.chevron_right, size: 20),
+                        label: const Text('Next'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: (_isSearchingThemeImages || !_themeSearchHasMore)
+                        ? null
+                        : () async {
+                            await _searchThemeSuggestions(loadMore: true);
+                            if (mounted) refreshDialog();
+                          },
+                    icon: const Icon(Icons.expand_more, size: 18),
+                    label: Text(_themeSearchHasMore ? 'Load more' : 'No more to load'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          
+          // Image Grid
           if (_themeSuggestions.isNotEmpty)
             ...List.generate(
               _themeSuggestions.length,
@@ -389,7 +526,31 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
               ),
             )
           else
-            Text('Run a search to load inspiration photos.', style: TextStyle(color: Colors.grey.shade600)),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    _designEventWizardStep == 0 ? Icons.image_outlined : Icons.widgets_outlined,
+                    size: 48,
+                    color: Colors.grey.shade400,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _designEventWizardStep == 0 
+                        ? 'Search for templates to get started'
+                        : 'Search for elements to enhance your design',
+                    style: TextStyle(color: Colors.grey.shade600),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -423,15 +584,43 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
             ),
             const SizedBox(height: 10),
             if (_designEventWizardStep == 2) ...[
-              TextField(
-                controller: _addByPromptCtrl,
-                onChanged: (_) => refreshDialog(),
-                decoration: const InputDecoration(
-                  labelText: 'Add by prompt',
-                  hintText: 'e.g. add more flowers on table',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _addByPromptCtrl,
+                      onChanged: (_) => refreshDialog(),
+                      onSubmitted: (_) {
+                        if (_selectedBaseImage != null && _addByPromptCtrl.text.trim().isNotEmpty && !_isAddingByPrompt) {
+                          _themeEditorAddByPrompt(refreshDialog);
+                        }
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Add by prompt',
+                        hintText: 'e.g. add more flowers on table',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: (_selectedBaseImage != null && _addByPromptCtrl.text.trim().isNotEmpty && !_isAddingByPrompt)
+                        ? () async => _themeEditorAddByPrompt(refreshDialog)
+                        : null,
+                    icon: _isAddingByPrompt 
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.send, size: 18),
+                    label: Text(_isAddingByPrompt ? 'Adding' : ''),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -445,10 +634,16 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
                     child: Text(_isExtractingThemeObjects ? 'Segmenting...' : 'Extract'),
                   ),
                   ElevatedButton(
-                    onPressed: _isDetectingAiObjects
-                        ? null
-                        : () async => _themeEditorRecolor(setDialogState, refreshDialog),
-                    child: Text(_isDetectingAiObjects ? 'Detecting...' : 'Recolor'),
+                    onPressed: (_extractedThemeObjects.isNotEmpty || _placedThemeObjects.isNotEmpty)
+                        ? () async => _themeEditorRecolor(setDialogState, refreshDialog)
+                        : null,
+                    child: Text((_extractedThemeObjects.isNotEmpty || _placedThemeObjects.isNotEmpty) ? 'Recolor Objects' : 'Recolor'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: (_extractedThemeObjects.isNotEmpty || _placedThemeObjects.isNotEmpty) 
+                          ? Colors.purple 
+                          : null,
+                      foregroundColor: Colors.white,
+                    ),
                   ),
                   ElevatedButton(
                     onPressed: _placedThemeObjects.isNotEmpty || _extractedThemeObjects.isNotEmpty
@@ -457,10 +652,14 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
                     child: const Text('Auto Place'),
                   ),
                   ElevatedButton(
-                    onPressed: (_selectedBaseImage != null && _addByPromptCtrl.text.trim().isNotEmpty && !_isAddingByPrompt)
-                        ? () async => _themeEditorAddByPrompt(refreshDialog)
+                    onPressed: (_placedThemeObjects.isNotEmpty && !_isPlacementSaved)
+                        ? () async => _themeEditorSavePlacement(refreshDialog)
                         : null,
-                    child: Text(_isAddingByPrompt ? 'Adding...' : 'Add By Prompt'),
+                    child: Text(_isPlacementSaved ? 'Placement Saved' : 'Save Placement'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _isPlacementSaved ? Colors.grey : Colors.orange,
+                      foregroundColor: Colors.white,
+                    ),
                   ),
                   ElevatedButton(
                     onPressed: (_selectedBaseImage != null &&
@@ -526,7 +725,15 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
   }
 
   Future<void> _themeEditorRecolor(void Function(void Function()) setDialogState, VoidCallback refreshDialog) async {
-    await _runCustomerEditObjectsFlow(setDialogState);
+    // If we already have extracted objects, use them directly
+    if (_extractedThemeObjects.isNotEmpty) {
+      await _runRecolorWithExtractedObjects(setDialogState);
+    } else if (_placedThemeObjects.isNotEmpty) {
+      await _runRecolorWithPlacedObjects(setDialogState);
+    } else {
+      // Fallback to original flow if no objects available
+      await _runCustomerEditObjectsFlow(setDialogState);
+    }
     if (mounted) refreshDialog();
   }
 
@@ -538,6 +745,302 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
   Future<void> _themeEditorAddByPrompt(VoidCallback refreshDialog) async {
     await _addObjectsByPromptAndRender();
     if (mounted) refreshDialog();
+  }
+
+  Future<void> _runRecolorWithExtractedObjects(void Function(void Function()) setDialogState) async {
+    final selection = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) {
+        String? selectedObjectId;
+        String selectedHex = '#F4511E';
+        double selectedAlpha = 1.0;
+        const palette = <String>[
+          '#F4511E',
+          '#1DB954',
+          '#1976D2',
+          '#E91E63',
+          '#6A1B9A',
+          '#FFC107',
+          '#FFFFFF',
+          '#212121',
+        ];
+        return StatefulBuilder(
+          builder: (context, setLocalState) {
+            return Dialog(
+              backgroundColor: const Color(0xFFF7F8FA),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              child: Container(
+                width: 800,
+                height: 600,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Recolor Extracted Objects',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFF4511E),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(10),
+                                color: Colors.white,
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Extracted Objects:',
+                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Expanded(
+                                      child: SingleChildScrollView(
+                                        child: Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children: _extractedThemeObjects.map((obj) {
+                                            final id = (obj['id'] ?? '').toString();
+                                            final label = (obj['label'] ?? 'Object').toString();
+                                            final active = selectedObjectId == id;
+                                            return FilterChip(
+                                              label: Text('$label #${id.split('_').last}'),
+                                              selected: active,
+                                              onSelected: (_) => setLocalState(() {
+                                                selectedObjectId = id;
+                                              }),
+                                              backgroundColor: Colors.grey.shade200,
+                                              selectedColor: Colors.purple.withOpacity(0.3),
+                                              checkmarkColor: Colors.purple,
+                                            );
+                                          }).toList(),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            flex: 1,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(10),
+                                color: Colors.white,
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Color Selection:',
+                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: palette.map((hex) {
+                                        final selected = selectedHex == hex;
+                                        return GestureDetector(
+                                          onTap: () => setLocalState(() => selectedHex = hex),
+                                          child: Container(
+                                            width: 40,
+                                            height: 40,
+                                            decoration: BoxDecoration(
+                                              color: Color(int.parse(hex.substring(1), radix: 16) + 0xFF000000),
+                                              shape: BoxShape.circle,
+                                              border: Border.all(
+                                                color: selected ? Colors.black : Colors.black26,
+                                                width: selected ? 3 : 1,
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Alpha: ${(selectedAlpha * 100).round()}%',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Slider(
+                                          value: selectedAlpha,
+                                          min: 0.0,
+                                          max: 1.0,
+                                          divisions: 20,
+                                          activeColor: Color(
+                                            int.parse(selectedHex.substring(1), radix: 16) + 0xFF000000,
+                                          ),
+                                          onChanged: (value) => setLocalState(() => selectedAlpha = value),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      width: double.infinity,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: Color(
+                                          int.parse(selectedHex.substring(1), radix: 16) + 
+                                          (selectedAlpha * 255).round() * 0x1000000,
+                                        ),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: Colors.grey.shade400),
+                                      ),
+                                      child: const Center(
+                                        child: Text(
+                                          'Preview',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: selectedObjectId == null
+                          ? null
+                          : () => Navigator.of(context).pop({
+                              'objectId': selectedObjectId!,
+                              'hex': selectedHex,
+                              'alpha': selectedAlpha,
+                            }),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1DB954),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Apply Color'),
+                    ),
+                    const SizedBox(height: 8),
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.grey.shade400,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (selection == null) return;
+    final objectId = selection['objectId'];
+    final targetHex = selection['hex'];
+    final targetAlpha = selection['alpha'] as double? ?? 1.0;
+    
+    final targetObject = _extractedThemeObjects.firstWhere(
+      (obj) => (obj['id'] ?? '').toString() == objectId,
+      orElse: () => <String, dynamic>{},
+    );
+    
+    if (targetObject.isEmpty) return;
+    
+    final objectImageBase64 = (targetObject['objectImageBase64'] ?? '').toString();
+    if (objectImageBase64.isEmpty) return;
+    
+    setState(() => _isDetectingAiObjects = true);
+    try {
+      final recolor = await PublicEventsApi.instance
+          .swapThemeObjectColors(
+            imageBase64: objectImageBase64,
+            masks: [{
+              'objectId': objectId,
+            }],
+            edits: [{
+              'objectId': objectId,
+              'targetHex': targetHex,
+              'intensity': targetAlpha,
+            }],
+          )
+          .timeout(_aiRequestTimeout);
+      
+      final recoloredBase64 = (recolor['imageBase64'] ?? '').toString();
+      if (recoloredBase64.isNotEmpty) {
+        setState(() {
+          final index = _extractedThemeObjects.indexWhere(
+            (obj) => (obj['id'] ?? '').toString() == objectId,
+          );
+          if (index >= 0) {
+            _extractedThemeObjects[index] = {
+              ..._extractedThemeObjects[index],
+              'objectImageBase64': recoloredBase64,
+            };
+          }
+        });
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Object recolored successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Recolor failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() => _isDetectingAiObjects = false);
+    }
+  }
+
+  Future<void> _runRecolorWithPlacedObjects(void Function(void Function()) setDialogState) async {
+    await _runCustomerEditObjectsFlow(setDialogState);
   }
 
   Future<void> _themeEditorRenderComposite(VoidCallback refreshDialog) async {
@@ -567,6 +1070,32 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
       _focusedPhotoIndex = 0;
     });
     Navigator.pop(dialogContext);
+  }
+
+  Future<void> _themeEditorSavePlacement(VoidCallback refreshDialog) async {
+    if (_placedThemeObjects.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No objects placed to save.')),
+        );
+      }
+      return;
+    }
+    
+    setState(() {
+      _isPlacementSaved = true;
+    });
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Placement saved! You can now render the final design.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+    
+    if (mounted) refreshDialog();
   }
 
   void _themeEditorClose(BuildContext dialogContext) {

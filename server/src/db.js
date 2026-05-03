@@ -15,7 +15,7 @@ function buildPgPoolConfig() {
       user: process.env.PGUSER || process.env.DB_USER,
       password: process.env.PGPASSWORD || process.env.DB_PASSWORD,
       database: process.env.PGDATABASE || process.env.DB_NAME,
-      max: Number(process.env.PG_POOL_MAX || 10),
+      max: Number(process.env.PG_POOL_MAX || 25),
       idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 30000),
       connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 20000),
       options: `-c statement_timeout=${statementTimeout}`,
@@ -32,8 +32,8 @@ function buildPgPoolConfig() {
 
   return {
     connectionString: cs,
-    max: Number(process.env.PG_POOL_MAX || 10),
-    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 30000),
+    max: Number(process.env.PG_POOL_MAX || 25),
+    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 10000), // Reduced from 30s to 10s
     connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 20000),
     keepAlive: true,
     options: `-c statement_timeout=${statementTimeout}`,
@@ -44,7 +44,9 @@ function buildPgPoolConfig() {
   };
 }
 
-const pool = new Pool(buildPgPoolConfig());
+const config = buildPgPoolConfig();
+console.log("PostgreSQL pool configuration:", { max: config.max, connectionString: config.connectionString ? "***" : "individual params" });
+const pool = new Pool(config);
 
 pool.on("error", (err) => {
   console.error("PostgreSQL pool idle client error:", err?.message || err);

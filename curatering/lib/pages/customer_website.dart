@@ -3476,7 +3476,7 @@ class _InquireFormState extends State<_InquireForm> {
   final ScrollController _objectsStripScrollCtrl = ScrollController();
   // Avoid repeatedly base64-decoding the same images during drag/resize UI updates.
   final Map<String, Uint8List> _base64DecodeCache = {};
-  static const Duration _aiRequestTimeout = Duration(seconds: 30);
+  static const Duration _aiRequestTimeout = Duration(seconds: 180);
   /// Wizard for "Design my event": 0 = pick base, 1 = pick add-on source images, 2 = compose.
   int _designEventWizardStep = 0;
   int? _pendingBaseSuggestionIndex;
@@ -5075,14 +5075,18 @@ class _InquireFormState extends State<_InquireForm> {
             ..addAll(images);
           if (isNewSearch) {
             _selectedSuggestionIndexes.clear();
-            _selectedBaseImage = null;
-            _baseImageNaturalW = null;
-            _baseImageNaturalH = null;
-            _isPlacementSaved = false;
-            _designEventWizardStep = 0;
-            _pendingBaseSuggestionIndex = null;
-            _designEventBaseCarouselPage = 0;
-            _designEventAddonCarouselPage = 0;
+            // Only reset base image if we're in Step 0 (template selection)
+            // In Step 2 (element selection), preserve the base image
+            if (_designEventWizardStep == 0) {
+              _selectedBaseImage = null;
+              _baseImageNaturalW = null;
+              _baseImageNaturalH = null;
+              _isPlacementSaved = false;
+              _designEventWizardStep = 0;
+              _pendingBaseSuggestionIndex = null;
+              _designEventBaseCarouselPage = 0;
+              _designEventAddonCarouselPage = 0;
+            }
           } else if (isPageNav) {
             _selectedSuggestionIndexes.clear();
             _pendingBaseSuggestionIndex = null;
@@ -6150,11 +6154,12 @@ class _InquireFormState extends State<_InquireForm> {
         grouped.putIfAbsent(label, () => <Map<String, dynamic>>[]).add(obj);
       }
 
-      final selection = await showDialog<Map<String, String>>(
+      final selection = await showDialog<Map<String, dynamic>>(
         context: context,
         builder: (context) {
           String? selectedLabel;
           String selectedHex = '#F4511E';
+          double selectedAlpha = 1.0;
           const palette = <String>[
             '#F4511E',
             '#1DB954',
@@ -6302,6 +6307,52 @@ class _InquireFormState extends State<_InquireForm> {
                                             );
                                           }).toList(),
                                         ),
+                                        const SizedBox(height: 12),
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Alpha: ${(selectedAlpha * 100).round()}%',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Slider(
+                                              value: selectedAlpha,
+                                              min: 0.0,
+                                              max: 1.0,
+                                              divisions: 20,
+                                              activeColor: Color(
+                                                int.parse(selectedHex.substring(1), radix: 16) + 0xFF000000,
+                                              ),
+                                              onChanged: (value) => setLocalState(() => selectedAlpha = value),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Container(
+                                          width: double.infinity,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: Color(
+                                              int.parse(selectedHex.substring(1), radix: 16) + 
+                                              (selectedAlpha * 255).round() * 0x1000000,
+                                            ),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: Colors.grey.shade400),
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              'Preview',
+                                              style: TextStyle(
+                                                color: selectedAlpha > 0.5 ? Colors.white : Colors.black,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -6356,6 +6407,7 @@ class _InquireFormState extends State<_InquireForm> {
                                         : () => Navigator.of(context).pop({
                                             'label': selectedLabel!,
                                             'hex': selectedHex,
+                                            'alpha': selectedAlpha,
                                           }),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: const Color(0xFF1DB954),
@@ -6389,6 +6441,7 @@ class _InquireFormState extends State<_InquireForm> {
       if (selection == null) return;
       final selectedLabel = selection['label'];
       final targetHex = selection['hex'];
+      final targetAlpha = selection['alpha'] as double? ?? 1.0;
       if (selectedLabel == null || targetHex == null) return;
 
       final selectedObjects = grouped[selectedLabel] ?? const <Map<String, dynamic>>[];
@@ -6429,7 +6482,7 @@ class _InquireFormState extends State<_InquireForm> {
           .map((obj) => {
                 'objectId': (obj['id'] ?? '').toString(),
                 'targetHex': targetHex,
-                'intensity': 1.0,
+                'intensity': targetAlpha,
               })
           .toList();
 

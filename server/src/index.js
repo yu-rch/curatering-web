@@ -41,6 +41,7 @@ const AI_SERVICE_TOKEN = process.env.AI_SERVICE_TOKEN || "";
 const AI_SERVICE_TIMEOUT_SEGMENT_MS = Number(process.env.AI_SERVICE_TIMEOUT_SEGMENT_MS || 20000);
 const AI_SERVICE_TIMEOUT_RECOLOR_MS = Number(process.env.AI_SERVICE_TIMEOUT_RECOLOR_MS || 8000);
 const AI_SERVICE_TIMEOUT_COMPOSE_MS = Number(process.env.AI_SERVICE_TIMEOUT_COMPOSE_MS || 12000);
+const AI_SERVICE_TIMEOUT_ADD_BY_PROMPT_MS = Number(process.env.AI_SERVICE_TIMEOUT_ADD_BY_PROMPT_MS || 180000);
 const AI_SERVICE_MAX_IMAGE_BYTES = Number(process.env.AI_SERVICE_MAX_IMAGE_BYTES || 8_000_000);
 const AI_SERVICE_SEGMENT_TIMEOUT_RETRIES = Math.max(
   0,
@@ -2079,34 +2080,34 @@ app.post("/api/public/events/theme-design/theme-search", async (req, res) => {
     let error = "";
     let rateLimited = false;
     const seen = new Set();
+    
+    // Parallelize all Pexels API calls for better performance
+    const pexelsPromises = [];
     for (const q of queryCandidates) {
       if (!q) continue;
-      const first = await fetchPexelsImages({ query: q, perPage: 30, page: 1 });
-      for (const row of first.images || []) {
-        const key = String(row.imageUrl || "");
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        images.push(row);
-      }
-      if (first.error) error = first.error;
-      rateLimited = first.rateLimited;
-      if (!rateLimited && images.length < 24) {
-        const second = await fetchPexelsImages({ query: q, perPage: 30, page: 2 });
-        for (const row of second.images || []) {
+      pexelsPromises.push(fetchPexelsImages({ query: q, perPage: 30, page: 1 }));
+      pexelsPromises.push(fetchPexelsImages({ query: q, perPage: 30, page: 2 }));
+    }
+    
+    const pexelsResults = await Promise.allSettled(pexelsPromises);
+    for (const result of pexelsResults) {
+      if (result.status === 'fulfilled') {
+        const { images: resultImages, error: resultError, rateLimited: resultRateLimited } = result.value;
+        for (const row of resultImages || []) {
           const key = String(row.imageUrl || "");
           if (!key || seen.has(key)) continue;
           seen.add(key);
           images.push(row);
         }
-        if (second.error) error = second.error;
-        rateLimited = second.rateLimited;
+        if (resultError) error = resultError;
+        if (resultRateLimited) rateLimited = resultRateLimited;
       }
       if (images.length >= 36 || rateLimited) break;
     }
 
     let safeImages = sanitizeThemeSuggestions(images);
     if (safeImages.length) {
-      safeImages = await removePersonImagesViaAi(req, safeImages, { maxChecks: 6 });
+      safeImages = await removePersonImagesViaAi(req, safeImages, { maxChecks: 12 });
     }
     safeImages = safeImages.slice(0, 48);
     const safeFallback = sanitizeThemeSuggestions(fallbackThemeSuggestions);
@@ -2191,7 +2192,7 @@ app.post("/api/public/events/theme-design/add-by-prompt", async (req, res) => {
       const baseInfo = await callFastApiWithTimeoutRetry({
         req,
         routePath: "/v1/infer/yolo-sam",
-        timeoutMs: AI_SERVICE_TIMEOUT_SEGMENT_MS,
+        timeoutMs: AI_SERVICE_TIMEOUT_ADD_BY_PROMPT_MS,
         timeoutRetries: AI_SERVICE_SEGMENT_TIMEOUT_RETRIES,
         payload: {
           image_base64: cleanedBase,
@@ -2234,7 +2235,7 @@ app.post("/api/public/events/theme-design/add-by-prompt", async (req, res) => {
         const fastApiResponse = await callFastApi({
           req,
           routePath: "/v1/infer/yolo-sam-extract",
-          timeoutMs: AI_SERVICE_TIMEOUT_SEGMENT_MS,
+          timeoutMs: AI_SERVICE_TIMEOUT_ADD_BY_PROMPT_MS,
           payload: {
             image_base64: imagesBase64[i],
             confidence_threshold: 0.35,
@@ -2328,19 +2329,19 @@ app.post("/api/public/events/theme-design/extract-objects", async (req, res) => 
       throw toHttpError("imagesBase64 is required", 400, "invalid_images");
     }
 
-    const results = [];
-    for (let i = 0; i < imagesBase64.length; i += 1) {
+    // Process images in parallel for better performance
+    const extractionPromises = imagesBase64.map(async (imageBase64, i) => {
       try {
-        const imageBase64 = sanitizeBase64Image(imagesBase64[i]);
+        const sanitizedBase64 = sanitizeBase64Image(imageBase64);
         const fastApiResponse = await callFastApi({
           req,
           routePath: "/v1/infer/yolo-sam-extract",
           timeoutMs: AI_SERVICE_TIMEOUT_SEGMENT_MS,
           payload: {
-            image_base64: imageBase64,
-          confidence_threshold: Number.isFinite(Number(confidenceThreshold))
-              ? Number(confidenceThreshold)
-            : 0.35,
+            image_base64: sanitizedBase64,
+            confidence_threshold: Number.isFinite(Number(confidenceThreshold))
+                ? Number(confidenceThreshold)
+              : 0.35,
             max_detections: Number.isFinite(Number(maxDetections)) ? Number(maxDetections) : 20,
             mask_format: "alpha_png",
           },
@@ -2362,26 +2363,36 @@ app.post("/api/public/events/theme-design/extract-objects", async (req, res) => 
               objectImageBase64: String(obj.object_image_base64 || obj.objectImageBase64 || ""),
             }))
           : [];
-        results.push({
+        return {
           imageIndex: i,
           imageWidth: Number(fastApiResponse.image_width || fastApiResponse.imageWidth || 0),
           imageHeight: Number(fastApiResponse.image_height || fastApiResponse.imageHeight || 0),
           objects,
-        });
+        };
       } catch (err) {
         const msg =
           err && typeof err === "object" && "message" in err && typeof err.message === "string"
-            ? err.message
-            : String(err || "extract_failed");
-        results.push({
+              ? err.message
+              : String(err || "unknown");
+        console.warn(`extract-objects: failed for image ${i}:`, msg);
+        return {
           imageIndex: i,
           imageWidth: 0,
           imageHeight: 0,
           objects: [],
-          error: msg.slice(0, 400),
-        });
+        };
       }
-    }
+    });
+
+    const settledResults = await Promise.allSettled(extractionPromises);
+    const results = settledResults.map((result, index) => 
+      result.status === 'fulfilled' ? result.value : {
+        imageIndex: index,
+        imageWidth: 0,
+        imageHeight: 0,
+        objects: [],
+      }
+    );
     return res.json({ ok: true, images: results });
   } catch (e) {
     console.error(e);

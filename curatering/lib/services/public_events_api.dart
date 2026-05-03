@@ -9,9 +9,9 @@ import '../config.dart';
 class PublicEventsApi {
   PublicEventsApi._();
   static final PublicEventsApi instance = PublicEventsApi._();
-  static const Duration _aiTimeout = Duration(seconds: 45);
+  static const Duration _aiTimeout = Duration(seconds: 180);
   /// Composite rendering often runs longer than search/extract.
-  static const Duration _compositeTimeout = Duration(seconds: 120);
+  static const Duration _compositeTimeout = Duration(seconds: 180);
 
   Future<void> submitOnlineInquiry({required Map<String, dynamic> payload}) async {
     // Public inquiry submit should not include Authorization header from any
