@@ -27,7 +27,12 @@ jobs:
 
       - name: Build web
         working-directory: curatering
-        run: flutter build web --release --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+        run: flutter build web --release \
+          --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+          --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+      - name: Link Vercel project
+        run: vercel link --token=${{ secrets.VERCEL_TOKEN }} --yes
 
       - name: Install Vercel CLI
         run: npm i -g vercel
