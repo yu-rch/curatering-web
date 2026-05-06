@@ -8,12 +8,14 @@ class PointsCondition {
   double minimumCost;
   int pointsApplication;
   bool isActive;
+  String orderType; // 'restaurant' or 'catering'
 
   PointsCondition({
     required this.id,
     required this.minimumCost,
     required this.pointsApplication,
     this.isActive = true,
+    this.orderType = 'restaurant',
   });
 
   Map<String, dynamic> toJson() => {
@@ -21,14 +23,17 @@ class PointsCondition {
     'minimumCost': minimumCost,
     'pointsApplication': pointsApplication,
     'isActive': isActive,
+    'orderType': orderType,
   };
 
-  factory PointsCondition.fromJson(Map<String, dynamic> json) => PointsCondition(
-    id: json['id'] as String,
-    minimumCost: (json['minimumCost'] as num?)?.toDouble() ?? 0.0,
-    pointsApplication: (json['pointsApplication'] as num?)?.toInt() ?? 0,
-    isActive: json['isActive'] as bool? ?? true,
-  );
+  factory PointsCondition.fromJson(Map<String, dynamic> json) =>
+      PointsCondition(
+        id: json['id'] as String,
+        minimumCost: (json['minimumCost'] as num?)?.toDouble() ?? 0.0,
+        pointsApplication: (json['pointsApplication'] as num?)?.toInt() ?? 0,
+        isActive: json['isActive'] as bool? ?? true,
+        orderType: json['orderType'] as String? ?? 'restaurant',
+      );
 }
 
 /// Reward redemption condition (points range to redeem a reward)
@@ -58,14 +63,15 @@ class RewardsCondition {
     'isActive': isActive,
   };
 
-  factory RewardsCondition.fromJson(Map<String, dynamic> json) => RewardsCondition(
-    id: json['id'] as String,
-    minimumPoints: (json['minimumPoints'] as num?)?.toInt() ?? 0,
-    maximumPoints: (json['maximumPoints'] as num?)?.toInt() ?? 0,
-    reward: json['reward'] as String? ?? '',
-    size: json['size'] as String? ?? '',
-    isActive: json['isActive'] as bool? ?? true,
-  );
+  factory RewardsCondition.fromJson(Map<String, dynamic> json) =>
+      RewardsCondition(
+        id: json['id'] as String,
+        minimumPoints: (json['minimumPoints'] as num?)?.toInt() ?? 0,
+        maximumPoints: (json['maximumPoints'] as num?)?.toInt() ?? 0,
+        reward: json['reward'] as String? ?? '',
+        size: json['size'] as String? ?? '',
+        isActive: json['isActive'] as bool? ?? true,
+      );
 
   /// Get description for display
   String get description => size;
@@ -81,10 +87,14 @@ class LoyaltyRewardsStore extends ChangeNotifier {
   List<PointsCondition> _pointsConditions = [];
   List<RewardsCondition> _rewardsConditions = [];
 
-  List<PointsCondition> get pointsConditions => List.unmodifiable(_pointsConditions.where((p) => p.isActive));
-  List<RewardsCondition> get rewardsConditions => List.unmodifiable(_rewardsConditions.where((r) => r.isActive));
-  List<PointsCondition> get allPointsConditions => List.unmodifiable(_pointsConditions);
-  List<RewardsCondition> get allRewardsConditions => List.unmodifiable(_rewardsConditions);
+  List<PointsCondition> get pointsConditions =>
+      List.unmodifiable(_pointsConditions.where((p) => p.isActive));
+  List<RewardsCondition> get rewardsConditions =>
+      List.unmodifiable(_rewardsConditions.where((r) => r.isActive));
+  List<PointsCondition> get allPointsConditions =>
+      List.unmodifiable(_pointsConditions);
+  List<RewardsCondition> get allRewardsConditions =>
+      List.unmodifiable(_rewardsConditions);
 
   bool _loaded = false;
 
@@ -104,14 +114,18 @@ class LoyaltyRewardsStore extends ChangeNotifier {
       final rewardsList = map['rewardsConditions'] as List<dynamic>?;
 
       if (pointsList != null) {
-        _pointsConditions = pointsList
-            .map((p) => PointsCondition.fromJson(p as Map<String, dynamic>))
-            .toList();
+        _pointsConditions =
+            pointsList
+                .map((p) => PointsCondition.fromJson(p as Map<String, dynamic>))
+                .toList();
       }
       if (rewardsList != null) {
-        _rewardsConditions = rewardsList
-            .map((r) => RewardsCondition.fromJson(r as Map<String, dynamic>))
-            .toList();
+        _rewardsConditions =
+            rewardsList
+                .map(
+                  (r) => RewardsCondition.fromJson(r as Map<String, dynamic>),
+                )
+                .toList();
       }
       notifyListeners();
     } catch (e) {
@@ -121,29 +135,45 @@ class LoyaltyRewardsStore extends ChangeNotifier {
   }
 
   void _initializeDefaults() {
-    // Default points condition: 500 min order to earn 50 points
+    // Default points conditions with 2% reward rate (0.02 points per 1 PHP)
     _pointsConditions = [
+      // Restaurant: 100 min order to earn 2 points (2% rate)
       PointsCondition(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: '${DateTime.now().millisecondsSinceEpoch}_restaurant',
+        minimumCost: 100.0,
+        pointsApplication: 2,
+        orderType: 'restaurant',
+      ),
+      // Catering: 500 min order to earn 8 points (2% rate)
+      PointsCondition(
+        id: '${DateTime.now().millisecondsSinceEpoch}_catering',
         minimumCost: 500.0,
-        pointsApplication: 50,
+        pointsApplication: 8,
+        orderType: 'catering',
       ),
     ];
-    // Default rewards
+    // Default rewards with 0.02 PHP per point redemption value
     _rewardsConditions = [
       RewardsCondition(
         id: '${DateTime.now().millisecondsSinceEpoch}_1',
         minimumPoints: 100,
         maximumPoints: 100,
-        reward: 'Free Rice Meal',
-        size: '1 pc',
+        reward: '₱2 Discount',
+        size: '100 points = ₱2.00',
       ),
       RewardsCondition(
         id: '${DateTime.now().millisecondsSinceEpoch}_2',
-        minimumPoints: 50,
-        maximumPoints: 50,
-        reward: '10% Discount',
-        size: 'On next order',
+        minimumPoints: 500,
+        maximumPoints: 500,
+        reward: '₱8 Discount',
+        size: '500 points = ₱8.00',
+      ),
+      RewardsCondition(
+        id: '${DateTime.now().millisecondsSinceEpoch}_3',
+        minimumPoints: 1000,
+        maximumPoints: 1000,
+        reward: '₱16 Discount',
+        size: '1000 points = ₱16.00',
       ),
     ];
     _save();
@@ -167,13 +197,17 @@ class LoyaltyRewardsStore extends ChangeNotifier {
   void addPointsCondition({
     required double minimumCost,
     required int pointsApplication,
+    String orderType = 'restaurant',
   }) {
     final id = DateTime.now().millisecondsSinceEpoch.toString();
-    _pointsConditions.add(PointsCondition(
-      id: id,
-      minimumCost: minimumCost,
-      pointsApplication: pointsApplication,
-    ));
+    _pointsConditions.add(
+      PointsCondition(
+        id: id,
+        minimumCost: minimumCost,
+        pointsApplication: pointsApplication,
+        orderType: orderType,
+      ),
+    );
     _save();
     notifyListeners();
   }
@@ -210,13 +244,15 @@ class LoyaltyRewardsStore extends ChangeNotifier {
     required String size,
   }) {
     final id = DateTime.now().millisecondsSinceEpoch.toString();
-    _rewardsConditions.add(RewardsCondition(
-      id: id,
-      minimumPoints: minimumPoints,
-      maximumPoints: maximumPoints,
-      reward: reward,
-      size: size,
-    ));
+    _rewardsConditions.add(
+      RewardsCondition(
+        id: id,
+        minimumPoints: minimumPoints,
+        maximumPoints: maximumPoints,
+        reward: reward,
+        size: size,
+      ),
+    );
     _save();
     notifyListeners();
   }
@@ -245,31 +281,44 @@ class LoyaltyRewardsStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Get the applicable points earning for a given order cost
-  int getPointsForOrder(double orderCost) {
-    for (final condition in _pointsConditions.where((p) => p.isActive)) {
+  /// Get the applicable points earning for a given order cost and order type
+  int getPointsForOrder(double orderCost, {String orderType = 'restaurant'}) {
+    for (final condition in _pointsConditions.where(
+      (p) => p.isActive && p.orderType == orderType,
+    )) {
       if (orderCost >= condition.minimumCost) {
-        return condition.pointsApplication;
+        // Calculate points with rounding rule: .2-.6 down, .7-.9 up
+        final rawPoints = (orderCost * condition.pointsApplication) / 100;
+        final decimal = rawPoints % 1;
+        int points = rawPoints.floor();
+
+        if (decimal >= 0.7) {
+          points += 1;
+        }
+
+        return points;
       }
     }
     return 0;
   }
 
-  /// Get minimum order amount to earn points
-  double get minimumOrderForPoints {
-    if (_pointsConditions.where((p) => p.isActive).isEmpty) return 500.0;
-    return _pointsConditions
-        .where((p) => p.isActive)
-        .map((p) => p.minimumCost)
-        .reduce((a, b) => a < b ? a : b);
+  /// Get minimum order amount to earn points for a specific order type
+  double minimumOrderForPoints({String orderType = 'restaurant'}) {
+    final filtered =
+        _pointsConditions
+            .where((p) => p.isActive && p.orderType == orderType)
+            .toList();
+    if (filtered.isEmpty) return orderType == 'restaurant' ? 100.0 : 500.0;
+    return filtered.map((p) => p.minimumCost).reduce((a, b) => a < b ? a : b);
   }
 
-  /// Get points earned per qualifying order
-  int get pointsEarned {
-    if (_pointsConditions.where((p) => p.isActive).isEmpty) return 50;
-    return _pointsConditions
-        .where((p) => p.isActive)
-        .first
-        .pointsApplication;
+  /// Get points earned per qualifying order for a specific order type
+  int pointsEarned({String orderType = 'restaurant'}) {
+    final filtered =
+        _pointsConditions
+            .where((p) => p.isActive && p.orderType == orderType)
+            .toList();
+    if (filtered.isEmpty) return orderType == 'restaurant' ? 2 : 8;
+    return filtered.first.pointsApplication;
   }
 }

@@ -63,7 +63,9 @@ function isTransientPgNetworkError(err) {
     c === "EPIPE" ||
     c === "ECONNREFUSED" ||
     (typeof c === "string" && c.startsWith("08")) ||
-    /getaddrinfo/i.test(msg)
+    /getaddrinfo/i.test(msg) ||
+    /connection terminated/i.test(msg) ||
+    /connection closed/i.test(msg)
   );
 }
 
@@ -150,78 +152,6 @@ const restaurantItems = [
 
 export async function initDb() {
   await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
-
-  // Check if users table exists with uuid type and migrate if needed
-  const tableExists = await pool.query(`
-    SELECT EXISTS (
-      SELECT FROM information_schema.tables 
-      WHERE table_name = 'users'
-    );
-  `);
-
-  if (tableExists.rows[0].exists) {
-    // Check if id column is still uuid type
-    const idColumn = await pool.query(`
-      SELECT data_type 
-      FROM information_schema.columns 
-      WHERE table_name = 'users' AND column_name = 'id';
-    `);
-    
-    if (idColumn.rows.length > 0 && idColumn.rows[0].data_type === 'uuid') {
-      // Helper function to check if table exists
-      const tableExistsCheck = async (tableName) => {
-        const result = await pool.query(`
-          SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_name = '${tableName}'
-          );
-        `);
-        return result.rows[0].exists;
-      };
-
-      // Migrate to text-based ID - only process tables that exist
-      if (await tableExistsCheck('help_requests')) {
-        await pool.query(`ALTER TABLE help_requests DROP CONSTRAINT IF EXISTS help_requests_user_id_fkey;`);
-        await pool.query(`ALTER TABLE help_requests DROP CONSTRAINT IF EXISTS help_requests_resolved_by_fkey;`);
-        await pool.query(`ALTER TABLE help_requests ALTER COLUMN user_id TYPE TEXT;`);
-        await pool.query(`ALTER TABLE help_requests ALTER COLUMN resolved_by TYPE TEXT;`);
-      }
-      if (await tableExistsCheck('notifications')) {
-        await pool.query(`ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_user_id_fkey;`);
-        await pool.query(`ALTER TABLE notifications ALTER COLUMN user_id TYPE TEXT;`);
-      }
-      if (await tableExistsCheck('action_logs')) {
-        await pool.query(`ALTER TABLE action_logs DROP CONSTRAINT IF EXISTS action_logs_user_id_fkey;`);
-        await pool.query(`ALTER TABLE action_logs ALTER COLUMN user_id TYPE TEXT;`);
-      }
-      if (await tableExistsCheck('resolved_help_requests')) {
-        await pool.query(`ALTER TABLE resolved_help_requests DROP CONSTRAINT IF EXISTS resolved_help_requests_resolved_by_fkey;`);
-        await pool.query(`ALTER TABLE resolved_help_requests ALTER COLUMN resolved_by TYPE TEXT;`);
-      }
-      if (await tableExistsCheck('catering_orders')) {
-        await pool.query(`ALTER TABLE catering_orders DROP CONSTRAINT IF EXISTS catering_orders_created_by_fkey;`);
-        await pool.query(`ALTER TABLE catering_orders DROP CONSTRAINT IF EXISTS catering_orders_updated_by_fkey;`);
-        await pool.query(`ALTER TABLE catering_orders DROP CONSTRAINT IF EXISTS catering_orders_customer_id_fkey;`);
-        await pool.query(`ALTER TABLE catering_orders ALTER COLUMN created_by TYPE TEXT;`);
-        await pool.query(`ALTER TABLE catering_orders ALTER COLUMN updated_by TYPE TEXT;`);
-        await pool.query(`ALTER TABLE catering_orders ALTER COLUMN customer_id TYPE TEXT;`);
-      }
-      if (await tableExistsCheck('event_orders')) {
-        await pool.query(`ALTER TABLE event_orders DROP CONSTRAINT IF EXISTS event_orders_created_by_fkey;`);
-        await pool.query(`ALTER TABLE event_orders DROP CONSTRAINT IF EXISTS event_orders_updated_by_fkey;`);
-        await pool.query(`ALTER TABLE event_orders DROP CONSTRAINT IF EXISTS event_orders_customer_id_fkey;`);
-        await pool.query(`ALTER TABLE event_orders ALTER COLUMN created_by TYPE TEXT;`);
-        await pool.query(`ALTER TABLE event_orders ALTER COLUMN updated_by TYPE TEXT;`);
-        await pool.query(`ALTER TABLE event_orders ALTER COLUMN customer_id TYPE TEXT;`);
-      }
-      if (await tableExistsCheck('user_rewards')) {
-        await pool.query(`ALTER TABLE user_rewards DROP CONSTRAINT IF EXISTS user_rewards_user_id_fkey;`);
-        await pool.query(`ALTER TABLE user_rewards ALTER COLUMN user_id TYPE TEXT;`);
-      }
-      
-      await pool.query(`ALTER TABLE users ALTER COLUMN id TYPE TEXT;`);
-    }
-  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -344,12 +274,22 @@ export async function initDb() {
 
   await pool.query(`
     ALTER TABLE event_orders
+    ADD COLUMN IF NOT EXISTS down_payment_reference TEXT;
+  `);
+
+  await pool.query(`
+    ALTER TABLE event_orders
     ADD COLUMN IF NOT EXISTS full_payment_amount DECIMAL(10,2) DEFAULT 0.00;
   `);
 
   await pool.query(`
     ALTER TABLE event_orders
     ADD COLUMN IF NOT EXISTS full_payment_status TEXT DEFAULT 'pending' CHECK (full_payment_status IN ('pending','paid','cancelled'));
+  `);
+
+  await pool.query(`
+    ALTER TABLE event_orders
+    ADD COLUMN IF NOT EXISTS full_payment_reference TEXT;
   `);
 
   // Allow NULL values for event-specific fields for catering-only orders
@@ -463,12 +403,22 @@ export async function initDb() {
 
   await pool.query(`
     ALTER TABLE catering_orders
+    ADD COLUMN IF NOT EXISTS down_payment_reference TEXT;
+  `);
+
+  await pool.query(`
+    ALTER TABLE catering_orders
     ADD COLUMN IF NOT EXISTS full_payment_amount DECIMAL(10,2) DEFAULT 0.00;
   `);
 
   await pool.query(`
     ALTER TABLE catering_orders
     ADD COLUMN IF NOT EXISTS full_payment_status TEXT DEFAULT 'pending' CHECK (full_payment_status IN ('pending','paid','cancelled'));
+  `);
+
+  await pool.query(`
+    ALTER TABLE catering_orders
+    ADD COLUMN IF NOT EXISTS full_payment_reference TEXT;
   `);
 
   await pool.query(`
@@ -567,6 +517,15 @@ export async function initDb() {
     ADD COLUMN IF NOT EXISTS set_menus JSONB NOT NULL DEFAULT '[]'::jsonb;
   `);
 
+  // Create indexes for menu_dishes to improve query performance
+  try {
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_menu_dishes_archived ON menu_dishes (archived)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_menu_dishes_category_name ON menu_dishes (category, name)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_menu_dishes_available ON menu_dishes (available)`);
+  } catch (err) {
+    console.log("Index create (menu_dishes):", err.message);
+  }
+
   // Drop old menu_items table if it exists (replaced by menu_dishes)
   await pool.query(`DROP TABLE IF EXISTS menu_items;`);
 
@@ -604,6 +563,10 @@ export async function initDb() {
     INSERT INTO id_counters (prefix, last_number) VALUES ('MINQ', 0)
     ON CONFLICT (prefix) DO NOTHING;
   `);
+  await pool.query(`
+    INSERT INTO id_counters (prefix, last_number) VALUES ('ORD', 0)
+    ON CONFLICT (prefix) DO NOTHING;
+  `);
 
   // Create customer_accounts table with TEXT ID for CUS-0000 format
   await pool.query(`
@@ -619,10 +582,21 @@ export async function initDb() {
       reset_code VARCHAR(6),
       reset_code_expires TIMESTAMPTZ,
       archived BOOLEAN NOT NULL DEFAULT FALSE,
+      restaurant_loyalty_points INTEGER NOT NULL DEFAULT 0,
+      catering_loyalty_points INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  // Migration: Add loyalty points columns to customer_accounts if they don't exist
+  try {
+    await pool.query(`ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS restaurant_loyalty_points INTEGER NOT NULL DEFAULT 0`);
+    await pool.query(`ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS catering_loyalty_points INTEGER NOT NULL DEFAULT 0`);
+    console.log('Migration: Added loyalty points columns to customer_accounts');
+  } catch (err) {
+    console.log('Migration check for customer_accounts loyalty points columns:', err.message);
+  }
 
   // Create customer_profiles table for delivery addresses and additional info
   await pool.query(`
@@ -633,16 +607,20 @@ export async function initDb() {
       delivery_lat DECIMAL(10,8),
       delivery_lng DECIMAL(10,8),
       loyalty_points INTEGER NOT NULL DEFAULT 0,
+      restaurant_loyalty_points INTEGER NOT NULL DEFAULT 0,
+      catering_loyalty_points INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       UNIQUE(customer_id)
     );
   `);
 
+
   // Create restaurant_orders table for customer orders
   await pool.query(`
     CREATE TABLE IF NOT EXISTS restaurant_orders (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      order_no TEXT UNIQUE,
       customer_id TEXT REFERENCES customer_accounts(id) ON DELETE SET NULL,
       full_name TEXT,
       phone TEXT,
@@ -656,6 +634,7 @@ export async function initDb() {
       payment_reference TEXT,
       payment_status TEXT NOT NULL DEFAULT 'pending' CHECK (payment_status IN ('pending', 'paid', 'failed')),
       delivery_tracking_url TEXT,
+      points_earned INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
@@ -668,6 +647,38 @@ export async function initDb() {
     console.log('Migration: Added full_name and phone columns to restaurant_orders');
   } catch (err) {
     console.log('Migration check for restaurant_orders columns:', err.message);
+  }
+
+  // Migration: Add order_no column to restaurant_orders
+  try {
+    await pool.query(`ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS order_no TEXT UNIQUE`);
+    console.log('Migration: Added order_no column to restaurant_orders');
+  } catch (err) {
+    console.log('Migration check for restaurant_orders order_no:', err.message);
+  }
+
+  // Migration: Add points_earned column to restaurant_orders
+  try {
+    await pool.query(`ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS points_earned INTEGER DEFAULT 0`);
+    console.log('Migration: Added points_earned column to restaurant_orders');
+  } catch (err) {
+    console.log('Migration check for restaurant_orders points_earned:', err.message);
+  }
+
+  // Migration: Add points_earned column to catering_orders
+  try {
+    await pool.query(`ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS points_earned INTEGER DEFAULT 0`);
+    console.log('Migration: Added points_earned column to catering_orders');
+  } catch (err) {
+    console.log('Migration check for catering_orders points_earned:', err.message);
+  }
+
+  // Migration: Add points_earned column to event_orders
+  try {
+    await pool.query(`ALTER TABLE event_orders ADD COLUMN IF NOT EXISTS points_earned INTEGER DEFAULT 0`);
+    console.log('Migration: Added points_earned column to event_orders');
+  } catch (err) {
+    console.log('Migration check for event_orders points_earned:', err.message);
   }
 
   // Migration: Fix invalid status values in existing restaurant_orders data

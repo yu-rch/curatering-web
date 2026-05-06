@@ -99,7 +99,7 @@ class _SettingsState extends State<Settings> {
                                 Expanded(
                                   flex: 1,
                                   child: DropdownButtonFormField<String>(
-                                    value: _selectedIssue,
+                                    initialValue: _selectedIssue,
                                     items: [
                                       const DropdownMenuItem(
                                         value: 'Select problem',

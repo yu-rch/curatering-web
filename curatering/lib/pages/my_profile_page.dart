@@ -112,27 +112,30 @@ class _MyProfilePageState extends State<MyProfilePage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Session Expired'),
-        content: const Text('Your session has expired. Please log in again.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).pop('login_required');
-            },
-            child: const Text('OK'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Session Expired'),
+            content: const Text(
+              'Your session has expired. Please log in again.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  Navigator.of(context).pop('login_required');
+                },
+                child: const Text('OK'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   Future<void> _saveProfile() async {
     if (_fullNameController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Full name is required')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Full name is required')));
       return;
     }
 
@@ -151,7 +154,8 @@ class _MyProfilePageState extends State<MyProfilePage> {
         body: jsonEncode({
           'fullName': _fullNameController.text,
           'phone': _phoneController.text.isEmpty ? null : _phoneController.text,
-          'deliveryAddress': _addressController.text.isEmpty ? null : _addressController.text,
+          'deliveryAddress':
+              _addressController.text.isEmpty ? null : _addressController.text,
           'deliveryLat': _deliveryLat,
           'deliveryLng': _deliveryLng,
         }),
@@ -215,7 +219,9 @@ class _MyProfilePageState extends State<MyProfilePage> {
 
     if (_newPasswordController.text.length < 8) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('New password must be at least 8 characters')),
+        const SnackBar(
+          content: Text('New password must be at least 8 characters'),
+        ),
       );
       return;
     }
@@ -301,61 +307,228 @@ class _MyProfilePageState extends State<MyProfilePage> {
   }
 
   void _showChangePasswordDialog() {
+    String? errorMessage;
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Change Password'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _currentPasswordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Current Password',
-                  border: OutlineInputBorder(),
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => Dialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Close button
+                        Align(
+                          alignment: Alignment.topRight,
+                          child: IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close, color: Colors.black),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        // Title
+                        const Text(
+                          'CHANGE PASSWORD',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Error message
+                        if (errorMessage != null) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.shade200),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.error_outline,
+                                  color: Colors.red.shade700,
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    errorMessage!,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.red.shade700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+
+                        // Form fields
+                        SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  const SizedBox(
+                                    width: 100,
+                                    child: Text(
+                                      'CURRENT PASSWORD',
+                                      style: TextStyle(fontSize: 11),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _currentPasswordController,
+                                      obscureText: true,
+                                      decoration: const InputDecoration(
+                                        isDense: true,
+                                        border: OutlineInputBorder(),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  const SizedBox(
+                                    width: 100,
+                                    child: Text(
+                                      'NEW PASSWORD',
+                                      style: TextStyle(fontSize: 11),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _newPasswordController,
+                                      obscureText: true,
+                                      decoration: const InputDecoration(
+                                        isDense: true,
+                                        border: OutlineInputBorder(),
+                                        helperText: 'At least 8 characters',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  const SizedBox(
+                                    width: 100,
+                                    child: Text(
+                                      'CONFIRM PASSWORD',
+                                      style: TextStyle(fontSize: 11),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _confirmPasswordController,
+                                      obscureText: true,
+                                      decoration: const InputDecoration(
+                                        isDense: true,
+                                        border: OutlineInputBorder(),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        // Submit button
+                        ElevatedButton(
+                          onPressed:
+                              _isChangingPassword
+                                  ? null
+                                  : () async {
+                                    if (_currentPasswordController
+                                        .text
+                                        .isEmpty) {
+                                      setDialogState(
+                                        () =>
+                                            errorMessage =
+                                                'Please enter your current password',
+                                      );
+                                      return;
+                                    }
+                                    if (_newPasswordController.text.length <
+                                        8) {
+                                      setDialogState(
+                                        () =>
+                                            errorMessage =
+                                                'New password must be at least 8 characters',
+                                      );
+                                      return;
+                                    }
+                                    if (_newPasswordController.text !=
+                                        _confirmPasswordController.text) {
+                                      setDialogState(
+                                        () =>
+                                            errorMessage =
+                                                'Passwords do not match',
+                                      );
+                                      return;
+                                    }
+                                    await _changePassword();
+                                    if (mounted && errorMessage == null) {
+                                      Navigator.of(context).pop();
+                                    }
+                                  },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFFC024),
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 10,
+                              horizontal: 32,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child:
+                              _isChangingPassword
+                                  ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.black,
+                                    ),
+                                  )
+                                  : const Text(
+                                    'CHANGE PASSWORD',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _newPasswordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'New Password',
-                  border: OutlineInputBorder(),
-                  helperText: 'At least 8 characters',
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _confirmPasswordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Confirm New Password',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: _isChangingPassword ? null : _changePassword,
-            child: _isChangingPassword
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Change Password'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -364,7 +537,8 @@ class _MyProfilePageState extends State<MyProfilePage> {
       context: context,
       initialLatitude: _deliveryLat,
       initialLongitude: _deliveryLng,
-      initialAddress: _addressController.text.isNotEmpty ? _addressController.text : null,
+      initialAddress:
+          _addressController.text.isNotEmpty ? _addressController.text : null,
     );
 
     if (result != null) {
@@ -404,245 +578,356 @@ class _MyProfilePageState extends State<MyProfilePage> {
             onTabSelected: _navigateFromTopBar,
           ),
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
+            child:
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
                     ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(_error!, style: const TextStyle(color: Colors.red)),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadProfile,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E1E1E),
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('Retry'),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            _error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: _loadProfile,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1E1E1E),
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Retry'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                )
+                    )
                     : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Profile Header with Loyalty Points
-                      Card(
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          side: BorderSide(color: Colors.black.withOpacity(0.08)),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 40,
-                                backgroundColor: const Color(0xFFF4511E),
-                                child: Text(
-                                  _profileData?['fullName']?.substring(0, 1).toUpperCase() ?? 'C',
-                                  style: const TextStyle(
-                                    fontSize: 32,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Profile Header with Loyalty Points
+                          Card(
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              side: BorderSide(
+                                color: Colors.black.withOpacity(0.08),
                               ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _profileData?['fullName'] ?? 'Customer',
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 40,
+                                    backgroundColor: const Color(0xFFF4511E),
+                                    child: Text(
+                                      _profileData?['fullName']
+                                              ?.substring(0, 1)
+                                              .toUpperCase() ??
+                                          'C',
                                       style: const TextStyle(
-                                        fontSize: 20,
+                                        fontSize: 32,
                                         fontWeight: FontWeight.bold,
+                                        color: Colors.white,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _profileData?['email'] ?? '',
-                                      style: TextStyle(
-                                        color: Colors.grey.shade600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            Colors.amber.shade400,
-                                            Colors.orange.shade500,
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          _profileData?['fullName'] ??
+                                              'Customer',
+                                          style: const TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _profileData?['email'] ?? '',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        // Loyalty Points Display
+                                        Row(
+                                          children: [
+                                            // Restaurant Points
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 5,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                gradient: LinearGradient(
+                                                  colors: [
+                                                    Colors.orange.shade400,
+                                                    Colors.deepOrange.shade500,
+                                                  ],
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(16),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(
+                                                    Icons.restaurant,
+                                                    color: Colors.white,
+                                                    size: 14,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    '${_profileData?['restaurantLoyaltyPoints'] ?? 0}',
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            // Catering Points
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 5,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                gradient: LinearGradient(
+                                                  colors: [
+                                                    Colors.purple.shade400,
+                                                    Colors.deepPurple.shade500,
+                                                  ],
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(16),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(
+                                                    Icons.event,
+                                                    color: Colors.white,
+                                                    size: 14,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    '${_profileData?['cateringLoyaltyPoints'] ?? 0}',
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            // Total Points
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 5,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                gradient: LinearGradient(
+                                                  colors: [
+                                                    Colors.amber.shade400,
+                                                    Colors.orange.shade600,
+                                                  ],
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(16),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(
+                                                    Icons.star,
+                                                    color: Colors.white,
+                                                    size: 14,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    '${(_profileData?['restaurantLoyaltyPoints'] ?? 0) + (_profileData?['cateringLoyaltyPoints'] ?? 0)}',
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
                                           ],
                                         ),
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(
-                                            Icons.star,
-                                            color: Colors.white,
-                                            size: 16,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            '${_profileData?['loyaltyPoints'] ?? 0} Points',
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                      ],
                                     ),
-                                  ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+
+                          // Profile Information Section
+                          Text(
+                            'Profile Information',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: _fullNameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Full Name',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.person),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: _phoneController,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              labelText: 'Contact Number',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.phone),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+
+                          // Delivery Address Section
+                          Text(
+                            'Default Delivery Address',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: _addressController,
+                            maxLines: 3,
+                            decoration: InputDecoration(
+                              labelText: 'Delivery Address',
+                              border: const OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.location_on),
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.map),
+                                onPressed: _showMapPicker,
+                                tooltip: 'Pick from map',
+                              ),
+                            ),
+                          ),
+                          if (_deliveryLat != null && _deliveryLng != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Coordinates: ${_deliveryLat!.toStringAsFixed(6)}, ${_deliveryLng!.toStringAsFixed(6)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 24),
+
+                          // Save Profile Button
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: _isSaving ? null : _saveProfile,
+                              icon:
+                                  _isSaving
+                                      ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                      : const Icon(Icons.save),
+                              label: Text(
+                                _isSaving ? 'Saving...' : 'Save Profile',
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFF4511E),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
                                 ),
                               ),
-                            ],
+                            ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
+                          const SizedBox(height: 32),
 
-                      // Profile Information Section
-                      Text(
-                        'Profile Information',
-                        style: GoogleFonts.poppins(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _fullNameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Full Name',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.person),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _phoneController,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          labelText: 'Contact Number',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.phone),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Delivery Address Section
-                      Text(
-                        'Default Delivery Address',
-                        style: GoogleFonts.poppins(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _addressController,
-                        maxLines: 3,
-                        decoration: InputDecoration(
-                          labelText: 'Delivery Address',
-                          border: const OutlineInputBorder(),
-                          prefixIcon: const Icon(Icons.location_on),
-                          suffixIcon: IconButton(
-                            icon: const Icon(Icons.map),
-                            onPressed: _showMapPicker,
-                            tooltip: 'Pick from map',
+                          // Security Section
+                          Text(
+                            'Security',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
-                      ),
-                      if (_deliveryLat != null && _deliveryLng != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          'Coordinates: ${_deliveryLat!.toStringAsFixed(6)}, ${_deliveryLng!.toStringAsFixed(6)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
+                          const SizedBox(height: 16),
+                          ListTile(
+                            leading: const Icon(
+                              Icons.lock,
+                              color: Color(0xFFF4511E),
+                            ),
+                            title: const Text('Change Password'),
+                            subtitle: const Text(
+                              'Update your account password',
+                            ),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: _showChangePasswordDialog,
                           ),
-                        ),
-                      ],
-                      const SizedBox(height: 24),
+                          const SizedBox(height: 32),
 
-                      // Save Profile Button
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: _isSaving ? null : _saveProfile,
-                          icon: _isSaving
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.save),
-                          label: Text(_isSaving ? 'Saving...' : 'Save Profile'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFF4511E),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          // Account Info
+                          Text(
+                            'Account Information',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 16),
+                          ListTile(
+                            leading: const Icon(Icons.badge),
+                            title: const Text('Customer ID'),
+                            subtitle: Text(_profileData?['id'] ?? 'N/A'),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.calendar_today),
+                            title: const Text('Member Since'),
+                            subtitle: Text(
+                              _formatDate(_profileData?['createdAt']),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 32),
-
-                      // Security Section
-                      Text(
-                        'Security',
-                        style: GoogleFonts.poppins(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      ListTile(
-                        leading: const Icon(Icons.lock, color: Color(0xFFF4511E)),
-                        title: const Text('Change Password'),
-                        subtitle: const Text('Update your account password'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: _showChangePasswordDialog,
-                      ),
-                      const SizedBox(height: 32),
-
-                      // Account Info
-                      Text(
-                        'Account Information',
-                        style: GoogleFonts.poppins(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      ListTile(
-                        leading: const Icon(Icons.badge),
-                        title: const Text('Customer ID'),
-                        subtitle: Text(_profileData?['id'] ?? 'N/A'),
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.calendar_today),
-                        title: const Text('Member Since'),
-                        subtitle: Text(_formatDate(_profileData?['createdAt'])),
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
           ),
         ],
       ),
@@ -658,9 +943,9 @@ class _MyProfilePageState extends State<MyProfilePage> {
       CustomerPageTab.tracking => const MyOrderTrackingPage(),
       CustomerPageTab.profile => const MyProfilePage(),
     };
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => route),
-    );
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => route));
   }
 
   String _formatDate(String? dateStr) {

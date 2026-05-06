@@ -19,6 +19,7 @@ import '../services/public_events_api.dart';
 import '../services/website_content_store.dart';
 import '../services/cart_store.dart';
 import '../services/loyalty_rewards_store.dart';
+import '../services/api_client.dart';
 import '../widgets/map_picker.dart';
 import '../widgets/pexels_attribution_badge.dart';
 import 'customer_login.dart';
@@ -47,13 +48,24 @@ class _PlacementContainLayout {
   final double scale;
 }
 
-_PlacementContainLayout _placementContainLayout(double cw, double ch, double iw, double ih) {
+_PlacementContainLayout _placementContainLayout(
+  double cw,
+  double ch,
+  double iw,
+  double ih,
+) {
   final scale = math.min(cw / iw, ch / ih);
   final dispW = iw * scale;
   final dispH = ih * scale;
   final offX = (cw - dispW) / 2;
   final offY = (ch - dispH) / 2;
-  return _PlacementContainLayout(offX: offX, offY: offY, dispW: dispW, dispH: dispH, scale: scale);
+  return _PlacementContainLayout(
+    offX: offX,
+    offY: offY,
+    dispW: dispW,
+    dispH: dispH,
+    scale: scale,
+  );
 }
 
 class _SetDish {
@@ -140,25 +152,26 @@ class _SoftCustomerOverlayPainter extends CustomPainter {
       path.close();
       return path;
     }
-    return Path()
-      ..addRRect(
-        RRect.fromRectAndRadius(
-          boundingBox,
-          const Radius.circular(10),
-        ),
-      );
+    return Path()..addRRect(
+      RRect.fromRectAndRadius(boundingBox, const Radius.circular(10)),
+    );
   }
 
   @override
   void paint(Canvas canvas, Size size) {
     final path = _buildPath(size);
-    final stroke = Paint()
-      ..color = selected ? Colors.blue : Colors.orange
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    final fill = Paint()
-      ..color = selected ? Colors.blue.withOpacity(0.20) : Colors.orange.withOpacity(0.08)
-      ..style = PaintingStyle.fill;
+    final stroke =
+        Paint()
+          ..color = selected ? Colors.blue : Colors.orange
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2;
+    final fill =
+        Paint()
+          ..color =
+              selected
+                  ? Colors.blue.withOpacity(0.20)
+                  : Colors.orange.withOpacity(0.08)
+          ..style = PaintingStyle.fill;
     canvas.drawPath(path, fill);
     canvas.drawPath(path, stroke);
   }
@@ -204,11 +217,12 @@ double websiteContentMaxWidth(BuildContext context) {
 }
 
 EdgeInsets websitePagePadding(BuildContext context, {double vertical = 24}) {
-  final horizontal = isDesktop(context)
-      ? 40.0
-      : isTablet(context)
-      ? 24.0
-      : 16.0;
+  final horizontal =
+      isDesktop(context)
+          ? 40.0
+          : isTablet(context)
+          ? 24.0
+          : 16.0;
   return EdgeInsets.symmetric(horizontal: horizontal, vertical: vertical);
 }
 
@@ -298,12 +312,103 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       );
       return;
     }
-    CartStore.instance.addItem(dish);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${dish.name} added to cart'),
-        duration: const Duration(seconds: 1),
-      ),
+
+    // Show sauce selection dialog if dish has multiple sauces
+    if (dish.sauces.length > 1) {
+      _showSauceSelectionDialog(dish);
+    } else {
+      // Add directly if no sauce or single sauce
+      final selectedSauce = dish.sauces.isNotEmpty ? dish.sauces.first : null;
+      CartStore.instance.addItem(dish, selectedSauce: selectedSauce);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${dish.name} added to cart'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+  void _showSauceSelectionDialog(MenuDish dish) {
+    String? selectedSauce;
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: Text(
+                    'Select Sauce',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        dish.name,
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ...dish.sauces.map(
+                        (sauce) => RadioListTile<String>(
+                          title: Text(
+                            sauce.toUpperCase(),
+                            style: GoogleFonts.poppins(fontSize: 13),
+                          ),
+                          value: sauce,
+                          groupValue: selectedSauce,
+                          onChanged: (value) {
+                            setDialogState(() => selectedSauce = value);
+                          },
+                          activeColor: Colors.amber.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text(
+                        'Cancel',
+                        style: GoogleFonts.poppins(color: Colors.grey.shade600),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed:
+                          selectedSauce != null
+                              ? () {
+                                CartStore.instance.addItem(
+                                  dish,
+                                  selectedSauce: selectedSauce,
+                                );
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      '${dish.name} with $selectedSauce added to cart',
+                                    ),
+                                    duration: const Duration(seconds: 1),
+                                  ),
+                                );
+                              }
+                              : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.amber.shade700,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: Text(
+                        'Add to Cart',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+          ),
     );
   }
 
@@ -324,18 +429,18 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Future<void> _navigateToMyOrders() async {
-    final result = await Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const MyOrdersPage()),
-    );
+    final result = await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const MyOrdersPage()));
     if (result == 'login_required' && mounted) {
       await _handleLogin();
     }
   }
 
   Future<void> _navigateToMyCaterings() async {
-    final result = await Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const MyCateringsPage()),
-    );
+    final result = await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const MyCateringsPage()));
     if (result == 'login_required' && mounted) {
       await _handleLogin();
     }
@@ -351,9 +456,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Future<void> _navigateToMyProfile() async {
-    final result = await Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const MyProfilePage()),
-    );
+    final result = await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const MyProfilePage()));
     if (result == 'login_required' && mounted) {
       await _handleLogin();
     }
@@ -416,10 +521,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         );
     if (b64 == null || b64.isEmpty) return ph;
     try {
-      final normalized = b64
-          .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
-          .replaceAll('\n', '')
-          .trim();
+      final normalized =
+          b64
+              .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
+              .replaceAll('\n', '')
+              .trim();
       return Image.memory(
         base64Decode(normalized),
         height: height,
@@ -447,7 +553,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
     for (final m in exp.allMatches(text)) {
       if (m.start > cursor) {
-        spans.add(TextSpan(text: text.substring(cursor, m.start), style: active()));
+        spans.add(
+          TextSpan(text: text.substring(cursor, m.start), style: active()),
+        );
       }
       final closing = m.group(1) == '/';
       final tag = m.group(2);
@@ -491,46 +599,65 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       if (start < 0 || end < 0 || start > end) return;
       final text = ctrl.text;
       final selected = text.substring(start, end);
-      final replaced = '${text.substring(0, start)}$open$selected$close${text.substring(end)}';
+      final replaced =
+          '${text.substring(0, start)}$open$selected$close${text.substring(end)}';
       ctrl.text = replaced;
-      ctrl.selection = TextSelection.collapsed(offset: start + open.length + selected.length + close.length);
+      ctrl.selection = TextSelection.collapsed(
+        offset: start + open.length + selected.length + close.length,
+      );
     }
 
     return showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: SizedBox(
-          width: 620,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+      builder:
+          (ctx) => AlertDialog(
+            title: Text(title),
+            content: SizedBox(
+              width: 620,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  OutlinedButton(onPressed: () => wrapSelection('[b]', '[/b]'), child: const Text('Bold')),
-                  OutlinedButton(onPressed: () => wrapSelection('[i]', '[/i]'), child: const Text('Italic')),
-                  OutlinedButton(onPressed: () => wrapSelection('[u]', '[/u]'), child: const Text('Underline')),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () => wrapSelection('[b]', '[/b]'),
+                        child: const Text('Bold'),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => wrapSelection('[i]', '[/i]'),
+                        child: const Text('Italic'),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => wrapSelection('[u]', '[/u]'),
+                        child: const Text('Underline'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: ctrl,
+                    maxLines: 8,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: 'Use toolbar for rich formatting',
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: ctrl,
-                maxLines: 8,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  hintText: 'Use toolbar for rich formatting',
-                ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+                child: const Text('Save'),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Save')),
-        ],
-      ),
     );
   }
 
@@ -559,45 +686,69 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     var current = _imageAlignmentFor(w, b64);
     final next = await showDialog<Alignment>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Adjust image position'),
-        content: StatefulBuilder(
-          builder: (ctx, setLocal) => SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AspectRatio(
-                  aspectRatio: 1.8,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: _b64Image(b64, fit: BoxFit.cover, alignment: current),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Adjust image position'),
+            content: StatefulBuilder(
+              builder:
+                  (ctx, setLocal) => SizedBox(
+                    width: 420,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AspectRatio(
+                          aspectRatio: 1.8,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: _b64Image(
+                              b64,
+                              fit: BoxFit.cover,
+                              alignment: current,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('Horizontal'),
+                        ),
+                        Slider(
+                          value: current.x,
+                          min: -1,
+                          max: 1,
+                          onChanged:
+                              (v) => setLocal(
+                                () => current = Alignment(v, current.y),
+                              ),
+                        ),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('Vertical'),
+                        ),
+                        Slider(
+                          value: current.y,
+                          min: -1,
+                          max: 1,
+                          onChanged:
+                              (v) => setLocal(
+                                () => current = Alignment(current.x, v),
+                              ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                const Align(alignment: Alignment.centerLeft, child: Text('Horizontal')),
-                Slider(
-                  value: current.x,
-                  min: -1,
-                  max: 1,
-                  onChanged: (v) => setLocal(() => current = Alignment(v, current.y)),
-                ),
-                const Align(alignment: Alignment.centerLeft, child: Text('Vertical')),
-                Slider(
-                  value: current.y,
-                  min: -1,
-                  max: 1,
-                  onChanged: (v) => setLocal(() => current = Alignment(current.x, v)),
-                ),
-              ],
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, current),
+                child: const Text('Save'),
+              ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, current), child: const Text('Save')),
-        ],
-      ),
     );
     if (next == null) return;
     w.imageAlignments[key] = {'x': next.x, 'y': next.y};
@@ -614,7 +765,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              border: Border.all(color: const Color(0xFFFFC024).withValues(alpha: 0.6)),
+              border: Border.all(
+                color: const Color(0xFFFFC024).withValues(alpha: 0.6),
+              ),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -666,7 +819,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       ),
                       child: Text(
                         '${CartStore.instance.itemCount}',
-                        style: const TextStyle(color: Colors.white, fontSize: 10),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -677,96 +833,99 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             // Login/Logout Button
             if (_isCustomerLoggedIn)
               PopupMenuButton<String>(
-              onSelected: (value) async {
-                switch (value) {
-                  case 'my_profile':
-                    await _navigateToMyProfile();
-                    break;
-                  case 'my_orders':
-                    await _navigateToMyOrders();
-                    break;
-                  case 'my_caterings':
-                    await _navigateToMyCaterings();
-                    break;
-                  case 'order_tracking':
-                    await _navigateToOrderTracking();
-                    break;
-                  case 'logout':
-                    await _handleLogout();
-                    break;
-                }
-              },
-              child: Row(
-                children: [
-                  Icon(Icons.person, color: Colors.amber.shade400, size: 20),
-                  const SizedBox(width: 4),
-                  Text(
-                    _customerData?['fullName'] ?? 'Customer',
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
-                  ),
-                  const Icon(Icons.arrow_drop_down, color: Colors.white),
-                ],
-              ),
-              itemBuilder:
-                  (context) => [
-                    const PopupMenuItem(
-                      value: 'my_profile',
-                      child: Row(
-                        children: [
-                          Icon(Icons.person, size: 18),
-                          SizedBox(width: 8),
-                          Text('My Profile'),
-                        ],
-                      ),
+                onSelected: (value) async {
+                  switch (value) {
+                    case 'my_profile':
+                      await _navigateToMyProfile();
+                      break;
+                    case 'my_orders':
+                      await _navigateToMyOrders();
+                      break;
+                    case 'my_caterings':
+                      await _navigateToMyCaterings();
+                      break;
+                    case 'order_tracking':
+                      await _navigateToOrderTracking();
+                      break;
+                    case 'logout':
+                      await _handleLogout();
+                      break;
+                  }
+                },
+                child: Row(
+                  children: [
+                    Icon(Icons.person, color: Colors.amber.shade400, size: 20),
+                    const SizedBox(width: 4),
+                    Text(
+                      _customerData?['fullName'] ?? 'Customer',
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
                     ),
-                    const PopupMenuItem(
-                      value: 'my_orders',
-                      child: Row(
-                        children: [
-                          Icon(Icons.receipt_long, size: 18),
-                          SizedBox(width: 8),
-                          Text('My Orders'),
-                        ],
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'my_caterings',
-                      child: Row(
-                        children: [
-                          Icon(Icons.event, size: 18),
-                          SizedBox(width: 8),
-                          Text('My Caterings'),
-                        ],
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'order_tracking',
-                      child: Row(
-                        children: [
-                          Icon(Icons.local_shipping, size: 18),
-                          SizedBox(width: 8),
-                          Text('Order Tracking'),
-                        ],
-                      ),
-                    ),
-                    const PopupMenuDivider(),
-                    const PopupMenuItem(
-                      value: 'logout',
-                      child: Row(
-                        children: [
-                          Icon(Icons.logout, size: 18, color: Colors.red),
-                          SizedBox(width: 8),
-                          Text('Logout', style: TextStyle(color: Colors.red)),
-                        ],
-                      ),
-                    ),
+                    const Icon(Icons.arrow_drop_down, color: Colors.white),
                   ],
+                ),
+                itemBuilder:
+                    (context) => [
+                      const PopupMenuItem(
+                        value: 'my_profile',
+                        child: Row(
+                          children: [
+                            Icon(Icons.person, size: 18),
+                            SizedBox(width: 8),
+                            Text('My Profile'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'my_orders',
+                        child: Row(
+                          children: [
+                            Icon(Icons.receipt_long, size: 18),
+                            SizedBox(width: 8),
+                            Text('My Orders'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'my_caterings',
+                        child: Row(
+                          children: [
+                            Icon(Icons.event, size: 18),
+                            SizedBox(width: 8),
+                            Text('My Caterings'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'order_tracking',
+                        child: Row(
+                          children: [
+                            Icon(Icons.local_shipping, size: 18),
+                            SizedBox(width: 8),
+                            Text('Order Tracking'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: 'logout',
+                        child: Row(
+                          children: [
+                            Icon(Icons.logout, size: 18, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('Logout', style: TextStyle(color: Colors.red)),
+                          ],
+                        ),
+                      ),
+                    ],
               )
             else
               TextButton.icon(
                 onPressed: _handleLogin,
                 icon: const Icon(Icons.login, color: Colors.white, size: 18),
-                label: const Text('Login', style: TextStyle(color: Colors.white)),
+                label: const Text(
+                  'Login',
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
           ],
         ],
@@ -821,7 +980,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               children: [
                 TextButton(
                   onPressed: () {},
-                  child: const Text('PRIVACY POLICY', style: TextStyle(color: Colors.black)),
+                  child: const Text(
+                    'PRIVACY POLICY',
+                    style: TextStyle(color: Colors.black),
+                  ),
                 ),
                 _richTextLabel(
                   w.footerCopyright,
@@ -850,15 +1012,24 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             children: [
               TextButton(
                 onPressed: () => setState(() => _navIndex = 1),
-                child: const Text('GALLERY', style: TextStyle(color: Colors.black)),
+                child: const Text(
+                  'GALLERY',
+                  style: TextStyle(color: Colors.black),
+                ),
               ),
               TextButton(
                 onPressed: () => setState(() => _navIndex = 2),
-                child: const Text('CATERING MENU', style: TextStyle(color: Colors.black)),
+                child: const Text(
+                  'CATERING MENU',
+                  style: TextStyle(color: Colors.black),
+                ),
               ),
               TextButton(
                 onPressed: () => setState(() => _navIndex = 3),
-                child: const Text('RESTAURANT', style: TextStyle(color: Colors.black)),
+                child: const Text(
+                  'RESTAURANT',
+                  style: TextStyle(color: Colors.black),
+                ),
               ),
             ],
           ),
@@ -867,17 +1038,26 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             children: [
               TextButton(
                 onPressed: () => setState(() => _navIndex = 4),
-                child: const Text('INQUIRE NOW', style: TextStyle(color: Colors.black)),
+                child: const Text(
+                  'INQUIRE NOW',
+                  style: TextStyle(color: Colors.black),
+                ),
               ),
               TextButton(
                 onPressed: () => setState(() => _navIndex = 5),
-                child: const Text('CONTACT US', style: TextStyle(color: Colors.black)),
+                child: const Text(
+                  'CONTACT US',
+                  style: TextStyle(color: Colors.black),
+                ),
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pushNamed('/login'),
                 child: const Text(
                   'STAFF LOGIN',
-                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
                 ),
               ),
             ],
@@ -975,19 +1155,29 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             : _b64Image(
                               w.homeHeroImageBase64,
                               height: 360,
-                              alignment: _imageAlignmentFor(w, w.homeHeroImageBase64),
+                              alignment: _imageAlignmentFor(
+                                w,
+                                w.homeHeroImageBase64,
+                              ),
                             ),
                   ),
                   Positioned.fill(
-                    child: Container(color: Colors.black.withValues(alpha: 0.35)),
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.35),
+                    ),
                   ),
                   Positioned.fill(
                     child: Center(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 18),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 26,
+                          vertical: 18,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.25),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.6),
+                          ),
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -1023,12 +1213,17 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     await w.save();
                     setState(() {});
                   }),
-                  if (widget.contentEditable && w.homeHeroImageBase64.isNotEmpty)
+                  if (widget.contentEditable &&
+                      w.homeHeroImageBase64.isNotEmpty)
                     Positioned(
                       right: 8,
                       bottom: 8,
                       child: FilledButton.tonalIcon(
-                        onPressed: () => _editImagePosition(w: w, b64: w.homeHeroImageBase64),
+                        onPressed:
+                            () => _editImagePosition(
+                              w: w,
+                              b64: w.homeHeroImageBase64,
+                            ),
                         icon: const Icon(Icons.open_with, size: 16),
                         label: const Text('Position'),
                       ),
@@ -1037,10 +1232,15 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               ),
               Container(
                 color: const Color(0xFFF5F5F5),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 20,
+                ),
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
+                    constraints: BoxConstraints(
+                      maxWidth: websiteContentMaxWidth(context),
+                    ),
                     child: Column(
                       children: [
                         _richTextLabel(
@@ -1069,7 +1269,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           ),
                         const SizedBox(height: 18),
                         Flex(
-                          direction: isMobile(context) ? Axis.vertical : Axis.horizontal,
+                          direction:
+                              isMobile(context)
+                                  ? Axis.vertical
+                                  : Axis.horizontal,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
@@ -1122,12 +1325,18 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                           padding: const EdgeInsets.all(12),
                                           decoration: BoxDecoration(
                                             color: const Color(0xFFF7F7F7),
-                                            borderRadius: BorderRadius.circular(8),
-                                            border: Border.all(color: Colors.grey.shade300),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.grey.shade300,
+                                            ),
                                           ),
                                           child: _richTextLabel(
                                             w.latestEventBody,
-                                            style: const TextStyle(height: 1.35),
+                                            style: const TextStyle(
+                                              height: 1.35,
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(height: 12),
@@ -1135,14 +1344,21 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                           alignment: Alignment.center,
                                           child: FilledButton(
                                             style: FilledButton.styleFrom(
-                                              backgroundColor: const Color(0xFFFFC024),
+                                              backgroundColor: const Color(
+                                                0xFFFFC024,
+                                              ),
                                               foregroundColor: Colors.black,
                                               textStyle: const TextStyle(
                                                 fontWeight: FontWeight.w700,
                                                 letterSpacing: 0.4,
                                               ),
                                             ),
-                                            onPressed: widget.contentEditable ? null : () => setState(() => _navIndex = 4),
+                                            onPressed:
+                                                widget.contentEditable
+                                                    ? null
+                                                    : () => setState(
+                                                      () => _navIndex = 4,
+                                                    ),
                                             child: const Text('INQUIRE NOW!'),
                                           ),
                                         ),
@@ -1150,20 +1366,23 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     ),
                                   ),
                                   _editChip(() async {
-                                    final nextTitle = await _showRichTextEditorDialog(
-                                      title: 'Edit latest event title',
-                                      initialValue: w.latestEventTitle,
-                                    );
+                                    final nextTitle =
+                                        await _showRichTextEditorDialog(
+                                          title: 'Edit latest event title',
+                                          initialValue: w.latestEventTitle,
+                                        );
                                     if (nextTitle == null) return;
-                                    final nextSubtitle = await _showRichTextEditorDialog(
-                                      title: 'Edit latest event subtitle',
-                                      initialValue: w.latestEventSubtitle,
-                                    );
+                                    final nextSubtitle =
+                                        await _showRichTextEditorDialog(
+                                          title: 'Edit latest event subtitle',
+                                          initialValue: w.latestEventSubtitle,
+                                        );
                                     if (nextSubtitle == null) return;
-                                    final nextBody = await _showRichTextEditorDialog(
-                                      title: 'Edit latest event body',
-                                      initialValue: w.latestEventBody,
-                                    );
+                                    final nextBody =
+                                        await _showRichTextEditorDialog(
+                                          title: 'Edit latest event body',
+                                          initialValue: w.latestEventBody,
+                                        );
                                     if (nextBody == null) return;
                                     w.latestEventTitle = nextTitle;
                                     w.latestEventSubtitle = nextSubtitle;
@@ -1174,7 +1393,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                 ],
                               ),
                             ),
-                            SizedBox(width: isMobile(context) ? 0 : 20, height: isMobile(context) ? 16 : 0),
+                            SizedBox(
+                              width: isMobile(context) ? 0 : 20,
+                              height: isMobile(context) ? 16 : 0,
+                            ),
                             Expanded(
                               flex: 5,
                               child: Stack(
@@ -1185,22 +1407,39 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                       final gap = 10.0;
                                       final halfW = (totalW - gap) / 2;
                                       final list = w.latestEventCollageBase64;
-                                      String? at(int i) => i < list.length ? list[i] : null;
+                                      String? at(int i) =>
+                                          i < list.length ? list[i] : null;
                                       return Column(
                                         children: [
                                           Row(
                                             children: [
-                                              _collageTile(at(0), width: halfW, height: 170),
+                                              _collageTile(
+                                                at(0),
+                                                width: halfW,
+                                                height: 170,
+                                              ),
                                               SizedBox(width: gap),
-                                              _collageTile(at(1), width: halfW, height: 170),
+                                              _collageTile(
+                                                at(1),
+                                                width: halfW,
+                                                height: 170,
+                                              ),
                                             ],
                                           ),
                                           const SizedBox(height: 10),
                                           Row(
                                             children: [
-                                              _collageTile(at(2), width: halfW, height: 170),
+                                              _collageTile(
+                                                at(2),
+                                                width: halfW,
+                                                height: 170,
+                                              ),
                                               SizedBox(width: gap),
-                                              _collageTile(at(3), width: halfW, height: 170),
+                                              _collageTile(
+                                                at(3),
+                                                width: halfW,
+                                                height: 170,
+                                              ),
                                             ],
                                           ),
                                         ],
@@ -1319,18 +1558,23 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           SizedBox(
                             height: 28,
                             child: ElevatedButton.icon(
-                              onPressed: (widget.contentEditable || !d.available)
-                                  ? null
-                                  : () => _addToCart(d),
-                              icon: Icon(d.available ? Icons.add : Icons.block, size: 14),
+                              onPressed:
+                                  (widget.contentEditable || !d.available)
+                                      ? null
+                                      : () => _addToCart(d),
+                              icon: Icon(
+                                d.available ? Icons.add : Icons.block,
+                                size: 14,
+                              ),
                               label: Text(
                                 d.available ? 'Add' : 'N/A',
                                 style: const TextStyle(fontSize: 10),
                               ),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: d.available
-                                    ? const Color(0xFF1E1E1E)
-                                    : Colors.grey.shade500,
+                                backgroundColor:
+                                    d.available
+                                        ? const Color(0xFF1E1E1E)
+                                        : Colors.grey.shade500,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
@@ -1407,7 +1651,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
-  Widget _collageTile(String? b64, {required double width, required double height}) {
+  Widget _collageTile(
+    String? b64, {
+    required double width,
+    required double height,
+  }) {
     return SizedBox(
       width: width,
       height: height,
@@ -1425,14 +1673,17 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         padding: websitePagePadding(context),
         child: Center(
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
+            constraints: BoxConstraints(
+              maxWidth: websiteContentMaxWidth(context),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(
                   children: [
                     FilledButton.tonal(
-                      onPressed: () => setState(() => _galleryDetailIndex = null),
+                      onPressed:
+                          () => setState(() => _galleryDetailIndex = null),
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFF1E1E1E),
                         foregroundColor: Colors.white,
@@ -1442,7 +1693,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFFC024),
                           borderRadius: BorderRadius.circular(8),
@@ -1472,7 +1726,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 ),
                 const SizedBox(height: 16),
                 TextField(
-                  onChanged: (v) => setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
+                  onChanged:
+                      (v) => setState(
+                        () => _gallerySearchQuery = v.trim().toLowerCase(),
+                      ),
                   decoration: InputDecoration(
                     hintText: 'SEARCH',
                     isDense: true,
@@ -1491,7 +1748,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: isMobile(context) ? 1 : isTablet(context) ? 2 : 3,
+                    crossAxisCount:
+                        isMobile(context)
+                            ? 1
+                            : isTablet(context)
+                            ? 2
+                            : 3,
                     crossAxisSpacing: 16,
                     mainAxisSpacing: 16,
                     childAspectRatio: 0.95,
@@ -1509,29 +1771,34 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         onTap: () {
                           showDialog<void>(
                             context: context,
-                            builder: (dlgCtx) => Dialog(
-                              insetPadding: const EdgeInsets.symmetric(horizontal: 120, vertical: 60),
-                              child: Stack(
-                                children: [
-                                  Padding(
-                                    padding: const EdgeInsets.all(18),
-                                    child: _b64Image(
-                                      img,
-                                      fit: BoxFit.contain,
-                                      alignment: _imageAlignmentFor(w, img),
-                                    ),
+                            builder:
+                                (dlgCtx) => Dialog(
+                                  insetPadding: const EdgeInsets.symmetric(
+                                    horizontal: 120,
+                                    vertical: 60,
                                   ),
-                                  Positioned(
-                                    top: 8,
-                                    right: 8,
-                                    child: IconButton(
-                                      onPressed: () => Navigator.pop(dlgCtx),
-                                      icon: const Icon(Icons.close),
-                                    ),
+                                  child: Stack(
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.all(18),
+                                        child: _b64Image(
+                                          img,
+                                          fit: BoxFit.contain,
+                                          alignment: _imageAlignmentFor(w, img),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: IconButton(
+                                          onPressed:
+                                              () => Navigator.pop(dlgCtx),
+                                          icon: const Icon(Icons.close),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            ),
+                                ),
                           );
                         },
                         child: Padding(
@@ -1553,20 +1820,29 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                   right: 6,
                                   top: 6,
                                   child: PopupMenuButton<String>(
-                                    icon: const Icon(Icons.more_vert, color: Colors.white),
+                                    icon: const Icon(
+                                      Icons.more_vert,
+                                      color: Colors.white,
+                                    ),
                                     onSelected: (value) async {
                                       if (value == 'position') {
-                                        await _editImagePosition(w: w, b64: img);
+                                        await _editImagePosition(
+                                          w: w,
+                                          b64: img,
+                                        );
                                         return;
                                       } else if (value == 'delete') {
                                         cat.imageBase64List.removeAt(i);
                                       } else if (value == 'up' && i > 0) {
                                         final tmp = cat.imageBase64List[i - 1];
-                                        cat.imageBase64List[i - 1] = cat.imageBase64List[i];
+                                        cat.imageBase64List[i - 1] =
+                                            cat.imageBase64List[i];
                                         cat.imageBase64List[i] = tmp;
-                                      } else if (value == 'down' && i < cat.imageBase64List.length - 1) {
+                                      } else if (value == 'down' &&
+                                          i < cat.imageBase64List.length - 1) {
                                         final tmp = cat.imageBase64List[i + 1];
-                                        cat.imageBase64List[i + 1] = cat.imageBase64List[i];
+                                        cat.imageBase64List[i + 1] =
+                                            cat.imageBase64List[i];
                                         cat.imageBase64List[i] = tmp;
                                       } else {
                                         return;
@@ -1574,12 +1850,25 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                       await w.save();
                                       setState(() {});
                                     },
-                                    itemBuilder: (_) => const [
-                                      PopupMenuItem(value: 'position', child: Text('Adjust Position')),
-                                      PopupMenuItem(value: 'up', child: Text('Move Up')),
-                                      PopupMenuItem(value: 'down', child: Text('Move Down')),
-                                      PopupMenuItem(value: 'delete', child: Text('Delete')),
-                                    ],
+                                    itemBuilder:
+                                        (_) => const [
+                                          PopupMenuItem(
+                                            value: 'position',
+                                            child: Text('Adjust Position'),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'up',
+                                            child: Text('Move Up'),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'down',
+                                            child: Text('Move Down'),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'delete',
+                                            child: Text('Delete'),
+                                          ),
+                                        ],
                                   ),
                                 ),
                             ],
@@ -1603,7 +1892,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           padding: websitePagePadding(context),
           child: Center(
             child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
+              constraints: BoxConstraints(
+                maxWidth: websiteContentMaxWidth(context),
+              ),
               child: Column(
                 children: [
                   Text(
@@ -1620,7 +1911,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   ),
                   const SizedBox(height: 18),
                   TextField(
-                    onChanged: (v) => setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
+                    onChanged:
+                        (v) => setState(
+                          () => _gallerySearchQuery = v.trim().toLowerCase(),
+                        ),
                     decoration: InputDecoration(
                       hintText: 'SEARCH',
                       isDense: true,
@@ -1649,13 +1943,27 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       mainAxisSpacing: 16,
                       childAspectRatio: 1.1,
                     ),
-                    itemCount: w.galleryCategories
-                        .where((c) => _gallerySearchQuery.isEmpty || c.label.toLowerCase().contains(_gallerySearchQuery))
-                        .length,
+                    itemCount:
+                        w.galleryCategories
+                            .where(
+                              (c) =>
+                                  _gallerySearchQuery.isEmpty ||
+                                  c.label.toLowerCase().contains(
+                                    _gallerySearchQuery,
+                                  ),
+                            )
+                            .length,
                     itemBuilder: (ctx, i) {
-                      final filtered = w.galleryCategories
-                          .where((c) => _gallerySearchQuery.isEmpty || c.label.toLowerCase().contains(_gallerySearchQuery))
-                          .toList();
+                      final filtered =
+                          w.galleryCategories
+                              .where(
+                                (c) =>
+                                    _gallerySearchQuery.isEmpty ||
+                                    c.label.toLowerCase().contains(
+                                      _gallerySearchQuery,
+                                    ),
+                              )
+                              .toList();
                       final c = filtered[i];
                       final realIndex = w.galleryCategories.indexOf(c);
                       final thumb =
@@ -1663,7 +1971,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                               ? c.imageBase64List.first
                               : null;
                       return InkWell(
-                        onTap: () => setState(() => _galleryDetailIndex = realIndex),
+                        onTap:
+                            () =>
+                                setState(() => _galleryDetailIndex = realIndex),
                         child: Stack(
                           children: [
                             ClipRRect(
@@ -1762,48 +2072,139 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Widget _buildCateringMenu() {
-    // Show loading state
-    if (MenuStore.instance.isLoading) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Loading menu...'),
-          ],
+    final allDishes = MenuStore.instance.activeDishes;
+    final cateringDishes =
+        allDishes.where((d) => d.category == 'catering').toList();
+
+    // Show loading state if dishes are empty or currently loading
+    if (MenuStore.instance.isLoading || allDishes.isEmpty) {
+      return SizedBox(
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 60,
+                height: 60,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.amber.shade700,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Loading our delicious menu...',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
     // Show error state
     if (MenuStore.instance.error != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.red),
-            const SizedBox(height: 16),
-            Text('Error: ${MenuStore.instance.error}'),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => MenuStore.instance.loadDishes(),
-              child: const Text('Retry'),
+      return SizedBox(
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: Colors.red.shade400,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Oops, there was an error loading the website.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    color: Colors.grey.shade800,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Try reloading the page.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.amber.shade600, Colors.amber.shade800],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.amber.shade200,
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton.icon(
+                    onPressed: () => MenuStore.instance.loadDishes(),
+                    icon: const Icon(
+                      Icons.refresh_rounded,
+                      color: Colors.white,
+                    ),
+                    label: Text(
+                      'Reload Page',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 16,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       );
     }
-
-    final allDishes = MenuStore.instance.activeDishes;
-    final cateringDishes =
-        allDishes.where((d) => d.category == 'catering').toList();
 
     return SingleChildScrollView(
       padding: websitePagePadding(context),
       child: Center(
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
+          constraints: BoxConstraints(
+            maxWidth: websiteContentMaxWidth(context),
+          ),
           child: Column(
             children: [
               Text(
@@ -1829,13 +2230,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount:
                         isMobile(context)
-                            ? 1
-                            : isTablet(context)
                             ? 2
-                            : 3,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    childAspectRatio: 0.9,
+                            : isTablet(context)
+                            ? 3
+                            : 5,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 0.8,
                   ),
                   itemCount: cateringDishes.length,
                   itemBuilder: (ctx, i) {
@@ -1894,18 +2295,54 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   Widget _buildRestaurantMenu() {
     final allDishes = MenuStore.instance.activeDishes;
-    final restaurantDishes = allDishes.where((d) {
-      final category = d.category.trim().toLowerCase();
-      final isRestaurantCategory = category == 'restaurant' ||
-          category == 'main_course' ||
-          category == 'noodles' ||
-          category == 'appetizer' ||
-          category == 'rice' ||
-          category == 'dessert' ||
-          category == 'drinks' ||
-          category == 'drink';
-      return isRestaurantCategory || d.type.trim().isNotEmpty;
-    }).toList();
+
+    // Show loading state if dishes are empty or currently loading
+    if (MenuStore.instance.isLoading || allDishes.isEmpty) {
+      return SizedBox(
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 60,
+                height: 60,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.amber.shade700,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Loading our delicious menu...',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final restaurantDishes =
+        allDishes.where((d) {
+          final category = d.category.trim().toLowerCase();
+          final isRestaurantCategory =
+              category == 'restaurant' ||
+              category == 'main_course' ||
+              category == 'noodles' ||
+              category == 'appetizer' ||
+              category == 'rice' ||
+              category == 'dessert' ||
+              category == 'drinks' ||
+              category == 'drink';
+          return isRestaurantCategory || d.type.trim().isNotEmpty;
+        }).toList();
     final cartItems = CartStore.instance.items;
     final totalAmount = CartStore.instance.totalAmount;
     // Filter restaurant dishes by selected type
@@ -1932,10 +2369,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     }
 
     final selectedType = _selectedRestaurantType.trim().toLowerCase();
-    final dishes = restaurantDishes.where((d) {
-      final dishType = restaurantTypeForDish(d);
-      return dishType == selectedType;
-    }).toList();
+    final dishes =
+        restaurantDishes.where((d) {
+          final dishType = restaurantTypeForDish(d);
+          return dishType == selectedType;
+        }).toList();
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2106,7 +2544,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             Expanded(
                               flex: 2,
                               child: Padding(
-                                padding: const EdgeInsets.all(12.0),
+                                padding: const EdgeInsets.all(8.0),
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
@@ -2142,18 +2580,20 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                         fontSize: 12,
                                       ),
                                     ),
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: 4),
                                     if (_isCustomerLoggedIn)
                                       SizedBox(
                                         height: 28,
                                         child: ElevatedButton(
-                                          onPressed: d.available
-                                              ? () => _addToCart(d)
-                                              : null,
+                                          onPressed:
+                                              d.available
+                                                  ? () => _addToCart(d)
+                                                  : null,
                                           style: ElevatedButton.styleFrom(
-                                            backgroundColor: d.available
-                                                ? const Color(0xFF1E1E1E)
-                                                : Colors.grey.shade500,
+                                            backgroundColor:
+                                                d.available
+                                                    ? const Color(0xFF1E1E1E)
+                                                    : Colors.grey.shade500,
                                             foregroundColor: Colors.white,
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 16,
@@ -2164,7 +2604,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                             ),
                                           ),
                                           child: Text(
-                                            d.available ? 'Add' : 'Not Available',
+                                            d.available
+                                                ? 'Add'
+                                                : 'Not Available',
                                             style: TextStyle(fontSize: 11),
                                           ),
                                         ),
@@ -2296,9 +2738,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
                                           ),
-                                          if (cartItem.dish.sauces.isNotEmpty)
+                                          if (cartItem.selectedSauce != null)
                                             Text(
-                                              cartItem.dish.sauces.first
+                                              cartItem.selectedSauce!
                                                   .toUpperCase(),
                                               style: TextStyle(
                                                 fontSize: 8,
@@ -2773,9 +3215,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   // Loyalty Points Banner - shows points earned and reward selection
   Widget _buildLoyaltyBanner() {
     // Get values from LoyaltyRewardsStore (persisted from management page)
-    final double minimumOrderForPoints = LoyaltyRewardsStore.instance.minimumOrderForPoints;
-    final int pointsEarned = LoyaltyRewardsStore.instance.pointsEarned;
-    final int currentPoints = 0; // User's current points balance - in production from API
+    final double minimumOrderForPoints = LoyaltyRewardsStore.instance
+        .minimumOrderForPoints(orderType: 'restaurant');
+    final int pointsEarned = LoyaltyRewardsStore.instance.pointsEarned(
+      orderType: 'restaurant',
+    );
+    final int currentPoints =
+        0; // User's current points balance - in production from API
     final availableRewards = LoyaltyRewardsStore.instance.rewardsConditions;
     // Ensure store is loaded
     LoyaltyRewardsStore.instance.ensureLoaded();
@@ -3054,8 +3500,14 @@ class _ContactSectionState extends State<_ContactSection> {
 
     setState(() => _submittingHelp = true);
     try {
-      // TODO: Add API call to submit help request
-      await Future.delayed(const Duration(seconds: 1)); // Simulate API call
+      await ApiClient.instance.postJson(
+        '/api/public/help-requests',
+        body: {
+          'name': _helpNameCtrl.text.trim(),
+          'email': _helpEmailCtrl.text.trim(),
+          'message': _helpMessageCtrl.text.trim(),
+        },
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Help request submitted successfully!')),
@@ -3082,7 +3534,9 @@ class _ContactSectionState extends State<_ContactSection> {
           padding: websitePagePadding(context, vertical: 32),
           child: Center(
             child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
+              constraints: BoxConstraints(
+                maxWidth: websiteContentMaxWidth(context),
+              ),
               child: Column(
                 children: [
                   Text(
@@ -3461,6 +3915,9 @@ class _InquireFormState extends State<_InquireForm> {
   bool _isExtractingThemeObjects = false;
   bool _isRenderingComposite = false;
   bool _isAddingByPrompt = false;
+  bool _isAutoPlacing = false;
+  bool _isAnalyzingBase = false;
+  bool _isLockingBase = false;
   String? _selectedBaseImage;
   String? _confirmedCompositeBase64;
   final List<Map<String, dynamic>> _themeSuggestions = [];
@@ -3468,6 +3925,7 @@ class _InquireFormState extends State<_InquireForm> {
   final List<Map<String, dynamic>> _extractedThemeObjects = [];
   final List<Map<String, dynamic>> _placedThemeObjects = [];
   bool _isPlacementSaved = false;
+
   /// Natural pixel size of the selected base image (for placement ↔ bitmap alignment).
   double? _baseImageNaturalW;
   double? _baseImageNaturalH;
@@ -3477,6 +3935,7 @@ class _InquireFormState extends State<_InquireForm> {
   // Avoid repeatedly base64-decoding the same images during drag/resize UI updates.
   final Map<String, Uint8List> _base64DecodeCache = {};
   static const Duration _aiRequestTimeout = Duration(seconds: 180);
+
   /// Wizard for "Design my event": 0 = pick base, 1 = pick add-on source images, 2 = compose.
   int _designEventWizardStep = 0;
   int? _pendingBaseSuggestionIndex;
@@ -3649,18 +4108,14 @@ class _InquireFormState extends State<_InquireForm> {
     // Build menu items for summary
     List<Map<String, dynamic>> menuItems = [];
     String menuSummaryTitle = '';
-    
+
     if (_menuChoice == 'yes') {
       menuSummaryTitle = 'Curated Menu';
       for (final dishId in _selectedDishIds) {
         final dish = MenuStore.instance.allDishes.firstWhere(
           (d) => d.id == dishId,
         );
-        menuItems.add({
-          'dishName': dish.name,
-          'paxOption': '',
-          'price': '0',
-        });
+        menuItems.add({'dishName': dish.name, 'paxOption': '', 'price': '0'});
       }
       for (final customDish in _customDishes) {
         menuItems.add({
@@ -3678,11 +4133,7 @@ class _InquireFormState extends State<_InquireForm> {
         final dish = MenuStore.instance.allDishes.firstWhere(
           (d) => d.id == dishId,
         );
-        menuItems.add({
-          'dishName': dish.name,
-          'paxOption': '',
-          'price': '0',
-        });
+        menuItems.add({'dishName': dish.name, 'paxOption': '', 'price': '0'});
       }
     } else {
       menuSummaryTitle = 'Menu to be suggested by our team';
@@ -3707,58 +4158,76 @@ class _InquireFormState extends State<_InquireForm> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Event Details
-                  _buildSummarySection(
-                    'Event Details',
-                    [
-                      _buildSummaryRow('Service Type', _serviceType == 'catering' ? 'Catering Only' : 'Catering + Event'),
-                      if (!isCateringOnly) ...[
-                        _buildSummaryRow('Event Title', _eventTitle.text.trim()),
-                        _buildSummaryRow('Event Type', _eventType),
-                        _buildSummaryRow('Formality', _formality),
-                      ],
-                      _buildSummaryRow('Date', _dateController.text.trim()),
-                      _buildSummaryRow('Time', _timeController.text.trim()),
-                      _buildSummaryRow('Guests', _guests.text.trim()),
+                  _buildSummarySection('Event Details', [
+                    _buildSummaryRow(
+                      'Service Type',
+                      _serviceType == 'catering'
+                          ? 'Catering Only'
+                          : 'Catering + Event',
+                    ),
+                    if (!isCateringOnly) ...[
+                      _buildSummaryRow('Event Title', _eventTitle.text.trim()),
+                      _buildSummaryRow('Event Type', _eventType),
+                      _buildSummaryRow('Formality', _formality),
                     ],
-                  ),
+                    _buildSummaryRow('Date', _dateController.text.trim()),
+                    _buildSummaryRow('Time', _timeController.text.trim()),
+                    _buildSummaryRow('Guests', _guests.text.trim()),
+                  ]),
                   const Divider(height: 24),
-                  
+
                   // Contact Information
-                  _buildSummarySection(
-                    'Contact Information',
-                    [
-                      _buildSummaryRow('Customer', _customer.text.trim()),
-                      _buildSummaryRow('Contact Person', _contactPerson.text.trim()),
-                      _buildSummaryRow('Phone', _phone.text.trim()),
-                      _buildSummaryRow('Email', _email.text.trim()),
-                      _buildSummaryRow('Address', _address.text.trim()),
-                    ],
-                  ),
+                  _buildSummarySection('Contact Information', [
+                    _buildSummaryRow('Customer', _customer.text.trim()),
+                    _buildSummaryRow(
+                      'Contact Person',
+                      _contactPerson.text.trim(),
+                    ),
+                    _buildSummaryRow('Phone', _phone.text.trim()),
+                    _buildSummaryRow('Email', _email.text.trim()),
+                    _buildSummaryRow('Address', _address.text.trim()),
+                  ]),
                   const Divider(height: 24),
-                  
+
                   // Menu
                   _buildSummarySection(
                     menuSummaryTitle,
                     menuItems.isEmpty
-                        ? [_buildSummaryRow('Menu', 'Will be suggested by our team')]
+                        ? [
+                          _buildSummaryRow(
+                            'Menu',
+                            'Will be suggested by our team',
+                          ),
+                        ]
                         : menuItems
-                            .map((item) => _buildSummaryRow(item['dishName'], 'Selected'))
+                            .map(
+                              (item) => _buildSummaryRow(
+                                item['dishName'],
+                                'Selected',
+                              ),
+                            )
                             .toList(),
                   ),
-                  
+
                   // Theme/Design
                   if (_serviceType == 'catering+event') ...[
                     const Divider(height: 24),
-                    _buildSummarySection(
-                      'Theme & Design',
-                      [
-                        _buildSummaryRow('Custom Design', _wantsCustomDesign ? 'Yes' : 'Standard'),
-                        if (_themeRequestCtrl.text.trim().isNotEmpty)
-                          _buildSummaryRow('Theme Request', _themeRequestCtrl.text.trim()),
-                        if (_designBoardPhotos().isNotEmpty)
-                          _buildSummaryRow('Reference Photos', '${_designBoardPhotos().length} photo(s)'),
-                      ],
-                    ),
+                    _buildSummarySection('Theme & Design', [
+                      _buildSummaryRow(
+                        'Custom Design',
+                        _wantsCustomDesign ? 'Yes' : 'Standard',
+                      ),
+                      if (_themeRequestCtrl.text.trim().isNotEmpty)
+                        _buildSummaryRow(
+                          'Theme Request',
+                          _themeRequestCtrl.text.trim(),
+                        ),
+                      if (_designBoardPhotos().isNotEmpty)
+                        _buildSummaryRow(
+                          'Reference Photos',
+                          '${_designBoardPhotos().length} photo(s)',
+                        ),
+                    ]),
                   ],
                 ],
               ),
@@ -3815,19 +4284,13 @@ class _InquireFormState extends State<_InquireForm> {
             width: 120,
             child: Text(
               label,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey.shade600,
-              ),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
             ),
           ),
         ],
@@ -3954,14 +4417,17 @@ class _InquireFormState extends State<_InquireForm> {
           'contactPerson': _contactPerson.text.trim(),
           'contactNumber': _phone.text.trim(),
           'emailAddress': _email.text.trim(),
-          'scheduleSlots': _eventScheduleSlots
-              .map((slot) => {
-                    'date':
-                        '${slot.date.year.toString().padLeft(4, '0')}-${slot.date.month.toString().padLeft(2, '0')}-${slot.date.day.toString().padLeft(2, '0')}',
-                    'startTime': _toHhmm(slot.startTime),
-                    'endTime': _toHhmm(slot.endTime),
-                  })
-              .toList(),
+          'scheduleSlots':
+              _eventScheduleSlots
+                  .map(
+                    (slot) => {
+                      'date':
+                          '${slot.date.year.toString().padLeft(4, '0')}-${slot.date.month.toString().padLeft(2, '0')}-${slot.date.day.toString().padLeft(2, '0')}',
+                      'startTime': _toHhmm(slot.startTime),
+                      'endTime': _toHhmm(slot.endTime),
+                    },
+                  )
+                  .toList(),
           'address': _address.text.trim(),
           'guestCount': g,
           'menu': menuItems,
@@ -4061,7 +4527,9 @@ class _InquireFormState extends State<_InquireForm> {
       ),
       child: Center(
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
+          constraints: BoxConstraints(
+            maxWidth: websiteContentMaxWidth(context),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -4316,18 +4784,19 @@ class _InquireFormState extends State<_InquireForm> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: _eventScheduleSlots.asMap().entries.map((entry) {
-                final index = entry.key;
-                final slot = entry.value;
-                return InputChip(
-                  label: Text(slot.label(context)),
-                  onDeleted: () {
-                    setState(() {
-                      _eventScheduleSlots.removeAt(index);
-                    });
-                  },
-                );
-              }).toList(),
+              children:
+                  _eventScheduleSlots.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final slot = entry.value;
+                    return InputChip(
+                      label: Text(slot.label(context)),
+                      onDeleted: () {
+                        setState(() {
+                          _eventScheduleSlots.removeAt(index);
+                        });
+                      },
+                    );
+                  }).toList(),
             ),
           const SizedBox(height: 12),
           TextField(
@@ -4599,9 +5068,16 @@ class _InquireFormState extends State<_InquireForm> {
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     subtitle: null,
-                    trailing: isSelected
-                        ? const Icon(Icons.check_circle, color: Color(0xFF4CAF50))
-                        : const Icon(Icons.add_circle_outline, color: Colors.grey),
+                    trailing:
+                        isSelected
+                            ? const Icon(
+                              Icons.check_circle,
+                              color: Color(0xFF4CAF50),
+                            )
+                            : const Icon(
+                              Icons.add_circle_outline,
+                              color: Colors.grey,
+                            ),
                     onTap: () {
                       setState(() {
                         if (isSelected) {
@@ -4704,9 +5180,10 @@ class _InquireFormState extends State<_InquireForm> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
                 side: BorderSide(
-                  color: _selectedSetMenuId == setMenu.id
-                      ? const Color(0xFFFFC024)
-                      : Colors.grey.shade300,
+                  color:
+                      _selectedSetMenuId == setMenu.id
+                          ? const Color(0xFFFFC024)
+                          : Colors.grey.shade300,
                   width: _selectedSetMenuId == setMenu.id ? 1.5 : 1,
                 ),
               ),
@@ -5019,7 +5496,10 @@ class _InquireFormState extends State<_InquireForm> {
     );
   }
 
-  Future<void> _searchThemeSuggestions({bool loadMore = false, int? goToPage}) async {
+  Future<void> _searchThemeSuggestions({
+    bool loadMore = false,
+    int? goToPage,
+  }) async {
     final prompt = _themeRequestCtrl.text.trim();
     if (prompt.isEmpty) return;
     final int nextPage;
@@ -5048,12 +5528,17 @@ class _InquireFormState extends State<_InquireForm> {
       final warning = (response['error'] ?? '').toString().trim();
       final hasMore = response['hasMore'] == true;
       final rawTotal = response['total'];
-      var total = rawTotal is num ? rawTotal.toInt() : int.tryParse('$rawTotal') ?? 0;
-      final rawImages = (response['images'] as List<dynamic>? ?? const [])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
-      final images = rawImages.where((row) => !_isLikelyPeopleImageSuggestion(row)).toList();
+      var total =
+          rawTotal is num ? rawTotal.toInt() : int.tryParse('$rawTotal') ?? 0;
+      final rawImages =
+          (response['images'] as List<dynamic>? ?? const [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+      final images =
+          rawImages
+              .where((row) => !_isLikelyPeopleImageSuggestion(row))
+              .toList();
       if (total <= 0 && images.isNotEmpty) {
         total = images.length;
       }
@@ -5062,7 +5547,10 @@ class _InquireFormState extends State<_InquireForm> {
         _themeSearchHasMore = hasMore;
         _themeSearchTotal = total;
         if (loadMore && goToPage == null) {
-          final seen = _themeSuggestions.map((row) => (row['imageUrl'] ?? '').toString()).toSet();
+          final seen =
+              _themeSuggestions
+                  .map((row) => (row['imageUrl'] ?? '').toString())
+                  .toSet();
           for (final row in images) {
             final url = (row['imageUrl'] ?? '').toString();
             if (url.isEmpty || seen.contains(url)) continue;
@@ -5141,7 +5629,9 @@ class _InquireFormState extends State<_InquireForm> {
 
     // When backend falls back to generic stock images, aggressively filter
     // to avoid showing people-focused references in the design workflow.
-    if (source == 'fallback' && !text.contains('decor') && !text.contains('tablescape')) {
+    if (source == 'fallback' &&
+        !text.contains('decor') &&
+        !text.contains('tablescape')) {
       return true;
     }
     return hasPeopleKeyword;
@@ -5151,14 +5641,20 @@ class _InquireFormState extends State<_InquireForm> {
     if (_selectedSuggestionIndexes.isEmpty) return;
     setState(() => _isExtractingThemeObjects = true);
     try {
-      final selectedUrls = _selectedSuggestionIndexes
-          .map((i) => _themeSuggestions[i]['imageUrl']?.toString() ?? '')
-          .where((u) => u.isNotEmpty)
-          .toList();
-      final bytesList = await Future.wait(selectedUrls.map(_resolveDesignPhotoBytes));
+      final selectedUrls =
+          _selectedSuggestionIndexes
+              .map((i) => _themeSuggestions[i]['imageUrl']?.toString() ?? '')
+              .where((u) => u.isNotEmpty)
+              .toList();
+      final bytesList = await Future.wait(
+        selectedUrls.map(_resolveDesignPhotoBytes),
+      );
       final encoded = bytesList.map(base64Encode).toList();
-      final response = await PublicEventsApi.instance.extractThemeObjects(imagesBase64: encoded);
-      final imageGroups = (response['images'] as List<dynamic>? ?? const []).whereType<Map>();
+      final response = await PublicEventsApi.instance.extractThemeObjects(
+        imagesBase64: encoded,
+      );
+      final imageGroups =
+          (response['images'] as List<dynamic>? ?? const []).whereType<Map>();
       final flattened = <Map<String, dynamic>>[];
       var failedImages = 0;
       for (final group in imageGroups) {
@@ -5170,18 +5666,24 @@ class _InquireFormState extends State<_InquireForm> {
             .map((e) => Map<String, dynamic>.from(e));
         flattened.addAll(objects);
       }
-      var visibleObjects = flattened.where((row) => (row['objectImageBase64'] ?? '').toString().isNotEmpty).toList();
+      var visibleObjects =
+          flattened
+              .where(
+                (row) => (row['objectImageBase64'] ?? '').toString().isNotEmpty,
+              )
+              .toList();
       var usedSourceFallback = false;
       if (visibleObjects.isEmpty) {
         usedSourceFallback = true;
-        visibleObjects = encoded.take(6).toList().asMap().entries.map((entry) {
-          return <String, dynamic>{
-            'id': 'fallback_source_${entry.key}',
-            'label': 'Source image',
-            'score': 1.0,
-            'objectImageBase64': entry.value,
-          };
-        }).toList();
+        visibleObjects =
+            encoded.take(6).toList().asMap().entries.map((entry) {
+              return <String, dynamic>{
+                'id': 'fallback_source_${entry.key}',
+                'label': 'Source image',
+                'score': 1.0,
+                'objectImageBase64': entry.value,
+              };
+            }).toList();
       }
       setState(() {
         _extractedThemeObjects
@@ -5193,7 +5695,9 @@ class _InquireFormState extends State<_InquireForm> {
       if (mounted && usedSourceFallback) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No objects were extracted. Using selected source images as fallback cutouts.'),
+            content: Text(
+              'No objects were extracted. Using selected source images as fallback cutouts.',
+            ),
           ),
         );
       }
@@ -5215,31 +5719,46 @@ class _InquireFormState extends State<_InquireForm> {
 
   Future<void> _analyzeBaseAndRecommend() async {
     if (_selectedBaseImage == null) return;
-    final baseBytes = await _resolveDesignPhotoBytes(_selectedBaseImage!);
-    final response = await PublicEventsApi.instance.analyzeBaseImage(
-      baseImageBase64: base64Encode(baseBytes),
-    );
-    setState(() {
-      _baseFreeSpaces
-        ..clear()
-        ..addAll((response['freeSpaces'] as List<dynamic>? ?? const []).whereType<Map>().map((e) => Map<String, dynamic>.from(e)));
-      _baseRecommendations
-        ..clear()
-        ..addAll((response['recommendations'] as List<dynamic>? ?? const []).map((e) => e.toString()));
-    });
+    setState(() => _isAnalyzingBase = true);
+    try {
+      final baseBytes = await _resolveDesignPhotoBytes(_selectedBaseImage!);
+      final response = await PublicEventsApi.instance.analyzeBaseImage(
+        baseImageBase64: base64Encode(baseBytes),
+      );
+      setState(() {
+        _baseFreeSpaces
+          ..clear()
+          ..addAll(
+            (response['freeSpaces'] as List<dynamic>? ?? const [])
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e)),
+          );
+        _baseRecommendations
+          ..clear()
+          ..addAll(
+            (response['recommendations'] as List<dynamic>? ?? const []).map(
+              (e) => e.toString(),
+            ),
+          );
+      });
+    } finally {
+      if (mounted) setState(() => _isAnalyzingBase = false);
+    }
   }
 
   Future<void> _autoPlaceSelectedObjects() async {
     if (_extractedThemeObjects.isEmpty) return;
+    setState(() => _isAutoPlacing = true);
     try {
       final response = await PublicEventsApi.instance.autoPlaceThemeObjects(
         freeSpaces: _baseFreeSpaces,
         objects: _extractedThemeObjects,
       );
-      final placements = (response['placements'] as List<dynamic>? ?? const [])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      final placements =
+          (response['placements'] as List<dynamic>? ?? const [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
 
       final nextPlaced = <Map<String, dynamic>>[];
       for (var i = 0; i < placements.length; i++) {
@@ -5252,7 +5771,10 @@ class _InquireFormState extends State<_InquireForm> {
             break;
           }
         }
-        match ??= i < _extractedThemeObjects.length ? _extractedThemeObjects[i] : null;
+        match ??=
+            i < _extractedThemeObjects.length
+                ? _extractedThemeObjects[i]
+                : null;
         if (match == null) continue;
         final b64 = (match['objectImageBase64'] ?? '').toString();
         if (b64.isEmpty) continue;
@@ -5303,6 +5825,8 @@ class _InquireFormState extends State<_InquireForm> {
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isAutoPlacing = false);
     }
   }
 
@@ -5320,7 +5844,11 @@ class _InquireFormState extends State<_InquireForm> {
         _baseImageNaturalH! <= 0) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not read base image size. Try re-selecting the base image.')),
+          const SnackBar(
+            content: Text(
+              'Could not read base image size. Try re-selecting the base image.',
+            ),
+          ),
         );
       }
       return;
@@ -5328,7 +5856,9 @@ class _InquireFormState extends State<_InquireForm> {
     if (!_isPlacementSaved) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please click Save Placement before rendering.')),
+          const SnackBar(
+            content: Text('Please click Save Placement before rendering.'),
+          ),
         );
       }
       return;
@@ -5339,50 +5869,64 @@ class _InquireFormState extends State<_InquireForm> {
       // Sanitize current editor state before sending to render-composite.
       final iw = _baseImageNaturalW!;
       final ih = _baseImageNaturalH!;
-      final sanitizedObjects = _placedThemeObjects
-          .where((o) => (o['objectImageBase64'] ?? '').toString().trim().isNotEmpty)
-          .map((o) {
-        double _finite(num? v, double fallback) {
-          final d = (v ?? fallback).toDouble();
-          return d.isFinite ? d : fallback;
-        }
+      final sanitizedObjects =
+          _placedThemeObjects
+              .where(
+                (o) =>
+                    (o['objectImageBase64'] ?? '').toString().trim().isNotEmpty,
+              )
+              .map((o) {
+                double _finite(num? v, double fallback) {
+                  final d = (v ?? fallback).toDouble();
+                  return d.isFinite ? d : fallback;
+                }
 
-        double x = _finite(o['x'] as num?, 0.0);
-        double y = _finite(o['y'] as num?, 0.0);
-        double width = _finite(o['width'] as num?, 0.15);
-        double height = _finite(o['height'] as num?, 0.15);
+                double x = _finite(o['x'] as num?, 0.0);
+                double y = _finite(o['y'] as num?, 0.0);
+                double width = _finite(o['width'] as num?, 0.15);
+                double height = _finite(o['height'] as num?, 0.15);
 
-        final looksNormalized =
-            x <= 1.01 && y <= 1.01 && width <= 1.01 && height <= 1.01 && x >= -0.001 && y >= -0.001;
-        if (looksNormalized) {
-          x *= iw;
-          y *= ih;
-          width *= iw;
-          height *= ih;
-        } else {
-          if (width <= 1.0) width = 2.1;
-          if (height <= 1.0) height = 2.1;
-        }
-        if (width < 2.0) width = 2.0;
-        if (height < 2.0) height = 2.0;
-        final rotation = _finite(o['rotation'] as num?, 0.0);
-        final intensity = _finite(o['intensity'] as num?, 1.0).clamp(0.0, 1.0);
-        final zIndex = (o['zIndex'] as num?)?.toInt() ?? 0;
+                final looksNormalized =
+                    x <= 1.01 &&
+                    y <= 1.01 &&
+                    width <= 1.01 &&
+                    height <= 1.01 &&
+                    x >= -0.001 &&
+                    y >= -0.001;
+                if (looksNormalized) {
+                  x *= iw;
+                  y *= ih;
+                  width *= iw;
+                  height *= ih;
+                } else {
+                  if (width <= 1.0) width = 2.1;
+                  if (height <= 1.0) height = 2.1;
+                }
+                if (width < 2.0) width = 2.0;
+                if (height < 2.0) height = 2.0;
+                final rotation = _finite(o['rotation'] as num?, 0.0);
+                final intensity = _finite(
+                  o['intensity'] as num?,
+                  1.0,
+                ).clamp(0.0, 1.0);
+                final zIndex = (o['zIndex'] as num?)?.toInt() ?? 0;
 
-        final targetHex = (o['targetHex'] ?? '').toString().trim();
+                final targetHex = (o['targetHex'] ?? '').toString().trim();
 
-        return {
-          'objectImageBase64': (o['objectImageBase64'] ?? '').toString(),
-          'x': x,
-          'y': y,
-          'width': width,
-          'height': height,
-          'rotation': rotation,
-          'zIndex': zIndex,
-          'intensity': intensity,
-          'targetHex': targetHex.isEmpty ? null : targetHex,
-        };
-      }).toList();
+                return {
+                  'objectImageBase64':
+                      (o['objectImageBase64'] ?? '').toString(),
+                  'x': x,
+                  'y': y,
+                  'width': width,
+                  'height': height,
+                  'rotation': rotation,
+                  'zIndex': zIndex,
+                  'intensity': intensity,
+                  'targetHex': targetHex.isEmpty ? null : targetHex,
+                };
+              })
+              .toList();
 
       final baseBytes = await _resolveDesignPhotoBytes(_selectedBaseImage!);
       final response = await PublicEventsApi.instance.renderThemeComposite(
@@ -5396,7 +5940,11 @@ class _InquireFormState extends State<_InquireForm> {
         });
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Render returned no image. Try again or adjust objects.')),
+          const SnackBar(
+            content: Text(
+              'Render returned no image. Try again or adjust objects.',
+            ),
+          ),
         );
       }
     } catch (e) {
@@ -5431,14 +5979,18 @@ class _InquireFormState extends State<_InquireForm> {
         baseImageUrl: _selectedBaseImage,
       );
       final imageBase64 = (response['imageBase64'] ?? '').toString().trim();
-      final placements = (response['placements'] as List<dynamic>? ?? const [])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      final placements =
+          (response['placements'] as List<dynamic>? ?? const [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
       if (imageBase64.isEmpty) {
         if (mounted) {
-          final msg = (response['error'] ?? 'Prompt add returned no image.').toString();
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+          final msg =
+              (response['error'] ?? 'Prompt add returned no image.').toString();
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(msg)));
         }
         return;
       }
@@ -5447,9 +5999,12 @@ class _InquireFormState extends State<_InquireForm> {
         if (placements.isNotEmpty) {
           _placedThemeObjects
             ..clear()
-            ..addAll(placements.map((p) => {
+            ..addAll(
+              placements.map(
+                (p) => {
                   'id': p['id'] ?? 'prompt_obj',
-                  'objectImageBase64': (p['objectImageBase64'] ?? '').toString(),
+                  'objectImageBase64':
+                      (p['objectImageBase64'] ?? '').toString(),
                   'x': p['x'],
                   'y': p['y'],
                   'width': p['width'],
@@ -5459,7 +6014,9 @@ class _InquireFormState extends State<_InquireForm> {
                   'intensity': p['intensity'] ?? 1.0,
                   'targetHex': p['targetHex'],
                   '_checked': true,
-                }));
+                },
+              ),
+            );
           _isPlacementSaved = true;
         }
       });
@@ -5471,7 +6028,13 @@ class _InquireFormState extends State<_InquireForm> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e is Exception ? e.toString().replaceFirst('Exception: ', '') : 'Failed to add by prompt.')),
+          SnackBar(
+            content: Text(
+              e is Exception
+                  ? e.toString().replaceFirst('Exception: ', '')
+                  : 'Failed to add by prompt.',
+            ),
+          ),
         );
       }
     } finally {
@@ -5479,36 +6042,51 @@ class _InquireFormState extends State<_InquireForm> {
     }
   }
 
-  void _showThemeImageEnlargeDialog(BuildContext dialogContext, String imageUrl) {
+  void _showThemeImageEnlargeDialog(
+    BuildContext dialogContext,
+    String imageUrl,
+  ) {
     showDialog<void>(
       context: dialogContext,
-      builder: (ctx) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: SizedBox(
-          width: MediaQuery.of(ctx).size.width * 0.92,
-          height: MediaQuery.of(ctx).size.height * 0.88,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: InteractiveViewer(
-                  minScale: 0.5,
-                  maxScale: 4,
-                  child: Center(child: _designImagePreview(imageUrl, fit: BoxFit.contain)),
-                ),
+      builder:
+          (ctx) => Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 24,
+            ),
+            child: SizedBox(
+              width: MediaQuery.of(ctx).size.width * 0.92,
+              height: MediaQuery.of(ctx).size.height * 0.88,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: InteractiveViewer(
+                      minScale: 0.5,
+                      maxScale: 4,
+                      child: Center(
+                        child: _designImagePreview(
+                          imageUrl,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: IconButton(
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.black54,
+                        foregroundColor: Colors.white,
+                      ),
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ),
+                ],
               ),
-              Positioned(
-                top: 4,
-                right: 4,
-                child: IconButton(
-                  style: IconButton.styleFrom(backgroundColor: Colors.black54, foregroundColor: Colors.white),
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(ctx),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
     );
   }
 
@@ -5524,19 +6102,27 @@ class _InquireFormState extends State<_InquireForm> {
     double? editorWidth,
     double? editorMaxHeight,
   }) {
-    final safeEditorWidth = (editorWidth != null && editorWidth.isFinite) ? editorWidth : null;
-    final safeEditorMaxHeight = (editorMaxHeight != null && editorMaxHeight.isFinite && editorMaxHeight > 0)
-        ? editorMaxHeight
-        : null;
-    final sourceCandidates = extractedObjects
-        .where((o) => (o['objectImageBase64'] ?? '').toString().isNotEmpty)
-        .toList();
+    final safeEditorWidth =
+        (editorWidth != null && editorWidth.isFinite) ? editorWidth : null;
+    final safeEditorMaxHeight =
+        (editorMaxHeight != null &&
+                editorMaxHeight.isFinite &&
+                editorMaxHeight > 0)
+            ? editorMaxHeight
+            : null;
+    final sourceCandidates =
+        extractedObjects
+            .where((o) => (o['objectImageBase64'] ?? '').toString().isNotEmpty)
+            .toList();
 
     Widget dragCanvas(double width, double height) {
       final imgW = _baseImageNaturalW;
       final imgH = _baseImageNaturalH;
       final layoutReady = imgW != null && imgH != null && imgW > 0 && imgH > 0;
-      final L = layoutReady ? _placementContainLayout(width, height, imgW, imgH) : null;
+      final L =
+          layoutReady
+              ? _placementContainLayout(width, height, imgW, imgH)
+              : null;
 
       return StatefulBuilder(
         builder: (context, setLocalState) {
@@ -5554,18 +6140,24 @@ class _InquireFormState extends State<_InquireForm> {
 
               final local1 = details.offset;
               final renderBox = context.findRenderObject() as RenderBox?;
-              final local2 = renderBox != null ? renderBox.globalToLocal(details.offset) : local1;
+              final local2 =
+                  renderBox != null
+                      ? renderBox.globalToLocal(details.offset)
+                      : local1;
 
-              final local1InBounds = local1.dx >= 0 &&
+              final local1InBounds =
+                  local1.dx >= 0 &&
                   local1.dx <= width &&
                   local1.dy >= 0 &&
                   local1.dy <= height;
-              final local2InBounds = local2.dx >= 0 &&
+              final local2InBounds =
+                  local2.dx >= 0 &&
                   local2.dx <= width &&
                   local2.dy >= 0 &&
                   local2.dy <= height;
 
-              final local = local1InBounds ? local1 : (local2InBounds ? local2 : local1);
+              final local =
+                  local1InBounds ? local1 : (local2InBounds ? local2 : local1);
 
               const defaultCanvasPx = 120.0;
               final nw = (defaultCanvasPx / lay.dispW).clamp(0.02, 1.0);
@@ -5577,7 +6169,8 @@ class _InquireFormState extends State<_InquireForm> {
 
               _placedThemeObjects.add({
                 'id': details.data['id'],
-                'objectImageBase64': (details.data['objectImageBase64'] ?? '').toString(),
+                'objectImageBase64':
+                    (details.data['objectImageBase64'] ?? '').toString(),
                 'x': nx,
                 'y': ny,
                 'width': nw,
@@ -5602,7 +6195,12 @@ class _InquireFormState extends State<_InquireForm> {
                 child: Stack(
                   clipBehavior: Clip.hardEdge,
                   children: [
-                    Positioned.fill(child: _designImagePreview(baseImage, fit: BoxFit.contain)),
+                    Positioned.fill(
+                      child: _designImagePreview(
+                        baseImage,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
                     if (!layoutReady)
                       Center(
                         child: Padding(
@@ -5614,7 +6212,10 @@ class _InquireFormState extends State<_InquireForm> {
                               const SizedBox(height: 12),
                               Text(
                                 'Loading image layout…',
-                                style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey.shade700,
+                                ),
                               ),
                             ],
                           ),
@@ -5624,7 +6225,8 @@ class _InquireFormState extends State<_InquireForm> {
                       ...placedObjects.asMap().entries.map((entry) {
                         final index = entry.key;
                         final obj = entry.value;
-                        final color = (obj['targetHex'] ?? '#f4511e').toString();
+                        final color =
+                            (obj['targetHex'] ?? '#f4511e').toString();
                         final isChecked = obj['_checked'] == true;
                         final lay = L!;
 
@@ -5642,18 +6244,36 @@ class _InquireFormState extends State<_InquireForm> {
                               if ((obj['_isResizing'] ?? false) == true) return;
                               final onx = (obj['x'] as num?)?.toDouble() ?? 0.0;
                               final ony = (obj['y'] as num?)?.toDouble() ?? 0.0;
-                              final ow = (obj['width'] as num?)?.toDouble() ?? 0.15;
-                              final oh = (obj['height'] as num?)?.toDouble() ?? 0.15;
-                              obj['x'] = (onx + d.delta.dx / lay.dispW).clamp(0.0, 1.0 - ow);
-                              obj['y'] = (ony + d.delta.dy / lay.dispH).clamp(0.0, 1.0 - oh);
+                              final ow =
+                                  (obj['width'] as num?)?.toDouble() ?? 0.15;
+                              final oh =
+                                  (obj['height'] as num?)?.toDouble() ?? 0.15;
+                              obj['x'] = (onx + d.delta.dx / lay.dispW).clamp(
+                                0.0,
+                                1.0 - ow,
+                              );
+                              obj['y'] = (ony + d.delta.dy / lay.dispH).clamp(
+                                0.0,
+                                1.0 - oh,
+                              );
                               _isPlacementSaved = false;
                               notifyPlacementChanged();
                             },
                             onTap: () {
                               if (isChecked) return;
-                              final palette = ['#f4511e', '#1db954', '#1976d2', '#e91e63', '#6a1b9a', '#ffc107'];
-                              final current = palette.indexOf(color.toLowerCase());
-                              obj['targetHex'] = palette[(current + 1) % palette.length];
+                              final palette = [
+                                '#f4511e',
+                                '#1db954',
+                                '#1976d2',
+                                '#e91e63',
+                                '#6a1b9a',
+                                '#ffc107',
+                              ];
+                              final current = palette.indexOf(
+                                color.toLowerCase(),
+                              );
+                              obj['targetHex'] =
+                                  palette[(current + 1) % palette.length];
                               _isPlacementSaved = false;
                               notifyPlacementChanged();
                             },
@@ -5661,7 +6281,13 @@ class _InquireFormState extends State<_InquireForm> {
                               width: nw * lay.dispW,
                               height: nh * lay.dispH,
                               decoration: BoxDecoration(
-                                border: isChecked ? null : Border.all(color: Colors.white, width: 2),
+                                border:
+                                    isChecked
+                                        ? null
+                                        : Border.all(
+                                          color: Colors.white,
+                                          width: 2,
+                                        ),
                                 boxShadow: [
                                   BoxShadow(
                                     color: Colors.black.withValues(alpha: 0.15),
@@ -5673,7 +6299,8 @@ class _InquireFormState extends State<_InquireForm> {
                                 children: [
                                   Positioned.fill(
                                     child: _designImagePreview(
-                                      (obj['objectImageBase64'] ?? '').toString(),
+                                      (obj['objectImageBase64'] ?? '')
+                                          .toString(),
                                       fit: BoxFit.contain,
                                     ),
                                   ),
@@ -5688,24 +6315,54 @@ class _InquireFormState extends State<_InquireForm> {
                                           obj['_isResizing'] = true;
                                         },
                                         onPanUpdate: (d) {
-                                          final objX = (obj['x'] as num?)?.toDouble() ?? 0;
-                                          final objY = (obj['y'] as num?)?.toDouble() ?? 0;
-                                          final objW = ((obj['width'] as num?)?.toDouble() ?? 0.15);
-                                          final objH = ((obj['height'] as num?)?.toDouble() ?? 0.15);
+                                          final objX =
+                                              (obj['x'] as num?)?.toDouble() ??
+                                              0;
+                                          final objY =
+                                              (obj['y'] as num?)?.toDouble() ??
+                                              0;
+                                          final objW =
+                                              ((obj['width'] as num?)
+                                                      ?.toDouble() ??
+                                                  0.15);
+                                          final objH =
+                                              ((obj['height'] as num?)
+                                                      ?.toDouble() ??
+                                                  0.15);
 
                                           const minUserSize = 40.0;
                                           const minApiPix = 2.0;
-                                          final minWn = math.max(minUserSize / lay.dispW, minApiPix / imgW);
-                                          final minHn = math.max(minUserSize / lay.dispH, minApiPix / imgH);
+                                          final minWn = math.max(
+                                            minUserSize / lay.dispW,
+                                            minApiPix / imgW,
+                                          );
+                                          final minHn = math.max(
+                                            minUserSize / lay.dispH,
+                                            minApiPix / imgH,
+                                          );
 
-                                          final maxWn = (1.0 - objX).clamp(minWn, 1.0);
-                                          final maxHn = (1.0 - objY).clamp(minHn, 1.0);
+                                          final maxWn = (1.0 - objX).clamp(
+                                            minWn,
+                                            1.0,
+                                          );
+                                          final maxHn = (1.0 - objY).clamp(
+                                            minHn,
+                                            1.0,
+                                          );
 
-                                          final nextW = objW + d.delta.dx / lay.dispW;
-                                          final nextH = objH + d.delta.dy / lay.dispH;
+                                          final nextW =
+                                              objW + d.delta.dx / lay.dispW;
+                                          final nextH =
+                                              objH + d.delta.dy / lay.dispH;
 
-                                          obj['width'] = nextW.clamp(minWn, maxWn);
-                                          obj['height'] = nextH.clamp(minHn, maxHn);
+                                          obj['width'] = nextW.clamp(
+                                            minWn,
+                                            maxWn,
+                                          );
+                                          obj['height'] = nextH.clamp(
+                                            minHn,
+                                            maxHn,
+                                          );
                                           _isPlacementSaved = false;
                                           notifyPlacementChanged();
                                         },
@@ -5717,10 +6374,19 @@ class _InquireFormState extends State<_InquireForm> {
                                           width: 22,
                                           height: 22,
                                           decoration: BoxDecoration(
-                                            color: Colors.white.withValues(alpha: 0.95),
-                                            border: Border.all(color: Colors.black54, width: 1),
+                                            color: Colors.white.withValues(
+                                              alpha: 0.95,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.black54,
+                                              width: 1,
+                                            ),
                                           ),
-                                          child: const Icon(Icons.open_with, size: 14, color: Colors.black54),
+                                          child: const Icon(
+                                            Icons.open_with,
+                                            size: 14,
+                                            color: Colors.black54,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -5730,15 +6396,21 @@ class _InquireFormState extends State<_InquireForm> {
                                     top: 2,
                                     child: GestureDetector(
                                       onTap: () {
-                                        obj['_checked'] = !(obj['_checked'] == true);
+                                        obj['_checked'] =
+                                            !(obj['_checked'] == true);
                                         _isPlacementSaved = false;
                                         notifyPlacementChanged();
                                       },
                                       child: CircleAvatar(
                                         radius: 10,
-                                        backgroundColor: isChecked ? const Color(0xFF2E7D32) : Colors.black54,
+                                        backgroundColor:
+                                            isChecked
+                                                ? const Color(0xFF2E7D32)
+                                                : Colors.black54,
                                         child: Icon(
-                                          isChecked ? Icons.check : Icons.check_box_outline_blank,
+                                          isChecked
+                                              ? Icons.check
+                                              : Icons.check_box_outline_blank,
                                           size: 12,
                                           color: Colors.white,
                                         ),
@@ -5758,7 +6430,11 @@ class _InquireFormState extends State<_InquireForm> {
                                         child: const CircleAvatar(
                                           radius: 10,
                                           backgroundColor: Colors.red,
-                                          child: Icon(Icons.close, size: 12, color: Colors.white),
+                                          child: Icon(
+                                            Icons.close,
+                                            size: 12,
+                                            color: Colors.white,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -5781,20 +6457,21 @@ class _InquireFormState extends State<_InquireForm> {
       children: [
         IconButton(
           tooltip: 'Scroll left',
-          onPressed: sourceCandidates.isEmpty
-              ? null
-              : () {
-                  if (!_objectsStripScrollCtrl.hasClients) return;
-                  final target = (_objectsStripScrollCtrl.offset - 180).clamp(
-                    0.0,
-                    _objectsStripScrollCtrl.position.maxScrollExtent,
-                  );
-                  _objectsStripScrollCtrl.animateTo(
-                    target,
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOutCubic,
-                  );
-                },
+          onPressed:
+              sourceCandidates.isEmpty
+                  ? null
+                  : () {
+                    if (!_objectsStripScrollCtrl.hasClients) return;
+                    final target = (_objectsStripScrollCtrl.offset - 180).clamp(
+                      0.0,
+                      _objectsStripScrollCtrl.position.maxScrollExtent,
+                    );
+                    _objectsStripScrollCtrl.animateTo(
+                      target,
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                    );
+                  },
           icon: const Icon(Icons.chevron_left),
         ),
         Expanded(
@@ -5808,32 +6485,42 @@ class _InquireFormState extends State<_InquireForm> {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: sourceCandidates.map((obj) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8, bottom: 4),
-                      child: Draggable<Map<String, dynamic>>(
-                        data: obj,
-                        feedback: SizedBox(
-                          width: 80,
-                          height: 80,
-                          child: _designImagePreview((obj['objectImageBase64'] ?? '').toString(), fit: BoxFit.contain),
-                        ),
-                        childWhenDragging: Opacity(
-                          opacity: 0.3,
-                          child: SizedBox(
-                            width: 72,
-                            height: 72,
-                            child: _designImagePreview((obj['objectImageBase64'] ?? '').toString(), fit: BoxFit.contain),
+                  children:
+                      sourceCandidates.map((obj) {
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8, bottom: 4),
+                          child: Draggable<Map<String, dynamic>>(
+                            data: obj,
+                            feedback: SizedBox(
+                              width: 80,
+                              height: 80,
+                              child: _designImagePreview(
+                                (obj['objectImageBase64'] ?? '').toString(),
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                            childWhenDragging: Opacity(
+                              opacity: 0.3,
+                              child: SizedBox(
+                                width: 72,
+                                height: 72,
+                                child: _designImagePreview(
+                                  (obj['objectImageBase64'] ?? '').toString(),
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                            child: SizedBox(
+                              width: 72,
+                              height: 72,
+                              child: _designImagePreview(
+                                (obj['objectImageBase64'] ?? '').toString(),
+                                fit: BoxFit.contain,
+                              ),
+                            ),
                           ),
-                        ),
-                        child: SizedBox(
-                          width: 72,
-                          height: 72,
-                          child: _designImagePreview((obj['objectImageBase64'] ?? '').toString(), fit: BoxFit.contain),
-                        ),
-                      ),
-                    );
-                  }).toList(),
+                        );
+                      }).toList(),
                 ),
               ),
             ),
@@ -5841,20 +6528,21 @@ class _InquireFormState extends State<_InquireForm> {
         ),
         IconButton(
           tooltip: 'Scroll right',
-          onPressed: sourceCandidates.isEmpty
-              ? null
-              : () {
-                  if (!_objectsStripScrollCtrl.hasClients) return;
-                  final target = (_objectsStripScrollCtrl.offset + 180).clamp(
-                    0.0,
-                    _objectsStripScrollCtrl.position.maxScrollExtent,
-                  );
-                  _objectsStripScrollCtrl.animateTo(
-                    target,
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOutCubic,
-                  );
-                },
+          onPressed:
+              sourceCandidates.isEmpty
+                  ? null
+                  : () {
+                    if (!_objectsStripScrollCtrl.hasClients) return;
+                    final target = (_objectsStripScrollCtrl.offset + 180).clamp(
+                      0.0,
+                      _objectsStripScrollCtrl.position.maxScrollExtent,
+                    );
+                    _objectsStripScrollCtrl.animateTo(
+                      target,
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                    );
+                  },
           icon: const Icon(Icons.chevron_right),
         ),
       ],
@@ -5867,7 +6555,10 @@ class _InquireFormState extends State<_InquireForm> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Drag objects onto base image', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Drag objects onto base image',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             if (placedObjects.isNotEmpty)
               Padding(
@@ -5907,7 +6598,10 @@ class _InquireFormState extends State<_InquireForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Drag objects onto base image', style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text(
+          'Drag objects onto base image',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 8),
         if (sourceCandidates.isEmpty)
           Padding(
@@ -5968,7 +6662,7 @@ class _InquireFormState extends State<_InquireForm> {
     Map<String, String>? displayMap,
   }) {
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: value,
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
@@ -5996,7 +6690,10 @@ class _InquireFormState extends State<_InquireForm> {
   String? _normalizeBase64Payload(String value) {
     final raw = value.trim();
     if (raw.isEmpty) return null;
-    final payload = raw.startsWith('data:image/') ? raw.substring(raw.indexOf(',') + 1) : raw;
+    final payload =
+        raw.startsWith('data:image/')
+            ? raw.substring(raw.indexOf(',') + 1)
+            : raw;
     final compact = payload.replaceAll(RegExp(r'\s+'), '');
     if (compact.isEmpty) return null;
     if (!RegExp(r'^[A-Za-z0-9+/_=-]+$').hasMatch(compact)) return null;
@@ -6018,7 +6715,9 @@ class _InquireFormState extends State<_InquireForm> {
       try {
         final payload = _normalizeBase64Payload(trimmed);
         if (payload == null) {
-          return const Center(child: Icon(Icons.broken_image, color: Colors.grey));
+          return const Center(
+            child: Icon(Icons.broken_image, color: Colors.grey),
+          );
         }
         final bytes = _base64DecodeCache.putIfAbsent(
           payload,
@@ -6027,20 +6726,23 @@ class _InquireFormState extends State<_InquireForm> {
         return Image.memory(
           bytes,
           fit: fit,
-          errorBuilder: (ctx, err, stack) => const Center(
-            child: Icon(Icons.broken_image, color: Colors.grey),
-          ),
+          errorBuilder:
+              (ctx, err, stack) => const Center(
+                child: Icon(Icons.broken_image, color: Colors.grey),
+              ),
         );
       } catch (_) {
-        return const Center(child: Icon(Icons.broken_image, color: Colors.grey));
+        return const Center(
+          child: Icon(Icons.broken_image, color: Colors.grey),
+        );
       }
     }
     return Image.network(
       trimmed,
       fit: fit,
-      errorBuilder: (ctx, err, stack) => const Center(
-        child: Icon(Icons.broken_image, color: Colors.grey),
-      ),
+      errorBuilder:
+          (ctx, err, stack) =>
+              const Center(child: Icon(Icons.broken_image, color: Colors.grey)),
     );
   }
 
@@ -6057,7 +6759,9 @@ class _InquireFormState extends State<_InquireForm> {
   }
 
   List<String> _designBoardPhotos() {
-    return _designPhotoUrls.where((photo) => !_isLikelyDesignBoardAsset(photo)).toList();
+    return _designPhotoUrls
+        .where((photo) => !_isLikelyDesignBoardAsset(photo))
+        .toList();
   }
 
   Future<Uint8List> _resolveDesignPhotoBytes(String value) async {
@@ -6119,11 +6823,15 @@ class _InquireFormState extends State<_InquireForm> {
     }
   }
 
-  Future<void> _runCustomerEditObjectsFlow(void Function(void Function()) setDialogState) async {
+  Future<void> _runCustomerEditObjectsFlow(
+    void Function(void Function()) setDialogState,
+  ) async {
     final photos = _designBoardPhotos();
     if (photos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add at least one design board photo first.')),
+        const SnackBar(
+          content: Text('Add at least one design board photo first.'),
+        ),
       );
       return;
     }
@@ -6140,10 +6848,11 @@ class _InquireFormState extends State<_InquireForm> {
             maskFormat: 'polygon',
           )
           .timeout(_aiRequestTimeout);
-      final objects = (segmented['objects'] as List<dynamic>? ?? const [])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      final objects =
+          (segmented['objects'] as List<dynamic>? ?? const [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
       if (objects.isEmpty) {
         throw Exception('No objects detected to edit.');
       }
@@ -6174,7 +6883,9 @@ class _InquireFormState extends State<_InquireForm> {
             builder: (context, setLocalState) {
               return Dialog(
                 backgroundColor: const Color(0xFFF7F8FA),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
                 child: Container(
                   width: 1160,
                   height: 760,
@@ -6208,7 +6919,9 @@ class _InquireFormState extends State<_InquireForm> {
                               flex: 3,
                               child: Container(
                                 decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey.shade300),
+                                  border: Border.all(
+                                    color: Colors.grey.shade300,
+                                  ),
                                   borderRadius: BorderRadius.circular(10),
                                   color: Colors.black12,
                                 ),
@@ -6220,36 +6933,91 @@ class _InquireFormState extends State<_InquireForm> {
                                       final h = constraints.maxHeight;
                                       return Stack(
                                         children: [
-                                          Positioned.fill(child: Image.memory(bytes, fit: BoxFit.contain)),
+                                          Positioned.fill(
+                                            child: Image.memory(
+                                              bytes,
+                                              fit: BoxFit.contain,
+                                            ),
+                                          ),
                                           ...objects.map((obj) {
-                                            final boxRaw = Map<String, dynamic>.from(
-                                              (obj['boundingBox'] as Map?) ?? const <String, dynamic>{},
-                                            );
-                                            final leftRaw = (boxRaw['left'] as num?)?.toDouble() ?? 0;
-                                            final topRaw = (boxRaw['top'] as num?)?.toDouble() ?? 0;
-                                            final widthRaw = (boxRaw['width'] as num?)?.toDouble() ?? 0.2;
-                                            final heightRaw = (boxRaw['height'] as num?)?.toDouble() ?? 0.2;
-                                            final isNormalized = widthRaw <= 1.0 && heightRaw <= 1.0;
-                                            final left = isNormalized ? leftRaw * w : leftRaw;
-                                            final top = isNormalized ? topRaw * h : topRaw;
-                                            final width = isNormalized ? widthRaw * w : widthRaw;
-                                            final height = isNormalized ? heightRaw * h : heightRaw;
-                                            final active = selectedLabel == (obj['label'] ?? 'Object').toString();
+                                            final boxRaw =
+                                                Map<String, dynamic>.from(
+                                                  (obj['boundingBox']
+                                                          as Map?) ??
+                                                      const <String, dynamic>{},
+                                                );
+                                            final leftRaw =
+                                                (boxRaw['left'] as num?)
+                                                    ?.toDouble() ??
+                                                0;
+                                            final topRaw =
+                                                (boxRaw['top'] as num?)
+                                                    ?.toDouble() ??
+                                                0;
+                                            final widthRaw =
+                                                (boxRaw['width'] as num?)
+                                                    ?.toDouble() ??
+                                                0.2;
+                                            final heightRaw =
+                                                (boxRaw['height'] as num?)
+                                                    ?.toDouble() ??
+                                                0.2;
+                                            final isNormalized =
+                                                widthRaw <= 1.0 &&
+                                                heightRaw <= 1.0;
+                                            final left =
+                                                isNormalized
+                                                    ? leftRaw * w
+                                                    : leftRaw;
+                                            final top =
+                                                isNormalized
+                                                    ? topRaw * h
+                                                    : topRaw;
+                                            final width =
+                                                isNormalized
+                                                    ? widthRaw * w
+                                                    : widthRaw;
+                                            final height =
+                                                isNormalized
+                                                    ? heightRaw * h
+                                                    : heightRaw;
+                                            final active =
+                                                selectedLabel ==
+                                                (obj['label'] ?? 'Object')
+                                                    .toString();
                                             return Positioned(
                                               left: left,
                                               top: top,
                                               width: width,
                                               height: height,
                                               child: GestureDetector(
-                                                onTap: () => setLocalState(
-                                                  () => selectedLabel = (obj['label'] ?? 'Object').toString(),
-                                                ),
+                                                onTap:
+                                                    () => setLocalState(
+                                                      () =>
+                                                          selectedLabel =
+                                                              (obj['label'] ??
+                                                                      'Object')
+                                                                  .toString(),
+                                                    ),
                                                 child: CustomPaint(
-                                                  painter: _SoftCustomerOverlayPainter(
-                                                    polygonPoints: const <Map<String, dynamic>>[],
-                                                    boundingBox: Rect.fromLTWH(0, 0, width, height),
-                                                    selected: active,
-                                                  ),
+                                                  painter:
+                                                      _SoftCustomerOverlayPainter(
+                                                        polygonPoints:
+                                                            const <
+                                                              Map<
+                                                                String,
+                                                                dynamic
+                                                              >
+                                                            >[],
+                                                        boundingBox:
+                                                            Rect.fromLTWH(
+                                                              0,
+                                                              0,
+                                                              width,
+                                                              height,
+                                                            ),
+                                                        selected: active,
+                                                      ),
                                                 ),
                                               ),
                                             );
@@ -6271,45 +7039,64 @@ class _InquireFormState extends State<_InquireForm> {
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
                                       color: Colors.white,
-                                      border: Border.all(color: Colors.grey.shade300),
+                                      border: Border.all(
+                                        color: Colors.grey.shade300,
+                                      ),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         const Text(
                                           'Recolor',
-                                          style: TextStyle(fontWeight: FontWeight.bold),
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                         const SizedBox(height: 8),
                                         Wrap(
                                           spacing: 8,
                                           runSpacing: 8,
-                                          children: palette.map((hex) {
-                                            final color = Color(
-                                              int.parse(hex.substring(1), radix: 16) + 0xFF000000,
-                                            );
-                                            final selected = selectedHex == hex;
-                                            return GestureDetector(
-                                              onTap: () => setLocalState(() => selectedHex = hex),
-                                              child: Container(
-                                                width: 30,
-                                                height: 30,
-                                                decoration: BoxDecoration(
-                                                  color: color,
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(
-                                                    color: selected ? Colors.black : Colors.black26,
-                                                    width: selected ? 3 : 1,
+                                          children:
+                                              palette.map((hex) {
+                                                final color = Color(
+                                                  int.parse(
+                                                        hex.substring(1),
+                                                        radix: 16,
+                                                      ) +
+                                                      0xFF000000,
+                                                );
+                                                final selected =
+                                                    selectedHex == hex;
+                                                return GestureDetector(
+                                                  onTap:
+                                                      () => setLocalState(
+                                                        () => selectedHex = hex,
+                                                      ),
+                                                  child: Container(
+                                                    width: 30,
+                                                    height: 30,
+                                                    decoration: BoxDecoration(
+                                                      color: color,
+                                                      shape: BoxShape.circle,
+                                                      border: Border.all(
+                                                        color:
+                                                            selected
+                                                                ? Colors.black
+                                                                : Colors
+                                                                    .black26,
+                                                        width: selected ? 3 : 1,
+                                                      ),
+                                                    ),
                                                   ),
-                                                ),
-                                              ),
-                                            );
-                                          }).toList(),
+                                                );
+                                              }).toList(),
                                         ),
                                         const SizedBox(height: 12),
                                         Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               'Alpha: ${(selectedAlpha * 100).round()}%',
@@ -6325,9 +7112,16 @@ class _InquireFormState extends State<_InquireForm> {
                                               max: 1.0,
                                               divisions: 20,
                                               activeColor: Color(
-                                                int.parse(selectedHex.substring(1), radix: 16) + 0xFF000000,
+                                                int.parse(
+                                                      selectedHex.substring(1),
+                                                      radix: 16,
+                                                    ) +
+                                                    0xFF000000,
                                               ),
-                                              onChanged: (value) => setLocalState(() => selectedAlpha = value),
+                                              onChanged:
+                                                  (value) => setLocalState(
+                                                    () => selectedAlpha = value,
+                                                  ),
                                             ),
                                           ],
                                         ),
@@ -6337,17 +7131,29 @@ class _InquireFormState extends State<_InquireForm> {
                                           height: 40,
                                           decoration: BoxDecoration(
                                             color: Color(
-                                              int.parse(selectedHex.substring(1), radix: 16) + 
-                                              (selectedAlpha * 255).round() * 0x1000000,
+                                              int.parse(
+                                                    selectedHex.substring(1),
+                                                    radix: 16,
+                                                  ) +
+                                                  (selectedAlpha * 255)
+                                                          .round() *
+                                                      0x1000000,
                                             ),
-                                            borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(color: Colors.grey.shade400),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.grey.shade400,
+                                            ),
                                           ),
                                           child: Center(
                                             child: Text(
                                               'Preview',
                                               style: TextStyle(
-                                                color: selectedAlpha > 0.5 ? Colors.white : Colors.black,
+                                                color:
+                                                    selectedAlpha > 0.5
+                                                        ? Colors.white
+                                                        : Colors.black,
                                                 fontWeight: FontWeight.w500,
                                               ),
                                             ),
@@ -6362,15 +7168,20 @@ class _InquireFormState extends State<_InquireForm> {
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
                                       color: Colors.white,
-                                      border: Border.all(color: Colors.grey.shade300),
+                                      border: Border.all(
+                                        color: Colors.grey.shade300,
+                                      ),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         const Text(
                                           'Detected Objects:',
-                                          style: TextStyle(fontWeight: FontWeight.bold),
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                         const SizedBox(height: 8),
                                         Expanded(
@@ -6378,22 +7189,32 @@ class _InquireFormState extends State<_InquireForm> {
                                             child: Wrap(
                                               spacing: 8,
                                               runSpacing: 8,
-                                              children: grouped.entries.map((entry) {
-                                                final label = entry.value.length > 1
-                                                    ? '${entry.key} (${entry.value.length})'
-                                                    : entry.key;
-                                                final active = selectedLabel == entry.key;
-                                                return FilterChip(
-                                                  label: Text(label),
-                                                  selected: active,
-                                                  onSelected: (_) => setLocalState(() {
-                                                    selectedLabel = entry.key;
-                                                  }),
-                                                  backgroundColor: Colors.grey.shade200,
-                                                  selectedColor: Colors.blue.withOpacity(0.3),
-                                                  checkmarkColor: Colors.blue,
-                                                );
-                                              }).toList(),
+                                              children:
+                                                  grouped.entries.map((entry) {
+                                                    final label =
+                                                        entry.value.length > 1
+                                                            ? '${entry.key} (${entry.value.length})'
+                                                            : entry.key;
+                                                    final active =
+                                                        selectedLabel ==
+                                                        entry.key;
+                                                    return FilterChip(
+                                                      label: Text(label),
+                                                      selected: active,
+                                                      onSelected:
+                                                          (_) =>
+                                                              setLocalState(() {
+                                                                selectedLabel =
+                                                                    entry.key;
+                                                              }),
+                                                      backgroundColor:
+                                                          Colors.grey.shade200,
+                                                      selectedColor: Colors.blue
+                                                          .withOpacity(0.3),
+                                                      checkmarkColor:
+                                                          Colors.blue,
+                                                    );
+                                                  }).toList(),
                                             ),
                                           ),
                                         ),
@@ -6402,22 +7223,26 @@ class _InquireFormState extends State<_InquireForm> {
                                   ),
                                   const SizedBox(height: 12),
                                   ElevatedButton(
-                                    onPressed: selectedLabel == null
-                                        ? null
-                                        : () => Navigator.of(context).pop({
-                                            'label': selectedLabel!,
-                                            'hex': selectedHex,
-                                            'alpha': selectedAlpha,
-                                          }),
+                                    onPressed:
+                                        selectedLabel == null
+                                            ? null
+                                            : () => Navigator.of(context).pop({
+                                              'label': selectedLabel!,
+                                              'hex': selectedHex,
+                                              'alpha': selectedAlpha,
+                                            }),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: const Color(0xFF1DB954),
                                       foregroundColor: Colors.white,
                                     ),
-                                    child: const Text('Apply Colors to Selected'),
+                                    child: const Text(
+                                      'Apply Colors to Selected',
+                                    ),
                                   ),
                                   const SizedBox(height: 8),
                                   ElevatedButton(
-                                    onPressed: () => Navigator.of(context).pop(),
+                                    onPressed:
+                                        () => Navigator.of(context).pop(),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: Colors.grey.shade400,
                                       foregroundColor: Colors.white,
@@ -6444,47 +7269,55 @@ class _InquireFormState extends State<_InquireForm> {
       final targetAlpha = selection['alpha'] as double? ?? 1.0;
       if (selectedLabel == null || targetHex == null) return;
 
-      final selectedObjects = grouped[selectedLabel] ?? const <Map<String, dynamic>>[];
-      final masks = selectedObjects.map((obj) {
-        final rawPolygon =
-            (obj['polygonPoints'] as List<dynamic>? ??
-                    obj['polygon_points'] as List<dynamic>? ??
-                    const [])
-                .toList();
-        final polygon = rawPolygon
-            .map((point) {
-              if (point is Map) {
-                return {
-                  'x': (point['x'] as num?)?.toDouble() ?? 0.0,
-                  'y': (point['y'] as num?)?.toDouble() ?? 0.0,
-                };
-              }
-              if (point is List && point.length >= 2) {
-                final x = point[0];
-                final y = point[1];
-                if (x is num && y is num) {
-                  return {'x': x.toDouble(), 'y': y.toDouble()};
-                }
-              }
-              return null;
-            })
-            .whereType<Map<String, double>>()
-            .toList();
-        final maskBase64 =
-            (obj['maskBase64'] ?? obj['mask_base64'] ?? '').toString().trim();
-        return {
-          'objectId': (obj['id'] ?? '').toString(),
-          if (polygon.isNotEmpty) 'polygonPoints': polygon,
-          if (maskBase64.isNotEmpty) 'maskBase64': maskBase64,
-        };
-      }).toList();
-      final edits = selectedObjects
-          .map((obj) => {
-                'objectId': (obj['id'] ?? '').toString(),
-                'targetHex': targetHex,
-                'intensity': targetAlpha,
-              })
-          .toList();
+      final selectedObjects =
+          grouped[selectedLabel] ?? const <Map<String, dynamic>>[];
+      final masks =
+          selectedObjects.map((obj) {
+            final rawPolygon =
+                (obj['polygonPoints'] as List<dynamic>? ??
+                        obj['polygon_points'] as List<dynamic>? ??
+                        const [])
+                    .toList();
+            final polygon =
+                rawPolygon
+                    .map((point) {
+                      if (point is Map) {
+                        return {
+                          'x': (point['x'] as num?)?.toDouble() ?? 0.0,
+                          'y': (point['y'] as num?)?.toDouble() ?? 0.0,
+                        };
+                      }
+                      if (point is List && point.length >= 2) {
+                        final x = point[0];
+                        final y = point[1];
+                        if (x is num && y is num) {
+                          return {'x': x.toDouble(), 'y': y.toDouble()};
+                        }
+                      }
+                      return null;
+                    })
+                    .whereType<Map<String, double>>()
+                    .toList();
+            final maskBase64 =
+                (obj['maskBase64'] ?? obj['mask_base64'] ?? '')
+                    .toString()
+                    .trim();
+            return {
+              'objectId': (obj['id'] ?? '').toString(),
+              if (polygon.isNotEmpty) 'polygonPoints': polygon,
+              if (maskBase64.isNotEmpty) 'maskBase64': maskBase64,
+            };
+          }).toList();
+      final edits =
+          selectedObjects
+              .map(
+                (obj) => {
+                  'objectId': (obj['id'] ?? '').toString(),
+                  'targetHex': targetHex,
+                  'intensity': targetAlpha,
+                },
+              )
+              .toList();
 
       final recolor = await PublicEventsApi.instance
           .swapThemeObjectColors(
@@ -6511,13 +7344,16 @@ class _InquireFormState extends State<_InquireForm> {
       });
       setState(() {});
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('AI edit applied.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('AI edit applied.')));
       }
     } catch (e) {
       final msg = e.toString().toLowerCase();
-      final timeout = msg.contains('timeout') || msg.contains('timed out') || msg.contains('upstream_timeout');
+      final timeout =
+          msg.contains('timeout') ||
+          msg.contains('timed out') ||
+          msg.contains('upstream_timeout');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -6538,155 +7374,260 @@ class _InquireFormState extends State<_InquireForm> {
   void _showCustomDesignDialog() {
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final designBoardPhotos = _designBoardPhotos();
-          final screenWidth = MediaQuery.of(context).size.width;
-          final isNarrow = screenWidth < 720;
-          final dialogWidth = isNarrow ? screenWidth * 0.92 : 620.0;
-          final previewHeight = isNarrow ? 160.0 : 200.0;
-          final thumbSize = isNarrow ? 64.0 : 80.0;
-          final thumbStripHeight = isNarrow ? 64.0 : 80.0;
-          return AlertDialog(
-          backgroundColor: const Color(0xFFF7F8FA),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: Row(
-            children: const [
-              Icon(Icons.palette_outlined, color: Color(0xFFF4511E)),
-              SizedBox(width: 8),
-              Text('Events Theme Design'),
-            ],
-          ),
-          content: SizedBox(
-            width: dialogWidth,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.black.withOpacity(0.08)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.04),
-                          blurRadius: 14,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
+      builder:
+          (context) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              final designBoardPhotos = _designBoardPhotos();
+              final screenWidth = MediaQuery.of(context).size.width;
+              final isNarrow = screenWidth < 720;
+              final dialogWidth = isNarrow ? screenWidth * 0.92 : 620.0;
+              final previewHeight = isNarrow ? 160.0 : 200.0;
+              final thumbSize = isNarrow ? 64.0 : 80.0;
+              final thumbStripHeight = isNarrow ? 64.0 : 80.0;
+              return AlertDialog(
+                backgroundColor: const Color(0xFFF7F8FA),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                title: Row(
+                  children: const [
+                    Icon(Icons.palette_outlined, color: Color(0xFFF4511E)),
+                    SizedBox(width: 8),
+                    Text('Events Theme Design'),
+                  ],
+                ),
+                content: SizedBox(
+                  width: dialogWidth,
+                  child: SingleChildScrollView(
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFF3D0),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: const Text(
-                            'AI EDIT TOOLS',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                              color: Color(0xFF7A4E00),
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: Colors.black.withOpacity(0.08),
                             ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.04),
+                                blurRadius: 14,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Flow: EDIT OBJECTS -> choose grouped object -> pick color -> apply.',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: _isDetectingAiObjects
-                                ? null
-                                : () => _runCustomerEditObjectsFlow(setDialogState),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFF4511E),
-                              foregroundColor: Colors.white,
-                            ),
-                            child: _isDetectingAiObjects
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                    ),
-                                  )
-                                : const Text('EDIT OBJECTS'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.black.withOpacity(0.08)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Add reference photos (upload or URL).:',
-                          style: TextStyle(fontSize: 13),
-                        ),
-                        const SizedBox(height: 10),
-                        if (isNarrow)
-                          Column(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              TextField(
-                                controller: _designPhotoCtrl,
-                                decoration: const InputDecoration(
-                                  labelText: 'Photo URL',
-                                  hintText: 'Paste image link here...',
-                                  border: OutlineInputBorder(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFF3D0),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: const Text(
+                                  'AI EDIT TOOLS',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                    color: Color(0xFF7A4E00),
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Flow: EDIT OBJECTS -> choose grouped object -> pick color -> apply.',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                              const SizedBox(height: 10),
                               SizedBox(
                                 width: double.infinity,
-                                child: Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
+                                child: ElevatedButton(
+                                  onPressed:
+                                      _isDetectingAiObjects
+                                          ? null
+                                          : () => _runCustomerEditObjectsFlow(
+                                            setDialogState,
+                                          ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFF4511E),
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  child:
+                                      _isDetectingAiObjects
+                                          ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              valueColor:
+                                                  AlwaysStoppedAnimation<Color>(
+                                                    Colors.white,
+                                                  ),
+                                            ),
+                                          )
+                                          : const Text('EDIT OBJECTS'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: Colors.black.withOpacity(0.08),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Add reference photos (upload or URL).:',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                              const SizedBox(height: 10),
+                              if (isNarrow)
+                                Column(
                                   children: [
+                                    TextField(
+                                      controller: _designPhotoCtrl,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Photo URL',
+                                        hintText: 'Paste image link here...',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          ElevatedButton(
+                                            onPressed: () async {
+                                              final picked = await ImagePicker()
+                                                  .pickImage(
+                                                    source: ImageSource.gallery,
+                                                  );
+                                              if (picked == null) return;
+                                              final bytes =
+                                                  await picked.readAsBytes();
+                                              final encoded = base64Encode(
+                                                bytes,
+                                              );
+                                              setDialogState(() {
+                                                _designPhotoUrls.add(encoded);
+                                                _focusedPhotoIndex =
+                                                    _designPhotoUrls.length - 1;
+                                              });
+                                              setState(() {});
+                                            },
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(
+                                                0xFF1976D2,
+                                              ),
+                                              foregroundColor: Colors.white,
+                                            ),
+                                            child: const Text('Upload Photo'),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () {
+                                              final input =
+                                                  _designPhotoCtrl.text.trim();
+                                              if (input.isEmpty) return;
+                                              if (_isLikelyDesignBoardAsset(
+                                                input,
+                                              )) {
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'Logo/asset links are not added to the design board. Please use event inspiration photos.',
+                                                    ),
+                                                  ),
+                                                );
+                                                return;
+                                              }
+                                              setDialogState(() {
+                                                _designPhotoUrls.add(input);
+                                                _designPhotoCtrl.clear();
+                                              });
+                                              setState(() {});
+                                            },
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(
+                                                0xFFFFC024,
+                                              ),
+                                              foregroundColor: Colors.black87,
+                                            ),
+                                            child: const Text('Add URL'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              else
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: _designPhotoCtrl,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Photo URL',
+                                          hintText: 'Paste image link here...',
+                                          border: OutlineInputBorder(),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
                                     ElevatedButton(
                                       onPressed: () async {
-                                        final picked = await ImagePicker().pickImage(
-                                          source: ImageSource.gallery,
-                                        );
+                                        final picked = await ImagePicker()
+                                            .pickImage(
+                                              source: ImageSource.gallery,
+                                            );
                                         if (picked == null) return;
-                                        final bytes = await picked.readAsBytes();
+                                        final bytes =
+                                            await picked.readAsBytes();
                                         final encoded = base64Encode(bytes);
                                         setDialogState(() {
                                           _designPhotoUrls.add(encoded);
-                                          _focusedPhotoIndex = _designPhotoUrls.length - 1;
+                                          _focusedPhotoIndex =
+                                              _designPhotoUrls.length - 1;
                                         });
                                         setState(() {});
                                       },
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFF1976D2),
+                                        backgroundColor: const Color(
+                                          0xFF1976D2,
+                                        ),
                                         foregroundColor: Colors.white,
                                       ),
                                       child: const Text('Upload Photo'),
                                     ),
+                                    const SizedBox(width: 8),
                                     ElevatedButton(
                                       onPressed: () {
-                                        final input = _designPhotoCtrl.text.trim();
+                                        final input =
+                                            _designPhotoCtrl.text.trim();
                                         if (input.isEmpty) return;
                                         if (_isLikelyDesignBoardAsset(input)) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
                                             const SnackBar(
                                               content: Text(
                                                 'Logo/asset links are not added to the design board. Please use event inspiration photos.',
@@ -6702,217 +7643,176 @@ class _InquireFormState extends State<_InquireForm> {
                                         setState(() {});
                                       },
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFFFFC024),
+                                        backgroundColor: const Color(
+                                          0xFFFFC024,
+                                        ),
                                         foregroundColor: Colors.black87,
                                       ),
                                       child: const Text('Add URL'),
                                     ),
                                   ],
                                 ),
-                              ),
-                            ],
-                          )
-                        else
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _designPhotoCtrl,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Photo URL',
-                                    hintText: 'Paste image link here...',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              ElevatedButton(
-                                onPressed: () async {
-                                  final picked = await ImagePicker().pickImage(
-                                    source: ImageSource.gallery,
-                                  );
-                                  if (picked == null) return;
-                                  final bytes = await picked.readAsBytes();
-                                  final encoded = base64Encode(bytes);
-                                  setDialogState(() {
-                                    _designPhotoUrls.add(encoded);
-                                    _focusedPhotoIndex = _designPhotoUrls.length - 1;
-                                  });
-                                  setState(() {});
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF1976D2),
-                                  foregroundColor: Colors.white,
-                                ),
-                                child: const Text('Upload Photo'),
-                              ),
-                              const SizedBox(width: 8),
-                              ElevatedButton(
-                                onPressed: () {
-                                  final input = _designPhotoCtrl.text.trim();
-                                  if (input.isEmpty) return;
-                                  if (_isLikelyDesignBoardAsset(input)) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Logo/asset links are not added to the design board. Please use event inspiration photos.',
-                                        ),
-                                      ),
-                                    );
-                                    return;
-                                  }
-                                  setDialogState(() {
-                                    _designPhotoUrls.add(input);
-                                    _designPhotoCtrl.clear();
-                                  });
-                                  setState(() {});
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFFFFC024),
-                                  foregroundColor: Colors.black87,
-                                ),
-                                child: const Text('Add URL'),
-                              ),
                             ],
                           ),
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3D0),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '${designBoardPhotos.length} design board photo(s)',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: Color(0xFF7A4E00),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (designBoardPhotos.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            height: previewHeight,
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey.shade300),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: _designImagePreview(
+                                _focusedPhotoIndex != null &&
+                                        _focusedPhotoIndex! <
+                                            designBoardPhotos.length
+                                    ? designBoardPhotos[_focusedPhotoIndex!]
+                                    : designBoardPhotos.first,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            height: thumbStripHeight,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: designBoardPhotos.length,
+                              itemBuilder: (ctx, index) {
+                                final isFocused =
+                                    _focusedPhotoIndex == index ||
+                                    (_focusedPhotoIndex == null && index == 0);
+                                return GestureDetector(
+                                  onTap: () {
+                                    setDialogState(() {
+                                      _focusedPhotoIndex = index;
+                                    });
+                                  },
+                                  child: Container(
+                                    width: thumbSize,
+                                    margin: const EdgeInsets.only(right: 8),
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color:
+                                            isFocused
+                                                ? const Color(0xFFFFC024)
+                                                : Colors.grey.shade300,
+                                        width: isFocused ? 3 : 1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          _designImagePreview(
+                                            designBoardPhotos[index],
+                                            fit: BoxFit.cover,
+                                          ),
+                                          Positioned(
+                                            top: 2,
+                                            right: 2,
+                                            child: GestureDetector(
+                                              onTap: () {
+                                                final photoToRemove =
+                                                    designBoardPhotos[index];
+                                                setDialogState(() {
+                                                  _designPhotoUrls.remove(
+                                                    photoToRemove,
+                                                  );
+                                                  if (_focusedPhotoIndex !=
+                                                          null &&
+                                                      _focusedPhotoIndex! >=
+                                                          index) {
+                                                    _focusedPhotoIndex =
+                                                        _focusedPhotoIndex! > 0
+                                                            ? _focusedPhotoIndex! -
+                                                                1
+                                                            : null;
+                                                  }
+                                                });
+                                                setState(() {});
+                                              },
+                                              child: Container(
+                                                padding: const EdgeInsets.all(
+                                                  2,
+                                                ),
+                                                decoration: const BoxDecoration(
+                                                  color: Colors.red,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.close,
+                                                  size: 14,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF3D0),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                    '${designBoardPhotos.length} design board photo(s)',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                      color: Color(0xFF7A4E00),
-                    ),
+                ),
+                actions: [
+                  SizedBox(
+                    width: 140,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1DB954),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('DONE'),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  if (designBoardPhotos.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      height: previewHeight,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
+                  SizedBox(
+                    width: 140,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.grey.shade400,
+                        foregroundColor: Colors.white,
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: _designImagePreview(
-                          _focusedPhotoIndex != null && _focusedPhotoIndex! < designBoardPhotos.length
-                              ? designBoardPhotos[_focusedPhotoIndex!]
-                              : designBoardPhotos.first,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
+                      child: const Text('CANCEL'),
                     ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: thumbStripHeight,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: designBoardPhotos.length,
-                        itemBuilder: (ctx, index) {
-                          final isFocused =
-                              _focusedPhotoIndex == index || (_focusedPhotoIndex == null && index == 0);
-                          return GestureDetector(
-                            onTap: () {
-                              setDialogState(() {
-                                _focusedPhotoIndex = index;
-                              });
-                            },
-                            child: Container(
-                              width: thumbSize,
-                              margin: const EdgeInsets.only(right: 8),
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: isFocused ? const Color(0xFFFFC024) : Colors.grey.shade300,
-                                  width: isFocused ? 3 : 1,
-                                ),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    _designImagePreview(designBoardPhotos[index], fit: BoxFit.cover),
-                                    Positioned(
-                                      top: 2,
-                                      right: 2,
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          final photoToRemove = designBoardPhotos[index];
-                                          setDialogState(() {
-                                            _designPhotoUrls.remove(photoToRemove);
-                                            if (_focusedPhotoIndex != null && _focusedPhotoIndex! >= index) {
-                                              _focusedPhotoIndex =
-                                                  _focusedPhotoIndex! > 0 ? _focusedPhotoIndex! - 1 : null;
-                                            }
-                                          });
-                                          setState(() {});
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(2),
-                                          decoration: const BoxDecoration(
-                                            color: Colors.red,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.close,
-                                            size: 14,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
+                  ),
                 ],
-              ),
-            ),
+              );
+            },
           ),
-          actions: [
-            SizedBox(
-              width: 140,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1DB954),
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('DONE'),
-              ),
-            ),
-            SizedBox(
-              width: 140,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey.shade400,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('CANCEL'),
-              ),
-            ),
-          ],
-        );
-        },
-      ),
     );
   }
 }

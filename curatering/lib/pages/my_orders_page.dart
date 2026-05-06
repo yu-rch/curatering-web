@@ -54,12 +54,12 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
 
       final response = await http
           .get(
-        Uri.parse('$_apiBaseUrl/api/restaurant/orders'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      )
+            Uri.parse('$_apiBaseUrl/api/restaurant/orders'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+          )
           .timeout(_requestTimeout);
 
       if (response.statusCode == 401) {
@@ -78,9 +78,8 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
 
       final data = jsonDecode(response.body);
       final rawOrders = (data['orders'] as List<dynamic>? ?? const []);
-      final parsedOrders = rawOrders
-          .whereType<Map>()
-          .map((entry) {
+      final parsedOrders =
+          rawOrders.whereType<Map>().map((entry) {
             final order = Map<String, dynamic>.from(entry);
             final rawItems = order['items'];
             if (rawItems is String) {
@@ -94,8 +93,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
               order['items'] = <dynamic>[];
             }
             return order;
-          })
-          .toList();
+          }).toList();
       if (mounted) {
         setState(() {
           _orders = parsedOrders;
@@ -105,7 +103,8 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
     } on TimeoutException {
       if (mounted) {
         setState(() {
-          _error = 'Request timed out. Please check your connection and try again.';
+          _error =
+              'Request timed out. Please check your connection and try again.';
           _isLoading = false;
         });
       }
@@ -131,19 +130,22 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Session Expired'),
-        content: const Text('Your session has expired. Please log in again.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).pop('login_required');
-            },
-            child: const Text('OK'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Session Expired'),
+            content: const Text(
+              'Your session has expired. Please log in again.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  Navigator.of(context).pop('login_required');
+                },
+                child: const Text('OK'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -199,8 +201,9 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
     }
   }
 
-  String _shortOrderId(dynamic rawId) {
-    final value = (rawId ?? '').toString();
+  String _shortOrderId(dynamic rawId, dynamic orderNo) {
+    // Prefer order_no if available, otherwise fall back to id
+    final value = (orderNo ?? rawId ?? '').toString();
     if (value.isEmpty) return 'N/A';
     return value.length <= 8 ? value : value.substring(0, 8);
   }
@@ -214,9 +217,9 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
       CustomerPageTab.tracking => const MyOrderTrackingPage(),
       CustomerPageTab.orders => const MyOrdersPage(),
     };
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => route),
-    );
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => route));
   }
 
   @override
@@ -247,28 +250,32 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
             onTabSelected: _navigateFromTopBar,
           ),
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
+            child:
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
                     ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(_error!, style: const TextStyle(color: Colors.red)),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadOrders,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E1E1E),
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('Retry'),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            _error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: _loadOrders,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1E1E1E),
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Retry'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                )
+                    )
                     : _orders.isEmpty
-                        ? Center(
+                    ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -306,21 +313,24 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                         ],
                       ),
                     )
-                        : ListView.builder(
+                    : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                       itemCount: _orders.length,
                       itemBuilder: (context, index) {
                         final order = _orders[index];
                         final items = _normalizeOrderItems(order['items']);
                         final status = order['status'] ?? 'pending';
-                        final paymentStatus = order['payment_status'] ?? 'pending';
+                        final paymentStatus =
+                            order['payment_status'] ?? 'pending';
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 16),
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
-                            side: BorderSide(color: Colors.black.withOpacity(0.08)),
+                            side: BorderSide(
+                              color: Colors.black.withOpacity(0.08),
+                            ),
                           ),
                           child: Padding(
                             padding: const EdgeInsets.all(16),
@@ -328,10 +338,11 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      'Order #${_shortOrderId(order['id'])}',
+                                      'Order #${_shortOrderId(order['id'], order['order_no'])}',
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 16,
@@ -355,8 +366,12 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                                       children: [
                                         Expanded(
                                           child: Text(
-                                            item['name'] ?? item['dishName'] ?? 'Unknown Item',
-                                            style: const TextStyle(fontSize: 14),
+                                            item['name'] ??
+                                                item['dishName'] ??
+                                                'Unknown Item',
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                            ),
                                           ),
                                         ),
                                         Text(
@@ -372,10 +387,12 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                                 const Divider(height: 24),
                                 // Total and Status
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Chip(
                                           label: Text(
@@ -385,7 +402,9 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                                               color: Colors.white,
                                             ),
                                           ),
-                                          backgroundColor: _getStatusColor(status),
+                                          backgroundColor: _getStatusColor(
+                                            status,
+                                          ),
                                           padding: EdgeInsets.zero,
                                         ),
                                         const SizedBox(height: 4),
@@ -397,13 +416,17 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                                               color: Colors.white,
                                             ),
                                           ),
-                                          backgroundColor: _getPaymentStatusColor(paymentStatus),
+                                          backgroundColor:
+                                              _getPaymentStatusColor(
+                                                paymentStatus,
+                                              ),
                                           padding: EdgeInsets.zero,
                                         ),
                                       ],
                                     ),
                                     Column(
-                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
                                       children: [
                                         const Text(
                                           'Total Amount',

@@ -9,7 +9,8 @@ class RestaurantTransactionsPage extends StatefulWidget {
   const RestaurantTransactionsPage({super.key});
 
   @override
-  State<RestaurantTransactionsPage> createState() => _RestaurantTransactionsPageState();
+  State<RestaurantTransactionsPage> createState() =>
+      _RestaurantTransactionsPageState();
 }
 
 class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
@@ -19,7 +20,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   List<Map<String, dynamic>> _confirmationOrders = [];
   List<Map<String, dynamic>> _processingOrders = [];
   List<Map<String, dynamic>> _completedOrders = [];
-  
+
   // Performance optimization: Cache last fetch time
   DateTime? _lastFetchTime;
   static const Duration _cacheValidity = Duration(minutes: 2);
@@ -39,7 +40,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
   Future<void> _loadOrders({bool forceRefresh = false}) async {
     if (_isLoading) return; // Prevent multiple simultaneous loads
-    
+
     // Check if user is authenticated
     if (!AuthSession.instance.hasToken) {
       if (mounted) {
@@ -53,7 +54,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       }
       return;
     }
-    
+
     // Check cache validity
     if (!forceRefresh && _lastFetchTime != null) {
       final timeSinceLastFetch = DateTime.now().difference(_lastFetchTime!);
@@ -61,14 +62,16 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         return; // Use cached data
       }
     }
-    
+
     final stopwatch = Stopwatch()..start();
     setState(() => _isLoading = true);
-    
+
     try {
       final token = await _getAuthToken();
-      print('Debug: Using token for restaurant orders: ${token.substring(0, 20)}...');
-      
+      print(
+        'Debug: Using token for restaurant orders: ${token.substring(0, 20)}...',
+      );
+
       // Load smaller batches for faster initial display
       final response = await http.get(
         Uri.parse('$apiBaseUrl/api/manager/restaurant/orders?limit=50'),
@@ -82,12 +85,12 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         final parseTime = Stopwatch()..start();
         final allOrders = _parseResponse(response.body);
         parseTime.stop();
-        
+
         // Optimized filtering with pre-allocated lists
         final confirmationOrders = <Map<String, dynamic>>[];
         final processingOrders = <Map<String, dynamic>>[];
         final completedOrders = <Map<String, dynamic>>[];
-        
+
         // Use forEach instead of for loop for better performance
         allOrders.forEach((order) {
           final status = order['status'] as String? ?? '';
@@ -113,15 +116,18 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
           _completedOrders = completedOrders;
           _lastFetchTime = DateTime.now();
         });
-        
+
         stopwatch.stop();
-        print('Performance: Load took ${stopwatch.elapsedMilliseconds}ms, Parse took ${parseTime.elapsedMilliseconds}ms');
+        print(
+          'Performance: Load took ${stopwatch.elapsedMilliseconds}ms, Parse took ${parseTime.elapsedMilliseconds}ms',
+        );
       } else {
-        final errorMessage = response.statusCode == 401 
-          ? 'Authentication failed. Please log in again.'
-          : response.statusCode == 403
-          ? 'Access denied. You need manager permissions to view orders.'
-          : 'Failed to load orders (Status: ${response.statusCode})';
+        final errorMessage =
+            response.statusCode == 401
+                ? 'Authentication failed. Please log in again.'
+                : response.statusCode == 403
+                ? 'Access denied. You need manager permissions to view orders.'
+                : 'Failed to load orders (Status: ${response.statusCode})';
         throw Exception(errorMessage);
       }
     } catch (e) {
@@ -188,8 +194,11 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     }
   }
 
-  Future<void> _updateOrderStatus(String orderId, String newStatus,
-      {String? deliveryUrl}) async {
+  Future<void> _updateOrderStatus(
+    String orderId,
+    String newStatus, {
+    String? deliveryUrl,
+  }) async {
     // Optimistic update: Update UI immediately
     final originalOrder = _findOrderById(orderId);
     if (originalOrder != null) {
@@ -227,15 +236,19 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating order: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error updating order: $e')));
       }
     }
   }
 
   Map<String, dynamic>? _findOrderById(String orderId) {
-    for (final orderList in [_confirmationOrders, _processingOrders, _completedOrders]) {
+    for (final orderList in [
+      _confirmationOrders,
+      _processingOrders,
+      _completedOrders,
+    ]) {
       try {
         final order = orderList.firstWhere((order) => order['id'] == orderId);
         return Map<String, dynamic>.from(order);
@@ -246,11 +259,15 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     return null;
   }
 
-  void _optimisticallyUpdateOrder(String orderId, String newStatus, String? deliveryUrl) {
+  void _optimisticallyUpdateOrder(
+    String orderId,
+    String newStatus,
+    String? deliveryUrl,
+  ) {
     setState(() {
       // Remove from current list
       _removeOrderFromAllLists(orderId);
-      
+
       // Add to appropriate new list with updated status
       final updatedOrder = _findOrderById(orderId);
       if (updatedOrder != null) {
@@ -258,7 +275,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         if (deliveryUrl != null) {
           updatedOrder['delivery_tracking_url'] = deliveryUrl;
         }
-        
+
         if (newStatus == 'pending') {
           _confirmationOrders.add(updatedOrder);
         } else if (newStatus == 'processing' || newStatus == 'for_delivery') {
@@ -273,7 +290,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   void _revertOrderUpdate(String orderId, Map<String, dynamic> originalOrder) {
     setState(() {
       _removeOrderFromAllLists(orderId);
-      
+
       final status = originalOrder['status'] as String? ?? '';
       if (status == 'pending') {
         _confirmationOrders.add(originalOrder);
@@ -365,16 +382,17 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             ),
           ),
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _buildConfirmationTab(),
-                      _buildProcessingTab(),
-                      _buildCompletedTab(),
-                    ],
-                  ),
+            child:
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildConfirmationTab(),
+                        _buildProcessingTab(),
+                        _buildCompletedTab(),
+                      ],
+                    ),
           ),
         ],
       ),
@@ -426,7 +444,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             ],
           ),
           const SizedBox(height: 24),
-          
+
           // Orders Table
           Container(
             decoration: BoxDecoration(
@@ -524,7 +542,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             ],
           ),
           const SizedBox(height: 24),
-          
+
           // Orders Table
           Container(
             decoration: BoxDecoration(
@@ -583,7 +601,11 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.check_circle_outline, size: 64, color: Colors.grey.shade400),
+            Icon(
+              Icons.check_circle_outline,
+              size: 64,
+              color: Colors.grey.shade400,
+            ),
             const SizedBox(height: 16),
             Text(
               'No completed orders yet',
@@ -629,7 +651,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             ],
           ),
           const SizedBox(height: 24),
-          
+
           // Orders Table
           Container(
             decoration: BoxDecoration(
@@ -663,7 +685,10 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                       Expanded(flex: 1, child: _buildTableHeader('Items')),
                       Expanded(flex: 1, child: _buildTableHeader('Total')),
                       Expanded(flex: 1, child: _buildTableHeader('Date')),
-                      Expanded(flex: 2, child: _buildTableHeader('Payment Status')),
+                      Expanded(
+                        flex: 2,
+                        child: _buildTableHeader('Payment Status'),
+                      ),
                     ],
                   ),
                 ),
@@ -686,37 +711,44 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     final items = (order['items'] as List<dynamic>? ?? []);
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Order #${order['id']?.toString().substring(0, 8).toUpperCase() ?? 'N/A'}'),
-        content: SizedBox(
-          width: 420,
-          child: items.isEmpty
-              ? const Text('No dishes found for this order.')
-              : ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: items.length,
-                  separatorBuilder: (_, __) => const Divider(height: 12),
-                  itemBuilder: (context, i) {
-                    final item = items[i] as Map<String, dynamic>;
-                    final name = item['name'] ?? item['dishName'] ?? 'Unknown dish';
-                    final qty = item['quantity'] ?? 1;
-                    final price = item['price'] ?? '0';
-                    return Row(
-                      children: [
-                        Expanded(child: Text('$name x$qty')),
-                        Text('$_currencySymbol$price'),
-                      ],
-                    );
-                  },
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
+      builder:
+          (context) => AlertDialog(
+            title: Text(
+              'Order #${order['order_no'] ?? order['id']?.toString().substring(0, 8).toUpperCase() ?? 'N/A'}',
+            ),
+            content: SizedBox(
+              width: 420,
+              child:
+                  items.isEmpty
+                      ? const Text('No dishes found for this order.')
+                      : ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => const Divider(height: 12),
+                        itemBuilder: (context, i) {
+                          final item = items[i] as Map<String, dynamic>;
+                          final name =
+                              item['name'] ??
+                              item['dishName'] ??
+                              'Unknown dish';
+                          final qty = item['quantity'] ?? 1;
+                          final price = item['price'] ?? '0';
+                          return Row(
+                            children: [
+                              Expanded(child: Text('$name x$qty')),
+                              Text('$_currencySymbol$price'),
+                            ],
+                          );
+                        },
+                      ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -739,7 +771,12 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
   static const String _currencySymbol = '₱';
 
-  Widget _buildSummaryCard(String title, String value, IconData icon, Color color) {
+  Widget _buildSummaryCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -797,8 +834,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     );
   }
 
-  String _shortOrderId(dynamic rawId) {
-    final value = (rawId ?? '').toString();
+  String _shortOrderId(dynamic rawId, dynamic orderNo) {
+    // Prefer order_no if available, otherwise fall back to id
+    final value = (orderNo ?? rawId ?? '').toString();
     if (value.isEmpty) return 'N/A';
     final shortened = value.length <= 8 ? value : value.substring(0, 8);
     return '#${shortened.toUpperCase()}';
@@ -807,7 +845,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   Widget _buildOrderTableRow(Map<String, dynamic> order, int index) {
     final items = (order['items'] as List<dynamic>?) ?? [];
     final isEven = index % 2 == 0;
-    
+
     return InkWell(
       onTap: () => _showOrderItemsDialog(order),
       child: Container(
@@ -815,96 +853,148 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         decoration: BoxDecoration(
           color: isEven ? Colors.white : Colors.grey.shade50,
           border: Border(
-            bottom: BorderSide(
-              color: Colors.grey.shade200,
-              width: 0.5,
-            ),
+            bottom: BorderSide(color: Colors.grey.shade200, width: 0.5),
           ),
         ),
         child: IntrinsicHeight(
           child: Row(
-          children: [
-            Expanded(flex: 1, child: _buildTableCell(_shortOrderId(order['id']))),
-            Expanded(flex: 2, child: _buildTableCell(order['full_name'] ?? 'N/A')),
-            Expanded(flex: 1, child: _buildTableCell(order['phone'] ?? 'N/A')),
-            Expanded(flex: 1, child: _buildTableCell('${items.length}')),
-            Expanded(flex: 1, child: _buildTableCell('$_currencySymbol${_parseAmount(order['total_amount']).toStringAsFixed(2)}')),
-            Expanded(flex: 1, child: _buildTableCell('${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}')),
-            Expanded(
-              flex: 2,
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  GestureDetector(
-                    onTap: () => _showOrderItemsDialog(order),
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.click,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade600,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.visibility, color: Colors.white, size: 16),
-                            SizedBox(width: 4),
-                            Text('View Dishes', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => _confirmOrder(order['id']),
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.click,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.green,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.check, color: Colors.white, size: 16),
-                            SizedBox(width: 4),
-                            Text('Confirm', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => _cancelOrder(order['id']),
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.click,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.close, color: Colors.white, size: 16),
-                            SizedBox(width: 4),
-                            Text('Cancel', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+            children: [
+              Expanded(
+                flex: 1,
+                child: _buildTableCell(
+                  _shortOrderId(order['id'], order['order_no']),
+                ),
               ),
-            ),
-          ],
+              Expanded(
+                flex: 2,
+                child: _buildTableCell(order['full_name'] ?? 'N/A'),
+              ),
+              Expanded(
+                flex: 1,
+                child: _buildTableCell(order['phone'] ?? 'N/A'),
+              ),
+              Expanded(flex: 1, child: _buildTableCell('${items.length}')),
+              Expanded(
+                flex: 1,
+                child: _buildTableCell(
+                  '$_currencySymbol${_parseAmount(order['total_amount']).toStringAsFixed(2)}',
+                ),
+              ),
+              Expanded(
+                flex: 1,
+                child: _buildTableCell(
+                  '${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}',
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    GestureDetector(
+                      onTap: () => _showOrderItemsDialog(order),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade600,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.visibility,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                'View Dishes',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () => _confirmOrder(order['id']),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.check, color: Colors.white, size: 16),
+                              SizedBox(width: 4),
+                              Text(
+                                'Confirm',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () => _cancelOrder(order['id']),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.close, color: Colors.white, size: 16),
+                              SizedBox(width: 4),
+                              Text(
+                                'Cancel',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -946,7 +1036,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     final items = (order['items'] as List<dynamic>?) ?? [];
     final status = order['status'] as String? ?? 'processing';
     final isEven = index % 2 == 0;
-    
+
     return InkWell(
       onTap: () => _showOrderItemsDialog(order),
       child: Container(
@@ -954,99 +1044,156 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         decoration: BoxDecoration(
           color: isEven ? Colors.white : Colors.grey.shade50,
           border: Border(
-            bottom: BorderSide(
-              color: Colors.grey.shade200,
-              width: 0.5,
-            ),
+            bottom: BorderSide(color: Colors.grey.shade200, width: 0.5),
           ),
         ),
         child: IntrinsicHeight(
           child: Row(
-          children: [
-            Expanded(flex: 1, child: _buildTableCell(_shortOrderId(order['id']))),
-            Expanded(flex: 2, child: _buildTableCell(order['full_name'] ?? 'N/A')),
-            Expanded(flex: 1, child: _buildStatusBadge(status, null)),
-            Expanded(flex: 1, child: _buildTableCell('${items.length}')),
-            Expanded(flex: 1, child: _buildTableCell('$_currencySymbol${_parseAmount(order['total_amount']).toStringAsFixed(2)}')),
-            Expanded(flex: 1, child: _buildTableCell('${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}')),
-            Expanded(
-              flex: 2,
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  GestureDetector(
-                    onTap: () => _showOrderItemsDialog(order),
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.click,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade600,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.visibility, color: Colors.white, size: 16),
-                            SizedBox(width: 4),
-                            Text('View Dishes', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  if (status == 'confirmed' || status == 'preparing') ...[
-                    GestureDetector(
-                      onTap: () => _showDeliveryUrlDialog(order['id']),
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.orange,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.local_shipping, color: Colors.white, size: 16),
-                              SizedBox(width: 4),
-                              Text('For Delivery', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                  if (status == 'out_for_delivery') ...[
-                    GestureDetector(
-                      onTap: () => _markDelivered(order['id']),
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.green,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.check_circle, color: Colors.white, size: 16),
-                              SizedBox(width: 4),
-                              Text('Delivered', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
+            children: [
+              Expanded(
+                flex: 1,
+                child: _buildTableCell(
+                  _shortOrderId(order['id'], order['order_no']),
+                ),
               ),
-            ),
-          ],
+              Expanded(
+                flex: 2,
+                child: _buildTableCell(order['full_name'] ?? 'N/A'),
+              ),
+              Expanded(flex: 1, child: _buildStatusBadge(status, null)),
+              Expanded(flex: 1, child: _buildTableCell('${items.length}')),
+              Expanded(
+                flex: 1,
+                child: _buildTableCell(
+                  '$_currencySymbol${_parseAmount(order['total_amount']).toStringAsFixed(2)}',
+                ),
+              ),
+              Expanded(
+                flex: 1,
+                child: _buildTableCell(
+                  '${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}',
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    GestureDetector(
+                      onTap: () => _showOrderItemsDialog(order),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade600,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.visibility,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                'View Dishes',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (status == 'confirmed' || status == 'preparing') ...[
+                      GestureDetector(
+                        onTap: () => _showDeliveryUrlDialog(order['id']),
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.local_shipping,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  'For Delivery',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (status == 'out_for_delivery') ...[
+                      GestureDetector(
+                        onTap: () => _markDelivered(order['id']),
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.check_circle,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Delivered',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1058,7 +1205,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     final status = order['status'] as String? ?? 'completed';
     final paymentStatus = order['payment_status'] as String? ?? 'pending';
     final isEven = index % 2 == 0;
-    
+
     return InkWell(
       onTap: () => _showOrderItemsDialog(order),
       child: Container(
@@ -1066,54 +1213,83 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         decoration: BoxDecoration(
           color: isEven ? Colors.white : Colors.grey.shade50,
           border: Border(
-            bottom: BorderSide(
-              color: Colors.grey.shade200,
-              width: 0.5,
-            ),
+            bottom: BorderSide(color: Colors.grey.shade200, width: 0.5),
           ),
         ),
         child: IntrinsicHeight(
           child: Row(
-          children: [
-            Expanded(flex: 1, child: _buildTableCell(_shortOrderId(order['id']))),
-            Expanded(flex: 2, child: _buildTableCell(order['full_name'] ?? 'N/A')),
-            Expanded(flex: 1, child: _buildStatusBadge(status, null)),
-            Expanded(flex: 1, child: _buildTableCell('${items.length}')),
-            Expanded(flex: 1, child: _buildTableCell('$_currencySymbol${_parseAmount(order['total_amount']).toStringAsFixed(2)}')),
-            Expanded(flex: 1, child: _buildTableCell('${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}')),
-            Expanded(
-              flex: 2,
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  GestureDetector(
-                    onTap: () => _showOrderItemsDialog(order),
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.click,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade600,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.visibility, color: Colors.white, size: 16),
-                            SizedBox(width: 4),
-                            Text('View Dishes', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-                          ],
+            children: [
+              Expanded(
+                flex: 1,
+                child: _buildTableCell(
+                  _shortOrderId(order['id'], order['order_no']),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: _buildTableCell(order['full_name'] ?? 'N/A'),
+              ),
+              Expanded(flex: 1, child: _buildStatusBadge(status, null)),
+              Expanded(flex: 1, child: _buildTableCell('${items.length}')),
+              Expanded(
+                flex: 1,
+                child: _buildTableCell(
+                  '$_currencySymbol${_parseAmount(order['total_amount']).toStringAsFixed(2)}',
+                ),
+              ),
+              Expanded(
+                flex: 1,
+                child: _buildTableCell(
+                  '${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}',
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    GestureDetector(
+                      onTap: () => _showOrderItemsDialog(order),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade600,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.visibility,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                'View Dishes',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: _buildPaymentStatusBadge(paymentStatus)),
-                ],
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildPaymentStatusBadge(paymentStatus)),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
           ),
         ),
       ),
@@ -1123,7 +1299,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   Widget _buildPaymentStatusBadge(String paymentStatus) {
     Color color;
     String text;
-    
+
     switch (paymentStatus) {
       case 'paid':
         color = Colors.green;
@@ -1137,7 +1313,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         color = Colors.orange;
         text = 'PENDING';
     }
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -1159,21 +1335,94 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   Future<void> _confirmOrder(String orderId) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Order'),
-        content: const Text('Are you sure you want to confirm this order?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+      builder:
+          (context) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 420),
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Close button
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      icon: const Icon(Icons.close, color: Colors.black),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Title
+                  const Text(
+                    'CONFIRM ORDER',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Are you sure you want to confirm this order?',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                  const SizedBox(height: 24),
+                  // Buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFFC024),
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text(
+                            'CONFIRM',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey.shade300,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text(
+                            'CANCEL',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            child: const Text('Confirm', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
@@ -1184,21 +1433,94 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   Future<void> _cancelOrder(String orderId) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cancel Order'),
-        content: const Text('Are you sure you want to cancel this order?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('No'),
+      builder:
+          (context) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 420),
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Close button
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      icon: const Icon(Icons.close, color: Colors.black),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Title
+                  const Text(
+                    'CANCEL ORDER',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Are you sure you want to cancel this order?',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                  const SizedBox(height: 24),
+                  // Buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text(
+                            'YES, CANCEL',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey.shade300,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text(
+                            'NO',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Yes, Cancel', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
@@ -1208,66 +1530,237 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
   Future<void> _showDeliveryUrlDialog(String orderId) async {
     final urlController = TextEditingController();
+    String? errorMessage;
 
     final result = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Delivery URL'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Please enter the delivery tracking URL:'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: urlController,
-              decoration: const InputDecoration(
-                hintText: 'https://...',
-                border: OutlineInputBorder(),
-                labelText: 'Delivery URL',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => Dialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Close button
+                        Align(
+                          alignment: Alignment.topRight,
+                          child: IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close, color: Colors.black),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        // Title
+                        const Text(
+                          'ADD DELIVERY URL',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Error message
+                        if (errorMessage != null) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.shade200),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.error_outline,
+                                  color: Colors.red.shade700,
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    errorMessage!,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.red.shade700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+
+                        // Form field
+                        const Text(
+                          'Please enter the delivery tracking URL:',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: urlController,
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            hintText: 'https://...',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        // Submit button
+                        ElevatedButton(
+                          onPressed: () {
+                            if (urlController.text.trim().isEmpty) {
+                              setDialogState(
+                                () =>
+                                    errorMessage =
+                                        'Please enter a delivery URL',
+                              );
+                              return;
+                            }
+                            Navigator.of(
+                              context,
+                            ).pop(urlController.text.trim());
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFFC024),
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 10,
+                              horizontal: 32,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text(
+                            'SUBMIT',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
           ),
-          ElevatedButton(
-            onPressed: () {
-              if (urlController.text.trim().isNotEmpty) {
-                Navigator.of(context).pop(urlController.text.trim());
-              }
-            },
-            child: const Text('Submit'),
-          ),
-        ],
-      ),
     );
 
     if (result != null && result.isNotEmpty) {
-      await _updateOrderStatus(orderId, 'out_for_delivery', deliveryUrl: result);
+      await _updateOrderStatus(
+        orderId,
+        'out_for_delivery',
+        deliveryUrl: result,
+      );
     }
   }
 
   Future<void> _markDelivered(String orderId) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Mark as Delivered'),
-        content: const Text('Confirm that this order has been delivered?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+      builder:
+          (context) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 420),
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Close button
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      icon: const Icon(Icons.close, color: Colors.black),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Title
+                  const Text(
+                    'MARK AS DELIVERED',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Confirm that this order has been delivered?',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                  const SizedBox(height: 24),
+                  // Buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFFC024),
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text(
+                            'YES, DELIVERED',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey.shade300,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text(
+                            'CANCEL',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            child: const Text('Yes, Delivered', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {

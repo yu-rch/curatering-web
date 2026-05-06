@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import gc
 import logging
 from dataclasses import dataclass, field
 from io import BytesIO
@@ -10,7 +11,6 @@ from typing import Any
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw
-from segment_anything import SamPredictor, sam_model_registry
 from ultralytics import YOLO
 
 
@@ -22,13 +22,10 @@ MIN_DETECTION_AREA_RATIO = 0.0025
 @dataclass
 class AiPipeline:
     yolo_model_path: str
-    sam_model_path: str
-    sam_model_type: str = "vit_b"
     model_device: str = "cpu"
     max_detections: int = 30
     models_loaded: bool = False
     _yolo_model: YOLO | None = field(default=None, init=False, repr=False)
-    _sam_predictor: SamPredictor | None = field(default=None, init=False, repr=False)
 
     def load_models(self) -> None:
         if not self.yolo_model_path:
@@ -39,33 +36,6 @@ class AiPipeline:
             raise FileNotFoundError(f"YOLO model file not found: {model_path}")
 
         self._yolo_model = YOLO(str(model_path))
-
-        if self.sam_model_path:
-            sam_path = Path(self.sam_model_path)
-            if not sam_path.exists():
-                logger.warning(
-                    "SAM model file not found at %s; segmentation endpoint will be unavailable",
-                    sam_path,
-                )
-            else:
-                sam_builder = sam_model_registry.get(self.sam_model_type)
-                if sam_builder is None:
-                    raise ValueError(
-                        f"Unsupported SAM_MODEL_TYPE: {self.sam_model_type}. "
-                        "Supported values include vit_b, vit_l, vit_h."
-                    )
-                sam_model = sam_builder(checkpoint=str(sam_path))
-                sam_model.to(device=self.model_device)
-                self._sam_predictor = SamPredictor(sam_model)
-                logger.info(
-                    "SAM model loaded from %s (type=%s, device=%s)",
-                    sam_path,
-                    self.sam_model_type,
-                    self.model_device,
-                )
-        else:
-            logger.warning("SAM_MODEL_PATH is not configured; segmentation endpoint will be unavailable")
-
         self.models_loaded = True
         logger.info("YOLO model loaded from %s", model_path)
 
@@ -91,6 +61,8 @@ class AiPipeline:
             max_det=int(limit),
             device=self.model_device,
             verbose=False,
+            iou=0.45,
+            agnostic_nms=True,
         )[0]
 
         names = result.names or {}
@@ -141,13 +113,6 @@ class AiPipeline:
         image = self._decode_image(image_base64)
         image_height = int(image.shape[0])
         image_width = int(image.shape[1])
-        use_sam = self._sam_predictor is not None
-        if use_sam:
-            self._sam_predictor.set_image(image)
-        else:
-            logger.warning(
-                "SAM model is not configured. Falling back to YOLO box polygons for segmentation."
-            )
         objects: list[dict[str, Any]] = []
 
         for prompt in prompts:
@@ -161,45 +126,23 @@ class AiPipeline:
             x2 = self._clamp((x + w) * image_width, x1 + 1, image_width)
             y2 = self._clamp((y + h) * image_height, y1 + 1, image_height)
 
-            polygon_points: list[dict[str, float]] = []
+            # Use rectangle polygon from YOLO box for segmentation
+            polygon_points = [
+                {"x": self._clamp(x, 0.0, 1.0), "y": self._clamp(y, 0.0, 1.0)},
+                {"x": self._clamp(x + w, 0.0, 1.0), "y": self._clamp(y, 0.0, 1.0)},
+                {"x": self._clamp(x + w, 0.0, 1.0), "y": self._clamp(y + h, 0.0, 1.0)},
+                {"x": self._clamp(x, 0.0, 1.0), "y": self._clamp(y + h, 0.0, 1.0)},
+            ]
+            score = float(prompt.get("confidence", 0.0))
             mask_base64 = ""
-            score = 0.0
-            if use_sam:
-                masks, scores, _ = self._sam_predictor.predict(
-                    box=np.array([x1, y1, x2, y2], dtype=np.float32),
-                    multimask_output=False,
-                )
-                if len(masks) > 0:
-                    mask_bool = masks[0]
-                    score = float(scores[0]) if len(scores) > 0 else 0.0
-                    mask_arr = (mask_bool.astype(np.uint8) * 255).astype(np.uint8)
-                    polygon_points = self._mask_to_polygon_points(
-                        mask_arr,
-                        image_width=image_width,
-                        image_height=image_height,
-                    )
-
-                    if mask_format == "alpha_png":
-                        mask_base64 = self._encode_png_base64(mask_arr)
-                    else:
-                        mask_base64 = ""
-            else:
-                # Fallback: rectangle polygon from YOLO box so editing flow remains usable.
-                polygon_points = [
-                    {"x": self._clamp(x, 0.0, 1.0), "y": self._clamp(y, 0.0, 1.0)},
-                    {"x": self._clamp(x + w, 0.0, 1.0), "y": self._clamp(y, 0.0, 1.0)},
-                    {"x": self._clamp(x + w, 0.0, 1.0), "y": self._clamp(y + h, 0.0, 1.0)},
-                    {"x": self._clamp(x, 0.0, 1.0), "y": self._clamp(y + h, 0.0, 1.0)},
-                ]
-                score = float(prompt.get("confidence", 0.0))
-                if mask_format == "alpha_png":
-                    mask_arr = np.zeros((image_height, image_width), dtype=np.uint8)
-                    xi1 = int(round(x1))
-                    yi1 = int(round(y1))
-                    xi2 = int(round(x2))
-                    yi2 = int(round(y2))
-                    mask_arr[max(0, yi1):min(image_height, yi2), max(0, xi1):min(image_width, xi2)] = 255
-                    mask_base64 = self._encode_png_base64(mask_arr)
+            if mask_format == "alpha_png":
+                mask_arr = np.zeros((image_height, image_width), dtype=np.uint8)
+                xi1 = int(round(x1))
+                yi1 = int(round(y1))
+                xi2 = int(round(x2))
+                yi2 = int(round(y2))
+                mask_arr[max(0, yi1):min(image_height, yi2), max(0, xi1):min(image_width, xi2)] = 255
+                mask_base64 = self._encode_png_base64(mask_arr)
 
             objects.append(
                 {
@@ -272,6 +215,7 @@ class AiPipeline:
                     if mask_img.size != (image_w, image_h):
                         mask_img = mask_img.resize((image_w, image_h), Image.Resampling.BILINEAR)
                     alpha_mask = np.array(mask_img, dtype=np.uint8)
+                    del mask_img
                 except Exception:
                     alpha_mask = None
             if alpha_mask is None:
@@ -281,12 +225,15 @@ class AiPipeline:
                     image_height=image_h,
                 )
             obj_image = self._extract_object_cutout_base64(image, alpha_mask)
-            extracted_objects.append(
-                {
-                    **obj,
-                    "object_image_base64": obj_image,
-                }
-            )
+            if obj_image:  # Only add if extraction succeeded
+                extracted_objects.append(
+                    {
+                        **obj,
+                        "object_image_base64": obj_image,
+                    }
+                )
+            del alpha_mask
+            gc.collect()
 
         return {
             "detections": result["detections"],

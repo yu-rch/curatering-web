@@ -518,7 +518,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                       if (menuSelectionType == 'preset') ...[
                         const SizedBox(height: 10),
                         DropdownButtonFormField<String>(
-                          value: selectedPresetMenuId,
+                          initialValue: selectedPresetMenuId,
                           decoration: const InputDecoration(
                             labelText: 'Select Catering Menu',
                             border: OutlineInputBorder(),

@@ -24,7 +24,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
   final _notesController = TextEditingController();
-  
+
   double? _deliveryLat;
   double? _deliveryLng;
   bool _isLoading = false;
@@ -59,7 +59,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           _phoneController.text = _customerData?['phone'] ?? '';
         });
       }
-      
+
       // Load saved address from profile
       await _loadSavedAddress();
     } catch (e) {
@@ -71,9 +71,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
-      
+
       if (token == null || token.isEmpty) return;
-      
+
       final response = await http.get(
         Uri.parse('${apiBaseUrl}/api/customer/profile'),
         headers: {
@@ -81,10 +81,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
           'Content-Type': 'application/json',
         },
       );
-      
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['deliveryAddress'] != null && data['deliveryAddress'].isNotEmpty) {
+        if (data['deliveryAddress'] != null &&
+            data['deliveryAddress'].isNotEmpty) {
           setState(() {
             _addressController.text = data['deliveryAddress'];
             _deliveryLat = data['deliveryLat']?.toDouble();
@@ -99,13 +100,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Future<void> _saveAddressToProfile() async {
     if (!_saveAddress) return;
-    
+
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
-      
+
       if (token == null || token.isEmpty) return;
-      
+
       await http.put(
         Uri.parse('${apiBaseUrl}/api/customer/profile'),
         headers: {
@@ -128,7 +129,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
       context: context,
       initialLatitude: _deliveryLat,
       initialLongitude: _deliveryLng,
-      initialAddress: _addressController.text.isNotEmpty ? _addressController.text : null,
+      initialAddress:
+          _addressController.text.isNotEmpty ? _addressController.text : null,
     );
 
     if (result != null) {
@@ -144,7 +146,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
     // Check if user is logged in first
     if (_customerData == null) {
       final result = await Navigator.of(context).push(
-        MaterialPageRoute(builder: (context) => const CustomerLoginPage(redirectToCheckout: true)),
+        MaterialPageRoute(
+          builder:
+              (context) => const CustomerLoginPage(redirectToCheckout: true),
+        ),
       );
       if (result != null) {
         await _loadCustomerData();
@@ -161,15 +166,19 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
 
     if (_nameController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter your name')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter your name')));
       return;
     }
 
-    if (_phoneController.text.isEmpty || _phoneController.text.length != 11 || !RegExp(r'^\d{11}$').hasMatch(_phoneController.text)) {
+    if (_phoneController.text.isEmpty ||
+        _phoneController.text.length != 11 ||
+        !RegExp(r'^\d{11}$').hasMatch(_phoneController.text)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid 11-digit contact number')),
+        const SnackBar(
+          content: Text('Please enter a valid 11-digit contact number'),
+        ),
       );
       return;
     }
@@ -186,20 +195,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
-      
+
       if (token == null || token.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Please log in to place an order')),
         );
         return;
       }
-      
-      final items = CartStore.instance.items.map((item) => {
-        'dishId': item.dish.id,
-        'name': item.dish.name,
-        'price': item.dish.price, 
-        'quantity': item.quantity,
-      }).toList();
+
+      final items =
+          CartStore.instance.items
+              .map(
+                (item) => {
+                  'dishId': item.dish.id,
+                  'name': item.dish.name,
+                  'price': item.dish.price,
+                  'quantity': item.quantity,
+                },
+              )
+              .toList();
 
       final orderData = {
         'items': items,
@@ -241,7 +255,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
         await prefs.remove('customer_data');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Session expired. Please log in again.')),
+            const SnackBar(
+              content: Text('Session expired. Please log in again.'),
+            ),
           );
         }
       } else {
@@ -250,9 +266,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _isLoading = false);
     }
@@ -295,7 +311,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   onPressed: () => Navigator.of(context).pop(),
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: Colors.amber.shade400),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -333,107 +352,147 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             Container(
                               padding: const EdgeInsets.all(16),
                               child: Column(
-                                children: cartItems.map((item) {
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 16),
-                                    child: Row(
-                                      children: [
-                                        if (item.dish.imageBase64 != null)
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(4),
-                                            child: Image.memory(
-                                              base64Decode(item.dish.imageBase64!),
-                                              width: 50,
-                                              height: 50,
-                                              fit: BoxFit.cover,
-                                            ),
-                                          )
-                                        else
-                                          Container(
-                                            width: 50,
-                                            height: 50,
-                                            decoration: BoxDecoration(
-                                              color: Colors.grey.shade200,
-                                              borderRadius: BorderRadius.circular(4),
-                                            ),
-                                            child: const Icon(Icons.fastfood, size: 20),
-                                          ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                item.dish.name.toUpperCase(),
-                                                style: const TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w600,
+                                children:
+                                    cartItems.map((item) {
+                                      return Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 16,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            if (item.dish.imageBase64 != null)
+                                              ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                                child: Image.memory(
+                                                  base64Decode(
+                                                    item.dish.imageBase64!,
+                                                  ),
+                                                  width: 50,
+                                                  height: 50,
+                                                  fit: BoxFit.cover,
+                                                ),
+                                              )
+                                            else
+                                              Container(
+                                                width: 50,
+                                                height: 50,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.grey.shade200,
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                ),
+                                                child: const Icon(
+                                                  Icons.fastfood,
+                                                  size: 20,
                                                 ),
                                               ),
-                                              if (item.dish.sauces.isNotEmpty)
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    item.dish.name
+                                                        .toUpperCase(),
+                                                    style: const TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                  if (item.selectedSauce !=
+                                                      null)
+                                                    Text(
+                                                      item.selectedSauce!
+                                                          .toUpperCase(),
+                                                      style: TextStyle(
+                                                        fontSize: 9,
+                                                        color:
+                                                            Colors
+                                                                .grey
+                                                                .shade600,
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                            // Quantity Controls (+ amount -)
+                                            Row(
+                                              children: [
+                                                IconButton(
+                                                  onPressed: () {
+                                                    if (item.quantity > 1) {
+                                                      setState(() {
+                                                        CartStore.instance
+                                                            .updateQuantity(
+                                                              item.dish.id,
+                                                              item.quantity - 1,
+                                                            );
+                                                      });
+                                                    } else {
+                                                      // Remove item if quantity becomes 0
+                                                      setState(() {
+                                                        CartStore.instance
+                                                            .removeItem(
+                                                              item.dish.id,
+                                                            );
+                                                      });
+                                                    }
+                                                  },
+                                                  icon: Icon(
+                                                    Icons.remove_circle_outline,
+                                                    size: 20,
+                                                    color: Colors.red.shade400,
+                                                  ),
+                                                  padding: EdgeInsets.zero,
+                                                  constraints:
+                                                      const BoxConstraints(),
+                                                ),
+                                                const SizedBox(width: 8),
                                                 Text(
-                                                  item.dish.sauces.first.toUpperCase(),
-                                                  style: TextStyle(
-                                                    fontSize: 9,
-                                                    color: Colors.grey.shade600,
+                                                  '${item.quantity}',
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
-                                            ],
-                                          ),
-                                        ),
-                                        // Quantity Controls (+ amount -)
-                                        Row(
-                                          children: [
-                                            IconButton(
-                                              onPressed: () {
-                                                if (item.quantity > 1) {
-                                                  setState(() {
-                                                    CartStore.instance.updateQuantity(item.dish.id, item.quantity - 1);
-                                                  });
-                                                } else {
-                                                  // Remove item if quantity becomes 0
-                                                  setState(() {
-                                                    CartStore.instance.removeItem(item.dish.id);
-                                                  });
-                                                }
-                                              },
-                                              icon: Icon(Icons.remove_circle_outline, size: 20, color: Colors.red.shade400),
-                                              padding: EdgeInsets.zero,
-                                              constraints: const BoxConstraints(),
+                                                const SizedBox(width: 8),
+                                                IconButton(
+                                                  onPressed: () {
+                                                    setState(() {
+                                                      CartStore.instance
+                                                          .updateQuantity(
+                                                            item.dish.id,
+                                                            item.quantity + 1,
+                                                          );
+                                                    });
+                                                  },
+                                                  icon: Icon(
+                                                    Icons.add_circle_outline,
+                                                    size: 20,
+                                                    color:
+                                                        Colors.green.shade400,
+                                                  ),
+                                                  padding: EdgeInsets.zero,
+                                                  constraints:
+                                                      const BoxConstraints(),
+                                                ),
+                                              ],
                                             ),
-                                            const SizedBox(width: 8),
+                                            const SizedBox(width: 12),
                                             Text(
-                                              '${item.quantity}',
+                                              '₱${((double.tryParse(item.dish.price) ?? 0) * item.quantity).toStringAsFixed(0)}',
                                               style: const TextStyle(
-                                                fontSize: 12,
+                                                fontSize: 11,
                                                 fontWeight: FontWeight.bold,
                                               ),
                                             ),
-                                            const SizedBox(width: 8),
-                                            IconButton(
-                                              onPressed: () {
-                                                setState(() {
-                                                  CartStore.instance.updateQuantity(item.dish.id, item.quantity + 1);
-                                                });
-                                              },
-                                              icon: Icon(Icons.add_circle_outline, size: 20, color: Colors.green.shade400),
-                                              padding: EdgeInsets.zero,
-                                              constraints: const BoxConstraints(),
-                                            ),
                                           ],
                                         ),
-                                        const SizedBox(width: 12),
-                                        Text(
-                                          '₱${((double.tryParse(item.dish.price) ?? 0) * item.quantity).toStringAsFixed(0)}',
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
+                                      );
+                                    }).toList(),
                               ),
                             ),
                             // Redeem/Loyalty Banner
@@ -443,11 +502,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             Container(
                               padding: const EdgeInsets.all(16),
                               child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   const Text(
                                     'TOTAL',
-                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                   Text(
                                     '₱${totalAmount.toStringAsFixed(2)}',
@@ -492,7 +555,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   // Name
-                                  _buildLabelAndField('NAME', '', controller: _nameController),
+                                  _buildLabelAndField(
+                                    'NAME',
+                                    '',
+                                    controller: _nameController,
+                                  ),
                                   const SizedBox(height: 16),
                                   // Contact Number
                                   _buildLabelAndField(
@@ -527,36 +594,56 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                   ),
                                   const SizedBox(height: 16),
                                   // Time of delivery
-                                  _buildLabelAndDropdown('TIME OF DELIVERY', 'NOW', ['NOW', 'LATER']),
+                                  _buildLabelAndDropdown(
+                                    'TIME OF DELIVERY',
+                                    'NOW',
+                                    ['NOW', 'LATER'],
+                                  ),
                                   const SizedBox(height: 16),
                                   // Mode of payment
-                                  _buildLabelAndDropdown('MODE OF PAYMENT', 'GCASH ONLY', ['GCASH ONLY']),
+                                  _buildLabelAndDropdown(
+                                    'MODE OF PAYMENT',
+                                    'GCASH ONLY',
+                                    ['GCASH ONLY'],
+                                  ),
                                   const SizedBox(height: 32),
                                   // Proceed button
                                   Center(
                                     child: ElevatedButton(
-                                      onPressed: _isLoading ? null : _handlePlaceOrder,
+                                      onPressed:
+                                          _isLoading ? null : _handlePlaceOrder,
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFFFFC024),
+                                        backgroundColor: const Color(
+                                          0xFFFFC024,
+                                        ),
                                         foregroundColor: Colors.black,
-                                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 32,
+                                          vertical: 12,
+                                        ),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(20),
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
                                         ),
                                       ),
-                                      child: _isLoading
-                                          ? const SizedBox(
-                                              width: 20,
-                                              height: 20,
-                                              child: CircularProgressIndicator(strokeWidth: 2),
-                                            )
-                                          : const Text(
-                                              'PROCEED TO PAYMENT',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.bold,
+                                      child:
+                                          _isLoading
+                                              ? const SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                              : const Text(
+                                                'PROCEED TO PAYMENT',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
                                               ),
-                                            ),
                                     ),
                                   ),
                                 ],
@@ -681,7 +768,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 borderRadius: BorderRadius.circular(6),
                 borderSide: BorderSide(color: Colors.grey.shade300),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
               suffixIcon: IconButton(
                 icon: const Icon(Icons.map, size: 20),
                 onPressed: _showMapPicker,
@@ -704,7 +794,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
     bool digitsOnly = false,
   }) {
     return Row(
-      crossAxisAlignment: maxLines > 1 ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+      crossAxisAlignment:
+          maxLines > 1 ? CrossAxisAlignment.start : CrossAxisAlignment.center,
       children: [
         SizedBox(
           width: 100,
@@ -718,46 +809,59 @@ class _CheckoutPageState extends State<CheckoutPage> {
           ),
         ),
         Expanded(
-          child: controller != null
-              ? TextField(
-                  controller: controller,
-                  maxLines: maxLines,
-                  keyboardType: keyboardType,
-                  maxLength: maxLength,
-                  inputFormatters: digitsOnly
-                      ? [FilteringTextInputFormatter.digitsOnly]
-                      : null,
-                  style: const TextStyle(fontSize: 12),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(
+          child:
+              controller != null
+                  ? TextField(
+                    controller: controller,
+                    maxLines: maxLines,
+                    keyboardType: keyboardType,
+                    maxLength: maxLength,
+                    inputFormatters:
+                        digitsOnly
+                            ? [FilteringTextInputFormatter.digitsOnly]
+                            : null,
+                    style: const TextStyle(fontSize: 12),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      counterText: '',
+                    ),
+                  )
+                  : Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
                       borderRadius: BorderRadius.circular(6),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
                     ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    counterText: '',
-                  ),
-                )
-              : Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade300),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    value.isEmpty ? '' : value,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: value.isEmpty ? Colors.grey.shade400 : Colors.black,
+                    child: Text(
+                      value.isEmpty ? '' : value,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color:
+                            value.isEmpty ? Colors.grey.shade400 : Colors.black,
+                      ),
                     ),
                   ),
-                ),
         ),
       ],
     );
   }
 
-  Widget _buildLabelAndDropdown(String label, String value, List<String> options) {
+  Widget _buildLabelAndDropdown(
+    String label,
+    String value,
+    List<String> options,
+  ) {
     return Row(
       children: [
         SizedBox(
@@ -780,12 +884,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(fontSize: 11),
-                ),
-              ],
+              children: [Text(value, style: const TextStyle(fontSize: 11))],
             ),
           ),
         ),
@@ -796,8 +895,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
   // Redeem/Loyalty Banner - shows points and rewards
   Widget _buildRedeemBanner() {
     // Get values from store (with defaults)
-    final double minimumOrderForPoints = LoyaltyRewardsStore.instance.minimumOrderForPoints;
-    final int pointsEarned = LoyaltyRewardsStore.instance.pointsEarned;
+    final double minimumOrderForPoints = LoyaltyRewardsStore.instance
+        .minimumOrderForPoints(orderType: 'restaurant');
+    final int pointsEarned = LoyaltyRewardsStore.instance.pointsEarned(
+      orderType: 'restaurant',
+    );
     // Ensure store is loaded
     LoyaltyRewardsStore.instance.ensureLoaded();
 
@@ -823,11 +925,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     color: Colors.white.withOpacity(0.2),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.stars,
-                    color: Colors.white,
-                    size: 28,
-                  ),
+                  child: const Icon(Icons.stars, color: Colors.white, size: 28),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -854,7 +952,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
@@ -888,9 +989,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: CartStore.instance.totalAmount / minimumOrderForPoints,
+                    value:
+                        CartStore.instance.totalAmount / minimumOrderForPoints,
                     backgroundColor: Colors.white.withOpacity(0.3),
-                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      Colors.white,
+                    ),
                     minHeight: 6,
                   ),
                 ),
@@ -932,76 +1036,128 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.card_giftcard, color: Colors.orange),
-            const SizedBox(width: 8),
-            const Text('Redeem Rewards'),
-          ],
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Your Points: $currentPoints',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-              const SizedBox(height: 16),
-              ...availableRewards.map((reward) {
-                final canRedeem = currentPoints >= reward.minimumPoints;
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: canRedeem ? Colors.green : Colors.grey.shade300,
-                      child: Icon(
-                        canRedeem ? Icons.check : Icons.lock,
-                        color: Colors.white,
-                        size: 18,
-                      ),
+      builder:
+          (context) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 420),
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Close button
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, color: Colors.black),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
                     ),
-                    title: Text(reward.reward),
-                    subtitle: Text(reward.description),
-                    trailing: Chip(
-                      label: Text('${reward.minimumPoints} pts'),
-                      backgroundColor: canRedeem ? Colors.green.shade100 : Colors.grey.shade200,
-                      labelStyle: TextStyle(
-                        color: canRedeem ? Colors.green.shade800 : Colors.grey.shade600,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                    onTap: canRedeem
-                        ? () {
-                            Navigator.of(context).pop();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('${reward.reward} redeemed successfully!'),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
-                          }
-                        : null,
                   ),
-                );
-              }).toList(),
-            ],
+                  const SizedBox(height: 8),
+                  // Title
+                  const Row(
+                    children: [
+                      Icon(Icons.card_giftcard, color: Colors.orange),
+                      SizedBox(width: 8),
+                      Text(
+                        'REDEEM REWARDS',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Your Points: $currentPoints',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ...availableRewards.map((reward) {
+                    final canRedeem = currentPoints >= reward.minimumPoints;
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor:
+                              canRedeem ? Colors.green : Colors.grey.shade300,
+                          child: Icon(
+                            canRedeem ? Icons.check : Icons.lock,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                        title: Text(reward.reward),
+                        subtitle: Text(reward.description),
+                        trailing: Chip(
+                          label: Text('${reward.minimumPoints} pts'),
+                          backgroundColor:
+                              canRedeem
+                                  ? Colors.green.shade100
+                                  : Colors.grey.shade200,
+                          labelStyle: TextStyle(
+                            color:
+                                canRedeem
+                                    ? Colors.green.shade800
+                                    : Colors.grey.shade600,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        onTap:
+                            canRedeem
+                                ? () {
+                                  Navigator.of(context).pop();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        '${reward.reward} redeemed successfully!',
+                                      ),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                }
+                                : null,
+                      ),
+                    );
+                  }).toList(),
+                  const SizedBox(height: 24),
+                  // Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFFC024),
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text(
+                        'CLOSE',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
     );
   }
 }

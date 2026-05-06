@@ -6,7 +6,10 @@ import '../config.dart';
 import '../utils/responsive_layout.dart';
 
 // Runtime fallback for dev mode (String.fromEnvironment defaultValue doesn't work in JIT mode)
-String get _apiBaseUrl => apiBaseUrl.isEmpty ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/' : apiBaseUrl;
+String get _apiBaseUrl =>
+    apiBaseUrl.isEmpty
+        ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/'
+        : apiBaseUrl;
 
 class CustomerLoginPage extends StatefulWidget {
   final bool? redirectToCheckout;
@@ -34,6 +37,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
   bool _showResetPassword = false;
   String? _pendingEmail;
   String? _resetEmail;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -50,9 +54,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
   Future<void> _handleForgotPassword() async {
     if (_emailController.text.isEmpty || !_emailController.text.contains('@')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid email')),
-      );
+      setState(() => _errorMessage = 'Please enter a valid email');
       return;
     }
 
@@ -62,9 +64,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
       final response = await http.post(
         Uri.parse('/api/customer/forgot-password'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': _emailController.text.trim(),
-        }),
+        body: jsonEncode({'email': _emailController.text.trim()}),
       );
 
       final data = jsonDecode(response.body);
@@ -74,35 +74,29 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
           _resetEmail = _emailController.text.trim();
           _showForgotPassword = false;
           _showResetPassword = true;
+          _errorMessage = null;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Reset code sent to your email')),
-        );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? 'Failed to send reset code')),
+        setState(
+          () => _errorMessage = data['error'] ?? 'Failed to send reset code',
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      setState(() => _errorMessage = 'Error: $e');
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
   Future<void> _handleResetPassword() async {
-    if (_resetCodeController.text.isEmpty || _resetCodeController.text.length != 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid 6-digit reset code')),
-      );
+    if (_resetCodeController.text.isEmpty ||
+        _resetCodeController.text.length != 6) {
+      setState(() => _errorMessage = 'Please enter a valid 6-digit reset code');
       return;
     }
-    if (_newPasswordController.text.isEmpty || _newPasswordController.text.length < 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password must be at least 6 characters')),
-      );
+    if (_newPasswordController.text.isEmpty ||
+        _newPasswordController.text.length < 6) {
+      setState(() => _errorMessage = 'Password must be at least 6 characters');
       return;
     }
 
@@ -122,25 +116,21 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Password reset successful! Please login.')),
-        );
         setState(() {
           _showResetPassword = false;
           _isLoginMode = true;
           _resetCodeController.clear();
           _newPasswordController.clear();
           _passwordController.clear();
+          _errorMessage = null;
         });
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? 'Failed to reset password')),
+        setState(
+          () => _errorMessage = data['error'] ?? 'Failed to reset password',
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      setState(() => _errorMessage = 'Error: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -172,23 +162,18 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
         if (mounted) {
           Navigator.of(context).pop(data);
         }
-      } else if (response.statusCode == 403 && data['requiresVerification'] == true) {
+      } else if (response.statusCode == 403 &&
+          data['requiresVerification'] == true) {
         setState(() {
           _showOtpField = true;
           _pendingEmail = _emailController.text.trim();
+          _errorMessage = null;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? 'Please verify your email')),
-        );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? 'Login failed')),
-        );
+        setState(() => _errorMessage = data['error'] ?? 'Login failed');
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      setState(() => _errorMessage = 'Error: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -198,9 +183,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
     if (!_formKey.currentState!.validate()) return;
 
     if (_passwordController.text != _confirmPasswordController.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Passwords do not match')),
-      );
+      setState(() => _errorMessage = 'Passwords do not match');
       return;
     }
 
@@ -224,21 +207,16 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
         setState(() {
           _showOtpField = true;
           _pendingEmail = _emailController.text.trim();
+          _errorMessage = null;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? 'Account created. Check your email for OTP.')),
-        );
       } else {
-        final errorMsg = data['error'] ?? 'Signup failed (HTTP ${response.statusCode})';
+        final errorMsg =
+            data['error'] ?? 'Signup failed (HTTP ${response.statusCode})';
         print('Signup error response: $data');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMsg)),
-        );
+        setState(() => _errorMessage = errorMsg);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      setState(() => _errorMessage = 'Error: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -246,9 +224,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
   Future<void> _handleVerifyOtp() async {
     if (_otpController.text.length != 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid 6-digit OTP')),
-      );
+      setState(() => _errorMessage = 'Please enter a valid 6-digit OTP');
       return;
     }
 
@@ -273,14 +249,10 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
         }
         return;
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? 'Verification failed')),
-        );
+        setState(() => _errorMessage = data['error'] ?? 'Verification failed');
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      setState(() => _errorMessage = 'Error: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -291,7 +263,9 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
-        constraints: BoxConstraints(maxWidth: isMobileWidth(context) ? 340 : 420),
+        constraints: BoxConstraints(
+          maxWidth: isMobileWidth(context) ? 340 : 420,
+        ),
         padding: appPagePadding(context),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -312,10 +286,10 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
               _showOtpField
                   ? 'VERIFY EMAIL'
                   : _showForgotPassword
-                      ? 'FORGOT PASSWORD'
-                      : _showResetPassword
-                          ? 'RESET PASSWORD'
-                          : (_isLoginMode ? 'LOG IN' : 'SIGN UP'),
+                  ? 'FORGOT PASSWORD'
+                  : _showResetPassword
+                  ? 'RESET PASSWORD'
+                  : (_isLoginMode ? 'LOG IN' : 'SIGN UP'),
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -323,6 +297,41 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
               ),
             ),
             const SizedBox(height: 24),
+
+            // Error message
+            if (_errorMessage != null) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      color: Colors.red.shade700,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.red.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             if (_showForgotPassword) ...[
               // Forgot Password UI
@@ -351,7 +360,10 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                       ),
                     ),
                   ),
@@ -363,21 +375,28 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFFFC024),
                   foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 32),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 10,
+                    horizontal: 32,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text(
-                        'SEND RESET CODE',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                      ),
+                child:
+                    _isLoading
+                        ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Text(
+                          'SEND RESET CODE',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
               ),
               const SizedBox(height: 16),
               GestureDetector(
@@ -404,10 +423,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                 children: [
                   const SizedBox(
                     width: 100,
-                    child: Text(
-                      'RESET CODE',
-                      style: TextStyle(fontSize: 11),
-                    ),
+                    child: Text('RESET CODE', style: TextStyle(fontSize: 11)),
                   ),
                   Expanded(
                     child: TextFormField(
@@ -420,7 +436,10 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         counterText: '',
                       ),
                     ),
@@ -433,10 +452,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                 children: [
                   const SizedBox(
                     width: 100,
-                    child: Text(
-                      'NEW PASSWORD',
-                      style: TextStyle(fontSize: 11),
-                    ),
+                    child: Text('NEW PASSWORD', style: TextStyle(fontSize: 11)),
                   ),
                   Expanded(
                     child: TextFormField(
@@ -448,7 +464,10 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                       ),
                     ),
                   ),
@@ -460,28 +479,36 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFFFC024),
                   foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 32),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 10,
+                    horizontal: 32,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text(
-                        'RESET PASSWORD',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                      ),
+                child:
+                    _isLoading
+                        ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Text(
+                          'RESET PASSWORD',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
               ),
               const SizedBox(height: 16),
               GestureDetector(
-                onTap: () => setState(() {
-                  _showResetPassword = false;
-                  _isLoginMode = true;
-                }),
+                onTap:
+                    () => setState(() {
+                      _showResetPassword = false;
+                      _isLoginMode = true;
+                    }),
                 child: const Text(
                   'BACK TO LOGIN',
                   style: TextStyle(
@@ -503,7 +530,10 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty || value.length != 6) {
@@ -518,18 +548,25 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFFFC024),
                   foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 32),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 32,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('VERIFY', style: TextStyle(fontWeight: FontWeight.bold)),
+                child:
+                    _isLoading
+                        ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Text(
+                          'VERIFY',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
               ),
             ] else ...[
               Form(
@@ -558,7 +595,10 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(6),
                                 ),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
                               ),
                               validator: (value) {
                                 if (value == null || value.isEmpty) {
@@ -591,7 +631,10 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(6),
                                 ),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
                               ),
                             ),
                           ),
@@ -619,10 +662,15 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(6),
                               ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
                             ),
                             validator: (value) {
-                              if (value == null || value.isEmpty || !value.contains('@')) {
+                              if (value == null ||
+                                  value.isEmpty ||
+                                  !value.contains('@')) {
                                 return 'Invalid email';
                               }
                               return null;
@@ -652,10 +700,15 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(6),
                               ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
                             ),
                             validator: (value) {
-                              if (value == null || value.isEmpty || value.length < 6) {
+                              if (value == null ||
+                                  value.isEmpty ||
+                                  value.length < 6) {
                                 return 'Min 6 chars';
                               }
                               return null;
@@ -686,7 +739,10 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(6),
                                 ),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
                               ),
                               validator: (value) {
                                 if (value == null || value.isEmpty) {
@@ -707,25 +763,37 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                     ],
                     // Submit Button
                     ElevatedButton(
-                      onPressed: _isLoading ? null : (_isLoginMode ? _handleLogin : _handleSignup),
+                      onPressed:
+                          _isLoading
+                              ? null
+                              : (_isLoginMode ? _handleLogin : _handleSignup),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFFFC024),
                         foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 32),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 10,
+                          horizontal: 32,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      child: _isLoading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(
-                              _isLoginMode ? 'LOG IN' : 'SIGN IN',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                            ),
+                      child:
+                          _isLoading
+                              ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : Text(
+                                _isLoginMode ? 'LOG IN' : 'SIGN IN',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
                     ),
                   ],
                 ),
@@ -750,7 +818,9 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    _isLoginMode ? "DON'T HAVE AN ACCOUNT? " : "ALREADY HAVE AN ACCOUNT? ",
+                    _isLoginMode
+                        ? "DON'T HAVE AN ACCOUNT? "
+                        : "ALREADY HAVE AN ACCOUNT? ",
                     style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
                   ),
                   GestureDetector(

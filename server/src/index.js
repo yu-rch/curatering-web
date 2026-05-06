@@ -1096,7 +1096,114 @@ app.get("/api/auth/me", authRequired, async (req, res) => {
   });
 });
 
-//Help request
+// Public help request (for contact us form - no auth required)
+app.post("/api/public/help-requests", async (req, res) => {
+  try {
+    const { name, email, message } = req.body || {};
+    if (!name || !email || !message) {
+      return res
+        .status(400)
+        .json({ message: "name, email, and message are required" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO help_requests (user_id, feature, problem, request, status)
+       VALUES ($1, $2, $3, $4, 'unresolved')
+       RETURNING id;`,
+      ['guest', 'Contact Us', `${name} (${email})`, message],
+    );
+
+    return res.json({ ok: true, id: result.rows[0].id });
+  } catch (e) {
+    console.error("Error completing post-event analysis:", e);
+    return res.status(500).json({ error: "Failed to complete post-event analysis" });
+  }
+});
+
+// Complete catering order and calculate loyalty points
+app.post(
+  "/api/catering/orders/:orderId/complete",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin"])),
+  async (req, res) => {
+    try {
+      const { orderId } = req.params;
+
+      const result = await pool.query(
+        `UPDATE catering_orders
+         SET
+           status = 'completed',
+           updated_by = $1,
+           updated_at = now()
+         WHERE id = $2
+           AND status IN ('for_processing', 'for_post_analysis')
+         RETURNING *;`,
+        [req.user.id, orderId],
+      );
+
+      if (result.rowCount === 0) {
+        return res
+          .status(404)
+          .json({
+            message: "Catering order not found or already completed",
+          });
+      }
+
+      const order = result.rows[0];
+      const customerId = order.customer_id;
+      
+      // Auto-calculate loyalty points when order is completed
+      if (customerId) {
+        const totalAmount = parseFloat(order.total_cost || 0);
+        
+        // Default catering loyalty points: 500 min order to earn 8 points (2% rate)
+        const minimumCost = 500.0;
+        const pointsApplication = 8; // 2% of total cost
+        
+        if (totalAmount >= minimumCost) {
+          // Calculate points with rounding rule: .2-.6 down, .7-.9 up
+          const rawPoints = (totalAmount * pointsApplication) / 100;
+          const decimal = rawPoints % 1;
+          let points = Math.floor(rawPoints);
+          
+          if (decimal >= 0.7) {
+            points += 1;
+          }
+          
+          // Update order with calculated points
+          await pool.query(
+            `UPDATE catering_orders SET points_earned = $1 WHERE id = $2`,
+            [points, orderId]
+          );
+          
+          // Update customer's total loyalty points
+          await pool.query(
+            `UPDATE customer_accounts 
+             SET catering_loyalty_points = catering_loyalty_points + $1,
+                 updated_at = now()
+             WHERE id = $2`,
+            [points, customerId]
+          );
+        }
+      }
+
+      await logAction({
+        userId: req.user.id,
+        feature: "Catering",
+        action: "completed catering order",
+        other: { orderId },
+      });
+
+      return res.json({ ok: true, id: result.rows[0].id });
+    } catch (e) {
+      console.error("Error completing catering order:", e);
+      return res.status(500).json({ error: "Failed to complete catering order" });
+    }
+  },
+);
+
+//Help request (authenticated)
 app.post("/api/help-requests", authRequired, async (req, res) => {
   try {
     const { feature, problem, request } = req.body || {};
@@ -1160,10 +1267,14 @@ app.get(
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
     const result = await pool.query(
-      `SELECT id, email, full_name, role, archived, page_permissions, birthday, contact_number, employment_type
-     FROM users
+      `SELECT u.id, u.email, u.full_name, u.role, u.archived, u.page_permissions, u.birthday, u.contact_number, u.employment_type,
+             COALESCE(ca.restaurant_loyalty_points, 0) as restaurant_loyalty_points,
+             COALESCE(ca.catering_loyalty_points, 0) as catering_loyalty_points,
+             (COALESCE(ca.restaurant_loyalty_points, 0) + COALESCE(ca.catering_loyalty_points, 0)) as loyalty_points
+     FROM users u
+     LEFT JOIN customer_accounts ca ON u.id::text = ca.id::text
      ${whereSql}
-     ORDER BY created_at DESC
+     ORDER BY u.created_at DESC
      LIMIT 200;`,
       params,
     );
@@ -1417,14 +1528,14 @@ app.get(
       `SELECT
       hr.id,
       hr.user_id,
-      u.full_name AS "userName",
+      COALESCE(u.full_name, hr.problem) AS "userName",
       hr.feature,
       hr.problem,
       hr.request,
       hr.status,
       hr.created_at AS "createdAt"
      FROM help_requests hr
-     JOIN users u ON u.id = hr.user_id
+     LEFT JOIN users u ON u.id = hr.user_id
      ${whereSql}
      ORDER BY hr.created_at DESC
      LIMIT 500;`,
@@ -2239,7 +2350,7 @@ app.post("/api/public/events/theme-design/add-by-prompt", async (req, res) => {
           payload: {
             image_base64: imagesBase64[i],
             confidence_threshold: 0.35,
-            max_detections: 20,
+            max_detections: 10,
             mask_format: "alpha_png",
           },
         });
@@ -2329,10 +2440,11 @@ app.post("/api/public/events/theme-design/extract-objects", async (req, res) => 
       throw toHttpError("imagesBase64 is required", 400, "invalid_images");
     }
 
-    // Process images in parallel for better performance
-    const extractionPromises = imagesBase64.map(async (imageBase64, i) => {
+    // Process images sequentially to avoid OOM
+    const extractionResults = [];
+    for (let i = 0; i < imagesBase64.length; i += 1) {
       try {
-        const sanitizedBase64 = sanitizeBase64Image(imageBase64);
+        const sanitizedBase64 = sanitizeBase64Image(imagesBase64[i]);
         const fastApiResponse = await callFastApi({
           req,
           routePath: "/v1/infer/yolo-sam-extract",
@@ -2342,7 +2454,7 @@ app.post("/api/public/events/theme-design/extract-objects", async (req, res) => 
             confidence_threshold: Number.isFinite(Number(confidenceThreshold))
                 ? Number(confidenceThreshold)
               : 0.35,
-            max_detections: Number.isFinite(Number(maxDetections)) ? Number(maxDetections) : 20,
+            max_detections: Number.isFinite(Number(maxDetections)) ? Math.min(Number(maxDetections), 10) : 10,
             mask_format: "alpha_png",
           },
         });
@@ -2363,37 +2475,27 @@ app.post("/api/public/events/theme-design/extract-objects", async (req, res) => 
               objectImageBase64: String(obj.object_image_base64 || obj.objectImageBase64 || ""),
             }))
           : [];
-        return {
+        extractionResults.push({
           imageIndex: i,
           imageWidth: Number(fastApiResponse.image_width || fastApiResponse.imageWidth || 0),
           imageHeight: Number(fastApiResponse.image_height || fastApiResponse.imageHeight || 0),
           objects,
-        };
+        });
       } catch (err) {
         const msg =
           err && typeof err === "object" && "message" in err && typeof err.message === "string"
               ? err.message
               : String(err || "unknown");
         console.warn(`extract-objects: failed for image ${i}:`, msg);
-        return {
+        extractionResults.push({
           imageIndex: i,
           imageWidth: 0,
           imageHeight: 0,
           objects: [],
-        };
+        });
       }
-    });
-
-    const settledResults = await Promise.allSettled(extractionPromises);
-    const results = settledResults.map((result, index) => 
-      result.status === 'fulfilled' ? result.value : {
-        imageIndex: index,
-        imageWidth: 0,
-        imageHeight: 0,
-        objects: [],
-      }
-    );
-    return res.json({ ok: true, images: results });
+    }
+    return res.json({ ok: true, images: extractionResults });
   } catch (e) {
     console.error(e);
     return sendHttpError(res, e, "Failed to extract theme objects");
@@ -3688,7 +3790,63 @@ runInitDbWithRetries()
       }
     });
 
-    
+    // Payment status update endpoint
+    app.put('/api/events/orders/:orderId/payment-status', authRequired, async (req, res) => {
+      try {
+        const { orderId } = req.params;
+        const { paymentType, status, referenceNumber } = req.body || {};
+
+        if (!paymentType || !status) {
+          return res.status(400).json({ error: 'paymentType and status are required' });
+        }
+
+        if (!['down_payment', 'full_payment'].includes(paymentType)) {
+          return res.status(400).json({ error: 'Invalid paymentType. Must be down_payment or full_payment' });
+        }
+
+        if (!['paid', 'pending', 'cancelled'].includes(status)) {
+          return res.status(400).json({ error: 'Invalid status. Must be paid, pending, or cancelled' });
+        }
+
+        // Determine which table to use
+        const orderResult = await pool.query(
+          `SELECT 'event_orders' as table_name FROM event_orders WHERE id = $1
+           UNION ALL
+           SELECT 'catering_orders' FROM catering_orders WHERE id = $1
+           LIMIT 1`,
+          [orderId]
+        );
+
+        if (orderResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Order not found' });
+        }
+
+        const tableName = orderResult.rows[0].table_name;
+        const statusColumn = paymentType === 'down_payment' ? 'down_payment_status' : 'full_payment_status';
+        const amountColumn = paymentType === 'down_payment' ? 'down_payment_amount' : 'full_payment_amount';
+
+        // Build update query with reference number if provided
+        let updateQuery = `UPDATE ${tableName} SET ${statusColumn} = $1`;
+        const queryParams = [status];
+
+        if (referenceNumber && referenceNumber.trim()) {
+          const refColumn = paymentType === 'down_payment' ? 'down_payment_reference' : 'full_payment_reference';
+          updateQuery += `, ${refColumn} = $2`;
+          queryParams.push(referenceNumber.trim());
+        }
+
+        updateQuery += ` WHERE id = $${queryParams.length + 1} RETURNING *`;
+        queryParams.push(orderId);
+
+        const result = await pool.query(updateQuery, queryParams);
+
+        res.json({ ok: true, order: result.rows[0] });
+      } catch (error) {
+        console.error('Error updating payment status:', error);
+        res.status(500).json({ error: 'Failed to update payment status' });
+      }
+    });
+
 // Loyalty Rewards API endpoints
     app.get('/api/loyalty/user-points', authRequired, async (req, res) => {
       try {
@@ -4209,11 +4367,10 @@ runInitDbWithRetries()
         );
 
         // Create customer profile with 0 loyalty points
-        // TODO: Fix customer_id column issue - using id for testing
         await pool.query(
-          `INSERT INTO customer_profiles (id, loyalty_points)
+          `INSERT INTO customer_profiles (customer_id, loyalty_points)
            VALUES ($1, $2)
-           ON CONFLICT (id) DO NOTHING`,
+           ON CONFLICT (customer_id) DO NOTHING`,
           [customerId, 0]
         );
 
@@ -4480,7 +4637,7 @@ runInitDbWithRetries()
       try {
         const { items, fullName, phone, deliveryAddress, deliveryLat, deliveryLng, deliveryNotes, totalAmount } = req.body || {};
         const customerId = req.customer.id;
-        
+
         if (!items || !Array.isArray(items) || items.length === 0) {
           return res.status(400).json({ error: 'Items are required' });
         }
@@ -4489,11 +4646,14 @@ runInitDbWithRetries()
           return res.status(400).json({ error: 'Delivery address is required' });
         }
 
+        // Generate sequential order number (ORD-0001, ORD-0002, etc.)
+        const orderNo = await generateSequentialId('ORD', 4);
+
         const result = await pool.query(
-          `INSERT INTO restaurant_orders (customer_id, full_name, phone, items, total_amount, delivery_address, delivery_lat, delivery_lng, delivery_notes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          `INSERT INTO restaurant_orders (order_no, customer_id, full_name, phone, items, total_amount, delivery_address, delivery_lat, delivery_lng, delivery_notes)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING *`,
-          [customerId, fullName || null, phone || null, JSON.stringify(items), totalAmount || 0, deliveryAddress, deliveryLat, deliveryLng, deliveryNotes || null]
+          [orderNo, customerId, fullName || null, phone || null, JSON.stringify(items), totalAmount || 0, deliveryAddress, deliveryLat, deliveryLng, deliveryNotes || null]
         );
 
         const customerResult = await pool.query(
@@ -4507,7 +4667,7 @@ runInitDbWithRetries()
             text:
               `Hello ${customerResult.rows[0].full_name || "Customer"},\n\n` +
               `Your checkout has been received successfully.\n` +
-              `Order ID: ${result.rows[0].id}\n` +
+              `Order No: ${result.rows[0].order_no}\n` +
               `Total: PHP ${Number(totalAmount || 0).toFixed(2)}\n\n` +
               `- Curatering Team`,
           });
@@ -4761,6 +4921,43 @@ runInitDbWithRetries()
         
         if (result.rowCount === 0) {
           return res.status(404).json({ error: 'Order not found' });
+        }
+
+        // Auto-calculate loyalty points when order is delivered
+        if (status === 'delivered') {
+          const order = result.rows[0];
+          const customerId = order.customer_id;
+          const totalAmount = parseFloat(order.total_amount || 0);
+          
+          // Default restaurant loyalty points: 100 min order to earn 2 points (2% rate)
+          const minimumCost = 100.0;
+          const pointsApplication = 2; // 2% of total cost
+          
+          if (totalAmount >= minimumCost) {
+            // Calculate points with rounding rule: .2-.6 down, .7-.9 up
+            const rawPoints = (totalAmount * pointsApplication) / 100;
+            const decimal = rawPoints % 1;
+            let points = Math.floor(rawPoints);
+            
+            if (decimal >= 0.7) {
+              points += 1;
+            }
+            
+            // Update order with calculated points
+            await pool.query(
+              `UPDATE restaurant_orders SET points_earned = $1 WHERE id = $2`,
+              [points, orderId]
+            );
+            
+            // Update customer's total loyalty points
+            await pool.query(
+              `UPDATE customer_accounts 
+               SET restaurant_loyalty_points = restaurant_loyalty_points + $1,
+                   updated_at = now()
+               WHERE id = $2`,
+              [points, customerId]
+            );
+          }
         }
 
         const customerResult = await pool.query(
@@ -5059,9 +5256,10 @@ runInitDbWithRetries()
       try {
         const customerId = req.customer.id;
 
-        // Get customer account info
+        // Get customer account info with loyalty points
         const accountResult = await pool.query(
-          `SELECT id, email, full_name, phone, created_at
+          `SELECT id, email, full_name, phone, created_at,
+                  restaurant_loyalty_points, catering_loyalty_points
            FROM customer_accounts
            WHERE id = $1`,
           [customerId]
@@ -5072,11 +5270,13 @@ runInitDbWithRetries()
         }
 
         const account = accountResult.rows[0];
+
+        // Get delivery address from customer_profiles
         const profileColumns = await getCustomerProfileColumns();
-        let profileResult;
+        let profileResult = { rows: [] };
         if (profileColumns.hasCustomerId) {
           profileResult = await pool.query(
-            `SELECT delivery_address, delivery_lat, delivery_lng, loyalty_points
+            `SELECT delivery_address, delivery_lat, delivery_lng
              FROM customer_profiles
              WHERE customer_id = $1
              LIMIT 1`,
@@ -5084,7 +5284,7 @@ runInitDbWithRetries()
           );
         } else if (profileColumns.hasUserEmail) {
           profileResult = await pool.query(
-            `SELECT delivery_address, delivery_lat, delivery_lng, loyalty_points
+            `SELECT delivery_address, delivery_lat, delivery_lng
              FROM customer_profiles
              WHERE user_email = $1
              LIMIT 1`,
@@ -5092,16 +5292,17 @@ runInitDbWithRetries()
           );
         } else if (profileColumns.hasId) {
           profileResult = await pool.query(
-            `SELECT delivery_address, delivery_lat, delivery_lng, loyalty_points
+            `SELECT delivery_address, delivery_lat, delivery_lng
              FROM customer_profiles
              WHERE id::text = $1
              LIMIT 1`,
             [customerId],
           );
-        } else {
-          profileResult = { rows: [] };
         }
         const profile = profileResult.rows[0] || {};
+
+        const restaurantPoints = account.restaurant_loyalty_points || 0;
+        const cateringPoints = account.catering_loyalty_points || 0;
 
         res.json({
           id: account.id,
@@ -5109,7 +5310,9 @@ runInitDbWithRetries()
           fullName: account.full_name,
           phone: account.phone,
           createdAt: account.created_at,
-          loyaltyPoints: profile.loyalty_points || 0,
+          loyaltyPoints: restaurantPoints + cateringPoints,
+          restaurantLoyaltyPoints: restaurantPoints,
+          cateringLoyaltyPoints: cateringPoints,
           deliveryAddress: profile.delivery_address || null,
           deliveryLat: profile.delivery_lat || null,
           deliveryLng: profile.delivery_lng || null,
@@ -5264,20 +5467,19 @@ runInitDbWithRetries()
     // Customer Account Management (Super Admin only)
     app.get('/api/admin/customers', authRequired, async (req, res) => {
       try {
-        // Check if user is super admin
-        const userResult = await pool.query(
-          'SELECT role FROM users WHERE id = $1',
-          [req.user.id]
-        );
-        
+        const userResult = await pool.query('SELECT role FROM users WHERE id = $1', [req.user.id]);
         if (userResult.rows.length === 0 || userResult.rows[0].role !== 'super_admin') {
           return res.status(403).json({ error: 'Super admin access required' });
         }
 
+        // Fetch customers with loyalty points directly from customer_accounts
         const result = await pool.query(
-          `SELECT id, email, full_name, phone, is_verified, archived, created_at 
-           FROM customer_accounts 
-           WHERE archived = FALSE 
+          `SELECT id, email, full_name, phone, is_verified, archived, created_at,
+             COALESCE(restaurant_loyalty_points, 0) as restaurant_loyalty_points,
+             COALESCE(catering_loyalty_points, 0) as catering_loyalty_points,
+             (COALESCE(restaurant_loyalty_points, 0) + COALESCE(catering_loyalty_points, 0)) as loyalty_points
+           FROM customer_accounts
+           WHERE archived = FALSE
            ORDER BY created_at DESC`
         );
 
@@ -5285,6 +5487,56 @@ runInitDbWithRetries()
       } catch (error) {
         console.error('Error fetching customers:', error);
         res.status(500).json({ error: 'Failed to fetch customers' });
+      }
+    });
+
+    app.post('/api/admin/recalculate-loyalty-points', authRequired, async (req, res) => {
+      try {
+        const userResult = await pool.query('SELECT role FROM users WHERE id = $1', [req.user.id]);
+        if (userResult.rows.length === 0 || userResult.rows[0].role !== 'super_admin') {
+          return res.status(403).json({ error: 'Super admin access required' });
+        }
+
+        const customersResult = await pool.query(`SELECT id FROM customer_accounts WHERE archived = FALSE`);
+        let updatedCount = 0;
+
+        for (const customer of customersResult.rows) {
+          const customerId = customer.id;
+
+          const restaurantPoints = await pool.query(
+            `SELECT COALESCE(SUM(points_earned), 0) as total FROM restaurant_orders WHERE customer_id = $1 AND status = 'delivered'`,
+            [customerId]
+          );
+
+          const cateringPoints = await pool.query(
+            `SELECT COALESCE(SUM(points_earned), 0) as total FROM catering_orders WHERE customer_id = $1 AND status = 'completed'`,
+            [customerId]
+          );
+
+          const eventPoints = await pool.query(
+            `SELECT COALESCE(SUM(points_earned), 0) as total FROM event_orders WHERE customer_id = $1 AND status = 'completed'`,
+            [customerId]
+          );
+
+          const restaurantTotal = restaurantPoints.rows[0].total || 0;
+          const cateringTotal = cateringPoints.rows[0].total || 0;
+
+          // Update loyalty points directly in customer_accounts
+          await pool.query(
+            `UPDATE customer_accounts
+             SET restaurant_loyalty_points = $1,
+                 catering_loyalty_points = $2,
+                 updated_at = now()
+             WHERE id = $3`,
+            [restaurantTotal, cateringTotal, customerId]
+          );
+          updatedCount++;
+        }
+
+        res.json({ success: true, updatedCount });
+      } catch (error) {
+        console.error('Error recalculating loyalty points:', error);
+        res.status(500).json({ error: 'Failed to recalculate loyalty points' });
       }
     });
 
@@ -5303,8 +5555,10 @@ runInitDbWithRetries()
         }
 
         const customerResult = await pool.query(
-          `SELECT id, email, full_name, phone, is_verified, archived, created_at 
-           FROM customer_accounts 
+          `SELECT id, email, full_name, phone, is_verified, archived, created_at,
+                  COALESCE(restaurant_loyalty_points, 0) as restaurant_loyalty_points,
+                  COALESCE(catering_loyalty_points, 0) as catering_loyalty_points
+           FROM customer_accounts
            WHERE id = $1`,
           [customerId]
         );
@@ -5313,26 +5567,32 @@ runInitDbWithRetries()
           return res.status(404).json({ error: 'Customer not found' });
         }
 
+        const customer = customerResult.rows[0];
+        const restaurantLoyaltyPoints = customer.restaurant_loyalty_points || 0;
+        const cateringLoyaltyPoints = customer.catering_loyalty_points || 0;
+        const totalLoyaltyPoints = restaurantLoyaltyPoints + cateringLoyaltyPoints;
+
         // Get customer orders
         // TODO: Fix customer_id column issue - using id for testing
         const ordersResult = await pool.query(
-          `SELECT id, total_amount, status, payment_status, created_at 
-           FROM restaurant_orders 
-           WHERE id = $1 
+          `SELECT id, total_amount, status, payment_status, created_at
+           FROM restaurant_orders
+           WHERE id = $1
            ORDER BY created_at DESC`,
           [customerId]
         );
 
-        // Calculate loyalty points (10% of total spent)
+        // Calculate total spent
         const totalSpent = ordersResult.rows.reduce((sum, order) => {
           return sum + parseFloat(order.total_amount || 0);
         }, 0);
-        const loyaltyPoints = Math.floor(totalSpent * 0.1);
 
-        res.json({ 
+        res.json({
           customer: customerResult.rows[0],
           orders: ordersResult.rows,
-          loyaltyPoints,
+          loyaltyPoints: totalLoyaltyPoints,
+          restaurantLoyaltyPoints,
+          cateringLoyaltyPoints,
           totalSpent,
         });
       } catch (error) {
@@ -5669,13 +5929,16 @@ runInitDbWithRetries()
       }
     });
 
-    // Serve Flutter web build files (production)
-    app.use(express.static(path.join(__dirname, '../../curatering/build/web')));
-    
+    // Serve Flutter web build files (production).
+    // Allow overriding via WEB_BUILD_PATH env var to support different deploy layouts.
+    const webBuildPath = process.env.WEB_BUILD_PATH || path.join(__dirname, '../../curatering/build/web');
+    console.log('Serving static web files from:', webBuildPath);
+    app.use(express.static(webBuildPath));
+
     // SPA fallback - serve index.html for all non-API routes
     app.get('*', (req, res) => {
       if (!req.path.startsWith('/api')) {
-        res.sendFile(path.join(__dirname, '../../curatering/build/web/index.html'));
+        res.sendFile(path.join(webBuildPath, 'index.html'));
       }
     });
     

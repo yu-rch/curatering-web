@@ -14,9 +14,10 @@ class EventsApi {
     required String roleType, // manager | supervisor
     bool compact = false,
   }) async {
-    final path = roleType == 'manager'
-        ? '/api/manager/events/orders'
-        : '/api/supervisor/events/orders';
+    final path =
+        roleType == 'manager'
+            ? '/api/manager/events/orders'
+            : '/api/supervisor/events/orders';
 
     final qp = <String, String>{'status': status};
     if (compact) qp['compact'] = '1';
@@ -40,9 +41,10 @@ class EventsApi {
     required String roleType,
   }) async {
     final encoded = Uri.encodeComponent(orderId);
-    final path = roleType == 'manager'
-        ? '/api/manager/events/orders/$encoded'
-        : '/api/supervisor/events/orders/$encoded';
+    final path =
+        roleType == 'manager'
+            ? '/api/manager/events/orders/$encoded'
+            : '/api/supervisor/events/orders/$encoded';
 
     final decoded = await ApiClient.instance.getJson(path, useCache: false);
     final raw = decoded['order'];
@@ -81,18 +83,14 @@ class EventsApi {
     );
   }
 
-  Future<void> acceptOrder({
-    required String orderId,
-  }) async {
+  Future<void> acceptOrder({required String orderId}) async {
     await ApiClient.instance.postJson(
       '/api/events/orders/$orderId/accept',
       body: {},
     );
   }
 
-  Future<void> cancelOrder({
-    required String orderId,
-  }) async {
+  Future<void> cancelOrder({required String orderId}) async {
     await ApiClient.instance.postJson(
       '/api/events/orders/$orderId/cancel',
       body: {},
@@ -168,13 +166,15 @@ class EventsApi {
     required String orderId,
     required String paymentType, // 'down_payment' or 'full_payment'
     required String status, // 'paid' or 'pending'
+    String? referenceNumber,
   }) async {
+    final body = {'paymentType': paymentType, 'status': status};
+    if (referenceNumber != null && referenceNumber.isNotEmpty) {
+      body['referenceNumber'] = referenceNumber;
+    }
     await ApiClient.instance.putJson(
       '/api/events/orders/$orderId/payment-status',
-      body: {
-        'paymentType': paymentType,
-        'status': status,
-      },
+      body: body,
     );
   }
 
@@ -185,9 +185,7 @@ class EventsApi {
   }) async {
     await ApiClient.instance.putJson(
       '/api/events/orders/$orderId/event-photos',
-      body: {
-        'photos': photos,
-      },
+      body: {'photos': photos},
     );
   }
 
@@ -256,11 +254,7 @@ class EventsApi {
     try {
       return await ApiClient.instance.postJson(
         '/api/events/theme-design/swap-colors',
-        body: {
-          'imageBase64': imageBase64,
-          'masks': masks,
-          'edits': edits,
-        },
+        body: {'imageBase64': imageBase64, 'masks': masks, 'edits': edits},
       );
     } on ApiError catch (e) {
       final msg = e.message.toLowerCase();
@@ -340,13 +334,13 @@ class EventsApi {
     for (final s in _toList(scheduleRaw)) {
       final sm = _toMap(s);
       if (sm.isEmpty) continue;
-        scheduleSlots.add(
-          EventScheduleSlotDto(
-            date: (sm['date'] ?? '').toString(),
-            startTime: (sm['startTime'] ?? sm['start_time'] ?? '').toString(),
-            endTime: (sm['endTime'] ?? sm['end_time'] ?? '').toString(),
-          ),
-        );
+      scheduleSlots.add(
+        EventScheduleSlotDto(
+          date: (sm['date'] ?? '').toString(),
+          startTime: (sm['startTime'] ?? sm['start_time'] ?? '').toString(),
+          endTime: (sm['endTime'] ?? sm['end_time'] ?? '').toString(),
+        ),
+      );
     }
 
     final menuRaw = map['menu'];
@@ -354,22 +348,23 @@ class EventsApi {
     for (final m in _toList(menuRaw)) {
       final mm = _toMap(m);
       if (mm.isEmpty) continue;
-        menu.add(
-          EventMenuItemDto(
-            dishName: (mm['dishName'] ?? mm['dish_name'] ?? '').toString(),
-            paxOption: (mm['paxOption'] ?? mm['pax_option'] ?? '').toString(),
-            price: mm['price']?.toString() ?? '0',
-          ),
-        );
+      menu.add(
+        EventMenuItemDto(
+          dishName: (mm['dishName'] ?? mm['dish_name'] ?? '').toString(),
+          paxOption: (mm['paxOption'] ?? mm['pax_option'] ?? '').toString(),
+          price: mm['price']?.toString() ?? '0',
+        ),
+      );
     }
 
     final rawTheme = map['themeDesign'] ?? map['theme_design'];
     final themeRaw = _toMap(rawTheme);
-    final costBreakdown = _toMap(themeRaw['costBreakdown'] ?? themeRaw['cost_breakdown']);
+    final costBreakdown = _toMap(
+      themeRaw['costBreakdown'] ?? themeRaw['cost_breakdown'],
+    );
     final themeDesign = EventThemeDesignDto(
-      picksBase64: _toList(themeRaw['picksBase64'])
-          .map((e) => e.toString())
-          .toList(),
+      picksBase64:
+          _toList(themeRaw['picksBase64']).map((e) => e.toString()).toList(),
       tintEnabled: _toBool(themeRaw['tintEnabled']),
       tintColorHex: themeRaw['tintColorHex'] as String?,
       colorPrompt: themeRaw['colorPrompt'] as String?,
@@ -377,11 +372,18 @@ class EventsApi {
         themeRaw['wantsCustomDesign'] ?? themeRaw['wants_custom_design'],
       ),
       customerThemeRequest:
-          (themeRaw['customerThemeRequest'] ?? themeRaw['customer_theme_request'])
+          (themeRaw['customerThemeRequest'] ??
+                  themeRaw['customer_theme_request'])
               ?.toString(),
-      dishCost: _toNullableDouble(costBreakdown['dishCost'] ?? costBreakdown['dish_cost']),
-      laborCost: _toNullableDouble(costBreakdown['laborCost'] ?? costBreakdown['labor_cost']),
-      travelCost: _toNullableDouble(costBreakdown['travelCost'] ?? costBreakdown['travel_cost']),
+      dishCost: _toNullableDouble(
+        costBreakdown['dishCost'] ?? costBreakdown['dish_cost'],
+      ),
+      laborCost: _toNullableDouble(
+        costBreakdown['laborCost'] ?? costBreakdown['labor_cost'],
+      ),
+      travelCost: _toNullableDouble(
+        costBreakdown['travelCost'] ?? costBreakdown['travel_cost'],
+      ),
     );
 
     PostAnalysisDto? postAnalysis;
@@ -404,16 +406,16 @@ class EventsApi {
     for (final c in _toList(checklistRaw)) {
       final cc = _toMap(c);
       if (cc.isEmpty) continue;
-        checklist.add(
-          ChecklistItemDto(
-            id: cc['id'] as String? ?? '',
-            title: cc['title'] as String? ?? '',
-            description: cc['description'] as String? ?? '',
-            price: _toDouble(cc['price']),
-            isCompleted: cc['isCompleted'] as bool? ?? false,
-            assignedTo: cc['assignedTo'] as String? ?? '',
-          ),
-        );
+      checklist.add(
+        ChecklistItemDto(
+          id: cc['id'] as String? ?? '',
+          title: cc['title'] as String? ?? '',
+          description: cc['description'] as String? ?? '',
+          price: _toDouble(cc['price']),
+          isCompleted: cc['isCompleted'] as bool? ?? false,
+          assignedTo: cc['assignedTo'] as String? ?? '',
+        ),
+      );
     }
 
     final actualEventImages = <String>[];
@@ -431,10 +433,14 @@ class EventsApi {
       orderType: map['orderType'] as String? ?? 'catering',
       eventType: map['eventType'] as String? ?? '',
       formalityLevel: map['formalityLevel'] as String? ?? '',
-      customerName: (map['customerName'] ?? map['customer_name'] ?? '').toString(),
-      contactPerson: (map['contactPerson'] ?? map['contact_person'] ?? '').toString(),
-      contactNumber: (map['contactNumber'] ?? map['contact_number'] ?? '').toString(),
-      emailAddress: (map['emailAddress'] ?? map['email_address'] ?? '').toString(),
+      customerName:
+          (map['customerName'] ?? map['customer_name'] ?? '').toString(),
+      contactPerson:
+          (map['contactPerson'] ?? map['contact_person'] ?? '').toString(),
+      contactNumber:
+          (map['contactNumber'] ?? map['contact_number'] ?? '').toString(),
+      emailAddress:
+          (map['emailAddress'] ?? map['email_address'] ?? '').toString(),
       scheduleSlots: scheduleSlots,
       address: (map['address'] ?? '').toString(),
       guestCount: _toInt(map['guestCount'] ?? map['guest_count']),
@@ -457,8 +463,8 @@ class EventsApi {
       checklist: checklist,
       actualEventImages: actualEventImages,
       finalStatus:
-          (map['finalStatus'] ?? map['final_status'] ?? 'successful').toString(),
+          (map['finalStatus'] ?? map['final_status'] ?? 'successful')
+              .toString(),
     );
   }
 }
-
