@@ -6,7 +6,10 @@
 *.swp
 .buildlog/
 .history
-
+.env
+.env.example
+.env.local
+inst.txt
 
 
 # Flutter repo-specific

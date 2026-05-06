@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'dart:convert';
+import '../utils/responsive_layout.dart';
 
 class OrderTrackingPage extends StatefulWidget {
   final Map<String, dynamic> orderData;
@@ -12,79 +11,6 @@ class OrderTrackingPage extends StatefulWidget {
 }
 
 class _OrderTrackingPageState extends State<OrderTrackingPage> {
-  final _trackingUrlController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.orderData['delivery_tracking_url'] != null) {
-      _trackingUrlController.text = widget.orderData['delivery_tracking_url'];
-    }
-  }
-
-  @override
-  void dispose() {
-    _trackingUrlController.dispose();
-    super.dispose();
-  }
-
-  String _getStatusText(String status) {
-    switch (status) {
-      case 'pending':
-        return 'Order Placed';
-      case 'confirmed':
-        return 'Payment Confirmed';
-      case 'preparing':
-        return 'Preparing';
-      case 'out_for_delivery':
-        return 'Out for Delivery';
-      case 'delivered':
-        return 'Delivered';
-      case 'cancelled':
-        return 'Cancelled';
-      default:
-        return status;
-    }
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status) {
-      case 'pending':
-        return Colors.orange;
-      case 'confirmed':
-        return Colors.blue;
-      case 'preparing':
-        return Colors.purple;
-      case 'out_for_delivery':
-        return Colors.teal;
-      case 'delivered':
-        return Colors.green;
-      case 'cancelled':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  Future<void> _openTrackingUrl() async {
-    final url = _trackingUrlController.text.trim();
-    if (url.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a tracking URL')),
-      );
-      return;
-    }
-
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not launch URL')),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final status = widget.orderData['status'] ?? 'pending';
@@ -106,10 +32,10 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
         elevation: 0,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: appPagePadding(context),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1100),
+            constraints: BoxConstraints(maxWidth: appContentMaxWidth(context)),
             child: Column(
               children: [
                 // Payment Title
@@ -202,7 +128,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
                 // Back to Home Button
                 ElevatedButton(
                   onPressed: () {
-                    Navigator.of(context).pushNamedAndRemoveUntil('/public', (route) => false);
+                    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF1E1E1E),
@@ -423,6 +349,9 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
   }
 
   Widget _buildPaymentConfirmedColumn({required String paymentReference}) {
+    final paymentStatus = widget.orderData['payment_status'] ?? 'pending';
+    final isPaymentConfirmed = paymentStatus == 'paid';
+    
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -435,13 +364,13 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
         children: [
           const SizedBox(height: 20),
 
-          // PAYMENT CONFIRMED!
+          // PAYMENT STATUS
           Text(
-            'PAYMENT CONFIRMED!',
+            isPaymentConfirmed ? 'PAYMENT CONFIRMED!' : 'PAYMENT PENDING',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Colors.green.shade600,
+              color: isPaymentConfirmed ? Colors.green.shade600 : Colors.orange.shade600,
               letterSpacing: 0.5,
             ),
           ),
@@ -449,7 +378,9 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
 
           // Message
           Text(
-            'PLEASE WAIT FOR YOUR ORDER CONFIRMATION VIA TEXT.',
+            isPaymentConfirmed 
+                ? 'PLEASE WAIT FOR YOUR ORDER CONFIRMATION VIA TEXT.'
+                : 'AWAITING PAYMENT CONFIRMATION FROM MANAGER.',
             style: TextStyle(
               fontSize: 9,
               color: Colors.grey.shade600,
@@ -591,71 +522,4 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
     return checkIndex < currentIndex;
   }
 
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: const TextStyle(color: Colors.grey),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusProgress(String status) {
-    final statuses = ['pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered'];
-    final currentIndex = statuses.indexOf(status);
-    
-    return Column(
-      children: [
-        Row(
-          children: List.generate(statuses.length, (index) {
-            final isActive = index <= currentIndex;
-            return Expanded(
-              child: Container(
-                height: 4,
-                color: isActive ? _getStatusColor(status) : Colors.grey.shade300,
-                margin: EdgeInsets.only(right: index < statuses.length - 1 ? 4 : 0),
-              ),
-            );
-          }),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _buildStatusLabel('Placed', currentIndex >= 0),
-            _buildStatusLabel('Paid', currentIndex >= 1),
-            _buildStatusLabel('Preparing', currentIndex >= 2),
-            _buildStatusLabel('On Way', currentIndex >= 3),
-            _buildStatusLabel('Delivered', currentIndex >= 4),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatusLabel(String label, bool isActive) {
-    return Text(
-      label,
-      style: TextStyle(
-        fontSize: 10,
-        color: isActive ? Colors.black : Colors.grey.shade400,
-        fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-      ),
-    );
-  }
 }

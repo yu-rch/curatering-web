@@ -30,16 +30,20 @@ class AppScaffold1 extends StatelessWidget {
       label: 'Loyalty Rewards',
       route: '/loyalty',
     ),
-    _SidebarItemData(icon: Icons.menu_book, label: 'Menu', route: '/menu'),
+    _SidebarItemData(
+      icon: Icons.swap_horiz,
+      label: 'Order History',
+      route: '/order-history',
+    ),
+    _SidebarItemData(
+      icon: Icons.menu_book,
+      label: 'Catering/Restaurant Menu',
+      route: '/catering-restaurant-menu',
+    ),
     _SidebarItemData(
       icon: Icons.bar_chart,
       label: 'Reports',
       route: '/reports',
-    ),
-    _SidebarItemData(
-      icon: Icons.swap_horiz,
-      label: 'Transactions',
-      route: '/transactions',
     ),
     _SidebarItemData(icon: Icons.archive, label: 'Archive', route: '/archive'),
     _SidebarItemData(icon: Icons.public, label: 'Website', route: '/website'),

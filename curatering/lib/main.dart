@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart' hide Placeholder;
+import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'config.dart';
 import 'pages/login.dart';
 import 'pages/dashboard.dart';
 import 'pages/manage_accounts.dart';
@@ -10,7 +13,6 @@ import 'pages/menu.dart';
 import 'pages/reports.dart';
 import 'pages/transactions.dart';
 import 'pages/settings.dart';
-import 'pages/placeholder.dart';
 import 'pages/customer_website.dart';
 import 'auth/auth_session.dart';
 import 'auth/page_permissions.dart';
@@ -20,9 +22,19 @@ import 'widgets/page_permission_guard.dart';
 import 'pages/help_requests.dart';
 import 'pages/action_logs.dart';
 import 'pages/customer_management.dart';
+import 'pages/restaurant_transactions_page.dart';
+import 'widgets/app_scaffold.dart';
 import 'data_store.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  setUrlStrategy(PathUrlStrategy());
+
+  await Supabase.initialize(
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey,
+  );
+
   runApp(const MyApp());
 }
 
@@ -43,10 +55,10 @@ class MyApp extends StatelessWidget {
             brightness: dark ? Brightness.dark : Brightness.light,
             textTheme: GoogleFonts.interTextTheme(),
           ),
-          initialRoute: '/public',
+          initialRoute: '/',
           routes: {
             '/login': (context) => const Login(),
-            '/public': (context) => const CustomerWebsiteScreen(
+            '/': (context) => const CustomerWebsiteScreen(
                   contentEditable: false,
                   showStaffChrome: false,
                 ),
@@ -58,14 +70,6 @@ class MyApp extends StatelessWidget {
                     child: const Dashboard(),
                   ),
                 ),
-            // '/live-performance': (context) => RoleGuard(
-            //       requiredRole: Role.manager,
-            //       allowedRoles: {Role.manager, Role.supervisor, Role.admin},
-            //       child: PagePermissionGuard(
-            //         route: PagePermissionRoutes.livePerformance,
-            //         child: const LivePerformance(),
-            //       ),
-            //     ),
             '/manage-accounts': (context) => const RoleGuard(
                   requiredRole: Role.superAdmin,
                   child: ManageAccounts(),
@@ -98,12 +102,22 @@ class MyApp extends StatelessWidget {
                     child: const ManageLoyaltyRewards(),
                   ),
                 ),
-            '/menu': (context) => RoleGuard(
+            '/catering-restaurant-menu': (context) => RoleGuard(
                   requiredRole: Role.manager,
                   allowedRoles: {Role.manager},
                   child: PagePermissionGuard(
                     route: PagePermissionRoutes.menu,
                     child: const Menu(),
+                  ),
+                ),
+            '/restaurant-orders': (context) => RoleGuard(
+                  requiredRole: Role.manager,
+                  allowedRoles: {Role.manager, Role.supervisor},
+                  child: PagePermissionGuard(
+                    route: PagePermissionRoutes.restaurantOrders,
+                    child: const AppScaffold(
+                      child: RestaurantTransactionsPage(),
+                    ),
                   ),
                 ),
             '/reports': (context) => RoleGuard(
@@ -114,11 +128,11 @@ class MyApp extends StatelessWidget {
                     child: const Reports(),
                   ),
                 ),
-            '/transactions': (context) => RoleGuard(
+            '/order-history': (context) => RoleGuard(
                   requiredRole: Role.manager,
                   allowedRoles: {Role.manager, Role.supervisor},
                   child: PagePermissionGuard(
-                    route: PagePermissionRoutes.transactions,
+                    route: PagePermissionRoutes.orderHistory,
                     child: const Transactions(),
                   ),
                 ),
@@ -152,7 +166,6 @@ class MyApp extends StatelessWidget {
                     ),
                   ),
                 ),
-            '/': (context) => const Placeholder(title: 'Curatering'),
             '/settings': (context) => RoleGuard(
                   requiredRole: Role.manager,
                   allowedRoles: {Role.manager, Role.supervisor},

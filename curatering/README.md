@@ -18,11 +18,11 @@ On startup, the server creates the required tables (`users`, `help_requests`, `n
 
 ## Flutter configuration
 
-The app calls the backend at `http://localhost:3000` by default.
+The app calls the backend at `https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/` by default.
 
 If your backend runs on a different URL/port, start the app with:
 
-- `flutter run --dart-define=API_BASE_URL=http://localhost:3000`
+- `flutter run --dart-define=API_BASE_URL=https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/`
 
 Then login using your seeded Super Admin credentials to access:
 - `Manage Accounts`

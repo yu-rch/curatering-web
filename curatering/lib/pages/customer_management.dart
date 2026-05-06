@@ -3,6 +3,13 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../auth/auth_session.dart';
 import '../config.dart';
+import '../widgets/app_scaffold.dart';
+
+// Runtime fallback for dev mode (String.fromEnvironment defaultValue doesn't work in JIT mode)
+String get _apiBaseUrl =>
+    apiBaseUrl.isEmpty
+        ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/'
+        : apiBaseUrl;
 
 class CustomerManagementPage extends StatefulWidget {
   const CustomerManagementPage({super.key});
@@ -30,10 +37,8 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
 
     try {
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/api/admin/customers'),
-        headers: {
-          'Authorization': 'Bearer ${AuthSession.instance.token}',
-        },
+        Uri.parse('$_apiBaseUrl/api/admin/customers'),
+        headers: {'Authorization': 'Bearer ${AuthSession.instance.token}'},
       );
 
       final data = jsonDecode(response.body);
@@ -67,74 +72,184 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Customer Management'),
-        backgroundColor: const Color(0xFF1E1E1E),
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadCustomers,
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(_error!, style: const TextStyle(color: Colors.red)),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadCustomers,
-                        child: const Text('Retry'),
-                      ),
-                    ],
+    return AppScaffold(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Customer Management',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: _loadCustomers,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E1E1E),
+                    foregroundColor: Colors.white,
                   ),
-                )
-              : _customers.isEmpty
-                  ? const Center(child: Text('No customers found'))
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _customers.length,
-                      itemBuilder: (context, index) {
-                        final customer = _customers[index];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: customer['is_verified'] == true
-                                  ? Colors.green
-                                  : Colors.orange,
-                              child: Icon(
-                                customer['is_verified'] == true
-                                    ? Icons.check
-                                    : Icons.pending,
-                                color: Colors.white,
-                                size: 20,
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Review customer accounts, loyalty stats, and order activity.',
+              style: TextStyle(color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child:
+                  _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _error != null
+                      ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              _error!,
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: _loadCustomers,
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      )
+                      : _customers.isEmpty
+                      ? const Center(child: Text('No customers found'))
+                      : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+                        itemCount: _customers.length,
+                        itemBuilder: (context, index) {
+                          final customer = _customers[index];
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              side: BorderSide(
+                                color: Colors.black.withValues(alpha: 0.08),
                               ),
                             ),
-                            title: Text(
-                              customer['full_name'] ?? 'Unknown',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor:
+                                    customer['is_verified'] == true
+                                        ? Colors.green
+                                        : Colors.orange,
+                                child: Icon(
+                                  customer['is_verified'] == true
+                                      ? Icons.check
+                                      : Icons.pending,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
+                              title: Text(
+                                customer['full_name'] ?? 'Unknown',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(customer['email'] ?? ''),
+                                  if (customer['phone'] != null)
+                                    Text(customer['phone']),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      // Restaurant Points Chip
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange.shade100,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.restaurant,
+                                              size: 12,
+                                              color: Colors.orange.shade700,
+                                            ),
+                                            const SizedBox(width: 2),
+                                            Text(
+                                              '${customer['restaurant_loyalty_points'] ?? 0}',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.orange.shade700,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      // Catering Points Chip
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.purple.shade100,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.event,
+                                              size: 12,
+                                              color: Colors.purple.shade700,
+                                            ),
+                                            const SizedBox(width: 2),
+                                            Text(
+                                              '${customer['catering_loyalty_points'] ?? 0}',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.purple.shade700,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              trailing: const Icon(
+                                Icons.arrow_forward_ios,
+                                size: 16,
+                              ),
+                              onTap: () => _showCustomerDetails(customer['id']),
                             ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(customer['email'] ?? ''),
-                                if (customer['phone'] != null)
-                                  Text(customer['phone']),
-                              ],
-                            ),
-                            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                            onTap: () => _showCustomerDetails(customer['id']),
-                          ),
-                        );
-                      },
-                    ),
+                          );
+                        },
+                      ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -151,6 +266,8 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
   Map<String, dynamic>? _customerData;
   List<dynamic> _orders = [];
   int _loyaltyPoints = 0;
+  int _restaurantLoyaltyPoints = 0;
+  int _cateringLoyaltyPoints = 0;
   double _totalSpent = 0;
   bool _isLoading = true;
   String? _error;
@@ -169,10 +286,8 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
 
     try {
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/api/admin/customers/${widget.customerId}'),
-        headers: {
-          'Authorization': 'Bearer ${AuthSession.instance.token}',
-        },
+        Uri.parse('$_apiBaseUrl/api/admin/customers/${widget.customerId}'),
+        headers: {'Authorization': 'Bearer ${AuthSession.instance.token}'},
       );
 
       final data = jsonDecode(response.body);
@@ -182,6 +297,8 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
           _customerData = data['customer'];
           _orders = data['orders'] ?? [];
           _loyaltyPoints = data['loyaltyPoints'] ?? 0;
+          _restaurantLoyaltyPoints = data['restaurantLoyaltyPoints'] ?? 0;
+          _cateringLoyaltyPoints = data['cateringLoyaltyPoints'] ?? 0;
           _totalSpent = data['totalSpent']?.toDouble() ?? 0.0;
           _isLoading = false;
         });
@@ -202,7 +319,9 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
   Future<void> _archiveCustomer(bool archived) async {
     try {
       final response = await http.put(
-        Uri.parse('$apiBaseUrl/api/admin/customers/${widget.customerId}/archive'),
+        Uri.parse(
+          '$_apiBaseUrl/api/admin/customers/${widget.customerId}/archive',
+        ),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ${AuthSession.instance.token}',
@@ -214,7 +333,9 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
 
       if (response.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(archived ? 'Customer archived' : 'Customer restored')),
+          SnackBar(
+            content: Text(archived ? 'Customer archived' : 'Customer restored'),
+          ),
         );
         Navigator.of(context).pop();
       } else {
@@ -223,230 +344,427 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Customer Details'),
-        backgroundColor: const Color(0xFF1E1E1E),
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadCustomerDetails,
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Customer Info Card
-                      Card(
-                        elevation: 4,
-                        child: Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 40,
-                                    backgroundColor: _customerData?['is_verified'] == true
-                                        ? Colors.green
-                                        : Colors.orange,
-                                    child: const Icon(Icons.person, size: 40, color: Colors.white),
-                                  ),
-                                  const SizedBox(width: 20),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          _customerData?['full_name'] ?? 'Unknown',
-                                          style: const TextStyle(
-                                            fontSize: 24,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          _customerData?['email'] ?? '',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            color: Colors.grey.shade600,
-                                          ),
-                                        ),
-                                        if (_customerData?['phone'] != null) ...[
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            _customerData!['phone'],
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.grey.shade600,
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 20),
-                              const Divider(),
-                              const SizedBox(height: 20),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _buildInfoCard(
-                                      'Loyalty Points',
-                                      _loyaltyPoints.toString(),
-                                      Icons.star,
-                                      Colors.amber,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: _buildInfoCard(
-                                      'Total Spent',
-                                      '₱${_totalSpent.toStringAsFixed(2)}',
-                                      Icons.account_balance_wallet,
-                                      Colors.green,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _buildInfoCard(
-                                      'Orders',
-                                      _orders.length.toString(),
-                                      Icons.shopping_bag,
-                                      Colors.blue,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: _buildInfoCard(
-                                      'Status',
-                                      _customerData?['is_verified'] == true
-                                          ? 'Verified'
-                                          : 'Pending',
-                                      _customerData?['is_verified'] == true
-                                          ? Icons.verified
-                                          : Icons.pending,
-                                      _customerData?['is_verified'] == true
-                                          ? Colors.green
-                                          : Colors.orange,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Orders Section
-                      const Text(
-                        'Order History',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 12),
-                      if (_orders.isEmpty)
-                        const Card(
-                          child: Padding(
-                            padding: EdgeInsets.all(20),
-                            child: Center(child: Text('No orders yet')),
-                          ),
-                        )
-                      else
-                        ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: _orders.length,
-                          itemBuilder: (context, index) {
-                            final order = _orders[index];
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              child: ListTile(
-                                title: Text('Order #${order['id'].toString().substring(0, 8)}'),
-                                subtitle: Text(
-                                  'Status: ${order['status']}\n${_formatDate(order['created_at'])}',
-                                ),
-                                trailing: Text(
-                                  '₱${order['total_amount'].toString()}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                isThreeLine: true,
-                              ),
-                            );
-                          },
-                        ),
-                      const SizedBox(height: 24),
-
-                      // Archive Button
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            showDialog(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                title: const Text('Archive Customer?'),
-                                content: const Text(
-                                  'Are you sure you want to archive this customer? They will no longer be able to log in.',
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.of(context).pop(),
-                                    child: const Text('Cancel'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      Navigator.of(context).pop();
-                                      _archiveCustomer(true);
-                                    },
-                                    child: const Text('Archive', style: TextStyle(color: Colors.red)),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.archive),
-                          label: const Text('Archive Customer'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red.shade100,
-                            foregroundColor: Colors.red,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                        ),
-                      ),
-                    ],
+    return AppScaffold(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.arrow_back),
+                  tooltip: 'Back to customers',
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  'Customer Details',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: _loadCustomerDetails,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E1E1E),
+                    foregroundColor: Colors.white,
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'View profile details, totals, and account status.',
+              style: TextStyle(color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child:
+                  _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _error != null
+                      ? Center(child: Text(_error!))
+                      : SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Customer Info Card
+                            Card(
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                side: BorderSide(
+                                  color: Colors.black.withValues(alpha: 0.08),
+                                ),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(20),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 40,
+                                          backgroundColor:
+                                              _customerData?['is_verified'] ==
+                                                      true
+                                                  ? Colors.green
+                                                  : Colors.orange,
+                                          child: const Icon(
+                                            Icons.person,
+                                            size: 40,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 20),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                _customerData?['full_name'] ??
+                                                    'Unknown',
+                                                style: const TextStyle(
+                                                  fontSize: 24,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                _customerData?['email'] ?? '',
+                                                style: TextStyle(
+                                                  fontSize: 16,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                              if (_customerData?['phone'] !=
+                                                  null) ...[
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  _customerData!['phone'],
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                    color: Colors.grey.shade600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 20),
+                                    const Divider(),
+                                    const SizedBox(height: 20),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: _buildInfoCard(
+                                            'Total Points',
+                                            _loyaltyPoints.toString(),
+                                            Icons.star,
+                                            Colors.amber,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: _buildInfoCard(
+                                            'Restaurant Points',
+                                            _restaurantLoyaltyPoints.toString(),
+                                            Icons.restaurant,
+                                            Colors.orange,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: _buildInfoCard(
+                                            'Catering Points',
+                                            _cateringLoyaltyPoints.toString(),
+                                            Icons.event,
+                                            Colors.purple,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: _buildInfoCard(
+                                            'Total Spent',
+                                            '₱${_totalSpent.toStringAsFixed(2)}',
+                                            Icons.account_balance_wallet,
+                                            Colors.green,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: _buildInfoCard(
+                                            'Orders',
+                                            _orders.length.toString(),
+                                            Icons.shopping_bag,
+                                            Colors.blue,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: _buildInfoCard(
+                                            'Status',
+                                            _customerData?['is_verified'] ==
+                                                    true
+                                                ? 'Verified'
+                                                : 'Pending',
+                                            _customerData?['is_verified'] ==
+                                                    true
+                                                ? Icons.verified
+                                                : Icons.pending,
+                                            _customerData?['is_verified'] ==
+                                                    true
+                                                ? Colors.green
+                                                : Colors.orange,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+
+                            // Orders Section
+                            const Text(
+                              'Order History',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            if (_orders.isEmpty)
+                              const Card(
+                                child: Padding(
+                                  padding: EdgeInsets.all(20),
+                                  child: Center(child: Text('No orders yet')),
+                                ),
+                              )
+                            else
+                              ListView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                itemCount: _orders.length,
+                                itemBuilder: (context, index) {
+                                  final order = _orders[index];
+                                  return Card(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    child: ListTile(
+                                      title: Text(
+                                        'Order #${order['order_no'] ?? order['id'].toString().substring(0, 8)}',
+                                      ),
+                                      subtitle: Text(
+                                        'Status: ${order['status']}\n${_formatDate(order['created_at'])}',
+                                      ),
+                                      trailing: Text(
+                                        '₱${order['total_amount'].toString()}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      isThreeLine: true,
+                                    ),
+                                  );
+                                },
+                              ),
+                            const SizedBox(height: 24),
+
+                            // Archive Button
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  showDialog(
+                                    context: context,
+                                    builder:
+                                        (context) => Dialog(
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              20,
+                                            ),
+                                          ),
+                                          child: Container(
+                                            constraints: const BoxConstraints(
+                                              maxWidth: 420,
+                                            ),
+                                            padding: const EdgeInsets.all(24),
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                // Close button
+                                                Align(
+                                                  alignment: Alignment.topRight,
+                                                  child: IconButton(
+                                                    onPressed:
+                                                        () =>
+                                                            Navigator.of(
+                                                              context,
+                                                            ).pop(),
+                                                    icon: const Icon(
+                                                      Icons.close,
+                                                      color: Colors.black,
+                                                    ),
+                                                    padding: EdgeInsets.zero,
+                                                    constraints:
+                                                        const BoxConstraints(),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                // Title
+                                                const Text(
+                                                  'ARCHIVE CUSTOMER',
+                                                  style: TextStyle(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.bold,
+                                                    letterSpacing: 1,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 24),
+                                                const Text(
+                                                  'Are you sure you want to archive this customer? They will no longer be able to log in.',
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 24),
+                                                // Buttons
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: ElevatedButton(
+                                                        onPressed: () {
+                                                          Navigator.of(
+                                                            context,
+                                                          ).pop();
+                                                          _archiveCustomer(
+                                                            true,
+                                                          );
+                                                        },
+                                                        style: ElevatedButton.styleFrom(
+                                                          backgroundColor:
+                                                              Colors.red,
+                                                          foregroundColor:
+                                                              Colors.white,
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                vertical: 10,
+                                                              ),
+                                                          shape: RoundedRectangleBorder(
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  8,
+                                                                ),
+                                                          ),
+                                                        ),
+                                                        child: const Text(
+                                                          'ARCHIVE',
+                                                          style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    Expanded(
+                                                      child: ElevatedButton(
+                                                        onPressed:
+                                                            () =>
+                                                                Navigator.of(
+                                                                  context,
+                                                                ).pop(),
+                                                        style: ElevatedButton.styleFrom(
+                                                          backgroundColor:
+                                                              Colors
+                                                                  .grey
+                                                                  .shade300,
+                                                          foregroundColor:
+                                                              Colors.black,
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                vertical: 10,
+                                                              ),
+                                                          shape: RoundedRectangleBorder(
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  8,
+                                                                ),
+                                                          ),
+                                                        ),
+                                                        child: const Text(
+                                                          'CANCEL',
+                                                          style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                  );
+                                },
+                                icon: const Icon(Icons.archive),
+                                label: const Text('Archive Customer'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red.shade100,
+                                  foregroundColor: Colors.red,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildInfoCard(String title, String value, IconData icon, Color color) {
+  Widget _buildInfoCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -468,10 +786,7 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
           const SizedBox(height: 4),
           Text(
             title,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
-            ),
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
           ),
         ],
       ),

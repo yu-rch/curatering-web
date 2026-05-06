@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:barcode_widget/barcode_widget.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../config.dart';
-import '../services/cart_store.dart';
 import 'order_tracking_page.dart';
+import '../utils/responsive_layout.dart';
 
 class PaymentPage extends StatefulWidget {
   final Map<String, dynamic> orderData;
@@ -49,7 +48,7 @@ class _PaymentPageState extends State<PaymentPage> {
       final token = prefs.getString('customer_token');
 
       final response = await http.post(
-        Uri.parse('$apiBaseUrl/api/restaurant/orders/${widget.orderData['id']}/payment'),
+        Uri.parse('${apiBaseUrl}/api/restaurant/orders/${widget.orderData['id']}/payment'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -98,10 +97,10 @@ class _PaymentPageState extends State<PaymentPage> {
         title: const Text(''),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: appPagePadding(context),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1200),
+            constraints: BoxConstraints(maxWidth: appContentMaxWidth(context)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -164,9 +163,9 @@ class _PaymentPageState extends State<PaymentPage> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  _buildLabelAndValue('NAME', widget.orderData['customer_name'] ?? ''),
+                                  _buildLabelAndValue('NAME', widget.orderData['full_name'] ?? widget.orderData['fullName'] ?? ''),
                                   const SizedBox(height: 16),
-                                  _buildLabelAndValue('CONTACT NUMBER', widget.orderData['customer_phone'] ?? ''),
+                                  _buildLabelAndValue('CONTACT NUMBER', widget.orderData['phone'] ?? ''),
                                   const SizedBox(height: 16),
                                   _buildLabelAndValue('DELIVERY ADDRESS', widget.orderData['delivery_address'] ?? ''),
                                   const SizedBox(height: 24),
@@ -315,13 +314,11 @@ class _PaymentPageState extends State<PaymentPage> {
                                       color: Colors.white,
                                       borderRadius: BorderRadius.circular(8),
                                     ),
-                                    child: BarcodeWidget(
-                                      barcode: Barcode.qrCode(
-                                        errorCorrectLevel: BarcodeQRCorrectionLevel.high,
-                                      ),
-                                      data: 'CURATERING-PAY-${widget.orderData['id']}',
-                                      width: 150,
-                                      height: 150,
+                                    child: Image.asset(
+                                      'lib/assets/gcash_qr.jpg',
+                                      width: 200,
+                                      height: 280,
+                                      fit: BoxFit.contain,
                                     ),
                                   ),
                                   const SizedBox(height: 32),

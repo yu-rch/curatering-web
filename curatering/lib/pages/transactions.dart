@@ -7,7 +7,7 @@ import '../widgets/app_scaffold.dart';
 import '../utils/order_calculations.dart';
 
 class TransactionItem {
-  final String transactionNo;
+  final String orderNo;
   final String customerName;
   final String eventTitle;
   final String eventType;
@@ -15,7 +15,7 @@ class TransactionItem {
   final String loyaltyRewards;
 
   TransactionItem({
-    required this.transactionNo,
+    required this.orderNo,
     required this.customerName,
     required this.eventTitle,
     required this.eventType,
@@ -40,7 +40,11 @@ class _TransactionsState extends State<Transactions> {
 
   List<EventOrderDto> _completedOrders = const <EventOrderDto>[];
   List<DateTime> _availableDates = const <DateTime>[];
-  late DateTime _selectedDate;
+  DateTime _selectedDate = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    DateTime.now().day,
+  );
 
   @override
   void initState() {
@@ -64,13 +68,17 @@ class _TransactionsState extends State<Transactions> {
     });
 
     try {
-      final orders =
-          await EventsApi.instance.listOrders(status: 'completed', roleType: roleType);
+      final orders = await EventsApi.instance.listOrders(
+        status: 'completed',
+        roleType: roleType,
+        compact: true,
+      );
 
       final dates = <DateTime>{};
       for (final o in orders) {
         if (o.scheduleSlots.isEmpty) continue;
-        final d = DateTime.parse(o.scheduleSlots.first.date);
+        final d = DateTime.tryParse(o.scheduleSlots.first.date);
+        if (d == null) continue;
         dates.add(DateTime(d.year, d.month, d.day));
       }
       final sortedDates = dates.toList()..sort((a, b) => b.compareTo(a));
@@ -85,7 +93,7 @@ class _TransactionsState extends State<Transactions> {
         }
       });
     } catch (e) {
-      setState(() => _errorMessage = 'Failed to load transactions.');
+      setState(() => _errorMessage = 'Failed to load orders.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -139,7 +147,8 @@ class _TransactionsState extends State<Transactions> {
 
     final ordersForSelectedDate = _completedOrders.where((o) {
       if (o.scheduleSlots.isEmpty) return false;
-      final d = DateTime.parse(o.scheduleSlots.first.date);
+      final d = DateTime.tryParse(o.scheduleSlots.first.date);
+      if (d == null) return false;
       final key = DateTime(d.year, d.month, d.day);
       return key == selectedKey;
     }).toList();
@@ -152,11 +161,11 @@ class _TransactionsState extends State<Transactions> {
             return haystack.contains(_searchQuery);
           }).toList();
 
-    final transactions = filteredOrders.map((o) {
+    final orders = filteredOrders.map((o) {
       final totalCost = computeOrderTotalCost(o);
       final points = computeLoyaltyPointsFromCost(totalCost);
       return TransactionItem(
-        transactionNo: o.id,
+        orderNo: o.id,
         customerName: o.customerName,
         eventTitle: o.eventTitle,
         eventType: o.eventType,
@@ -176,8 +185,27 @@ class _TransactionsState extends State<Transactions> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Transactions',
+              'Orders',
               style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Text(
+                  'Daily completed orders and loyalty rewards summary.',
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: _loadCompletedOrders,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E1E1E),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             Expanded(
@@ -195,7 +223,7 @@ class _TransactionsState extends State<Transactions> {
                               child: Text(
                                 _isLoading
                                     ? 'Loading...'
-                                    : (_errorMessage ?? 'No transactions yet.'),
+                                    : (_errorMessage ?? 'No orders yet.'),
                                 style: TextStyle(color: Colors.grey.shade600),
                               ),
                             ),
@@ -213,14 +241,18 @@ class _TransactionsState extends State<Transactions> {
                   Expanded(
                     flex: 6,
                     child: Card(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                      ),
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Transactions',
+                              'Orders',
                               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                             ),
                             const SizedBox(height: 16),
@@ -231,12 +263,12 @@ class _TransactionsState extends State<Transactions> {
                                   child: CircularProgressIndicator(),
                                 ),
                               )
-                            else if (transactions.isEmpty)
+                            else if (orders.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.symmetric(vertical: 40),
                                 child: Center(
                                   child: Text(
-                                    'No transactions available for this date.',
+                                    'No orders available for this date.',
                                     style: TextStyle(color: Colors.grey.shade600),
                                   ),
                                 ),
@@ -246,16 +278,16 @@ class _TransactionsState extends State<Transactions> {
                                 scrollDirection: Axis.horizontal,
                                 child: DataTable(
                                   columns: const [
-                                    DataColumn(label: Text('Transaction No.')),
+                                    DataColumn(label: Text('Order No.')),
                                     DataColumn(label: Text('Customer Name')),
                                     DataColumn(label: Text('Event Title')),
                                     DataColumn(label: Text('Event Type')),
                                     DataColumn(label: Text('Total Cost')),
                                     DataColumn(label: Text('Loyalty Rewards')),
                                   ],
-                                  rows: transactions.map((tx) {
+                                  rows: orders.map((tx) {
                                     return DataRow(cells: [
-                                      DataCell(Text(tx.transactionNo)),
+                                      DataCell(Text(tx.orderNo)),
                                       DataCell(Text(tx.customerName)),
                                       DataCell(Text(tx.eventTitle)),
                                       DataCell(Text(tx.eventType)),

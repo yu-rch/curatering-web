@@ -68,6 +68,7 @@ class _LoginState extends State<Login> {
         Role.supervisor => '/dashboard',
         Role.manager => '/manage-events',
         Role.admin => '/dashboard', // Deprecated - treat as supervisor
+        Role.cashier => '/dashboard',
       };
       
       if (!mounted) {
@@ -234,7 +235,7 @@ class _LoginState extends State<Login> {
                       ),
                       TextButton(
                         onPressed: () =>
-                            Navigator.of(context).pushNamed('/public'),
+                            Navigator.of(context).pushNamed('/'),
                         child: const Text(
                           'View customer website',
                           style: TextStyle(

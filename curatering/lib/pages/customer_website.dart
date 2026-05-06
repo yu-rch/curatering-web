@@ -1,9 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
@@ -13,9 +18,55 @@ import '../services/set_menu_store.dart';
 import '../services/public_events_api.dart';
 import '../services/website_content_store.dart';
 import '../services/cart_store.dart';
+import '../services/loyalty_rewards_store.dart';
+import '../services/api_client.dart';
+import '../widgets/map_picker.dart';
+import '../widgets/pexels_attribution_badge.dart';
 import 'customer_login.dart';
 import 'checkout_page.dart';
+import 'my_orders_page.dart';
+import 'my_caterings_page.dart';
+import 'my_order_tracking_page.dart';
+import 'my_profile_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+part 'customer_website_theme_editor.dart';
+
+/// Letterboxing for placement editor: map between canvas coords and image bitmap (BoxFit.contain).
+class _PlacementContainLayout {
+  const _PlacementContainLayout({
+    required this.offX,
+    required this.offY,
+    required this.dispW,
+    required this.dispH,
+    required this.scale,
+  });
+  final double offX;
+  final double offY;
+  final double dispW;
+  final double dispH;
+  final double scale;
+}
+
+_PlacementContainLayout _placementContainLayout(
+  double cw,
+  double ch,
+  double iw,
+  double ih,
+) {
+  final scale = math.min(cw / iw, ch / ih);
+  final dispW = iw * scale;
+  final dispH = ih * scale;
+  final offX = (cw - dispW) / 2;
+  final offY = (ch - dispH) / 2;
+  return _PlacementContainLayout(
+    offX: offX,
+    offY: offY,
+    dispW: dispW,
+    dispH: dispH,
+    scale: scale,
+  );
+}
 
 class _SetDish {
   final String name;
@@ -57,6 +108,82 @@ class _SetMenuOption {
   });
 }
 
+class _InquiryScheduleSlot {
+  final DateTime date;
+  final TimeOfDay startTime;
+  final TimeOfDay endTime;
+
+  const _InquiryScheduleSlot({
+    required this.date,
+    required this.startTime,
+    required this.endTime,
+  });
+
+  String label(BuildContext context) {
+    final dateStr =
+        '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    return '$dateStr · ${startTime.format(context)}-${endTime.format(context)}';
+  }
+}
+
+class _SoftCustomerOverlayPainter extends CustomPainter {
+  _SoftCustomerOverlayPainter({
+    required this.polygonPoints,
+    required this.boundingBox,
+    required this.selected,
+  });
+
+  final List<Map<String, dynamic>> polygonPoints;
+  final Rect boundingBox;
+  final bool selected;
+
+  Path _buildPath(Size size) {
+    if (polygonPoints.length >= 3) {
+      final path = Path();
+      final first = polygonPoints.first;
+      final fx = (first['x'] as num?)?.toDouble() ?? 0;
+      final fy = (first['y'] as num?)?.toDouble() ?? 0;
+      path.moveTo(fx * size.width, fy * size.height);
+      for (final pt in polygonPoints.skip(1)) {
+        final x = (pt['x'] as num?)?.toDouble() ?? 0;
+        final y = (pt['y'] as num?)?.toDouble() ?? 0;
+        path.lineTo(x * size.width, y * size.height);
+      }
+      path.close();
+      return path;
+    }
+    return Path()..addRRect(
+      RRect.fromRectAndRadius(boundingBox, const Radius.circular(10)),
+    );
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = _buildPath(size);
+    final stroke =
+        Paint()
+          ..color = selected ? Colors.blue : Colors.orange
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2;
+    final fill =
+        Paint()
+          ..color =
+              selected
+                  ? Colors.blue.withOpacity(0.20)
+                  : Colors.orange.withOpacity(0.08)
+          ..style = PaintingStyle.fill;
+    canvas.drawPath(path, fill);
+    canvas.drawPath(path, stroke);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SoftCustomerOverlayPainter oldDelegate) {
+    return selected != oldDelegate.selected ||
+        polygonPoints.length != oldDelegate.polygonPoints.length ||
+        boundingBox != oldDelegate.boundingBox;
+  }
+}
+
 class CustomerWebsiteScreen extends StatefulWidget {
   const CustomerWebsiteScreen({
     super.key,
@@ -81,27 +208,50 @@ bool isTablet(BuildContext context) =>
 bool isDesktop(BuildContext context) =>
     MediaQuery.of(context).size.width >= 1100;
 
+double websiteContentMaxWidth(BuildContext context) {
+  final width = MediaQuery.of(context).size.width;
+  if (width >= 1800) return 1680;
+  if (width >= 1400) return 1440;
+  if (width >= 1100) return 1280;
+  return double.infinity;
+}
+
+EdgeInsets websitePagePadding(BuildContext context, {double vertical = 24}) {
+  final horizontal =
+      isDesktop(context)
+          ? 40.0
+          : isTablet(context)
+          ? 24.0
+          : 16.0;
+  return EdgeInsets.symmetric(horizontal: horizontal, vertical: vertical);
+}
+
 class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _navIndex = 0;
   int? _galleryDetailIndex;
+  String _gallerySearchQuery = '';
   Map<String, dynamic>? _customerData;
   bool _isCustomerLoggedIn = false;
+  String _selectedRestaurantType = 'RICE MEALS'; // Default selected category
 
   @override
   void initState() {
     super.initState();
-    WebsiteContentStore.instance.ensureLoaded().then((_) {
-      if (mounted) setState(() {});
-    });
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    await WebsiteContentStore.instance.ensureLoaded();
+    if (mounted) setState(() {});
     MenuStore.instance.addListener(_onMenuChanged);
     // Ensure dishes are loaded
     if (MenuStore.instance.activeDishes.isEmpty) {
-      MenuStore.instance.loadDishes();
+      await MenuStore.instance.loadDishes();
     }
     CartStore.instance.init();
     CartStore.instance.addListener(_onCartChanged);
-    _checkCustomerAuth();
+    await _checkCustomerAuth();
   }
 
   Future<void> _checkCustomerAuth() async {
@@ -141,9 +291,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         _isCustomerLoggedIn = false;
         _customerData = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Logged out successfully')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Logged out successfully')));
     }
   }
 
@@ -156,12 +306,109 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   void _addToCart(MenuDish dish) {
-    CartStore.instance.addItem(dish);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${dish.name} added to cart'),
-        duration: const Duration(seconds: 1),
-      ),
+    if (!dish.available) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${dish.name} is currently not available')),
+      );
+      return;
+    }
+
+    // Show sauce selection dialog if dish has multiple sauces
+    if (dish.sauces.length > 1) {
+      _showSauceSelectionDialog(dish);
+    } else {
+      // Add directly if no sauce or single sauce
+      final selectedSauce = dish.sauces.isNotEmpty ? dish.sauces.first : null;
+      CartStore.instance.addItem(dish, selectedSauce: selectedSauce);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${dish.name} added to cart'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+  void _showSauceSelectionDialog(MenuDish dish) {
+    String? selectedSauce;
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: Text(
+                    'Select Sauce',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        dish.name,
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ...dish.sauces.map(
+                        (sauce) => RadioListTile<String>(
+                          title: Text(
+                            sauce.toUpperCase(),
+                            style: GoogleFonts.poppins(fontSize: 13),
+                          ),
+                          value: sauce,
+                          groupValue: selectedSauce,
+                          onChanged: (value) {
+                            setDialogState(() => selectedSauce = value);
+                          },
+                          activeColor: Colors.amber.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text(
+                        'Cancel',
+                        style: GoogleFonts.poppins(color: Colors.grey.shade600),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed:
+                          selectedSauce != null
+                              ? () {
+                                CartStore.instance.addItem(
+                                  dish,
+                                  selectedSauce: selectedSauce,
+                                );
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      '${dish.name} with $selectedSauce added to cart',
+                                    ),
+                                    duration: const Duration(seconds: 1),
+                                  ),
+                                );
+                              }
+                              : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.amber.shade700,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: Text(
+                        'Add to Cart',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+          ),
     );
   }
 
@@ -171,14 +418,54 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   void _navigateToCheckout() {
     if (CartStore.instance.items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Your cart is empty')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Your cart is empty')));
       return;
     }
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const CheckoutPage()),
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const CheckoutPage()));
+  }
+
+  Future<void> _navigateToMyOrders() async {
+    final result = await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const MyOrdersPage()));
+    if (result == 'login_required' && mounted) {
+      await _handleLogin();
+    }
+  }
+
+  Future<void> _navigateToMyCaterings() async {
+    final result = await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const MyCateringsPage()));
+    if (result == 'login_required' && mounted) {
+      await _handleLogin();
+    }
+  }
+
+  Future<void> _navigateToOrderTracking() async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const MyOrderTrackingPage()),
     );
+    if (result == 'login_required' && mounted) {
+      await _handleLogin();
+    }
+  }
+
+  Future<void> _navigateToMyProfile() async {
+    final result = await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const MyProfilePage()));
+    if (result == 'login_required' && mounted) {
+      await _handleLogin();
+    }
+    // Refresh customer data after profile update
+    if (result == 'profile_updated' && mounted) {
+      await _checkCustomerAuth();
+    }
   }
 
   @override
@@ -204,10 +491,22 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     return base64Encode(bytes);
   }
 
+  Future<List<String>> _pickMultipleImageB64() async {
+    final picked = await ImagePicker().pickMultiImage();
+    if (picked.isEmpty) return const [];
+    final out = <String>[];
+    for (final x in picked) {
+      final bytes = await x.readAsBytes();
+      out.add(base64Encode(bytes));
+    }
+    return out;
+  }
+
   Widget _b64Image(
     String? b64, {
     double? height,
     BoxFit fit = BoxFit.cover,
+    Alignment alignment = Alignment.center,
     Widget? placeholder,
   }) {
     final ph =
@@ -222,11 +521,17 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         );
     if (b64 == null || b64.isEmpty) return ph;
     try {
+      final normalized =
+          b64
+              .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
+              .replaceAll('\n', '')
+              .trim();
       return Image.memory(
-        base64Decode(b64),
+        base64Decode(normalized),
         height: height,
         width: double.infinity,
         fit: fit,
+        alignment: alignment,
         gaplessPlayback: true,
       );
     } catch (_) {
@@ -234,22 +539,251 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     }
   }
 
+  List<InlineSpan> _simpleMarkupSpans(String text, TextStyle baseStyle) {
+    final spans = <InlineSpan>[];
+    final exp = RegExp(r'\[(\/?)(b|i|u)\]');
+    var cursor = 0;
+    var bold = false;
+    var italic = false;
+    var underline = false;
+    TextStyle active() => baseStyle.copyWith(
+      fontWeight: bold ? FontWeight.w700 : baseStyle.fontWeight,
+      fontStyle: italic ? FontStyle.italic : baseStyle.fontStyle,
+      decoration: underline ? TextDecoration.underline : baseStyle.decoration,
+    );
+    for (final m in exp.allMatches(text)) {
+      if (m.start > cursor) {
+        spans.add(
+          TextSpan(text: text.substring(cursor, m.start), style: active()),
+        );
+      }
+      final closing = m.group(1) == '/';
+      final tag = m.group(2);
+      if (tag == 'b') bold = !closing;
+      if (tag == 'i') italic = !closing;
+      if (tag == 'u') underline = !closing;
+      cursor = m.end;
+    }
+    if (cursor < text.length) {
+      spans.add(TextSpan(text: text.substring(cursor), style: active()));
+    }
+    if (spans.isEmpty) spans.add(TextSpan(text: text, style: baseStyle));
+    return spans;
+  }
+
+  Widget _richTextLabel(
+    String value, {
+    required TextStyle style,
+    TextAlign textAlign = TextAlign.start,
+    int? maxLines,
+    TextOverflow overflow = TextOverflow.clip,
+  }) {
+    return Text.rich(
+      TextSpan(children: _simpleMarkupSpans(value, style)),
+      textAlign: textAlign,
+      maxLines: maxLines,
+      overflow: overflow,
+    );
+  }
+
+  Future<String?> _showRichTextEditorDialog({
+    required String title,
+    required String initialValue,
+  }) async {
+    final ctrl = TextEditingController(text: initialValue);
+    void wrapSelection(String open, String close) {
+      final sel = ctrl.selection;
+      if (!sel.isValid) return;
+      final start = sel.start;
+      final end = sel.end;
+      if (start < 0 || end < 0 || start > end) return;
+      final text = ctrl.text;
+      final selected = text.substring(start, end);
+      final replaced =
+          '${text.substring(0, start)}$open$selected$close${text.substring(end)}';
+      ctrl.text = replaced;
+      ctrl.selection = TextSelection.collapsed(
+        offset: start + open.length + selected.length + close.length,
+      );
+    }
+
+    return showDialog<String>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: Text(title),
+            content: SizedBox(
+              width: 620,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () => wrapSelection('[b]', '[/b]'),
+                        child: const Text('Bold'),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => wrapSelection('[i]', '[/i]'),
+                        child: const Text('Italic'),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => wrapSelection('[u]', '[/u]'),
+                        child: const Text('Underline'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: ctrl,
+                    maxLines: 8,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: 'Use toolbar for rich formatting',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  String _imageKey(String? b64) {
+    final v = (b64 ?? '').trim();
+    if (v.isEmpty) return '';
+    return v.length <= 48 ? v : v.substring(0, 48);
+  }
+
+  Alignment _imageAlignmentFor(WebsiteContentStore w, String? b64) {
+    final key = _imageKey(b64);
+    final row = w.imageAlignments[key];
+    if (row == null) return Alignment.center;
+    return Alignment(
+      (row['x'] ?? 0).clamp(-1.0, 1.0),
+      (row['y'] ?? 0).clamp(-1.0, 1.0),
+    );
+  }
+
+  Future<void> _editImagePosition({
+    required WebsiteContentStore w,
+    required String? b64,
+  }) async {
+    if (b64 == null || b64.isEmpty) return;
+    final key = _imageKey(b64);
+    var current = _imageAlignmentFor(w, b64);
+    final next = await showDialog<Alignment>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Adjust image position'),
+            content: StatefulBuilder(
+              builder:
+                  (ctx, setLocal) => SizedBox(
+                    width: 420,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AspectRatio(
+                          aspectRatio: 1.8,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: _b64Image(
+                              b64,
+                              fit: BoxFit.cover,
+                              alignment: current,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('Horizontal'),
+                        ),
+                        Slider(
+                          value: current.x,
+                          min: -1,
+                          max: 1,
+                          onChanged:
+                              (v) => setLocal(
+                                () => current = Alignment(v, current.y),
+                              ),
+                        ),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('Vertical'),
+                        ),
+                        Slider(
+                          value: current.y,
+                          min: -1,
+                          max: 1,
+                          onChanged:
+                              (v) => setLocal(
+                                () => current = Alignment(current.x, v),
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, current),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+    );
+    if (next == null) return;
+    w.imageAlignments[key] = {'x': next.x, 'y': next.y};
+    await w.save();
+    if (mounted) setState(() {});
+  }
+
   Widget _publicHeader() {
     return Container(
       color: const Color(0xFF1E1E1E),
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: Colors.white,
-            child: Icon(Icons.restaurant, color: Colors.amber.shade800),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: const Color(0xFFFFC024).withValues(alpha: 0.6),
+              ),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              'MKC',
+              style: GoogleFonts.playfairDisplay(
+                color: const Color(0xFFFFC024),
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1,
+              ),
+            ),
           ),
-          const SizedBox(width: 20),
+          const SizedBox(width: 16),
           Expanded(
             child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: 2,
+              runSpacing: 4,
               alignment: WrapAlignment.center,
               children: [
                 _navLink('Home', 0),
@@ -261,75 +795,139 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               ],
             ),
           ),
-          // Cart Icon
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.shopping_cart, color: Colors.white),
-                onPressed: _openCartSidebar,
-              ),
-              if (CartStore.instance.itemCount > 0)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-                    child: Text(
-                      '${CartStore.instance.itemCount}',
-                      style: const TextStyle(color: Colors.white, fontSize: 10),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
+          if (!widget.contentEditable) ...[
+            // Cart Icon
+            Stack(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.shopping_cart, color: Colors.white),
+                  onPressed: _openCartSidebar,
                 ),
-            ],
-          ),
-          const SizedBox(width: 8),
-          // Login/Logout Button
-          if (_isCustomerLoggedIn)
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'logout') {
-                  _handleLogout();
-                }
-              },
-              child: Row(
-                children: [
-                  Icon(Icons.person, color: Colors.amber.shade400, size: 20),
-                  const SizedBox(width: 4),
-                  Text(
-                    _customerData?['fullName'] ?? 'Customer',
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                if (CartStore.instance.itemCount > 0)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 18,
+                        minHeight: 18,
+                      ),
+                      child: Text(
+                        '${CartStore.instance.itemCount}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   ),
-                  const Icon(Icons.arrow_drop_down, color: Colors.white),
-                ],
-              ),
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'logout',
-                  child: Row(
-                    children: [
-                      Icon(Icons.logout, size: 18),
-                      SizedBox(width: 8),
-                      Text('Logout'),
-                    ],
-                  ),
-                ),
               ],
-            )
-          else
-            TextButton.icon(
-              onPressed: _handleLogin,
-              icon: const Icon(Icons.login, color: Colors.white, size: 18),
-              label: const Text(
-                'Login',
-                style: TextStyle(color: Colors.white),
-              ),
             ),
+            const SizedBox(width: 8),
+            // Login/Logout Button
+            if (_isCustomerLoggedIn)
+              PopupMenuButton<String>(
+                onSelected: (value) async {
+                  switch (value) {
+                    case 'my_profile':
+                      await _navigateToMyProfile();
+                      break;
+                    case 'my_orders':
+                      await _navigateToMyOrders();
+                      break;
+                    case 'my_caterings':
+                      await _navigateToMyCaterings();
+                      break;
+                    case 'order_tracking':
+                      await _navigateToOrderTracking();
+                      break;
+                    case 'logout':
+                      await _handleLogout();
+                      break;
+                  }
+                },
+                child: Row(
+                  children: [
+                    Icon(Icons.person, color: Colors.amber.shade400, size: 20),
+                    const SizedBox(width: 4),
+                    Text(
+                      _customerData?['fullName'] ?? 'Customer',
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                    const Icon(Icons.arrow_drop_down, color: Colors.white),
+                  ],
+                ),
+                itemBuilder:
+                    (context) => [
+                      const PopupMenuItem(
+                        value: 'my_profile',
+                        child: Row(
+                          children: [
+                            Icon(Icons.person, size: 18),
+                            SizedBox(width: 8),
+                            Text('My Profile'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'my_orders',
+                        child: Row(
+                          children: [
+                            Icon(Icons.receipt_long, size: 18),
+                            SizedBox(width: 8),
+                            Text('My Orders'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'my_caterings',
+                        child: Row(
+                          children: [
+                            Icon(Icons.event, size: 18),
+                            SizedBox(width: 8),
+                            Text('My Caterings'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'order_tracking',
+                        child: Row(
+                          children: [
+                            Icon(Icons.local_shipping, size: 18),
+                            SizedBox(width: 8),
+                            Text('Order Tracking'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: 'logout',
+                        child: Row(
+                          children: [
+                            Icon(Icons.logout, size: 18, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('Logout', style: TextStyle(color: Colors.red)),
+                          ],
+                        ),
+                      ),
+                    ],
+              )
+            else
+              TextButton.icon(
+                onPressed: _handleLogin,
+                icon: const Icon(Icons.login, color: Colors.white, size: 18),
+                label: const Text(
+                  'Login',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+          ],
         ],
       ),
     );
@@ -338,12 +936,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Widget _navLink(String label, int index) {
     final on = _navIndex == index && _galleryDetailIndex == null;
     return InkWell(
-      onTap: () => setState(() {
-        _galleryDetailIndex = null;
-        _navIndex = index;
-      }),
+      onTap:
+          () => setState(() {
+            _galleryDetailIndex = null;
+            _navIndex = index;
+          }),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -352,12 +951,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: on ? FontWeight.w700 : FontWeight.w400,
-                fontSize: 13,
+                fontSize: 11.5,
+                letterSpacing: 0.5,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             if (on)
-              Container(height: 2, width: 36, color: const Color(0xFFFFC024)),
+              Container(height: 2, width: 32, color: const Color(0xFFFFC024)),
           ],
         ),
       ),
@@ -367,7 +967,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Widget _footer(WebsiteContentStore w) {
     return Container(
       color: const Color(0xFFFFC107),
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 24),
       child: Wrap(
         spacing: 32,
         runSpacing: 16,
@@ -380,12 +980,30 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               children: [
                 TextButton(
                   onPressed: () {},
-                  child: const Text('PRIVACY POLICY'),
+                  child: const Text(
+                    'PRIVACY POLICY',
+                    style: TextStyle(color: Colors.black),
+                  ),
                 ),
-                Text(
+                _richTextLabel(
                   w.footerCopyright,
                   style: const TextStyle(fontSize: 11, height: 1.4),
                 ),
+                if (widget.contentEditable)
+                  TextButton.icon(
+                    onPressed: () async {
+                      final value = await _showRichTextEditorDialog(
+                        title: 'Edit footer copyright',
+                        initialValue: w.footerCopyright,
+                      );
+                      if (value == null || value.isEmpty) return;
+                      w.footerCopyright = value;
+                      await w.save();
+                      setState(() {});
+                    },
+                    icon: const Icon(Icons.edit, size: 14),
+                    label: const Text('Edit'),
+                  ),
               ],
             ),
           ),
@@ -394,15 +1012,24 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             children: [
               TextButton(
                 onPressed: () => setState(() => _navIndex = 1),
-                child: const Text('GALLERY'),
+                child: const Text(
+                  'GALLERY',
+                  style: TextStyle(color: Colors.black),
+                ),
               ),
               TextButton(
                 onPressed: () => setState(() => _navIndex = 2),
-                child: const Text('CATERING MENU'),
+                child: const Text(
+                  'CATERING MENU',
+                  style: TextStyle(color: Colors.black),
+                ),
               ),
               TextButton(
                 onPressed: () => setState(() => _navIndex = 3),
-                child: const Text('RESTAURANT'),
+                child: const Text(
+                  'RESTAURANT',
+                  style: TextStyle(color: Colors.black),
+                ),
               ),
             ],
           ),
@@ -411,17 +1038,26 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             children: [
               TextButton(
                 onPressed: () => setState(() => _navIndex = 4),
-                child: const Text('INQUIRE NOW'),
+                child: const Text(
+                  'INQUIRE NOW',
+                  style: TextStyle(color: Colors.black),
+                ),
               ),
               TextButton(
                 onPressed: () => setState(() => _navIndex = 5),
-                child: const Text('CONTACT US'),
+                child: const Text(
+                  'CONTACT US',
+                  style: TextStyle(color: Colors.black),
+                ),
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pushNamed('/login'),
                 child: const Text(
                   'STAFF LOGIN',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
                 ),
               ),
             ],
@@ -501,21 +1137,74 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               Stack(
                 children: [
                   SizedBox(
-                    height: 280,
+                    height: 360,
                     width: double.infinity,
-                    child: w.homeHeroImageBase64.isEmpty
-                        ? Container(
-                            color: Colors.grey.shade400,
-                            alignment: Alignment.center,
-                            child: Text(
-                              'Macrina\'s Kitchen and Catering',
-                              style: GoogleFonts.playfairDisplay(
-                                fontSize: 28,
-                                color: Colors.white,
+                    child:
+                        w.homeHeroImageBase64.isEmpty
+                            ? Container(
+                              color: Colors.grey.shade700,
+                              alignment: Alignment.center,
+                              child: Text(
+                                'Macrina\'s Kitchen and Catering',
+                                style: GoogleFonts.playfairDisplay(
+                                  fontSize: 28,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            )
+                            : _b64Image(
+                              w.homeHeroImageBase64,
+                              height: 360,
+                              alignment: _imageAlignmentFor(
+                                w,
+                                w.homeHeroImageBase64,
                               ),
                             ),
-                          )
-                        : _b64Image(w.homeHeroImageBase64, height: 280),
+                  ),
+                  Positioned.fill(
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 26,
+                          vertical: 18,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.25),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.6),
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'MACRINA\'S',
+                              style: GoogleFonts.playfairDisplay(
+                                fontSize: isMobile(context) ? 34 : 54,
+                                color: Colors.white,
+                                letterSpacing: 1.6,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'KITCHEN AND CATERING',
+                              style: GoogleFonts.cormorantGaramond(
+                                fontSize: isMobile(context) ? 16 : 24,
+                                color: const Color(0xFFFFC024),
+                                letterSpacing: 2.4,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                   _editChip(() async {
                     final b64 = await _pickImageB64();
@@ -524,29 +1213,66 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     await w.save();
                     setState(() {});
                   }),
+                  if (widget.contentEditable &&
+                      w.homeHeroImageBase64.isNotEmpty)
+                    Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: FilledButton.tonalIcon(
+                        onPressed:
+                            () => _editImagePosition(
+                              w: w,
+                              b64: w.homeHeroImageBase64,
+                            ),
+                        icon: const Icon(Icons.open_with, size: 16),
+                        label: const Text('Position'),
+                      ),
+                    ),
                 ],
               ),
               Container(
                 color: const Color(0xFFF5F5F5),
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 20,
+                ),
                 child: Center(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      maxWidth: isDesktop(context) ? 1100 : double.infinity,
+                      maxWidth: websiteContentMaxWidth(context),
                     ),
                     child: Column(
                       children: [
-                        Text(
+                        _richTextLabel(
                           w.redBannerText,
                           style: GoogleFonts.dancingScript(
-                            fontSize: 26,
+                            fontSize: 24,
                             color: Colors.red.shade700,
                             fontWeight: FontWeight.w700,
                           ),
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 24),
-                        Row(
+                        if (widget.contentEditable)
+                          TextButton.icon(
+                            onPressed: () async {
+                              final value = await _showRichTextEditorDialog(
+                                title: 'Edit red banner text',
+                                initialValue: w.redBannerText,
+                              );
+                              if (value == null || value.isEmpty) return;
+                              w.redBannerText = value;
+                              await w.save();
+                              setState(() {});
+                            },
+                            icon: const Icon(Icons.edit, size: 16),
+                            label: const Text('Edit banner text'),
+                          ),
+                        const SizedBox(height: 18),
+                        Flex(
+                          direction:
+                              isMobile(context)
+                                  ? Axis.vertical
+                                  : Axis.horizontal,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
@@ -554,7 +1280,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                               child: Stack(
                                 children: [
                                   Container(
-                                    padding: const EdgeInsets.all(20),
+                                    padding: const EdgeInsets.all(18),
                                     decoration: BoxDecoration(
                                       color: Colors.white,
                                       borderRadius: BorderRadius.circular(12),
@@ -579,124 +1305,146 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                             ),
                                           ),
                                         ),
-                                        const SizedBox(height: 12),
-                                        Text(
+                                        const SizedBox(height: 10),
+                                        _richTextLabel(
                                           w.latestEventTitle,
                                           style: GoogleFonts.dancingScript(
-                                            fontSize: 32,
-                                            color: Colors.pink.shade300,
+                                            fontSize: 42,
+                                            color: const Color(0xFFB0305A),
                                           ),
                                         ),
-                                        Text(
+                                        _richTextLabel(
                                           w.latestEventSubtitle,
                                           style: const TextStyle(
                                             fontSize: 12,
                                             letterSpacing: 1.2,
                                           ),
                                         ),
+                                        const SizedBox(height: 14),
+                                        Container(
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF7F7F7),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.grey.shade300,
+                                            ),
+                                          ),
+                                          child: _richTextLabel(
+                                            w.latestEventBody,
+                                            style: const TextStyle(
+                                              height: 1.35,
+                                            ),
+                                          ),
+                                        ),
                                         const SizedBox(height: 12),
-                                        Text(w.latestEventBody),
-                                        const SizedBox(height: 12),
-                                        TextButton(
-                                          onPressed: () =>
-                                              setState(() => _navIndex = 3),
-                                          child: const Text('INQUIRE NOW!'),
+                                        Align(
+                                          alignment: Alignment.center,
+                                          child: FilledButton(
+                                            style: FilledButton.styleFrom(
+                                              backgroundColor: const Color(
+                                                0xFFFFC024,
+                                              ),
+                                              foregroundColor: Colors.black,
+                                              textStyle: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                letterSpacing: 0.4,
+                                              ),
+                                            ),
+                                            onPressed:
+                                                widget.contentEditable
+                                                    ? null
+                                                    : () => setState(
+                                                      () => _navIndex = 4,
+                                                    ),
+                                            child: const Text('INQUIRE NOW!'),
+                                          ),
                                         ),
                                       ],
                                     ),
                                   ),
                                   _editChip(() async {
-                                    final title = TextEditingController(
-                                      text: w.latestEventTitle,
-                                    );
-                                    final sub = TextEditingController(
-                                      text: w.latestEventSubtitle,
-                                    );
-                                    final body = TextEditingController(
-                                      text: w.latestEventBody,
-                                    );
-                                    await showDialog<void>(
-                                      context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        title: const Text('Edit latest event'),
-                                        content: SingleChildScrollView(
-                                          child: Column(
-                                            children: [
-                                              TextField(
-                                                controller: title,
-                                                decoration:
-                                                    const InputDecoration(
-                                                      labelText: 'Title',
-                                                    ),
-                                              ),
-                                              TextField(
-                                                controller: sub,
-                                                decoration:
-                                                    const InputDecoration(
-                                                      labelText: 'Subtitle',
-                                                    ),
-                                              ),
-                                              TextField(
-                                                controller: body,
-                                                maxLines: 4,
-                                                decoration:
-                                                    const InputDecoration(
-                                                      labelText: 'Body',
-                                                    ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () => Navigator.pop(ctx),
-                                            child: const Text('Cancel'),
-                                          ),
-                                          TextButton(
-                                            onPressed: () {
-                                              w.latestEventTitle = title.text;
-                                              w.latestEventSubtitle = sub.text;
-                                              w.latestEventBody = body.text;
-                                              w.save();
-                                              Navigator.pop(ctx);
-                                              setState(() {});
-                                            },
-                                            child: const Text('Save'),
-                                          ),
-                                        ],
-                                      ),
-                                    );
+                                    final nextTitle =
+                                        await _showRichTextEditorDialog(
+                                          title: 'Edit latest event title',
+                                          initialValue: w.latestEventTitle,
+                                        );
+                                    if (nextTitle == null) return;
+                                    final nextSubtitle =
+                                        await _showRichTextEditorDialog(
+                                          title: 'Edit latest event subtitle',
+                                          initialValue: w.latestEventSubtitle,
+                                        );
+                                    if (nextSubtitle == null) return;
+                                    final nextBody =
+                                        await _showRichTextEditorDialog(
+                                          title: 'Edit latest event body',
+                                          initialValue: w.latestEventBody,
+                                        );
+                                    if (nextBody == null) return;
+                                    w.latestEventTitle = nextTitle;
+                                    w.latestEventSubtitle = nextSubtitle;
+                                    w.latestEventBody = nextBody;
+                                    await w.save();
+                                    setState(() {});
                                   }),
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 20),
+                            SizedBox(
+                              width: isMobile(context) ? 0 : 20,
+                              height: isMobile(context) ? 16 : 0,
+                            ),
                             Expanded(
                               flex: 5,
                               child: Stack(
                                 children: [
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: List.generate(4, (i) {
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final totalW = constraints.maxWidth;
+                                      final gap = 10.0;
+                                      final halfW = (totalW - gap) / 2;
                                       final list = w.latestEventCollageBase64;
-                                      final b64 = i < list.length
-                                          ? list[i]
-                                          : null;
-                                      return SizedBox(
-                                        width: 160,
-                                        height: 120,
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            10,
+                                      String? at(int i) =>
+                                          i < list.length ? list[i] : null;
+                                      return Column(
+                                        children: [
+                                          Row(
+                                            children: [
+                                              _collageTile(
+                                                at(0),
+                                                width: halfW,
+                                                height: 170,
+                                              ),
+                                              SizedBox(width: gap),
+                                              _collageTile(
+                                                at(1),
+                                                width: halfW,
+                                                height: 170,
+                                              ),
+                                            ],
                                           ),
-                                          child: _b64Image(
-                                            b64,
-                                            fit: BoxFit.cover,
+                                          const SizedBox(height: 10),
+                                          Row(
+                                            children: [
+                                              _collageTile(
+                                                at(2),
+                                                width: halfW,
+                                                height: 170,
+                                              ),
+                                              SizedBox(width: gap),
+                                              _collageTile(
+                                                at(3),
+                                                width: halfW,
+                                                height: 170,
+                                              ),
+                                            ],
                                           ),
-                                        ),
+                                        ],
                                       );
-                                    }),
+                                    },
                                   ),
                                   _editChip(() async {
                                     final b64 = await _pickImageB64();
@@ -755,67 +1503,90 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: 160,
+          height: 226,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            children: dishes.map((d) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: SizedBox(
-                  width: 140,
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child:
-                              d.imageBase64 != null && d.imageBase64!.isNotEmpty
-                              ? _b64Image(d.imageBase64, fit: BoxFit.cover)
-                              : Container(
-                                  color: Colors.grey.shade200,
-                                  child: const Icon(Icons.fastfood, size: 40),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        d.name.toUpperCase(),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '₱${d.price}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.amber.shade800,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      SizedBox(
-                        height: 24,
-                        child: ElevatedButton.icon(
-                          onPressed: () => _addToCart(d),
-                          icon: const Icon(Icons.add, size: 14),
-                          label: const Text('Add', style: TextStyle(fontSize: 10)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1E1E1E),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
+            children:
+                dishes.map((d) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: SizedBox(
+                      width: 178,
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            height: 120,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child:
+                                  d.imageBase64 != null &&
+                                          d.imageBase64!.isNotEmpty
+                                      ? _b64Image(
+                                        d.imageBase64,
+                                        fit: BoxFit.cover,
+                                      )
+                                      : Container(
+                                        color: Colors.grey.shade200,
+                                        child: const Icon(
+                                          Icons.fastfood,
+                                          size: 40,
+                                        ),
+                                      ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 8),
+                          Text(
+                            d.name.toUpperCase(),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '₱${d.price}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.amber.shade800,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            height: 28,
+                            child: ElevatedButton.icon(
+                              onPressed:
+                                  (widget.contentEditable || !d.available)
+                                      ? null
+                                      : () => _addToCart(d),
+                              icon: Icon(
+                                d.available ? Icons.add : Icons.block,
+                                size: 14,
+                              ),
+                              label: Text(
+                                d.available ? 'Add' : 'N/A',
+                                style: const TextStyle(fontSize: 10),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    d.available
+                                        ? const Color(0xFF1E1E1E)
+                                        : Colors.grey.shade500,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
+                    ),
+                  );
+                }).toList(),
           ),
         ),
         const SizedBox(height: 28),
@@ -837,7 +1608,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: 120,
+          height: 140,
           child: ListView(
             scrollDirection: Axis.horizontal,
             children: List.generate(
@@ -847,13 +1618,14 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: SizedBox(
-                    width: 160,
-                    child: i < w.eventDesignImageBase64.length
-                        ? _b64Image(
-                            w.eventDesignImageBase64[i],
-                            fit: BoxFit.cover,
-                          )
-                        : Container(color: Colors.grey.shade300),
+                    width: 180,
+                    child:
+                        i < w.eventDesignImageBase64.length
+                            ? _b64Image(
+                              w.eventDesignImageBase64[i],
+                              fit: BoxFit.cover,
+                            )
+                            : Container(color: Colors.grey.shade300),
                   ),
                 ),
               ),
@@ -879,69 +1651,237 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
+  Widget _collageTile(
+    String? b64, {
+    required double width,
+    required double height,
+  }) {
+    return SizedBox(
+      width: width,
+      height: height,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: _b64Image(b64, fit: BoxFit.cover),
+      ),
+    );
+  }
+
   Widget _buildGallery(WebsiteContentStore w) {
     if (_galleryDetailIndex != null) {
       final cat = w.galleryCategories[_galleryDetailIndex!];
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
+      return SingleChildScrollView(
+        padding: websitePagePadding(context),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: websiteContentMaxWidth(context),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                OutlinedButton(
-                  onPressed: () => setState(() => _galleryDetailIndex = null),
-                  child: const Text('GO BACK'),
+                Row(
+                  children: [
+                    FilledButton.tonal(
+                      onPressed:
+                          () => setState(() => _galleryDetailIndex = null),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF1E1E1E),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('GO BACK'),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFC024),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          cat.label,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                    if (widget.contentEditable) ...[
+                      const SizedBox(width: 10),
+                      FilledButton.icon(
+                        onPressed: () async {
+                          final b64s = await _pickMultipleImageB64();
+                          if (b64s.isEmpty) return;
+                          cat.imageBase64List.addAll(b64s);
+                          await w.save();
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.add_photo_alternate),
+                        label: const Text('Add Photos'),
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(width: 16),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 10,
-                  ),
-                  color: const Color(0xFFFFC024),
-                  child: Text(
-                    cat.label,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                const SizedBox(height: 16),
+                TextField(
+                  onChanged:
+                      (v) => setState(
+                        () => _gallerySearchQuery = v.trim().toLowerCase(),
+                      ),
+                  decoration: InputDecoration(
+                    hintText: 'SEARCH',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.amber.shade700),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.amber.shade700),
+                    ),
                   ),
                 ),
-                const Spacer(),
-                if (widget.contentEditable)
-                  TextButton.icon(
-                    onPressed: () async {
-                      final b64 = await _pickImageB64();
-                      if (b64 == null) return;
-                      cat.imageBase64List.add(b64);
-                      await w.save();
-                      setState(() {});
-                    },
-                    icon: const Icon(Icons.upload),
-                    label: const Text('Upload'),
+                const SizedBox(height: 16),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount:
+                        isMobile(context)
+                            ? 1
+                            : isTablet(context)
+                            ? 2
+                            : 3,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    childAspectRatio: 0.95,
                   ),
+                  itemCount: cat.imageBase64List.length,
+                  itemBuilder: (ctx, i) {
+                    final img = cat.imageBase64List[i];
+                    return Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          showDialog<void>(
+                            context: context,
+                            builder:
+                                (dlgCtx) => Dialog(
+                                  insetPadding: const EdgeInsets.symmetric(
+                                    horizontal: 120,
+                                    vertical: 60,
+                                  ),
+                                  child: Stack(
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.all(18),
+                                        child: _b64Image(
+                                          img,
+                                          fit: BoxFit.contain,
+                                          alignment: _imageAlignmentFor(w, img),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: IconButton(
+                                          onPressed:
+                                              () => Navigator.pop(dlgCtx),
+                                          icon: const Icon(Icons.close),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                          );
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: _b64Image(
+                                    img,
+                                    fit: BoxFit.cover,
+                                    alignment: _imageAlignmentFor(w, img),
+                                  ),
+                                ),
+                              ),
+                              if (widget.contentEditable)
+                                Positioned(
+                                  right: 6,
+                                  top: 6,
+                                  child: PopupMenuButton<String>(
+                                    icon: const Icon(
+                                      Icons.more_vert,
+                                      color: Colors.white,
+                                    ),
+                                    onSelected: (value) async {
+                                      if (value == 'position') {
+                                        await _editImagePosition(
+                                          w: w,
+                                          b64: img,
+                                        );
+                                        return;
+                                      } else if (value == 'delete') {
+                                        cat.imageBase64List.removeAt(i);
+                                      } else if (value == 'up' && i > 0) {
+                                        final tmp = cat.imageBase64List[i - 1];
+                                        cat.imageBase64List[i - 1] =
+                                            cat.imageBase64List[i];
+                                        cat.imageBase64List[i] = tmp;
+                                      } else if (value == 'down' &&
+                                          i < cat.imageBase64List.length - 1) {
+                                        final tmp = cat.imageBase64List[i + 1];
+                                        cat.imageBase64List[i + 1] =
+                                            cat.imageBase64List[i];
+                                        cat.imageBase64List[i] = tmp;
+                                      } else {
+                                        return;
+                                      }
+                                      await w.save();
+                                      setState(() {});
+                                    },
+                                    itemBuilder:
+                                        (_) => const [
+                                          PopupMenuItem(
+                                            value: 'position',
+                                            child: Text('Adjust Position'),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'up',
+                                            child: Text('Move Up'),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'down',
+                                            child: Text('Move Down'),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'delete',
+                                            child: Text('Delete'),
+                                          ),
+                                        ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
           ),
-          Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.all(24),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: isMobile(context)
-                    ? 1
-                    : isTablet(context)
-                    ? 2
-                    : 3,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 1.2,
-              ),
-              itemCount: cat.imageBase64List.length,
-              itemBuilder: (ctx, i) => ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: _b64Image(cat.imageBase64List[i], fit: BoxFit.cover),
-              ),
-            ),
-          ),
-        ],
+        ),
       );
     }
 
@@ -949,11 +1889,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       listenable: w,
       builder: (context, _) {
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: websitePagePadding(context),
           child: Center(
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: isDesktop(context) ? 1100 : double.infinity,
+                maxWidth: websiteContentMaxWidth(context),
               ),
               child: Column(
                 children: [
@@ -966,38 +1906,85 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'WE CATER TO MANY DIFFERENT TYPES OF EVENTS. TAKE A LOOK AT OUR WORK!',
+                    'WE CATER TO MANY DIFFERENT TYPES OF EVENTS. TAKE A LOOK AT OUR WORK AND SEE SOME THINGS YOU MIGHT LIKE!',
                     textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 18),
+                  TextField(
+                    onChanged:
+                        (v) => setState(
+                          () => _gallerySearchQuery = v.trim().toLowerCase(),
+                        ),
+                    decoration: InputDecoration(
+                      hintText: 'SEARCH',
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.amber.shade700),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.amber.shade700),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 24),
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: isMobile(context)
-                          ? 1
-                          : isTablet(context)
-                          ? 2
-                          : 3,
+                      crossAxisCount:
+                          isMobile(context)
+                              ? 1
+                              : isTablet(context)
+                              ? 2
+                              : 3,
                       crossAxisSpacing: 16,
                       mainAxisSpacing: 16,
                       childAspectRatio: 1.1,
                     ),
-                    itemCount: w.galleryCategories.length,
+                    itemCount:
+                        w.galleryCategories
+                            .where(
+                              (c) =>
+                                  _gallerySearchQuery.isEmpty ||
+                                  c.label.toLowerCase().contains(
+                                    _gallerySearchQuery,
+                                  ),
+                            )
+                            .length,
                     itemBuilder: (ctx, i) {
-                      final c = w.galleryCategories[i];
-                      final thumb = c.imageBase64List.isNotEmpty
-                          ? c.imageBase64List.first
-                          : null;
+                      final filtered =
+                          w.galleryCategories
+                              .where(
+                                (c) =>
+                                    _gallerySearchQuery.isEmpty ||
+                                    c.label.toLowerCase().contains(
+                                      _gallerySearchQuery,
+                                    ),
+                              )
+                              .toList();
+                      final c = filtered[i];
+                      final realIndex = w.galleryCategories.indexOf(c);
+                      final thumb =
+                          c.imageBase64List.isNotEmpty
+                              ? c.imageBase64List.first
+                              : null;
                       return InkWell(
-                        onTap: () => setState(() => _galleryDetailIndex = i),
+                        onTap:
+                            () =>
+                                setState(() => _galleryDetailIndex = realIndex),
                         child: Stack(
                           children: [
                             ClipRRect(
                               borderRadius: BorderRadius.circular(12),
                               child: AspectRatio(
                                 aspectRatio: 1.1,
-                                child: _b64Image(thumb, fit: BoxFit.cover),
+                                child: _b64Image(
+                                  thumb,
+                                  fit: BoxFit.cover,
+                                  alignment: _imageAlignmentFor(w, thumb),
+                                ),
                               ),
                             ),
                             Positioned(
@@ -1019,8 +2006,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                   c.label,
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
                                   ),
                                 ),
                               ),
@@ -1043,25 +2030,29 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     );
                                     await showDialog<void>(
                                       context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        title: const Text('Category label'),
-                                        content: TextField(controller: ctrl),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () => Navigator.pop(ctx),
-                                            child: const Text('Cancel'),
+                                      builder:
+                                          (ctx) => AlertDialog(
+                                            title: const Text('Category label'),
+                                            content: TextField(
+                                              controller: ctrl,
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed:
+                                                    () => Navigator.pop(ctx),
+                                                child: const Text('Cancel'),
+                                              ),
+                                              TextButton(
+                                                onPressed: () {
+                                                  c.label = ctrl.text;
+                                                  w.save();
+                                                  Navigator.pop(ctx);
+                                                  setState(() {});
+                                                },
+                                                child: const Text('Save'),
+                                              ),
+                                            ],
                                           ),
-                                          TextButton(
-                                            onPressed: () {
-                                              c.label = ctrl.text;
-                                              w.save();
-                                              Navigator.pop(ctx);
-                                              setState(() {});
-                                            },
-                                            child: const Text('Save'),
-                                          ),
-                                        ],
-                                      ),
                                     );
                                   },
                                 ),
@@ -1081,48 +2072,138 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Widget _buildCateringMenu() {
-    // Show loading state
-    if (MenuStore.instance.isLoading) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Loading menu...'),
-          ],
+    final allDishes = MenuStore.instance.activeDishes;
+    final cateringDishes =
+        allDishes.where((d) => d.category == 'catering').toList();
+
+    // Show loading state if dishes are empty or currently loading
+    if (MenuStore.instance.isLoading || allDishes.isEmpty) {
+      return SizedBox(
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 60,
+                height: 60,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.amber.shade700,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Loading our delicious menu...',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
     // Show error state
     if (MenuStore.instance.error != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.red),
-            const SizedBox(height: 16),
-            Text('Error: ${MenuStore.instance.error}'),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => MenuStore.instance.loadDishes(),
-              child: const Text('Retry'),
+      return SizedBox(
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: Colors.red.shade400,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Oops, there was an error loading the website.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    color: Colors.grey.shade800,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Try reloading the page.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.amber.shade600, Colors.amber.shade800],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.amber.shade200,
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton.icon(
+                    onPressed: () => MenuStore.instance.loadDishes(),
+                    icon: const Icon(
+                      Icons.refresh_rounded,
+                      color: Colors.white,
+                    ),
+                    label: Text(
+                      'Reload Page',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 16,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       );
     }
 
-    final allDishes = MenuStore.instance.activeDishes;
-    final cateringDishes = allDishes.where((d) => d.category == 'catering').toList();
-
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: websitePagePadding(context),
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: isDesktop(context) ? 1100 : double.infinity,
+            maxWidth: websiteContentMaxWidth(context),
           ),
           child: Column(
             children: [
@@ -1147,14 +2228,15 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: isMobile(context)
-                        ? 1
-                        : isTablet(context)
-                        ? 2
-                        : 3,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    childAspectRatio: 0.9,
+                    crossAxisCount:
+                        isMobile(context)
+                            ? 2
+                            : isTablet(context)
+                            ? 3
+                            : 5,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 0.8,
                   ),
                   itemCount: cateringDishes.length,
                   itemBuilder: (ctx, i) {
@@ -1169,12 +2251,18 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                               ),
                               child:
                                   d.imageBase64 != null &&
-                                      d.imageBase64!.isNotEmpty
-                                  ? _b64Image(d.imageBase64, fit: BoxFit.cover)
-                                  : Container(
-                                      color: Colors.grey.shade200,
-                                      child: const Icon(Icons.fastfood, size: 48),
-                                    ),
+                                          d.imageBase64!.isNotEmpty
+                                      ? _b64Image(
+                                        d.imageBase64,
+                                        fit: BoxFit.cover,
+                                      )
+                                      : Container(
+                                        color: Colors.grey.shade200,
+                                        child: const Icon(
+                                          Icons.fastfood,
+                                          size: 48,
+                                        ),
+                                      ),
                             ),
                           ),
                           Padding(
@@ -1207,10 +2295,85 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   Widget _buildRestaurantMenu() {
     final allDishes = MenuStore.instance.activeDishes;
-    final restaurantDishes = allDishes.where((d) => d.category == 'restaurant').toList();
+
+    // Show loading state if dishes are empty or currently loading
+    if (MenuStore.instance.isLoading || allDishes.isEmpty) {
+      return SizedBox(
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 60,
+                height: 60,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.amber.shade700,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Loading our delicious menu...',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final restaurantDishes =
+        allDishes.where((d) {
+          final category = d.category.trim().toLowerCase();
+          final isRestaurantCategory =
+              category == 'restaurant' ||
+              category == 'main_course' ||
+              category == 'noodles' ||
+              category == 'appetizer' ||
+              category == 'rice' ||
+              category == 'dessert' ||
+              category == 'drinks' ||
+              category == 'drink';
+          return isRestaurantCategory || d.type.trim().isNotEmpty;
+        }).toList();
     final cartItems = CartStore.instance.items;
     final totalAmount = CartStore.instance.totalAmount;
-    final dishes = restaurantDishes;
+    // Filter restaurant dishes by selected type
+    String restaurantTypeForDish(MenuDish dish) {
+      final rawType = dish.type.trim().toLowerCase();
+      if (rawType.isNotEmpty) return rawType;
+      final category = dish.category.trim().toLowerCase();
+      switch (category) {
+        case 'main_course':
+        case 'rice':
+          return 'rice meals';
+        case 'noodles':
+          return 'pasta';
+        case 'appetizer':
+          return 'sandwiches';
+        case 'dessert':
+          return 'others';
+        case 'drink':
+        case 'drinks':
+          return 'drinks';
+        default:
+          return 'others';
+      }
+    }
+
+    final selectedType = _selectedRestaurantType.trim().toLowerCase();
+    final dishes =
+        restaurantDishes.where((d) {
+          final dishType = restaurantTypeForDish(d);
+          return dishType == selectedType;
+        }).toList();
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1219,7 +2382,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         Expanded(
           flex: 3,
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: websitePagePadding(context, vertical: 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1244,19 +2407,28 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFFFC024),
                           foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 12,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                         child: const Text(
                           'LOG IN TO ORDER',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+                // Loyalty Points Banner
+                _buildLoyaltyBanner(),
+                const SizedBox(height: 16),
                 // Search and Filter
                 Row(
                   children: [
@@ -1273,7 +2445,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             hintStyle: TextStyle(color: Colors.grey),
                             prefixIcon: Icon(Icons.search, color: Colors.grey),
                             border: InputBorder.none,
-                            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
                           ),
                         ),
                       ),
@@ -1301,12 +2476,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      _buildCategoryTab('RICE MEALS', true),
-                      _buildCategoryTab('SILOG MEALS', false),
-                      _buildCategoryTab('PASTA', false),
-                      _buildCategoryTab('SANDWICHES', false),
-                      _buildCategoryTab('OTHERS', false),
-                      _buildCategoryTab('DRINKS', false),
+                      _buildCategoryTab('RICE MEALS'),
+                      _buildCategoryTab('SILOG MEALS'),
+                      _buildCategoryTab('PASTA'),
+                      _buildCategoryTab('SANDWICHES'),
+                      _buildCategoryTab('OTHERS'),
+                      _buildCategoryTab('DRINKS'),
                     ],
                   ),
                 ),
@@ -1326,12 +2501,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                      childAspectRatio: 0.75,
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 5,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                          childAspectRatio: 0.70,
+                        ),
                     itemCount: dishes.length,
                     itemBuilder: (ctx, i) {
                       final d = dishes[i];
@@ -1349,18 +2525,26 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                 borderRadius: const BorderRadius.vertical(
                                   top: Radius.circular(12),
                                 ),
-                                child: d.imageBase64 != null && d.imageBase64!.isNotEmpty
-                                    ? _b64Image(d.imageBase64, fit: BoxFit.cover)
-                                    : Container(
-                                        color: Colors.grey.shade200,
-                                        child: const Icon(Icons.fastfood, size: 48),
-                                      ),
+                                child:
+                                    d.imageBase64 != null &&
+                                            d.imageBase64!.isNotEmpty
+                                        ? _b64Image(
+                                          d.imageBase64,
+                                          fit: BoxFit.cover,
+                                        )
+                                        : Container(
+                                          color: Colors.grey.shade200,
+                                          child: const Icon(
+                                            Icons.fastfood,
+                                            size: 48,
+                                          ),
+                                        ),
                               ),
                             ),
                             Expanded(
                               flex: 2,
                               child: Padding(
-                                padding: const EdgeInsets.all(12.0),
+                                padding: const EdgeInsets.all(8.0),
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
@@ -1376,7 +2560,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      d.sauces.isNotEmpty ? d.sauces.join(', ').toUpperCase() : '',
+                                      d.sauces.isNotEmpty
+                                          ? d.sauces.join(', ').toUpperCase()
+                                          : '',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         fontSize: 9,
@@ -1394,21 +2580,35 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                         fontSize: 12,
                                       ),
                                     ),
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: 4),
                                     if (_isCustomerLoggedIn)
                                       SizedBox(
                                         height: 28,
                                         child: ElevatedButton(
-                                          onPressed: () => _addToCart(d),
+                                          onPressed:
+                                              d.available
+                                                  ? () => _addToCart(d)
+                                                  : null,
                                           style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(0xFF1E1E1E),
+                                            backgroundColor:
+                                                d.available
+                                                    ? const Color(0xFF1E1E1E)
+                                                    : Colors.grey.shade500,
                                             foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                            ),
                                             shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(6),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
                                             ),
                                           ),
-                                          child: const Text('Add', style: TextStyle(fontSize: 11)),
+                                          child: Text(
+                                            d.available
+                                                ? 'Add'
+                                                : 'Not Available',
+                                            style: TextStyle(fontSize: 11),
+                                          ),
                                         ),
                                       ),
                                   ],
@@ -1449,7 +2649,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+                    border: Border(
+                      bottom: BorderSide(color: Colors.grey.shade200),
+                    ),
                   ),
                   child: const Text(
                     'YOUR TRAY',
@@ -1462,133 +2664,180 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 ),
                 // Cart items
                 Flexible(
-                  child: cartItems.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.shopping_cart_outlined, size: 48, color: Colors.grey.shade300),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Your tray is empty',
-                              style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: cartItems.length,
-                        itemBuilder: (context, index) {
-                          final cartItem = cartItems[index];
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Row(
+                  child:
+                      cartItems.isEmpty
+                          ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                if (cartItem.dish.imageBase64 != null)
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(4),
-                                    child: Image.memory(
-                                      base64Decode(cartItem.dish.imageBase64!),
-                                      width: 50,
-                                      height: 50,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  )
-                                else
-                                  Container(
-                                    width: 50,
-                                    height: 50,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade200,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Icon(Icons.fastfood, size: 20, color: Colors.grey),
-                                  ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        cartItem.dish.name.toUpperCase(),
-                                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      if (cartItem.dish.sauces.isNotEmpty)
-                                        Text(
-                                          cartItem.dish.sauces.first.toUpperCase(),
-                                          style: TextStyle(fontSize: 8, color: Colors.grey.shade600),
-                                        ),
-                                    ],
-                                  ),
+                                Icon(
+                                  Icons.shopping_cart_outlined,
+                                  size: 48,
+                                  color: Colors.grey.shade300,
                                 ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      'x${cartItem.quantity}',
-                                      style: const TextStyle(fontSize: 10),
-                                    ),
-                                    Text(
-                                      '₱${(double.tryParse(cartItem.dish.price) ?? 0) * cartItem.quantity}',
-                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-                                    ),
-                                  ],
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Your tray is empty',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade500,
+                                    fontSize: 12,
+                                  ),
                                 ),
                               ],
                             ),
-                          );
-                        },
-                      ),
-              ),
-              // Footer with total and checkout
-              if (cartItems.isNotEmpty || true)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    border: Border(top: BorderSide(color: Colors.grey.shade200)),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'TOTAL',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                          )
+                          : ListView.builder(
+                            padding: const EdgeInsets.all(12),
+                            itemCount: cartItems.length,
+                            itemBuilder: (context, index) {
+                              final cartItem = cartItems[index];
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Row(
+                                  children: [
+                                    if (cartItem.dish.imageBase64 != null)
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: Image.memory(
+                                          base64Decode(
+                                            cartItem.dish.imageBase64!,
+                                          ),
+                                          width: 50,
+                                          height: 50,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      )
+                                    else
+                                      Container(
+                                        width: 50,
+                                        height: 50,
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade200,
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.fastfood,
+                                          size: 20,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            cartItem.dish.name.toUpperCase(),
+                                            style: const TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          if (cartItem.selectedSauce != null)
+                                            Text(
+                                              cartItem.selectedSauce!
+                                                  .toUpperCase(),
+                                              style: TextStyle(
+                                                fontSize: 8,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          'x${cartItem.quantity}',
+                                          style: const TextStyle(fontSize: 10),
+                                        ),
+                                        Text(
+                                          '₱${(double.tryParse(cartItem.dish.price) ?? 0) * cartItem.quantity}',
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                           ),
-                          Text(
-                            '₱${totalAmount.toStringAsFixed(2)}',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                          ),
-                        ],
+                ),
+                // Footer with total and checkout
+                if (cartItems.isNotEmpty || true)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(color: Colors.grey.shade200),
                       ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _isCustomerLoggedIn ? () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (context) => const CheckoutPage()),
-                          ) : _handleLogin,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFC024),
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'TOTAL',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              '₱${totalAmount.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed:
+                                _isCustomerLoggedIn
+                                    ? () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder:
+                                            (context) => const CheckoutPage(),
+                                      ),
+                                    )
+                                    : _handleLogin,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFC024),
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                            child: Text(
+                              _isCustomerLoggedIn
+                                  ? 'CHECKOUT'
+                                  : 'LOG IN TO ORDER',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                          child: Text(
-                            _isCustomerLoggedIn ? 'CHECKOUT' : 'LOG IN TO ORDER',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -1597,11 +2846,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
-  Widget _buildCategoryTab(String label, bool isSelected) {
+  Widget _buildCategoryTab(String label) {
+    final isSelected = label == _selectedRestaurantType;
     return Container(
       margin: const EdgeInsets.only(right: 8),
       child: ElevatedButton(
-        onPressed: () {},
+        onPressed: () {
+          setState(() {
+            _selectedRestaurantType = label;
+          });
+        },
         style: ElevatedButton.styleFrom(
           backgroundColor: isSelected ? const Color(0xFF1E1E1E) : Colors.white,
           foregroundColor: isSelected ? const Color(0xFFFFC024) : Colors.black,
@@ -1646,53 +2900,55 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
       /// ✅ Sticky header using NestedScrollView
       body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
-          SliverToBoxAdapter(
-            child: Column(
-              children: [
-                if (widget.showStaffChrome && AuthSession.instance.hasToken)
-                  Material(
-                    color: Colors.black,
-                    child: SafeArea(
-                      bottom: false,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
-                        child: Row(
-                          children: [
-                            TextButton(
-                              onPressed: () => Navigator.pushReplacementNamed(
-                                context,
-                                _staffHomeRoute(),
-                              ),
-                              child: const Text(
-                                '← Back to Curatering',
-                                style: TextStyle(color: Color(0xFFFFC024)),
-                              ),
+        headerSliverBuilder:
+            (context, innerBoxIsScrolled) => [
+              SliverToBoxAdapter(
+                child: Column(
+                  children: [
+                    if (widget.showStaffChrome && AuthSession.instance.hasToken)
+                      Material(
+                        color: Colors.black,
+                        child: SafeArea(
+                          bottom: false,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
                             ),
-                            const Spacer(),
-                            if (widget.contentEditable)
-                              Chip(
-                                label: const Text(
-                                  'EDIT MODE',
-                                  style: TextStyle(fontSize: 11),
+                            child: Row(
+                              children: [
+                                TextButton(
+                                  onPressed:
+                                      () => Navigator.pushReplacementNamed(
+                                        context,
+                                        _staffHomeRoute(),
+                                      ),
+                                  child: const Text(
+                                    '← Back to Curatering',
+                                    style: TextStyle(color: Color(0xFFFFC024)),
+                                  ),
                                 ),
-                                backgroundColor: Colors.amber.shade100,
-                              ),
-                          ],
+                                const Spacer(),
+                                if (widget.contentEditable)
+                                  Chip(
+                                    label: const Text(
+                                      'EDIT MODE',
+                                      style: TextStyle(fontSize: 11),
+                                    ),
+                                    backgroundColor: Colors.amber.shade100,
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
 
-                /// ✅ Sticky public header
-                _publicHeader(),
-              ],
-            ),
-          ),
-        ],
+                    /// ✅ Sticky public header
+                    _publicHeader(),
+                  ],
+                ),
+              ),
+            ],
 
         /// ✅ Scrollable content + footer
         body: CustomScrollView(
@@ -1742,110 +2998,145 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             ),
             // Cart items
             Expanded(
-              child: cartItems.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.shopping_cart_outlined, size: 64, color: Colors.grey.shade400),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Your cart is empty',
-                            style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Add items from the restaurant menu',
-                            style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: cartItems.length,
-                      itemBuilder: (context, index) {
-                        final cartItem = cartItems[index];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              children: [
-                                if (cartItem.dish.imageBase64 != null)
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.memory(
-                                      base64Decode(cartItem.dish.imageBase64!),
+              child:
+                  cartItems.isEmpty
+                      ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.shopping_cart_outlined,
+                              size: 64,
+                              color: Colors.grey.shade400,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Your cart is empty',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Add items from the restaurant menu',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                      : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: cartItems.length,
+                        itemBuilder: (context, index) {
+                          final cartItem = cartItems[index];
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  if (cartItem.dish.imageBase64 != null)
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.memory(
+                                        base64Decode(
+                                          cartItem.dish.imageBase64!,
+                                        ),
+                                        width: 60,
+                                        height: 60,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    )
+                                  else
+                                    Container(
                                       width: 60,
                                       height: 60,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  )
-                                else
-                                  Container(
-                                    width: 60,
-                                    height: 60,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade300,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Icon(Icons.restaurant, size: 24, color: Colors.grey),
-                                  ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        cartItem.dish.name,
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade300,
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
-                                      const SizedBox(height: 4),
+                                      child: const Icon(
+                                        Icons.restaurant,
+                                        size: 24,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          cartItem.dish.name,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '₱${cartItem.dish.price}',
+                                          style: TextStyle(
+                                            color: Colors.amber.shade800,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Row(
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.remove_circle_outline,
+                                          size: 20,
+                                        ),
+                                        onPressed: () {
+                                          if (cartItem.quantity > 1) {
+                                            CartStore.instance.updateQuantity(
+                                              cartItem.dish.id,
+                                              cartItem.quantity - 1,
+                                            );
+                                          } else {
+                                            CartStore.instance.removeItem(
+                                              cartItem.dish.id,
+                                            );
+                                          }
+                                        },
+                                      ),
                                       Text(
-                                        '₱${cartItem.dish.price}',
-                                        style: TextStyle(color: Colors.amber.shade800, fontWeight: FontWeight.bold),
+                                        '${cartItem.quantity}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.add_circle_outline,
+                                          size: 20,
+                                        ),
+                                        onPressed: () {
+                                          CartStore.instance.updateQuantity(
+                                            cartItem.dish.id,
+                                            cartItem.quantity + 1,
+                                          );
+                                        },
                                       ),
                                     ],
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                Row(
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.remove_circle_outline, size: 20),
-                                      onPressed: () {
-                                        if (cartItem.quantity > 1) {
-                                          CartStore.instance.updateQuantity(
-                                            cartItem.dish.id,
-                                            cartItem.quantity - 1,
-                                          );
-                                        } else {
-                                          CartStore.instance.removeItem(cartItem.dish.id);
-                                        }
-                                      },
-                                    ),
-                                    Text(
-                                      '${cartItem.quantity}',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.add_circle_outline, size: 20),
-                                      onPressed: () {
-                                        CartStore.instance.updateQuantity(
-                                          cartItem.dish.id,
-                                          cartItem.quantity + 1,
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
+                          );
+                        },
+                      ),
             ),
             // Footer with total and checkout
             if (cartItems.isNotEmpty)
@@ -1871,7 +3162,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         children: [
                           const Text(
                             'Total:',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           Text(
                             '₱${totalAmount.toStringAsFixed(2)}',
@@ -1901,7 +3195,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           ),
                           child: const Text(
                             'Proceed to Checkout',
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
@@ -1912,6 +3209,252 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // Loyalty Points Banner - shows points earned and reward selection
+  Widget _buildLoyaltyBanner() {
+    // Get values from LoyaltyRewardsStore (persisted from management page)
+    final double minimumOrderForPoints = LoyaltyRewardsStore.instance
+        .minimumOrderForPoints(orderType: 'restaurant');
+    final int pointsEarned = LoyaltyRewardsStore.instance.pointsEarned(
+      orderType: 'restaurant',
+    );
+    final int currentPoints =
+        0; // User's current points balance - in production from API
+    final availableRewards = LoyaltyRewardsStore.instance.rewardsConditions;
+    // Ensure store is loaded
+    LoyaltyRewardsStore.instance.ensureLoaded();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.amber.shade400, Colors.orange.shade500],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withOpacity(0.3),
+            spreadRadius: 2,
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.stars, color: Colors.white, size: 32),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Loyalty Rewards',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Earn $pointsEarned points on orders ≥ ₱${minimumOrderForPoints.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.9),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '$currentPoints pts',
+                  style: TextStyle(
+                    color: Colors.orange.shade700,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_isCustomerLoggedIn)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed:
+                    () => _showRewardDialog(availableRewards, currentPoints),
+                icon: const Icon(Icons.redeem, color: Colors.white),
+                label: const Text(
+                  'Redeem Rewards',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black.withOpacity(0.2),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _handleLogin,
+                icon: const Icon(Icons.login, color: Colors.white),
+                label: const Text(
+                  'Log in to view and redeem rewards',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black.withOpacity(0.2),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // Show reward selection dialog
+  Future<void> _showRewardDialog(
+    List<RewardsCondition> rewards,
+    int currentPoints,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.card_giftcard, color: Colors.orange),
+              const SizedBox(width: 8),
+              const Text('Redeem Rewards'),
+            ],
+          ),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.stars, color: Colors.amber.shade700),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Your Points: $currentPoints',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.amber.shade800,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Available Rewards:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                ...rewards.map((reward) {
+                  final canRedeem = currentPoints >= reward.minimumPoints;
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor:
+                            canRedeem ? Colors.green : Colors.grey.shade300,
+                        child: Icon(
+                          canRedeem ? Icons.check : Icons.lock,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                      title: Text(reward.reward),
+                      subtitle: Text(reward.description),
+                      trailing: Chip(
+                        label: Text('${reward.minimumPoints} pts'),
+                        backgroundColor:
+                            canRedeem
+                                ? Colors.green.shade100
+                                : Colors.grey.shade200,
+                        labelStyle: TextStyle(
+                          color:
+                              canRedeem
+                                  ? Colors.green.shade800
+                                  : Colors.grey.shade600,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                      onTap:
+                          canRedeem
+                              ? () {
+                                Navigator.of(context).pop();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      '${reward.reward} redeemed successfully!',
+                                    ),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                              : null,
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -1957,8 +3500,14 @@ class _ContactSectionState extends State<_ContactSection> {
 
     setState(() => _submittingHelp = true);
     try {
-      // TODO: Add API call to submit help request
-      await Future.delayed(const Duration(seconds: 1)); // Simulate API call
+      await ApiClient.instance.postJson(
+        '/api/public/help-requests',
+        body: {
+          'name': _helpNameCtrl.text.trim(),
+          'email': _helpEmailCtrl.text.trim(),
+          'message': _helpMessageCtrl.text.trim(),
+        },
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Help request submitted successfully!')),
@@ -1982,11 +3531,11 @@ class _ContactSectionState extends State<_ContactSection> {
       listenable: widget.store,
       builder: (context, _) {
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(32),
+          padding: websitePagePadding(context, vertical: 32),
           child: Center(
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: isDesktop(context) ? 1100 : double.infinity,
+                maxWidth: websiteContentMaxWidth(context),
               ),
               child: Column(
                 children: [
@@ -2035,23 +3584,24 @@ class _ContactSectionState extends State<_ContactSection> {
                             );
                             await showDialog<void>(
                               context: ctx,
-                              builder: (dctx) => AlertDialog(
-                                content: TextField(controller: t),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dctx),
-                                    child: const Text('Cancel'),
+                              builder:
+                                  (dctx) => AlertDialog(
+                                    content: TextField(controller: t),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dctx),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          widget.store.contactFacebook = t.text;
+                                          widget.store.save();
+                                          Navigator.pop(dctx);
+                                        },
+                                        child: const Text('Save'),
+                                      ),
+                                    ],
                                   ),
-                                  TextButton(
-                                    onPressed: () {
-                                      widget.store.contactFacebook = t.text;
-                                      widget.store.save();
-                                      Navigator.pop(dctx);
-                                    },
-                                    child: const Text('Save'),
-                                  ),
-                                ],
-                              ),
                             );
                           },
                         ),
@@ -2066,23 +3616,27 @@ class _ContactSectionState extends State<_ContactSection> {
                             );
                             await showDialog<void>(
                               context: ctx,
-                              builder: (dctx) => AlertDialog(
-                                content: TextField(controller: t, maxLines: 2),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dctx),
-                                    child: const Text('Cancel'),
+                              builder:
+                                  (dctx) => AlertDialog(
+                                    content: TextField(
+                                      controller: t,
+                                      maxLines: 2,
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dctx),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          widget.store.contactAddress = t.text;
+                                          widget.store.save();
+                                          Navigator.pop(dctx);
+                                        },
+                                        child: const Text('Save'),
+                                      ),
+                                    ],
                                   ),
-                                  TextButton(
-                                    onPressed: () {
-                                      widget.store.contactAddress = t.text;
-                                      widget.store.save();
-                                      Navigator.pop(dctx);
-                                    },
-                                    child: const Text('Save'),
-                                  ),
-                                ],
-                              ),
                             );
                           },
                         ),
@@ -2097,24 +3651,25 @@ class _ContactSectionState extends State<_ContactSection> {
                             );
                             await showDialog<void>(
                               context: ctx,
-                              builder: (dctx) => AlertDialog(
-                                title: const Text('Hours'),
-                                content: TextField(controller: t),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dctx),
-                                    child: const Text('Cancel'),
+                              builder:
+                                  (dctx) => AlertDialog(
+                                    title: const Text('Hours'),
+                                    content: TextField(controller: t),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dctx),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          widget.store.contactHours = t.text;
+                                          widget.store.save();
+                                          Navigator.pop(dctx);
+                                        },
+                                        child: const Text('Save'),
+                                      ),
+                                    ],
                                   ),
-                                  TextButton(
-                                    onPressed: () {
-                                      widget.store.contactHours = t.text;
-                                      widget.store.save();
-                                      Navigator.pop(dctx);
-                                    },
-                                    child: const Text('Save'),
-                                  ),
-                                ],
-                              ),
                             );
                           },
                         ),
@@ -2129,24 +3684,25 @@ class _ContactSectionState extends State<_ContactSection> {
                             );
                             await showDialog<void>(
                               context: ctx,
-                              builder: (dctx) => AlertDialog(
-                                title: const Text('Phone'),
-                                content: TextField(controller: t),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dctx),
-                                    child: const Text('Cancel'),
+                              builder:
+                                  (dctx) => AlertDialog(
+                                    title: const Text('Phone'),
+                                    content: TextField(controller: t),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dctx),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          widget.store.contactPhone = t.text;
+                                          widget.store.save();
+                                          Navigator.pop(dctx);
+                                        },
+                                        child: const Text('Save'),
+                                      ),
+                                    ],
                                   ),
-                                  TextButton(
-                                    onPressed: () {
-                                      widget.store.contactPhone = t.text;
-                                      widget.store.save();
-                                      Navigator.pop(dctx);
-                                    },
-                                    child: const Text('Save'),
-                                  ),
-                                ],
-                              ),
                             );
                           },
                         ),
@@ -2161,24 +3717,25 @@ class _ContactSectionState extends State<_ContactSection> {
                             );
                             await showDialog<void>(
                               context: ctx,
-                              builder: (dctx) => AlertDialog(
-                                title: const Text('Email'),
-                                content: TextField(controller: t),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dctx),
-                                    child: const Text('Cancel'),
+                              builder:
+                                  (dctx) => AlertDialog(
+                                    title: const Text('Email'),
+                                    content: TextField(controller: t),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dctx),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          widget.store.contactEmail = t.text;
+                                          widget.store.save();
+                                          Navigator.pop(dctx);
+                                        },
+                                        child: const Text('Save'),
+                                      ),
+                                    ],
                                   ),
-                                  TextButton(
-                                    onPressed: () {
-                                      widget.store.contactEmail = t.text;
-                                      widget.store.save();
-                                      Navigator.pop(dctx);
-                                    },
-                                    child: const Text('Save'),
-                                  ),
-                                ],
-                              ),
                             );
                           },
                         ),
@@ -2240,19 +3797,23 @@ class _ContactSectionState extends State<_ContactSection> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: _submittingHelp ? null : _submitHelpRequest,
+                            onPressed:
+                                _submittingHelp ? null : _submitHelpRequest,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFFFC024),
                               foregroundColor: Colors.black,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                             ),
-                            child: _submittingHelp
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Text('SUBMIT HELP REQUEST'),
+                            child:
+                                _submittingHelp
+                                    ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                    : const Text('SUBMIT HELP REQUEST'),
                           ),
                         ),
                       ],
@@ -2311,6 +3872,7 @@ class _InquireFormState extends State<_InquireForm> {
   final _guests = TextEditingController();
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
+  final List<_InquiryScheduleSlot> _eventScheduleSlots = [];
 
   // State
   String _eventType = 'Birthday';
@@ -2321,7 +3883,8 @@ class _InquireFormState extends State<_InquireForm> {
   String _serviceType = 'catering'; // 'catering' or 'catering+event'
 
   // Catering Service for small orders (< 50 PAX)
-  bool? _cateringServiceSelected; // null = not selected yet, true/false for selection
+  bool?
+  _cateringServiceSelected; // null = not selected yet, true/false for selection
 
   // Menu Selection State
   String _menuChoice = 'suggest'; // 'yes' or 'suggest'
@@ -2342,8 +3905,51 @@ class _InquireFormState extends State<_InquireForm> {
   // Event Design State (photos and theme)
   final List<String> _designPhotoUrls = []; // For uploaded/linked photos
   final _designPhotoCtrl = TextEditingController();
+  final _linkedBaseUrlCtrl = TextEditingController();
   int? _focusedPhotoIndex;
-  final _themeRequestCtrl = TextEditingController(); // For Macrina's theme request
+  final _themeRequestCtrl =
+      TextEditingController(); // For "I want to design my event" prompt
+  final _addByPromptCtrl = TextEditingController();
+  bool _isDetectingAiObjects = false;
+  bool _isSearchingThemeImages = false;
+  bool _isExtractingThemeObjects = false;
+  bool _isRenderingComposite = false;
+  bool _isAddingByPrompt = false;
+  bool _isAutoPlacing = false;
+  bool _isAnalyzingBase = false;
+  bool _isLockingBase = false;
+  String? _selectedBaseImage;
+  String? _confirmedCompositeBase64;
+  final List<Map<String, dynamic>> _themeSuggestions = [];
+  final Set<int> _selectedSuggestionIndexes = <int>{};
+  final List<Map<String, dynamic>> _extractedThemeObjects = [];
+  final List<Map<String, dynamic>> _placedThemeObjects = [];
+  bool _isPlacementSaved = false;
+
+  /// Natural pixel size of the selected base image (for placement ↔ bitmap alignment).
+  double? _baseImageNaturalW;
+  double? _baseImageNaturalH;
+  final List<Map<String, dynamic>> _baseFreeSpaces = [];
+  final List<String> _baseRecommendations = [];
+  final ScrollController _objectsStripScrollCtrl = ScrollController();
+  // Avoid repeatedly base64-decoding the same images during drag/resize UI updates.
+  final Map<String, Uint8List> _base64DecodeCache = {};
+  static const Duration _aiRequestTimeout = Duration(seconds: 180);
+
+  /// Wizard for "Design my event": 0 = pick base, 1 = pick add-on source images, 2 = compose.
+  int _designEventWizardStep = 0;
+  int? _pendingBaseSuggestionIndex;
+  int _designEventBaseCarouselPage = 0;
+  int _designEventAddonCarouselPage = 0;
+  int _themeSearchPage = 1;
+  bool _themeSearchHasMore = false;
+  int _themeSearchTotal = 0;
+  static const int _themeSearchPerPage = 12;
+
+  int _themeSearchMaxPages() {
+    if (_themeSearchTotal <= 0) return 1;
+    return (_themeSearchTotal + _themeSearchPerPage - 1) ~/ _themeSearchPerPage;
+  }
 
   @override
   void initState() {
@@ -2357,6 +3963,41 @@ class _InquireFormState extends State<_InquireForm> {
     // Ensure dishes are loaded for set menu display
     if (MenuStore.instance.activeDishes.isEmpty) {
       MenuStore.instance.loadDishes();
+    }
+    // Load customer data if logged in
+    _loadCustomerData();
+  }
+
+  Future<void> _loadCustomerData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('customer_token');
+    final customerData = prefs.getString('customer_data');
+
+    if (token != null && token.isNotEmpty && customerData != null) {
+      // User is logged in, auto-fill contact info
+      final data = jsonDecode(customerData);
+      if (mounted) {
+        setState(() {
+          _contactPerson.text = data['fullName'] ?? '';
+          _email.text = data['email'] ?? '';
+          _phone.text = data['phone'] ?? '';
+        });
+      }
+    } else {
+      // User is not logged in, show login dialog
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          final result = await showDialog(
+            context: context,
+            builder:
+                (context) => const CustomerLoginPage(redirectToCheckout: true),
+          );
+          if (result != null) {
+            // Reload customer data after login
+            await _loadCustomerData();
+          }
+        });
+      }
     }
   }
 
@@ -2377,35 +4018,284 @@ class _InquireFormState extends State<_InquireForm> {
     _customDishNameCtrl.dispose();
     _customDishDescCtrl.dispose();
     _designPhotoCtrl.dispose();
+    _linkedBaseUrlCtrl.dispose();
+    _objectsStripScrollCtrl.dispose();
     _themeRequestCtrl.dispose();
+    _addByPromptCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _selectDate() async {
-    final picked = await showDatePicker(
+  String _toHhmm(TimeOfDay time) =>
+      '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+
+  Future<void> _pickAddressFromMap() async {
+    final picked = await showMapPicker(
       context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialAddress: _address.text.trim(),
     );
     if (picked != null) {
       setState(() {
-        _dateController.text =
-            '${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}/${picked.year}';
+        _address.text = picked.address;
       });
     }
   }
 
-  Future<void> _selectTime() async {
-    final picked = await showTimePicker(
+  Future<void> _addEventScheduleSlot() async {
+    final now = DateTime.now();
+    final pickedDate = await showDatePicker(
       context: context,
-      initialTime: TimeOfDay.now(),
+      initialDate: now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
     );
-    if (picked != null) {
-      setState(() {
-        _timeController.text = picked.format(context);
-      });
+    if (pickedDate == null) return;
+
+    final start = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 9, minute: 0),
+    );
+    if (start == null) return;
+
+    final end = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: (start.hour + 1) % 24, minute: start.minute),
+    );
+    if (end == null) return;
+
+    setState(() {
+      _eventScheduleSlots.add(
+        _InquiryScheduleSlot(date: pickedDate, startTime: start, endTime: end),
+      );
+      _dateController.text =
+          '${pickedDate.month.toString().padLeft(2, '0')}/${pickedDate.day.toString().padLeft(2, '0')}/${pickedDate.year}';
+      _timeController.text = start.format(context);
+    });
+  }
+
+  Future<void> _showOrderSummaryDialog() async {
+    // Validate required fields first
+    final missing = <String>[];
+    final isCateringOnly = _serviceType == 'catering';
+
+    if (!isCateringOnly) {
+      if (_eventTitle.text.trim().isEmpty) missing.add('event title');
     }
+    if (_customer.text.trim().isEmpty) missing.add('customer name');
+    if (_contactPerson.text.trim().isEmpty) missing.add('contact person');
+    if (_phone.text.trim().isEmpty) missing.add('phone');
+    if (_email.text.trim().isEmpty) missing.add('email');
+    if (_address.text.trim().isEmpty) missing.add('city / address');
+    if (_eventScheduleSlots.isEmpty) missing.add('event schedule');
+    final g = int.tryParse(_guests.text.trim());
+    if (g == null || g < 1) missing.add('guest count');
+
+    // Menu is required
+    if (_menuChoice == 'yes' &&
+        _selectedDishIds.isEmpty &&
+        _customDishes.isEmpty) {
+      missing.add('menu (select dishes or add custom dishes)');
+    } else if (_menuChoice == 'suggest' && _selectedSetMenuId == null) {
+      missing.add('menu (select a set menu)');
+    }
+
+    if (missing.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Complete: ${missing.join(', ')}')),
+      );
+      return;
+    }
+
+    // Build menu items for summary
+    List<Map<String, dynamic>> menuItems = [];
+    String menuSummaryTitle = '';
+
+    if (_menuChoice == 'yes') {
+      menuSummaryTitle = 'Curated Menu';
+      for (final dishId in _selectedDishIds) {
+        final dish = MenuStore.instance.allDishes.firstWhere(
+          (d) => d.id == dishId,
+        );
+        menuItems.add({'dishName': dish.name, 'paxOption': '', 'price': '0'});
+      }
+      for (final customDish in _customDishes) {
+        menuItems.add({
+          'dishName': customDish.name,
+          'paxOption': 'Custom',
+          'price': 0,
+        });
+      }
+    } else if (_selectedSetMenuId != null) {
+      final setMenu = SetMenuStore.instance.activeSetMenus.firstWhere(
+        (s) => s.id == _selectedSetMenuId,
+      );
+      menuSummaryTitle = 'Set Menu: ${setMenu.name}';
+      for (final dishId in setMenu.dishIds) {
+        final dish = MenuStore.instance.allDishes.firstWhere(
+          (d) => d.id == dishId,
+        );
+        menuItems.add({'dishName': dish.name, 'paxOption': '', 'price': '0'});
+      }
+    } else {
+      menuSummaryTitle = 'Menu to be suggested by our team';
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.receipt_long, color: Color(0xFF4CAF50)),
+              SizedBox(width: 8),
+              Text('Order Summary'),
+            ],
+          ),
+          content: SizedBox(
+            width: 500,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Event Details
+                  _buildSummarySection('Event Details', [
+                    _buildSummaryRow(
+                      'Service Type',
+                      _serviceType == 'catering'
+                          ? 'Catering Only'
+                          : 'Catering + Event',
+                    ),
+                    if (!isCateringOnly) ...[
+                      _buildSummaryRow('Event Title', _eventTitle.text.trim()),
+                      _buildSummaryRow('Event Type', _eventType),
+                      _buildSummaryRow('Formality', _formality),
+                    ],
+                    _buildSummaryRow('Date', _dateController.text.trim()),
+                    _buildSummaryRow('Time', _timeController.text.trim()),
+                    _buildSummaryRow('Guests', _guests.text.trim()),
+                  ]),
+                  const Divider(height: 24),
+
+                  // Contact Information
+                  _buildSummarySection('Contact Information', [
+                    _buildSummaryRow('Customer', _customer.text.trim()),
+                    _buildSummaryRow(
+                      'Contact Person',
+                      _contactPerson.text.trim(),
+                    ),
+                    _buildSummaryRow('Phone', _phone.text.trim()),
+                    _buildSummaryRow('Email', _email.text.trim()),
+                    _buildSummaryRow('Address', _address.text.trim()),
+                  ]),
+                  const Divider(height: 24),
+
+                  // Menu
+                  _buildSummarySection(
+                    menuSummaryTitle,
+                    menuItems.isEmpty
+                        ? [
+                          _buildSummaryRow(
+                            'Menu',
+                            'Will be suggested by our team',
+                          ),
+                        ]
+                        : menuItems
+                            .map(
+                              (item) => _buildSummaryRow(
+                                item['dishName'],
+                                'Selected',
+                              ),
+                            )
+                            .toList(),
+                  ),
+
+                  // Theme/Design
+                  if (_serviceType == 'catering+event') ...[
+                    const Divider(height: 24),
+                    _buildSummarySection('Theme & Design', [
+                      _buildSummaryRow(
+                        'Custom Design',
+                        _wantsCustomDesign ? 'Yes' : 'Standard',
+                      ),
+                      if (_themeRequestCtrl.text.trim().isNotEmpty)
+                        _buildSummaryRow(
+                          'Theme Request',
+                          _themeRequestCtrl.text.trim(),
+                        ),
+                      if (_designBoardPhotos().isNotEmpty)
+                        _buildSummaryRow(
+                          'Reference Photos',
+                          '${_designBoardPhotos().length} photo(s)',
+                        ),
+                    ]),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('EDIT'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4CAF50),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('CONFIRM & SUBMIT'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      await _submit();
+    }
+  }
+
+  Widget _buildSummarySection(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+            color: Color(0xFF4CAF50),
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...children,
+      ],
+    );
+  }
+
+  Widget _buildSummaryRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _submit() async {
@@ -2421,13 +4311,14 @@ class _InquireFormState extends State<_InquireForm> {
     if (_phone.text.trim().isEmpty) missing.add('phone');
     if (_email.text.trim().isEmpty) missing.add('email');
     if (_address.text.trim().isEmpty) missing.add('city / address');
-    if (_dateController.text.trim().isEmpty) missing.add('event date');
-    if (_timeController.text.trim().isEmpty) missing.add('event time');
+    if (_eventScheduleSlots.isEmpty) missing.add('event schedule');
     final g = int.tryParse(_guests.text.trim());
     if (g == null || g < 1) missing.add('guest count');
 
     // Menu is required
-    if (_menuChoice == 'yes' && _selectedDishIds.isEmpty && _customDishes.isEmpty) {
+    if (_menuChoice == 'yes' &&
+        _selectedDishIds.isEmpty &&
+        _customDishes.isEmpty) {
       missing.add('menu (select dishes or add custom dishes)');
     } else if (_menuChoice == 'suggest' && _selectedSetMenuId == null) {
       missing.add('menu (select a set menu)');
@@ -2447,13 +4338,14 @@ class _InquireFormState extends State<_InquireForm> {
       if (_menuChoice == 'yes') {
         // Curated menu - include selected dishes
         for (final dishId in _selectedDishIds) {
-          final dish = MenuStore.instance.allDishes.firstWhere((d) => d.id == dishId);
-          final paxOption = _selectedPaxOptions[dishId] ?? dish.paxOptions.first;
+          final dish = MenuStore.instance.allDishes.firstWhere(
+            (d) => d.id == dishId,
+          );
           menuItems.add({
             'dishId': dishId,
             'dishName': dish.name,
-            'paxOption': paxOption,
-            'price': dish.price,
+            'paxOption': '',
+            'price': '0',
             'isCustom': false,
           });
         }
@@ -2470,50 +4362,82 @@ class _InquireFormState extends State<_InquireForm> {
         }
       } else if (_selectedSetMenuId != null) {
         // Set menu selected - use SetMenuStore
-        final setMenu = SetMenuStore.instance.activeSetMenus.firstWhere((s) => s.id == _selectedSetMenuId);
+        final setMenu = SetMenuStore.instance.activeSetMenus.firstWhere(
+          (s) => s.id == _selectedSetMenuId,
+        );
         for (final dishId in setMenu.dishIds) {
-          final dish = MenuStore.instance.allDishes.firstWhere((d) => d.id == dishId);
+          final dish = MenuStore.instance.allDishes.firstWhere(
+            (d) => d.id == dishId,
+          );
           menuItems.add({
             'dishId': dishId,
             'dishName': dish.name,
-            'paxOption': '10 pax',
-            'price': dish.price,
+            'paxOption': '',
+            'price': '0',
             'isCustom': false,
           });
         }
       }
 
-      final now = DateTime.now();
-      final date =
-          '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      // Persist theme design picks as actual base64 payloads (not URLs),
+      // so they can be displayed in Manage Events online inquiries.
+      final sourcesForSubmission = _designBoardPhotos().toList();
+      final confirmedComposite = (_confirmedCompositeBase64 ?? '').trim();
+      final selectedBase = (_selectedBaseImage ?? '').trim();
+      if (confirmedComposite.isNotEmpty) {
+        // Keep only one final edited image in persisted inquiry records.
+        sourcesForSubmission
+          ..clear()
+          ..add(confirmedComposite);
+      } else if (selectedBase.isNotEmpty) {
+        // If no composite exists yet, avoid duplicating a selected base source.
+        sourcesForSubmission.removeWhere((src) => src.trim() == selectedBase);
+      }
+
+      final serializedDesignPicks = <String>[];
+      for (final src in sourcesForSubmission) {
+        try {
+          final bytes = await _resolveDesignPhotoBytes(src);
+          serializedDesignPicks.add(base64Encode(bytes));
+        } catch (_) {
+          // Skip unreadable photo sources; do not fail whole inquiry submission.
+        }
+      }
+      final themeRequest = _themeRequestCtrl.text.trim();
 
       await PublicEventsApi.instance.submitOnlineInquiry(
         payload: {
-          'orderType': _serviceType == 'catering' ? 'catering' : 'catering_event',
-          'eventTitle': _serviceType == 'catering' ? '' : _eventTitle.text.trim(),
+          'orderType':
+              _serviceType == 'catering' ? 'catering' : 'catering_event',
+          'eventTitle':
+              _serviceType == 'catering' ? '' : _eventTitle.text.trim(),
           'eventType': _serviceType == 'catering' ? null : _eventType,
           'formalityLevel': _serviceType == 'catering' ? null : _formality,
           'customerName': _customer.text.trim(),
           'contactPerson': _contactPerson.text.trim(),
           'contactNumber': _phone.text.trim(),
           'emailAddress': _email.text.trim(),
-          'scheduleSlots': [
-            {
-              'date': date,
-              'startTime': _timeController.text.trim(),
-              'endTime': '14:00',
-            },
-          ],
+          'scheduleSlots':
+              _eventScheduleSlots
+                  .map(
+                    (slot) => {
+                      'date':
+                          '${slot.date.year.toString().padLeft(4, '0')}-${slot.date.month.toString().padLeft(2, '0')}-${slot.date.day.toString().padLeft(2, '0')}',
+                      'startTime': _toHhmm(slot.startTime),
+                      'endTime': _toHhmm(slot.endTime),
+                    },
+                  )
+                  .toList(),
           'address': _address.text.trim(),
           'guestCount': g,
           'menu': menuItems,
           'themeDesign': {
-            'picksBase64': _designPhotoUrls,
+            'picksBase64': serializedDesignPicks,
             'tintEnabled': false,
             'tintColorHex': null,
-            'colorPrompt': _themeRequestCtrl.text.trim(),
+            'colorPrompt': themeRequest,
             'wantsCustomDesign': _wantsCustomDesign,
-            'customerThemeRequest': _wantsCustomDesign ? null : _themeRequestCtrl.text.trim(),
+            'customerThemeRequest': themeRequest.isEmpty ? null : themeRequest,
           },
         },
       );
@@ -2523,6 +4447,8 @@ class _InquireFormState extends State<_InquireForm> {
           content: Text('Inquiry submitted. We\'ll get back to you soon!'),
         ),
       );
+      // Reset form after successful submission
+      _resetForm();
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2535,14 +4461,74 @@ class _InquireFormState extends State<_InquireForm> {
     }
   }
 
+  void _resetForm() {
+    setState(() {
+      // Clear all text controllers
+      _eventTitle.clear();
+      _customer.clear();
+      _contactPerson.clear();
+      _phone.clear();
+      _email.clear();
+      _address.clear();
+      _guests.clear();
+      _dateController.clear();
+      _timeController.clear();
+      _eventScheduleSlots.clear();
+      _themeRequestCtrl.clear();
+      _designPhotoCtrl.clear();
+
+      // Reset state variables to initial values
+      _eventType = 'Birthday';
+      _formality = 'casual';
+      _serviceType = 'catering';
+      _cateringServiceSelected = null;
+      _menuChoice = 'suggest';
+      _wantsCustomDesign = false;
+      _selectedSetMenuId = null;
+
+      // Clear collections
+      _selectedPaxOptions.clear();
+      _selectedDishIds.clear();
+      _setMenus.clear();
+      _customDishes.clear();
+      _designPhotoUrls.clear();
+      _focusedPhotoIndex = null;
+      _selectedBaseImage = null;
+      _baseImageNaturalW = null;
+      _baseImageNaturalH = null;
+      _confirmedCompositeBase64 = null;
+      _themeSuggestions.clear();
+      _selectedSuggestionIndexes.clear();
+      _extractedThemeObjects.clear();
+      _placedThemeObjects.clear();
+      _isPlacementSaved = false;
+      _baseFreeSpaces.clear();
+      _baseRecommendations.clear();
+      _designEventWizardStep = 0;
+      _pendingBaseSuggestionIndex = null;
+      _designEventBaseCarouselPage = 0;
+      _designEventAddonCarouselPage = 0;
+      _themeSearchPage = 1;
+      _themeSearchHasMore = false;
+      _themeSearchTotal = 0;
+
+      // Keep customer info if logged in (reload from saved data)
+      _loadCustomerData();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.symmetric(
+        horizontal: isDesktop(context) ? 40 : 16,
+        vertical: isDesktop(context) ? 24 : 16,
+      ),
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: isDesktop(context) ? 1200 : double.infinity,
+            maxWidth: websiteContentMaxWidth(context),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2564,7 +4550,7 @@ class _InquireFormState extends State<_InquireForm> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
-                  'INQUIRY FORM',
+                  'Inquire for Catering or Event',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
@@ -2581,53 +4567,57 @@ class _InquireFormState extends State<_InquireForm> {
               // Three Column Layout
               isDesktop(context)
                   ? Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: _buildEventInfoColumn()),
-                        const SizedBox(width: 16),
-                        Expanded(child: _buildMenuColumn()),
-                        const SizedBox(width: 16),
-                        if (_serviceType == 'catering+event')
-                          Expanded(child: _buildEventDesignColumn()),
-                      ],
-                    )
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 5, child: _buildEventInfoColumn()),
+                      const SizedBox(width: 16),
+                      Expanded(flex: 5, child: _buildMenuColumn()),
+                      const SizedBox(width: 16),
+                      if (_serviceType == 'catering+event')
+                        Expanded(flex: 4, child: _buildEventDesignColumn()),
+                    ],
+                  )
                   : Column(
-                      children: [
-                        _buildEventInfoColumn(),
-                        const SizedBox(height: 16),
-                        _buildMenuColumn(),
-                        const SizedBox(height: 16),
-                        if (_serviceType == 'catering+event')
-                          _buildEventDesignColumn(),
-                      ],
-                    ),
+                    children: [
+                      _buildEventInfoColumn(),
+                      const SizedBox(height: 16),
+                      _buildMenuColumn(),
+                      const SizedBox(height: 16),
+                      if (_serviceType == 'catering+event')
+                        _buildEventDesignColumn(),
+                    ],
+                  ),
 
               const SizedBox(height: 32),
               // Submit Button
               Center(
                 child: SizedBox(
-                  width: 300,
+                  width: screenWidth < 600 ? double.infinity : 360,
                   child: ElevatedButton(
-                    onPressed: _submitting ? null : _submit,
+                    onPressed: _submitting ? null : _showOrderSummaryDialog,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: Colors.black,
-                      side: const BorderSide(color: Color(0xFF4CAF50), width: 2),
+                      side: const BorderSide(
+                        color: Color(0xFF4CAF50),
+                        width: 2,
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    child: _submitting
-                        ? const SizedBox(
-                            height: 22,
-                            width: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text(
-                            'SUBMIT INQUIRY',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
+                    child:
+                        _submitting
+                            ? const SizedBox(
+                              height: 22,
+                              width: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Text(
+                              'REVIEW & SUBMIT',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
                   ),
                 ),
               ),
@@ -2670,13 +4660,16 @@ class _InquireFormState extends State<_InquireForm> {
     return ElevatedButton(
       onPressed: () => setState(() => _serviceType = value),
       style: ElevatedButton.styleFrom(
-        backgroundColor: isSelected ? const Color(0xFFFFC107) : Colors.grey.shade200,
+        backgroundColor:
+            isSelected ? const Color(0xFFFFC107) : Colors.grey.shade200,
         foregroundColor: Colors.black,
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: isSelected ? const Color(0xFFFFC107) : Colors.grey.shade400),
+          side: BorderSide(
+            color: isSelected ? const Color(0xFFFFC107) : Colors.grey.shade400,
+          ),
         ),
       ),
       child: Text(label),
@@ -2713,19 +4706,31 @@ class _InquireFormState extends State<_InquireForm> {
           if (!isCateringOnly) ...[
             _buildTextField(_eventTitle, 'EVENT TITLE'),
             const SizedBox(height: 12),
-            _buildDropdown(
-              'EVENT TYPE',
-              _eventType,
-              ['Birthday', 'Wedding', 'Corporate', 'Private Party', 'Other'],
-              (v) => setState(() => _eventType = v),
-            ),
+            _buildDropdown('EVENT TYPE', _eventType, [
+              'Wedding',
+              'Birthday',
+              'Corporate',
+              'Private Party',
+              'Sports',
+              'Government',
+              'Show',
+              'Educational',
+              'Reunion',
+              'Gala',
+              'Dinner',
+              'Other',
+            ], (v) => setState(() => _eventType = v)),
             const SizedBox(height: 12),
             _buildDropdown(
               'FORMALITY LEVEL',
               _formality,
               ['casual', 'semi_formal', 'formal'],
               (v) => setState(() => _formality = v),
-              displayMap: {'casual': 'Casual', 'semi_formal': 'Semi-formal', 'formal': 'Formal'},
+              displayMap: {
+                'casual': 'Casual',
+                'semi_formal': 'Semi-formal',
+                'formal': 'Formal',
+              },
             ),
             const SizedBox(height: 12),
           ],
@@ -2733,43 +4738,66 @@ class _InquireFormState extends State<_InquireForm> {
           const SizedBox(height: 12),
           _buildTextField(_contactPerson, 'CONTACT PERSON'),
           const SizedBox(height: 12),
-          _buildTextField(_phone, 'CONTACT NUMBER', keyboardType: TextInputType.phone),
+          _buildTextField(
+            _phone,
+            'CONTACT NUMBER',
+            keyboardType: TextInputType.phone,
+          ),
           const SizedBox(height: 12),
-          _buildTextField(_email, 'EMAIL ADDRESS', keyboardType: TextInputType.emailAddress),
+          _buildTextField(
+            _email,
+            'EMAIL ADDRESS',
+            keyboardType: TextInputType.emailAddress,
+          ),
           const SizedBox(height: 12),
-          _buildTextField(_address, 'Address'),
-          const SizedBox(height: 12),
-          // Date/Time Row
           Row(
             children: [
-              Expanded(
-                child: TextField(
-                  controller: _dateController,
-                  readOnly: true,
-                  onTap: _selectDate,
-                  decoration: InputDecoration(
-                    labelText: 'DATE/TIME OF EVENT',
-                    border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.calendar_today),
-                      onPressed: _selectDate,
-                    ),
-                  ),
-                ),
-              ),
+              Expanded(child: _buildTextField(_address, 'Address')),
               const SizedBox(width: 8),
               IconButton(
-                onPressed: _selectTime,
-                icon: const Icon(Icons.access_time),
-              ),
-              IconButton(
-                onPressed: () {
-                  // Add another date/time slot
-                },
-                icon: const Icon(Icons.add_circle_outline),
+                tooltip: 'Pick on map',
+                onPressed: _pickAddressFromMap,
+                icon: const Icon(Icons.map_outlined),
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _addEventScheduleSlot,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF4511E),
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Event Schedule'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (_eventScheduleSlots.isEmpty)
+            Text(
+              'No schedules yet.',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children:
+                  _eventScheduleSlots.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final slot = entry.value;
+                    return InputChip(
+                      label: Text(slot.label(context)),
+                      onDeleted: () {
+                        setState(() {
+                          _eventScheduleSlots.removeAt(index);
+                        });
+                      },
+                    );
+                  }).toList(),
+            ),
           const SizedBox(height: 12),
           TextField(
             controller: _guests,
@@ -2777,16 +4805,20 @@ class _InquireFormState extends State<_InquireForm> {
             decoration: const InputDecoration(
               labelText: 'NO OF GUESTS',
               border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 10,
+              ),
             ),
             style: const TextStyle(fontSize: 13),
-            onChanged: (value) => setState(() {
-              // Reset catering service selection when guest count changes
-              final count = int.tryParse(value) ?? 0;
-              if (count >= 50) {
-                _cateringServiceSelected = null;
-              }
-            }),
+            onChanged:
+                (value) => setState(() {
+                  // Reset catering service selection when guest count changes
+                  final count = int.tryParse(value) ?? 0;
+                  if (count >= 50) {
+                    _cateringServiceSelected = null;
+                  }
+                }),
           ),
           const SizedBox(height: 12),
           // Catering Service radio for small orders (< 50 PAX)
@@ -2845,12 +4877,19 @@ class _InquireFormState extends State<_InquireForm> {
             ),
             child: Row(
               children: [
-                Icon(Icons.warning_amber, color: Colors.orange.shade700, size: 20),
+                Icon(
+                  Icons.warning_amber,
+                  color: Colors.orange.shade700,
+                  size: 20,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'For catering orders with less than 50 PAX will incur additional charges.',
-                    style: TextStyle(color: Colors.orange.shade700, fontSize: 12),
+                    style: TextStyle(
+                      color: Colors.orange.shade700,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ],
@@ -2864,8 +4903,16 @@ class _InquireFormState extends State<_InquireForm> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.black.withOpacity(0.08)),
+        borderRadius: BorderRadius.circular(14),
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2903,9 +4950,12 @@ class _InquireFormState extends State<_InquireForm> {
           ),
           const SizedBox(height: 16),
           // Menu Content
-          if (_menuChoice == 'yes') _buildDishSelectionList()
-          else if (_selectedSetMenuId != null) _buildSetMenuView()
-          else _buildSetMenuSelection(),
+          if (_menuChoice == 'yes')
+            _buildDishSelectionList()
+          else if (_selectedSetMenuId != null)
+            _buildSetMenuView()
+          else
+            _buildSetMenuSelection(),
         ],
       ),
     );
@@ -2913,14 +4963,13 @@ class _InquireFormState extends State<_InquireForm> {
 
   Widget _buildMenuChoiceButton(String label, String value) {
     final isSelected = _menuChoice == value;
-    final isYes = value == 'yes';
     return ElevatedButton(
       onPressed: () => setState(() => _menuChoice = value),
       style: ElevatedButton.styleFrom(
-        backgroundColor: isYes ? const Color(0xFFE8F5E9) : Colors.white,
+        backgroundColor: isSelected ? const Color(0xFFE8F5E9) : Colors.white,
         foregroundColor: Colors.black,
         side: BorderSide(
-          color: isYes ? const Color(0xFF4CAF50) : Colors.red.shade300,
+          color: isSelected ? const Color(0xFF4CAF50) : Colors.grey.shade400,
           width: 2,
         ),
         elevation: 0,
@@ -2936,7 +4985,10 @@ class _InquireFormState extends State<_InquireForm> {
   }
 
   Widget _buildDishSelectionList() {
-    final dishes = MenuStore.instance.activeDishes.where((d) => d.category == 'catering').toList();
+    final dishes =
+        MenuStore.instance.activeDishes
+            .where((d) => d.category == 'catering')
+            .toList();
     return Container(
       constraints: const BoxConstraints(maxHeight: 500),
       child: Column(
@@ -2959,23 +5011,36 @@ class _InquireFormState extends State<_InquireForm> {
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            ..._customDishes.map((customDish) => Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              color: Colors.amber.shade50,
-              child: ListTile(
-                leading: const Icon(Icons.edit_note, size: 40, color: Color(0xFFFFC024)),
-                title: Text(customDish.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text(customDish.description, maxLines: 2, overflow: TextOverflow.ellipsis),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  onPressed: () {
-                    setState(() {
-                      _customDishes.removeWhere((d) => d.id == customDish.id);
-                    });
-                  },
+            ..._customDishes.map(
+              (customDish) => Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                color: Colors.amber.shade50,
+                child: ListTile(
+                  leading: const Icon(
+                    Icons.edit_note,
+                    size: 40,
+                    color: Color(0xFFFFC024),
+                  ),
+                  title: Text(
+                    customDish.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    customDish.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    onPressed: () {
+                      setState(() {
+                        _customDishes.removeWhere((d) => d.id == customDish.id);
+                      });
+                    },
+                  ),
                 ),
               ),
-            )),
+            ),
             const Divider(),
           ],
           // Catering Dishes from Menu
@@ -2989,30 +5054,30 @@ class _InquireFormState extends State<_InquireForm> {
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
-                    leading: dish.imageBase64 != null
-                        ? Image.memory(
-                            base64Decode(dish.imageBase64!),
-                            width: 50,
-                            height: 50,
-                            fit: BoxFit.cover,
-                          )
-                        : const Icon(Icons.restaurant, size: 40),
-                    title: Text(dish.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('₱${dish.price}'),
-                    trailing: isSelected
-                        ? DropdownButton<String>(
-                            value: _selectedPaxOptions[dish.id] ?? dish.paxOptions.first,
-                            isDense: true,
-                            items: dish.paxOptions
-                                .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                                .toList(),
-                            onChanged: (v) {
-                              setState(() {
-                                _selectedPaxOptions[dish.id] = v!;
-                              });
-                            },
-                          )
-                        : null,
+                    leading:
+                        dish.imageBase64 != null
+                            ? Image.memory(
+                              base64Decode(dish.imageBase64!),
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.cover,
+                            )
+                            : const Icon(Icons.restaurant, size: 40),
+                    title: Text(
+                      dish.name,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: null,
+                    trailing:
+                        isSelected
+                            ? const Icon(
+                              Icons.check_circle,
+                              color: Color(0xFF4CAF50),
+                            )
+                            : const Icon(
+                              Icons.add_circle_outline,
+                              color: Colors.grey,
+                            ),
                     onTap: () {
                       setState(() {
                         if (isSelected) {
@@ -3020,7 +5085,7 @@ class _InquireFormState extends State<_InquireForm> {
                           _selectedPaxOptions.remove(dish.id);
                         } else {
                           _selectedDishIds.add(dish.id);
-                          _selectedPaxOptions[dish.id] = dish.paxOptions.first;
+                          _selectedPaxOptions[dish.id] = '';
                         }
                       });
                     },
@@ -3039,53 +5104,56 @@ class _InquireFormState extends State<_InquireForm> {
   void _showAddCustomDishDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Custom Dish'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _customDishNameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Dish Name',
-                hintText: 'e.g., Grilled Salmon with Lemon Butter',
-              ),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Add Custom Dish'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: _customDishNameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Dish Name',
+                    hintText: 'e.g., Grilled Salmon with Lemon Butter',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _customDishDescCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Description (optional)',
+                    hintText: 'Special requests, ingredients, etc.',
+                  ),
+                  maxLines: 3,
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _customDishDescCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Description (optional)',
-                hintText: 'Special requests, ingredients, etc.',
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
               ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+              ElevatedButton(
+                onPressed: () {
+                  if (_customDishNameCtrl.text.trim().isNotEmpty) {
+                    setState(() {
+                      _customDishes.add(
+                        _CustomDish(
+                          id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
+                          name: _customDishNameCtrl.text.trim(),
+                          description: _customDishDescCtrl.text.trim(),
+                        ),
+                      );
+                      _customDishNameCtrl.clear();
+                      _customDishDescCtrl.clear();
+                    });
+                  }
+                  Navigator.pop(context);
+                },
+                child: const Text('Add'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              if (_customDishNameCtrl.text.trim().isNotEmpty) {
-                setState(() {
-                  _customDishes.add(_CustomDish(
-                    id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
-                    name: _customDishNameCtrl.text.trim(),
-                    description: _customDishDescCtrl.text.trim(),
-                  ));
-                  _customDishNameCtrl.clear();
-                  _customDishDescCtrl.clear();
-                });
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -3104,35 +5172,97 @@ class _InquireFormState extends State<_InquireForm> {
       );
     }
     return Column(
-      children: setMenus.map((setMenu) {
-        return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: ListTile(
-            title: Text(setMenu.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('${setMenu.dishIds.length} dishes', maxLines: 2, overflow: TextOverflow.ellipsis),
-            trailing: Radio<String>(
-              value: setMenu.id,
-              groupValue: _selectedSetMenuId,
-              onChanged: (v) => setState(() => _selectedSetMenuId = v),
-            ),
-            onTap: () => setState(() => _selectedSetMenuId = setMenu.id),
-          ),
-        );
-      }).toList(),
+      children:
+          setMenus.map((setMenu) {
+            return Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color:
+                      _selectedSetMenuId == setMenu.id
+                          ? const Color(0xFFFFC024)
+                          : Colors.grey.shade300,
+                  width: _selectedSetMenuId == setMenu.id ? 1.5 : 1,
+                ),
+              ),
+              child: ListTile(
+                title: Text(
+                  setMenu.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${setMenu.dishIds.length} dishes',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Tap to preview dishes',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                isThreeLine: true,
+                trailing: Radio<String>(
+                  value: setMenu.id,
+                  groupValue: _selectedSetMenuId,
+                  onChanged: (v) {
+                    setState(() {
+                      _selectedSetMenuId = v;
+                    });
+                  },
+                ),
+                onTap: () {
+                  setState(() {
+                    _selectedSetMenuId = setMenu.id;
+                  });
+                },
+              ),
+            );
+          }).toList(),
     );
   }
 
   Widget _buildSetMenuView() {
-    final setMenu = SetMenuStore.instance.activeSetMenus.firstWhere((s) => s.id == _selectedSetMenuId);
+    final setMenu = SetMenuStore.instance.activeSetMenus.firstWhere(
+      (s) => s.id == _selectedSetMenuId,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          setMenu.name,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              setMenu.name,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3D0),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '${setMenu.dishIds.length} dishes',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                  color: Color(0xFF9A6B00),
+                ),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 8),
-        Text('${setMenu.dishIds.length} dishes'),
         const SizedBox(height: 16),
         const Text(
           'Dishes in this set:',
@@ -3142,28 +5272,43 @@ class _InquireFormState extends State<_InquireForm> {
         ...setMenu.dishIds.map((dishId) {
           final dish = MenuStore.instance.allDishes.firstWhere(
             (d) => d.id == dishId,
-            orElse: () => MenuDish(
-              id: dishId,
-              name: 'Unknown Dish',
-              category: '',
-              price: '0',
-              archived: false,
-              paxOptions: ['10 pax'],
-            ),
+            orElse:
+                () => MenuDish(
+                  id: dishId,
+                  name: 'Unknown Dish',
+                  category: '',
+                  price: '0',
+                  archived: false,
+                  paxOptions: ['10 pax'],
+                ),
           );
           return Card(
             margin: const EdgeInsets.only(bottom: 8),
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: Colors.grey.shade300),
+            ),
             child: ListTile(
               dense: true,
-              leading: dish.imageBase64 != null
-                  ? Image.memory(
-                      base64Decode(dish.imageBase64!),
-                      width: 40,
-                      height: 40,
-                      fit: BoxFit.cover,
-                    )
-                  : const Icon(Icons.restaurant, size: 32),
+              leading:
+                  dish.imageBase64 != null
+                      ? Image.memory(
+                        base64Decode(dish.imageBase64!),
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.cover,
+                      )
+                      : const Icon(Icons.restaurant, size: 32),
               title: Text(dish.name, style: const TextStyle(fontSize: 13)),
+              subtitle: const Text(
+                'Selected dish',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              trailing: const Icon(
+                Icons.check_circle,
+                color: Color(0xFF1DB954),
+              ),
             ),
           );
         }),
@@ -3222,9 +5367,9 @@ class _InquireFormState extends State<_InquireForm> {
                       ),
                     ],
                   ),
-                  if (_designPhotoUrls.isNotEmpty) ...[
+                  if (_designBoardPhotos().isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Text('${_designPhotoUrls.length} photo(s) added'),
+                    Text('${_designBoardPhotos().length} photo(s) added'),
                   ],
                   const SizedBox(height: 8),
                   TextButton(
@@ -3237,7 +5382,7 @@ class _InquireFormState extends State<_InquireForm> {
             const SizedBox(height: 12),
             TextButton(
               onPressed: () => setState(() => _wantsCustomDesign = false),
-              child: const Text('Change to Macrina\'s Design'),
+              child: const Text('Change to Assisted Design'),
             ),
           ] else if (_themeRequestCtrl.text.isNotEmpty) ...[
             Container(
@@ -3254,23 +5399,56 @@ class _InquireFormState extends State<_InquireForm> {
                       Icon(Icons.check_circle, color: Colors.red),
                       SizedBox(width: 8),
                       Text(
-                        'Macrina\'s will create your design',
+                        'Assisted event design is selected',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    'Theme: ${_themeRequestCtrl.text}',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  InkWell(
+                    onTap: _showDesignMyEventDialog,
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text(
+                        'Theme: ${_themeRequestCtrl.text}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          decoration: TextDecoration.underline,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
                   ),
+                  if ((_confirmedCompositeBase64 ?? '').trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: SizedBox(
+                        height: 84,
+                        width: double.infinity,
+                        child: _designImagePreview(
+                          _confirmedCompositeBase64!,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Tap theme text to continue editing this draft design.',
+                      style: TextStyle(fontSize: 11, color: Colors.black54),
+                    ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(height: 12),
             TextButton(
-              onPressed: () => setState(() => _wantsCustomDesign = true),
+              onPressed: () {
+                setState(() => _wantsCustomDesign = true);
+                _showCustomDesignDialog();
+              },
               child: const Text('Change to My Design'),
             ),
           ] else ...[
@@ -3285,14 +5463,16 @@ class _InquireFormState extends State<_InquireForm> {
                 side: const BorderSide(color: Color(0xFF4CAF50), width: 2),
                 elevation: 0,
                 minimumSize: const Size(double.infinity, 48),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
-              child: const Text('CREATE MY EVENT DESIGN'),
+              child: const Text('I WANT TO CREATE MY OWN DESIGN'),
             ),
             const SizedBox(height: 12),
             ElevatedButton(
               onPressed: () {
-                _showMacrinaDesignDialog();
+                _showDesignMyEventDialog();
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
@@ -3300,10 +5480,12 @@ class _InquireFormState extends State<_InquireForm> {
                 side: BorderSide(color: Colors.red.shade300, width: 2),
                 elevation: 0,
                 minimumSize: const Size(double.infinity, 48),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
               child: const Text(
-                'NO I\'D LIKE MACRINAS TO CREATE MY\nEVENT DESIGN INSTEAD',
+                'I WANT TO DESIGN MY EVENT',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 11),
               ),
@@ -3314,58 +5496,1159 @@ class _InquireFormState extends State<_InquireForm> {
     );
   }
 
-  void _showMacrinaDesignDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Macrina\'s Will Create Your Design'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Let us know what themes, colors, or styles you\'d like for your event.',
-              style: TextStyle(fontSize: 13),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _themeRequestCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Theme/Style Preferences',
-                hintText: 'e.g., Rustic, Elegant, Garden theme, Pink and gold colors...',
-                border: OutlineInputBorder(),
+  Future<void> _searchThemeSuggestions({
+    bool loadMore = false,
+    int? goToPage,
+  }) async {
+    final prompt = _themeRequestCtrl.text.trim();
+    if (prompt.isEmpty) return;
+    final int nextPage;
+    if (goToPage != null) {
+      nextPage = goToPage;
+    } else if (loadMore) {
+      nextPage = _themeSearchPage + 1;
+    } else {
+      nextPage = 1;
+    }
+    final isNewSearch = !loadMore && goToPage == null;
+    final isPageNav = goToPage != null;
+    setState(() => _isSearchingThemeImages = true);
+    try {
+      final response = await PublicEventsApi.instance.searchThemeImages(
+        eventTitle: _eventTitle.text.trim(),
+        eventType: _eventType,
+        formalityLevel: _formality,
+        prompt: prompt,
+        baseImageUrl: _selectedBaseImage,
+        tags: const ['decoration', 'design', 'theme'],
+        page: nextPage,
+        perPage: _themeSearchPerPage,
+      );
+      final usedFallback = response['usedFallback'] == true;
+      final warning = (response['error'] ?? '').toString().trim();
+      final hasMore = response['hasMore'] == true;
+      final rawTotal = response['total'];
+      var total =
+          rawTotal is num ? rawTotal.toInt() : int.tryParse('$rawTotal') ?? 0;
+      final rawImages =
+          (response['images'] as List<dynamic>? ?? const [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+      final images =
+          rawImages
+              .where((row) => !_isLikelyPeopleImageSuggestion(row))
+              .toList();
+      if (total <= 0 && images.isNotEmpty) {
+        total = images.length;
+      }
+      setState(() {
+        _themeSearchPage = nextPage;
+        _themeSearchHasMore = hasMore;
+        _themeSearchTotal = total;
+        if (loadMore && goToPage == null) {
+          final seen =
+              _themeSuggestions
+                  .map((row) => (row['imageUrl'] ?? '').toString())
+                  .toSet();
+          for (final row in images) {
+            final url = (row['imageUrl'] ?? '').toString();
+            if (url.isEmpty || seen.contains(url)) continue;
+            seen.add(url);
+            _themeSuggestions.add(row);
+          }
+        } else {
+          _themeSuggestions
+            ..clear()
+            ..addAll(images);
+          if (isNewSearch) {
+            _selectedSuggestionIndexes.clear();
+            // Only reset base image if we're in Step 0 (template selection)
+            // In Step 2 (element selection), preserve the base image
+            if (_designEventWizardStep == 0) {
+              _selectedBaseImage = null;
+              _baseImageNaturalW = null;
+              _baseImageNaturalH = null;
+              _isPlacementSaved = false;
+              _designEventWizardStep = 0;
+              _pendingBaseSuggestionIndex = null;
+              _designEventBaseCarouselPage = 0;
+              _designEventAddonCarouselPage = 0;
+            }
+          } else if (isPageNav) {
+            _selectedSuggestionIndexes.clear();
+            _pendingBaseSuggestionIndex = null;
+            _designEventBaseCarouselPage = 0;
+            _designEventAddonCarouselPage = 0;
+            if (_designEventWizardStep == 0) {
+              _selectedBaseImage = null;
+            }
+          }
+        }
+      });
+      if (mounted) {
+        if (!loadMore && !isPageNav && images.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No decor-only results found. Try a more specific prompt (e.g. "table setup, balloons, centerpieces, no people").',
               ),
-              maxLines: 4,
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+          );
+        } else if (!loadMore && !isPageNav && usedFallback) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                warning.isNotEmpty
+                    ? 'Using fallback image suggestions: $warning'
+                    : 'Using fallback image suggestions. Check Pexels API key/config in server env.',
+              ),
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _isSearchingThemeImages = false);
+    }
+  }
+
+  bool _isLikelyPeopleImageSuggestion(Map<String, dynamic> row) {
+    final source = (row['source'] ?? '').toString().toLowerCase().trim();
+    final text = [
+      row['title'],
+      row['description'],
+      row['imageUrl'],
+      row['thumbnailUrl'],
+      row['photographer'],
+      row['pexelsUrl'],
+    ].map((v) => (v ?? '').toString().toLowerCase()).join(' ');
+
+    final hasPeopleKeyword = RegExp(
+      r'\b(person|people|human|portrait|face|selfie|man|woman|boy|girl|bride|groom|model|crowd|group)\b',
+    ).hasMatch(text);
+
+    // When backend falls back to generic stock images, aggressively filter
+    // to avoid showing people-focused references in the design workflow.
+    if (source == 'fallback' &&
+        !text.contains('decor') &&
+        !text.contains('tablescape')) {
+      return true;
+    }
+    return hasPeopleKeyword;
+  }
+
+  Future<void> _extractSelectedObjects() async {
+    if (_selectedSuggestionIndexes.isEmpty) return;
+    setState(() => _isExtractingThemeObjects = true);
+    try {
+      final selectedUrls =
+          _selectedSuggestionIndexes
+              .map((i) => _themeSuggestions[i]['imageUrl']?.toString() ?? '')
+              .where((u) => u.isNotEmpty)
+              .toList();
+      final bytesList = await Future.wait(
+        selectedUrls.map(_resolveDesignPhotoBytes),
+      );
+      final encoded = bytesList.map(base64Encode).toList();
+      final response = await PublicEventsApi.instance.extractThemeObjects(
+        imagesBase64: encoded,
+      );
+      final imageGroups =
+          (response['images'] as List<dynamic>? ?? const []).whereType<Map>();
+      final flattened = <Map<String, dynamic>>[];
+      var failedImages = 0;
+      for (final group in imageGroups) {
+        if ((group['error'] ?? '').toString().trim().isNotEmpty) {
+          failedImages += 1;
+        }
+        final objects = (group['objects'] as List<dynamic>? ?? const [])
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e));
+        flattened.addAll(objects);
+      }
+      var visibleObjects =
+          flattened
+              .where(
+                (row) => (row['objectImageBase64'] ?? '').toString().isNotEmpty,
+              )
+              .toList();
+      var usedSourceFallback = false;
+      if (visibleObjects.isEmpty) {
+        usedSourceFallback = true;
+        visibleObjects =
+            encoded.take(6).toList().asMap().entries.map((entry) {
+              return <String, dynamic>{
+                'id': 'fallback_source_${entry.key}',
+                'label': 'Source image',
+                'score': 1.0,
+                'objectImageBase64': entry.value,
+              };
+            }).toList();
+      }
+      setState(() {
+        _extractedThemeObjects
+          ..clear()
+          ..addAll(visibleObjects);
+        _placedThemeObjects.clear();
+        _isPlacementSaved = false;
+      });
+      if (mounted && usedSourceFallback) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No objects were extracted. Using selected source images as fallback cutouts.',
+            ),
           ),
-          ElevatedButton(
-            onPressed: () {
-              if (_themeRequestCtrl.text.trim().isNotEmpty) {
-                setState(() => _wantsCustomDesign = false);
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('Confirm'),
+        );
+      }
+      if (mounted && failedImages > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              failedImages == 1
+                  ? 'Segmentation failed for 1 source image; others were kept if any.'
+                  : 'Segmentation failed for $failedImages source images; others were kept if any.',
+            ),
           ),
-        ],
-      ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExtractingThemeObjects = false);
+    }
+  }
+
+  Future<void> _analyzeBaseAndRecommend() async {
+    if (_selectedBaseImage == null) return;
+    setState(() => _isAnalyzingBase = true);
+    try {
+      final baseBytes = await _resolveDesignPhotoBytes(_selectedBaseImage!);
+      final response = await PublicEventsApi.instance.analyzeBaseImage(
+        baseImageBase64: base64Encode(baseBytes),
+      );
+      setState(() {
+        _baseFreeSpaces
+          ..clear()
+          ..addAll(
+            (response['freeSpaces'] as List<dynamic>? ?? const [])
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e)),
+          );
+        _baseRecommendations
+          ..clear()
+          ..addAll(
+            (response['recommendations'] as List<dynamic>? ?? const []).map(
+              (e) => e.toString(),
+            ),
+          );
+      });
+    } finally {
+      if (mounted) setState(() => _isAnalyzingBase = false);
+    }
+  }
+
+  Future<void> _autoPlaceSelectedObjects() async {
+    if (_extractedThemeObjects.isEmpty) return;
+    setState(() => _isAutoPlacing = true);
+    try {
+      final response = await PublicEventsApi.instance.autoPlaceThemeObjects(
+        freeSpaces: _baseFreeSpaces,
+        objects: _extractedThemeObjects,
+      );
+      final placements =
+          (response['placements'] as List<dynamic>? ?? const [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+
+      final nextPlaced = <Map<String, dynamic>>[];
+      for (var i = 0; i < placements.length; i++) {
+        final p = placements[i];
+        final pid = (p['objectId'] ?? '').toString();
+        Map<String, dynamic>? match;
+        for (final obj in _extractedThemeObjects) {
+          if ((obj['id'] ?? '').toString() == pid) {
+            match = obj;
+            break;
+          }
+        }
+        match ??=
+            i < _extractedThemeObjects.length
+                ? _extractedThemeObjects[i]
+                : null;
+        if (match == null) continue;
+        final b64 = (match['objectImageBase64'] ?? '').toString();
+        if (b64.isEmpty) continue;
+        nextPlaced.add({
+          'id': p['objectId'] ?? match['id'],
+          'x': p['x'],
+          'y': p['y'],
+          'width': p['width'],
+          'height': p['height'],
+          'rotation': p['rotation'] ?? 0,
+          'zIndex': p['zIndex'] ?? i,
+          'intensity': 1.0,
+          'targetHex': '#f4511e',
+          '_checked': false,
+          'objectImageBase64': b64,
+        });
+      }
+
+      if (nextPlaced.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Auto place had nothing to apply. Your current placement was left unchanged.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      setState(() {
+        _placedThemeObjects
+          ..clear()
+          ..addAll(nextPlaced);
+        _isPlacementSaved = false;
+      });
+    } catch (e, st) {
+      debugPrint('autoPlace: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e is Exception
+                  ? e.toString().replaceFirst('Exception: ', '')
+                  : 'Auto place failed. Your placement was left unchanged.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAutoPlacing = false);
+    }
+  }
+
+  Future<void> _renderComposite() async {
+    if (_selectedBaseImage == null) return;
+    if (_baseImageNaturalW == null ||
+        _baseImageNaturalH == null ||
+        _baseImageNaturalW! <= 0 ||
+        _baseImageNaturalH! <= 0) {
+      await _cacheBaseImageNaturalSize();
+    }
+    if (_baseImageNaturalW == null ||
+        _baseImageNaturalH == null ||
+        _baseImageNaturalW! <= 0 ||
+        _baseImageNaturalH! <= 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not read base image size. Try re-selecting the base image.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    if (!_isPlacementSaved) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please click Save Placement before rendering.'),
+          ),
+        );
+      }
+      return;
+    }
+    setState(() => _isRenderingComposite = true);
+    try {
+      // FastAPI validation is strict (e.g. width/height must be > 1).
+      // Sanitize current editor state before sending to render-composite.
+      final iw = _baseImageNaturalW!;
+      final ih = _baseImageNaturalH!;
+      final sanitizedObjects =
+          _placedThemeObjects
+              .where(
+                (o) =>
+                    (o['objectImageBase64'] ?? '').toString().trim().isNotEmpty,
+              )
+              .map((o) {
+                double _finite(num? v, double fallback) {
+                  final d = (v ?? fallback).toDouble();
+                  return d.isFinite ? d : fallback;
+                }
+
+                double x = _finite(o['x'] as num?, 0.0);
+                double y = _finite(o['y'] as num?, 0.0);
+                double width = _finite(o['width'] as num?, 0.15);
+                double height = _finite(o['height'] as num?, 0.15);
+
+                final looksNormalized =
+                    x <= 1.01 &&
+                    y <= 1.01 &&
+                    width <= 1.01 &&
+                    height <= 1.01 &&
+                    x >= -0.001 &&
+                    y >= -0.001;
+                if (looksNormalized) {
+                  x *= iw;
+                  y *= ih;
+                  width *= iw;
+                  height *= ih;
+                } else {
+                  if (width <= 1.0) width = 2.1;
+                  if (height <= 1.0) height = 2.1;
+                }
+                if (width < 2.0) width = 2.0;
+                if (height < 2.0) height = 2.0;
+                final rotation = _finite(o['rotation'] as num?, 0.0);
+                final intensity = _finite(
+                  o['intensity'] as num?,
+                  1.0,
+                ).clamp(0.0, 1.0);
+                final zIndex = (o['zIndex'] as num?)?.toInt() ?? 0;
+
+                final targetHex = (o['targetHex'] ?? '').toString().trim();
+
+                return {
+                  'objectImageBase64':
+                      (o['objectImageBase64'] ?? '').toString(),
+                  'x': x,
+                  'y': y,
+                  'width': width,
+                  'height': height,
+                  'rotation': rotation,
+                  'zIndex': zIndex,
+                  'intensity': intensity,
+                  'targetHex': targetHex.isEmpty ? null : targetHex,
+                };
+              })
+              .toList();
+
+      final baseBytes = await _resolveDesignPhotoBytes(_selectedBaseImage!);
+      final response = await PublicEventsApi.instance.renderThemeComposite(
+        baseImageBase64: base64Encode(baseBytes),
+        objects: sanitizedObjects,
+      );
+      final imageBase64 = (response['imageBase64'] ?? '').toString().trim();
+      if (imageBase64.isNotEmpty) {
+        setState(() {
+          _confirmedCompositeBase64 = imageBase64;
+        });
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Render returned no image. Try again or adjust objects.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e is Exception
+                  ? e.toString().replaceFirst('Exception: ', '')
+                  : 'Render failed. The server may be busy — try again in a moment.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRenderingComposite = false);
+    }
+  }
+
+  Future<void> _addObjectsByPromptAndRender() async {
+    final prompt = _addByPromptCtrl.text.trim();
+    if (_selectedBaseImage == null || prompt.isEmpty) return;
+    setState(() => _isAddingByPrompt = true);
+    try {
+      final baseBytes = await _resolveDesignPhotoBytes(_selectedBaseImage!);
+      final response = await PublicEventsApi.instance.addThemeObjectsByPrompt(
+        baseImageBase64: base64Encode(baseBytes),
+        eventTitle: _eventTitle.text.trim(),
+        eventType: _eventType,
+        formalityLevel: _formality,
+        prompt: prompt,
+        baseImageUrl: _selectedBaseImage,
+      );
+      final imageBase64 = (response['imageBase64'] ?? '').toString().trim();
+      final placements =
+          (response['placements'] as List<dynamic>? ?? const [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+      if (imageBase64.isEmpty) {
+        if (mounted) {
+          final msg =
+              (response['error'] ?? 'Prompt add returned no image.').toString();
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(msg)));
+        }
+        return;
+      }
+      setState(() {
+        _confirmedCompositeBase64 = imageBase64;
+        if (placements.isNotEmpty) {
+          _placedThemeObjects
+            ..clear()
+            ..addAll(
+              placements.map(
+                (p) => {
+                  'id': p['id'] ?? 'prompt_obj',
+                  'objectImageBase64':
+                      (p['objectImageBase64'] ?? '').toString(),
+                  'x': p['x'],
+                  'y': p['y'],
+                  'width': p['width'],
+                  'height': p['height'],
+                  'rotation': p['rotation'] ?? 0,
+                  'zIndex': p['zIndex'] ?? 0,
+                  'intensity': p['intensity'] ?? 1.0,
+                  'targetHex': p['targetHex'],
+                  '_checked': true,
+                },
+              ),
+            );
+          _isPlacementSaved = true;
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Prompt objects added and rendered.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e is Exception
+                  ? e.toString().replaceFirst('Exception: ', '')
+                  : 'Failed to add by prompt.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAddingByPrompt = false);
+    }
+  }
+
+  void _showThemeImageEnlargeDialog(
+    BuildContext dialogContext,
+    String imageUrl,
+  ) {
+    showDialog<void>(
+      context: dialogContext,
+      builder:
+          (ctx) => Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 24,
+            ),
+            child: SizedBox(
+              width: MediaQuery.of(ctx).size.width * 0.92,
+              height: MediaQuery.of(ctx).size.height * 0.88,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: InteractiveViewer(
+                      minScale: 0.5,
+                      maxScale: 4,
+                      child: Center(
+                        child: _designImagePreview(
+                          imageUrl,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: IconButton(
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.black54,
+                        foregroundColor: Colors.white,
+                      ),
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label,
-      {TextInputType? keyboardType}) {
+  void _showDesignMyEventDialog() {
+    _showDesignMyEventEditorPage();
+  }
+
+  Widget _buildPlacementEditor({
+    required String baseImage,
+    required List<Map<String, dynamic>> placedObjects,
+    required List<Map<String, dynamic>> extractedObjects,
+    required VoidCallback onChanged,
+    double? editorWidth,
+    double? editorMaxHeight,
+  }) {
+    final safeEditorWidth =
+        (editorWidth != null && editorWidth.isFinite) ? editorWidth : null;
+    final safeEditorMaxHeight =
+        (editorMaxHeight != null &&
+                editorMaxHeight.isFinite &&
+                editorMaxHeight > 0)
+            ? editorMaxHeight
+            : null;
+    final sourceCandidates =
+        extractedObjects
+            .where((o) => (o['objectImageBase64'] ?? '').toString().isNotEmpty)
+            .toList();
+
+    Widget dragCanvas(double width, double height) {
+      final imgW = _baseImageNaturalW;
+      final imgH = _baseImageNaturalH;
+      final layoutReady = imgW != null && imgH != null && imgW > 0 && imgH > 0;
+      final L =
+          layoutReady
+              ? _placementContainLayout(width, height, imgW, imgH)
+              : null;
+
+      return StatefulBuilder(
+        builder: (context, setLocalState) {
+          void notifyPlacementChanged() {
+            setLocalState(() {});
+            onChanged();
+          }
+
+          return DragTarget<Map<String, dynamic>>(
+            onAcceptWithDetails: (details) {
+              final lay = L;
+              final iw = imgW;
+              final ih = imgH;
+              if (lay == null || iw == null || ih == null) return;
+
+              final local1 = details.offset;
+              final renderBox = context.findRenderObject() as RenderBox?;
+              final local2 =
+                  renderBox != null
+                      ? renderBox.globalToLocal(details.offset)
+                      : local1;
+
+              final local1InBounds =
+                  local1.dx >= 0 &&
+                  local1.dx <= width &&
+                  local1.dy >= 0 &&
+                  local1.dy <= height;
+              final local2InBounds =
+                  local2.dx >= 0 &&
+                  local2.dx <= width &&
+                  local2.dy >= 0 &&
+                  local2.dy <= height;
+
+              final local =
+                  local1InBounds ? local1 : (local2InBounds ? local2 : local1);
+
+              const defaultCanvasPx = 120.0;
+              final nw = (defaultCanvasPx / lay.dispW).clamp(0.02, 1.0);
+              final nh = (defaultCanvasPx / lay.dispH).clamp(0.02, 1.0);
+              final ix = (local.dx - lay.offX) / lay.scale;
+              final iy = (local.dy - lay.offY) / lay.scale;
+              final nx = (ix / iw).clamp(0.0, 1.0 - nw);
+              final ny = (iy / ih).clamp(0.0, 1.0 - nh);
+
+              _placedThemeObjects.add({
+                'id': details.data['id'],
+                'objectImageBase64':
+                    (details.data['objectImageBase64'] ?? '').toString(),
+                'x': nx,
+                'y': ny,
+                'width': nw,
+                'height': nh,
+                'rotation': 0.0,
+                'zIndex': _placedThemeObjects.length,
+                'targetHex': '#f4511e',
+                'intensity': 1.0,
+                '_checked': false,
+              });
+              _isPlacementSaved = false;
+              notifyPlacementChanged();
+            },
+            builder: (context, _, __) {
+              return Container(
+                height: height,
+                width: width,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Stack(
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    Positioned.fill(
+                      child: _designImagePreview(
+                        baseImage,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                    if (!layoutReady)
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const CircularProgressIndicator(),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Loading image layout…',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      ...placedObjects.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final obj = entry.value;
+                        final color =
+                            (obj['targetHex'] ?? '#f4511e').toString();
+                        final isChecked = obj['_checked'] == true;
+                        final lay = L!;
+
+                        final nx = (obj['x'] as num?)?.toDouble() ?? 0.0;
+                        final ny = (obj['y'] as num?)?.toDouble() ?? 0.0;
+                        final nw = (obj['width'] as num?)?.toDouble() ?? 0.15;
+                        final nh = (obj['height'] as num?)?.toDouble() ?? 0.15;
+
+                        return Positioned(
+                          left: lay.offX + nx * lay.dispW,
+                          top: lay.offY + ny * lay.dispH,
+                          child: GestureDetector(
+                            onPanUpdate: (d) {
+                              if (isChecked) return;
+                              if ((obj['_isResizing'] ?? false) == true) return;
+                              final onx = (obj['x'] as num?)?.toDouble() ?? 0.0;
+                              final ony = (obj['y'] as num?)?.toDouble() ?? 0.0;
+                              final ow =
+                                  (obj['width'] as num?)?.toDouble() ?? 0.15;
+                              final oh =
+                                  (obj['height'] as num?)?.toDouble() ?? 0.15;
+                              obj['x'] = (onx + d.delta.dx / lay.dispW).clamp(
+                                0.0,
+                                1.0 - ow,
+                              );
+                              obj['y'] = (ony + d.delta.dy / lay.dispH).clamp(
+                                0.0,
+                                1.0 - oh,
+                              );
+                              _isPlacementSaved = false;
+                              notifyPlacementChanged();
+                            },
+                            onTap: () {
+                              if (isChecked) return;
+                              final palette = [
+                                '#f4511e',
+                                '#1db954',
+                                '#1976d2',
+                                '#e91e63',
+                                '#6a1b9a',
+                                '#ffc107',
+                              ];
+                              final current = palette.indexOf(
+                                color.toLowerCase(),
+                              );
+                              obj['targetHex'] =
+                                  palette[(current + 1) % palette.length];
+                              _isPlacementSaved = false;
+                              notifyPlacementChanged();
+                            },
+                            child: Container(
+                              width: nw * lay.dispW,
+                              height: nh * lay.dispH,
+                              decoration: BoxDecoration(
+                                border:
+                                    isChecked
+                                        ? null
+                                        : Border.all(
+                                          color: Colors.white,
+                                          width: 2,
+                                        ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.15),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              child: Stack(
+                                children: [
+                                  Positioned.fill(
+                                    child: _designImagePreview(
+                                      (obj['objectImageBase64'] ?? '')
+                                          .toString(),
+                                      fit: BoxFit.contain,
+                                    ),
+                                  ),
+
+                                  // Resize handle (bottom-right).
+                                  if (!isChecked)
+                                    Positioned(
+                                      right: 0,
+                                      bottom: 0,
+                                      child: GestureDetector(
+                                        onPanStart: (_) {
+                                          obj['_isResizing'] = true;
+                                        },
+                                        onPanUpdate: (d) {
+                                          final objX =
+                                              (obj['x'] as num?)?.toDouble() ??
+                                              0;
+                                          final objY =
+                                              (obj['y'] as num?)?.toDouble() ??
+                                              0;
+                                          final objW =
+                                              ((obj['width'] as num?)
+                                                      ?.toDouble() ??
+                                                  0.15);
+                                          final objH =
+                                              ((obj['height'] as num?)
+                                                      ?.toDouble() ??
+                                                  0.15);
+
+                                          const minUserSize = 40.0;
+                                          const minApiPix = 2.0;
+                                          final minWn = math.max(
+                                            minUserSize / lay.dispW,
+                                            minApiPix / imgW,
+                                          );
+                                          final minHn = math.max(
+                                            minUserSize / lay.dispH,
+                                            minApiPix / imgH,
+                                          );
+
+                                          final maxWn = (1.0 - objX).clamp(
+                                            minWn,
+                                            1.0,
+                                          );
+                                          final maxHn = (1.0 - objY).clamp(
+                                            minHn,
+                                            1.0,
+                                          );
+
+                                          final nextW =
+                                              objW + d.delta.dx / lay.dispW;
+                                          final nextH =
+                                              objH + d.delta.dy / lay.dispH;
+
+                                          obj['width'] = nextW.clamp(
+                                            minWn,
+                                            maxWn,
+                                          );
+                                          obj['height'] = nextH.clamp(
+                                            minHn,
+                                            maxHn,
+                                          );
+                                          _isPlacementSaved = false;
+                                          notifyPlacementChanged();
+                                        },
+                                        onPanEnd: (_) {
+                                          obj['_isResizing'] = false;
+                                          notifyPlacementChanged();
+                                        },
+                                        child: Container(
+                                          width: 22,
+                                          height: 22,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.95,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.black54,
+                                              width: 1,
+                                            ),
+                                          ),
+                                          child: const Icon(
+                                            Icons.open_with,
+                                            size: 14,
+                                            color: Colors.black54,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+
+                                  Positioned(
+                                    left: 2,
+                                    top: 2,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        obj['_checked'] =
+                                            !(obj['_checked'] == true);
+                                        _isPlacementSaved = false;
+                                        notifyPlacementChanged();
+                                      },
+                                      child: CircleAvatar(
+                                        radius: 10,
+                                        backgroundColor:
+                                            isChecked
+                                                ? const Color(0xFF2E7D32)
+                                                : Colors.black54,
+                                        child: Icon(
+                                          isChecked
+                                              ? Icons.check
+                                              : Icons.check_box_outline_blank,
+                                          size: 12,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  if (!isChecked)
+                                    Positioned(
+                                      right: 2,
+                                      top: 2,
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          _placedThemeObjects.removeAt(index);
+                                          _isPlacementSaved = false;
+                                          notifyPlacementChanged();
+                                        },
+                                        child: const CircleAvatar(
+                                          radius: 10,
+                                          backgroundColor: Colors.red,
+                                          child: Icon(
+                                            Icons.close,
+                                            size: 12,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      );
+    }
+
+    final strip = Row(
+      children: [
+        IconButton(
+          tooltip: 'Scroll left',
+          onPressed:
+              sourceCandidates.isEmpty
+                  ? null
+                  : () {
+                    if (!_objectsStripScrollCtrl.hasClients) return;
+                    final target = (_objectsStripScrollCtrl.offset - 180).clamp(
+                      0.0,
+                      _objectsStripScrollCtrl.position.maxScrollExtent,
+                    );
+                    _objectsStripScrollCtrl.animateTo(
+                      target,
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                    );
+                  },
+          icon: const Icon(Icons.chevron_left),
+        ),
+        Expanded(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 108),
+            child: Scrollbar(
+              controller: _objectsStripScrollCtrl,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _objectsStripScrollCtrl,
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children:
+                      sourceCandidates.map((obj) {
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8, bottom: 4),
+                          child: Draggable<Map<String, dynamic>>(
+                            data: obj,
+                            feedback: SizedBox(
+                              width: 80,
+                              height: 80,
+                              child: _designImagePreview(
+                                (obj['objectImageBase64'] ?? '').toString(),
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                            childWhenDragging: Opacity(
+                              opacity: 0.3,
+                              child: SizedBox(
+                                width: 72,
+                                height: 72,
+                                child: _designImagePreview(
+                                  (obj['objectImageBase64'] ?? '').toString(),
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                            child: SizedBox(
+                              width: 72,
+                              height: 72,
+                              child: _designImagePreview(
+                                (obj['objectImageBase64'] ?? '').toString(),
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                ),
+              ),
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Scroll right',
+          onPressed:
+              sourceCandidates.isEmpty
+                  ? null
+                  : () {
+                    if (!_objectsStripScrollCtrl.hasClients) return;
+                    final target = (_objectsStripScrollCtrl.offset + 180).clamp(
+                      0.0,
+                      _objectsStripScrollCtrl.position.maxScrollExtent,
+                    );
+                    _objectsStripScrollCtrl.animateTo(
+                      target,
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                    );
+                  },
+          icon: const Icon(Icons.chevron_right),
+        ),
+      ],
+    );
+
+    if (safeEditorMaxHeight != null) {
+      return SizedBox(
+        width: safeEditorWidth,
+        height: safeEditorMaxHeight,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Drag objects onto base image',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            if (placedObjects.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  _isPlacementSaved
+                      ? 'Placement saved. Checked objects are locked for a clear preview.'
+                      : 'Tip: tap each object check button to lock it, then click Save Placement.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+              ),
+            if (sourceCandidates.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  'Use Extract Objects on the left to load cutouts.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+              )
+            else
+              strip,
+            const SizedBox(height: 8),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final w = editorWidth ?? constraints.maxWidth;
+                  final h = constraints.maxHeight;
+                  return dragCanvas(w, h);
+                },
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Drag objects onto base image',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        if (sourceCandidates.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              'Use Extract Objects on the left to load cutouts.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+          )
+        else
+          strip,
+        const SizedBox(height: 10),
+        if (placedObjects.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              _isPlacementSaved
+                  ? 'Placement saved. Checked objects are locked for a clear preview.'
+                  : 'Tip: tap each object check button to lock it, then click Save Placement.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+          ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final width = editorWidth ?? constraints.maxWidth;
+            return dragCanvas(width, 420);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label, {
+    TextInputType? keyboardType,
+  }) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
       ),
       style: const TextStyle(fontSize: 13),
     );
@@ -3379,179 +6662,1157 @@ class _InquireFormState extends State<_InquireForm> {
     Map<String, String>? displayMap,
   }) {
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: value,
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
       ),
-      items: options
-          .map((o) => DropdownMenuItem(
-                value: o,
-                child: Text(displayMap?[o] ?? o, style: const TextStyle(fontSize: 13)),
-              ))
-          .toList(),
+      items:
+          options
+              .map(
+                (o) => DropdownMenuItem(
+                  value: o,
+                  child: Text(
+                    displayMap?[o] ?? o,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              )
+              .toList(),
       onChanged: (v) => onChanged(v!),
     );
+  }
+
+  String? _normalizeBase64Payload(String value) {
+    final raw = value.trim();
+    if (raw.isEmpty) return null;
+    final payload =
+        raw.startsWith('data:image/')
+            ? raw.substring(raw.indexOf(',') + 1)
+            : raw;
+    final compact = payload.replaceAll(RegExp(r'\s+'), '');
+    if (compact.isEmpty) return null;
+    if (!RegExp(r'^[A-Za-z0-9+/_=-]+$').hasMatch(compact)) return null;
+    final normalized = compact.replaceAll('-', '+').replaceAll('_', '/');
+    final mod = normalized.length % 4;
+    if (mod == 0) return normalized;
+    return '$normalized${'=' * (4 - mod)}';
+  }
+
+  bool _looksLikeBase64Image(String value) {
+    final t = value.trim().toLowerCase();
+    if (t.startsWith('http://') || t.startsWith('https://')) return false;
+    return _normalizeBase64Payload(value) != null;
+  }
+
+  Widget _designImagePreview(String value, {BoxFit fit = BoxFit.cover}) {
+    final trimmed = value.trim();
+    if (_looksLikeBase64Image(trimmed)) {
+      try {
+        final payload = _normalizeBase64Payload(trimmed);
+        if (payload == null) {
+          return const Center(
+            child: Icon(Icons.broken_image, color: Colors.grey),
+          );
+        }
+        final bytes = _base64DecodeCache.putIfAbsent(
+          payload,
+          () => base64Decode(payload),
+        );
+        return Image.memory(
+          bytes,
+          fit: fit,
+          errorBuilder:
+              (ctx, err, stack) => const Center(
+                child: Icon(Icons.broken_image, color: Colors.grey),
+              ),
+        );
+      } catch (_) {
+        return const Center(
+          child: Icon(Icons.broken_image, color: Colors.grey),
+        );
+      }
+    }
+    return Image.network(
+      trimmed,
+      fit: fit,
+      errorBuilder:
+          (ctx, err, stack) =>
+              const Center(child: Icon(Icons.broken_image, color: Colors.grey)),
+    );
+  }
+
+  bool _isLikelyDesignBoardAsset(String value) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized.isEmpty) return true;
+    if (_looksLikeBase64Image(normalized)) return false;
+    return normalized.contains('logo') ||
+        normalized.contains('favicon') ||
+        normalized.contains('icon') ||
+        normalized.contains('brand') ||
+        normalized.contains('/assets/') ||
+        normalized.contains('\\assets\\');
+  }
+
+  List<String> _designBoardPhotos() {
+    return _designPhotoUrls
+        .where((photo) => !_isLikelyDesignBoardAsset(photo))
+        .toList();
+  }
+
+  Future<Uint8List> _resolveDesignPhotoBytes(String value) async {
+    final trimmed = value.trim();
+    if (_looksLikeBase64Image(trimmed)) {
+      final payload = _normalizeBase64Payload(trimmed);
+      if (payload == null) {
+        throw Exception('Invalid base64 image payload');
+      }
+      return base64Decode(payload);
+    }
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null) {
+      throw Exception('Invalid design photo source');
+    }
+    final response = await http.get(uri).timeout(_aiRequestTimeout);
+    if (response.statusCode != 200) {
+      throw Exception('Failed to download selected design photo');
+    }
+    return response.bodyBytes;
+  }
+
+  Future<void> _openExternalLink(String url) async {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _cacheBaseImageNaturalSize() async {
+    final src = _selectedBaseImage;
+    if (src == null || src.trim().isEmpty) {
+      if (mounted) {
+        setState(() {
+          _baseImageNaturalW = null;
+          _baseImageNaturalH = null;
+        });
+      }
+      return;
+    }
+    try {
+      final bytes = await _resolveDesignPhotoBytes(src);
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final w = frame.image.width.toDouble();
+      final h = frame.image.height.toDouble();
+      frame.image.dispose();
+      if (!mounted) return;
+      setState(() {
+        _baseImageNaturalW = w;
+        _baseImageNaturalH = h;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _baseImageNaturalW = null;
+          _baseImageNaturalH = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _runCustomerEditObjectsFlow(
+    void Function(void Function()) setDialogState,
+  ) async {
+    final photos = _designBoardPhotos();
+    if (photos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Add at least one design board photo first.'),
+        ),
+      );
+      return;
+    }
+    final focusedIndex = (_focusedPhotoIndex ?? 0).clamp(0, photos.length - 1);
+    final source = photos[focusedIndex];
+    setState(() => _isDetectingAiObjects = true);
+    try {
+      final bytes = await _resolveDesignPhotoBytes(source);
+      final imageBase64 = base64Encode(bytes);
+      final segmented = await PublicEventsApi.instance
+          .inferThemeObjectsWithSam(
+            imageBase64: imageBase64,
+            maxDetections: 20,
+            maskFormat: 'polygon',
+          )
+          .timeout(_aiRequestTimeout);
+      final objects =
+          (segmented['objects'] as List<dynamic>? ?? const [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+      if (objects.isEmpty) {
+        throw Exception('No objects detected to edit.');
+      }
+
+      final grouped = <String, List<Map<String, dynamic>>>{};
+      for (final obj in objects) {
+        final label = (obj['label'] ?? 'Object').toString();
+        grouped.putIfAbsent(label, () => <Map<String, dynamic>>[]).add(obj);
+      }
+
+      final selection = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (context) {
+          String? selectedLabel;
+          String selectedHex = '#F4511E';
+          double selectedAlpha = 1.0;
+          const palette = <String>[
+            '#F4511E',
+            '#1DB954',
+            '#1976D2',
+            '#E91E63',
+            '#6A1B9A',
+            '#FFC107',
+            '#FFFFFF',
+            '#212121',
+          ];
+          return StatefulBuilder(
+            builder: (context, setLocalState) {
+              return Dialog(
+                backgroundColor: const Color(0xFFF7F8FA),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Container(
+                  width: 1160,
+                  height: 760,
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Object Selection',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFF4511E),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: Colors.grey.shade300,
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                  color: Colors.black12,
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final w = constraints.maxWidth;
+                                      final h = constraints.maxHeight;
+                                      return Stack(
+                                        children: [
+                                          Positioned.fill(
+                                            child: Image.memory(
+                                              bytes,
+                                              fit: BoxFit.contain,
+                                            ),
+                                          ),
+                                          ...objects.map((obj) {
+                                            final boxRaw =
+                                                Map<String, dynamic>.from(
+                                                  (obj['boundingBox']
+                                                          as Map?) ??
+                                                      const <String, dynamic>{},
+                                                );
+                                            final leftRaw =
+                                                (boxRaw['left'] as num?)
+                                                    ?.toDouble() ??
+                                                0;
+                                            final topRaw =
+                                                (boxRaw['top'] as num?)
+                                                    ?.toDouble() ??
+                                                0;
+                                            final widthRaw =
+                                                (boxRaw['width'] as num?)
+                                                    ?.toDouble() ??
+                                                0.2;
+                                            final heightRaw =
+                                                (boxRaw['height'] as num?)
+                                                    ?.toDouble() ??
+                                                0.2;
+                                            final isNormalized =
+                                                widthRaw <= 1.0 &&
+                                                heightRaw <= 1.0;
+                                            final left =
+                                                isNormalized
+                                                    ? leftRaw * w
+                                                    : leftRaw;
+                                            final top =
+                                                isNormalized
+                                                    ? topRaw * h
+                                                    : topRaw;
+                                            final width =
+                                                isNormalized
+                                                    ? widthRaw * w
+                                                    : widthRaw;
+                                            final height =
+                                                isNormalized
+                                                    ? heightRaw * h
+                                                    : heightRaw;
+                                            final active =
+                                                selectedLabel ==
+                                                (obj['label'] ?? 'Object')
+                                                    .toString();
+                                            return Positioned(
+                                              left: left,
+                                              top: top,
+                                              width: width,
+                                              height: height,
+                                              child: GestureDetector(
+                                                onTap:
+                                                    () => setLocalState(
+                                                      () =>
+                                                          selectedLabel =
+                                                              (obj['label'] ??
+                                                                      'Object')
+                                                                  .toString(),
+                                                    ),
+                                                child: CustomPaint(
+                                                  painter:
+                                                      _SoftCustomerOverlayPainter(
+                                                        polygonPoints:
+                                                            const <
+                                                              Map<
+                                                                String,
+                                                                dynamic
+                                                              >
+                                                            >[],
+                                                        boundingBox:
+                                                            Rect.fromLTWH(
+                                                              0,
+                                                              0,
+                                                              width,
+                                                              height,
+                                                            ),
+                                                        selected: active,
+                                                      ),
+                                                ),
+                                              ),
+                                            );
+                                          }),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            SizedBox(
+                              width: 340,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      border: Border.all(
+                                        color: Colors.grey.shade300,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Recolor',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children:
+                                              palette.map((hex) {
+                                                final color = Color(
+                                                  int.parse(
+                                                        hex.substring(1),
+                                                        radix: 16,
+                                                      ) +
+                                                      0xFF000000,
+                                                );
+                                                final selected =
+                                                    selectedHex == hex;
+                                                return GestureDetector(
+                                                  onTap:
+                                                      () => setLocalState(
+                                                        () => selectedHex = hex,
+                                                      ),
+                                                  child: Container(
+                                                    width: 30,
+                                                    height: 30,
+                                                    decoration: BoxDecoration(
+                                                      color: color,
+                                                      shape: BoxShape.circle,
+                                                      border: Border.all(
+                                                        color:
+                                                            selected
+                                                                ? Colors.black
+                                                                : Colors
+                                                                    .black26,
+                                                        width: selected ? 3 : 1,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                );
+                                              }).toList(),
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Alpha: ${(selectedAlpha * 100).round()}%',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Slider(
+                                              value: selectedAlpha,
+                                              min: 0.0,
+                                              max: 1.0,
+                                              divisions: 20,
+                                              activeColor: Color(
+                                                int.parse(
+                                                      selectedHex.substring(1),
+                                                      radix: 16,
+                                                    ) +
+                                                    0xFF000000,
+                                              ),
+                                              onChanged:
+                                                  (value) => setLocalState(
+                                                    () => selectedAlpha = value,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Container(
+                                          width: double.infinity,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: Color(
+                                              int.parse(
+                                                    selectedHex.substring(1),
+                                                    radix: 16,
+                                                  ) +
+                                                  (selectedAlpha * 255)
+                                                          .round() *
+                                                      0x1000000,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.grey.shade400,
+                                            ),
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              'Preview',
+                                              style: TextStyle(
+                                                color:
+                                                    selectedAlpha > 0.5
+                                                        ? Colors.white
+                                                        : Colors.black,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Container(
+                                    height: 220,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      border: Border.all(
+                                        color: Colors.grey.shade300,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Detected Objects:',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Expanded(
+                                          child: SingleChildScrollView(
+                                            child: Wrap(
+                                              spacing: 8,
+                                              runSpacing: 8,
+                                              children:
+                                                  grouped.entries.map((entry) {
+                                                    final label =
+                                                        entry.value.length > 1
+                                                            ? '${entry.key} (${entry.value.length})'
+                                                            : entry.key;
+                                                    final active =
+                                                        selectedLabel ==
+                                                        entry.key;
+                                                    return FilterChip(
+                                                      label: Text(label),
+                                                      selected: active,
+                                                      onSelected:
+                                                          (_) =>
+                                                              setLocalState(() {
+                                                                selectedLabel =
+                                                                    entry.key;
+                                                              }),
+                                                      backgroundColor:
+                                                          Colors.grey.shade200,
+                                                      selectedColor: Colors.blue
+                                                          .withOpacity(0.3),
+                                                      checkmarkColor:
+                                                          Colors.blue,
+                                                    );
+                                                  }).toList(),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  ElevatedButton(
+                                    onPressed:
+                                        selectedLabel == null
+                                            ? null
+                                            : () => Navigator.of(context).pop({
+                                              'label': selectedLabel!,
+                                              'hex': selectedHex,
+                                              'alpha': selectedAlpha,
+                                            }),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF1DB954),
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    child: const Text(
+                                      'Apply Colors to Selected',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ElevatedButton(
+                                    onPressed:
+                                        () => Navigator.of(context).pop(),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.grey.shade400,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    child: const Text('Cancel'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+      if (selection == null) return;
+      final selectedLabel = selection['label'];
+      final targetHex = selection['hex'];
+      final targetAlpha = selection['alpha'] as double? ?? 1.0;
+      if (selectedLabel == null || targetHex == null) return;
+
+      final selectedObjects =
+          grouped[selectedLabel] ?? const <Map<String, dynamic>>[];
+      final masks =
+          selectedObjects.map((obj) {
+            final rawPolygon =
+                (obj['polygonPoints'] as List<dynamic>? ??
+                        obj['polygon_points'] as List<dynamic>? ??
+                        const [])
+                    .toList();
+            final polygon =
+                rawPolygon
+                    .map((point) {
+                      if (point is Map) {
+                        return {
+                          'x': (point['x'] as num?)?.toDouble() ?? 0.0,
+                          'y': (point['y'] as num?)?.toDouble() ?? 0.0,
+                        };
+                      }
+                      if (point is List && point.length >= 2) {
+                        final x = point[0];
+                        final y = point[1];
+                        if (x is num && y is num) {
+                          return {'x': x.toDouble(), 'y': y.toDouble()};
+                        }
+                      }
+                      return null;
+                    })
+                    .whereType<Map<String, double>>()
+                    .toList();
+            final maskBase64 =
+                (obj['maskBase64'] ?? obj['mask_base64'] ?? '')
+                    .toString()
+                    .trim();
+            return {
+              'objectId': (obj['id'] ?? '').toString(),
+              if (polygon.isNotEmpty) 'polygonPoints': polygon,
+              if (maskBase64.isNotEmpty) 'maskBase64': maskBase64,
+            };
+          }).toList();
+      final edits =
+          selectedObjects
+              .map(
+                (obj) => {
+                  'objectId': (obj['id'] ?? '').toString(),
+                  'targetHex': targetHex,
+                  'intensity': targetAlpha,
+                },
+              )
+              .toList();
+
+      final recolor = await PublicEventsApi.instance
+          .swapThemeObjectColors(
+            imageBase64: imageBase64,
+            masks: masks,
+            edits: edits,
+          )
+          .timeout(_aiRequestTimeout);
+      final recoloredBase64 = (recolor['imageBase64'] ?? '').toString().trim();
+      if (recoloredBase64.isEmpty) {
+        throw Exception('AI recolor did not return an image.');
+      }
+
+      setDialogState(() {
+        final existingIndex = _designPhotoUrls.indexOf(source);
+        if (existingIndex >= 0) {
+          // Replace the original with the edited version to avoid duplicate previews.
+          _designPhotoUrls[existingIndex] = recoloredBase64;
+          _focusedPhotoIndex = existingIndex;
+        } else {
+          _designPhotoUrls.add(recoloredBase64);
+          _focusedPhotoIndex = _designPhotoUrls.length - 1;
+        }
+      });
+      setState(() {});
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('AI edit applied.')));
+      }
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      final timeout =
+          msg.contains('timeout') ||
+          msg.contains('timed out') ||
+          msg.contains('upstream_timeout');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              timeout
+                  ? 'AI service timed out. Please try one clear image and retry.'
+                  : 'Failed to edit objects: $e',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isDetectingAiObjects = false);
+    }
   }
 
   void _showCustomDesignDialog() {
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Create Your Event Design'),
-          content: SizedBox(
-            width: 500,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Upload or link inspiration photos for your event design:',
-                    style: TextStyle(fontSize: 13),
-                  ),
-                  const SizedBox(height: 16),
-                  // Photo URL input
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _designPhotoCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Photo URL',
-                            hintText: 'Paste image link here...',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: () {
-                          if (_designPhotoCtrl.text.trim().isNotEmpty) {
-                            setDialogState(() {
-                              _designPhotoUrls.add(_designPhotoCtrl.text.trim());
-                              _designPhotoCtrl.clear();
-                            });
-                            setState(() {});
-                          }
-                        },
-                        child: const Text('Add'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  // Photo count
-                  Text(
-                    '${_designPhotoUrls.length} photo(s) added',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-                  // Focused photo display (larger)
-                  if (_designPhotoUrls.isNotEmpty) ...[
-                    Container(
-                      height: 200,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          _focusedPhotoIndex != null && _focusedPhotoIndex! < _designPhotoUrls.length
-                              ? _designPhotoUrls[_focusedPhotoIndex!]
-                              : _designPhotoUrls.first,
-                          fit: BoxFit.contain,
-                          errorBuilder: (ctx, err, stack) => const Center(
-                            child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // Photo carousel (smaller thumbnails)
-                    SizedBox(
-                      height: 80,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _designPhotoUrls.length,
-                        itemBuilder: (ctx, index) {
-                          final isFocused = _focusedPhotoIndex == index ||
-                              (_focusedPhotoIndex == null && index == 0);
-                          return GestureDetector(
-                            onTap: () {
-                              setDialogState(() {
-                                _focusedPhotoIndex = index;
-                              });
-                            },
-                            child: Container(
-                              width: 80,
-                              margin: const EdgeInsets.only(right: 8),
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: isFocused ? const Color(0xFFFFC024) : Colors.grey.shade300,
-                                  width: isFocused ? 3 : 1,
-                                ),
-                                borderRadius: BorderRadius.circular(8),
+      builder:
+          (context) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              final designBoardPhotos = _designBoardPhotos();
+              final screenWidth = MediaQuery.of(context).size.width;
+              final isNarrow = screenWidth < 720;
+              final dialogWidth = isNarrow ? screenWidth * 0.92 : 620.0;
+              final previewHeight = isNarrow ? 160.0 : 200.0;
+              final thumbSize = isNarrow ? 64.0 : 80.0;
+              final thumbStripHeight = isNarrow ? 64.0 : 80.0;
+              return AlertDialog(
+                backgroundColor: const Color(0xFFF7F8FA),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                title: Row(
+                  children: const [
+                    Icon(Icons.palette_outlined, color: Color(0xFFF4511E)),
+                    SizedBox(width: 8),
+                    Text('Events Theme Design'),
+                  ],
+                ),
+                content: SizedBox(
+                  width: dialogWidth,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: Colors.black.withOpacity(0.08),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.04),
+                                blurRadius: 14,
+                                offset: const Offset(0, 6),
                               ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Stack(
-                                  fit: StackFit.expand,
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFF3D0),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: const Text(
+                                  'AI EDIT TOOLS',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                    color: Color(0xFF7A4E00),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Flow: EDIT OBJECTS -> choose grouped object -> pick color -> apply.',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  onPressed:
+                                      _isDetectingAiObjects
+                                          ? null
+                                          : () => _runCustomerEditObjectsFlow(
+                                            setDialogState,
+                                          ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFF4511E),
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  child:
+                                      _isDetectingAiObjects
+                                          ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              valueColor:
+                                                  AlwaysStoppedAnimation<Color>(
+                                                    Colors.white,
+                                                  ),
+                                            ),
+                                          )
+                                          : const Text('EDIT OBJECTS'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: Colors.black.withOpacity(0.08),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Add reference photos (upload or URL).:',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                              const SizedBox(height: 10),
+                              if (isNarrow)
+                                Column(
                                   children: [
-                                    Image.network(
-                                      _designPhotoUrls[index],
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (ctx, err, stack) => const Center(
-                                        child: Icon(Icons.broken_image, color: Colors.grey),
+                                    TextField(
+                                      controller: _designPhotoCtrl,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Photo URL',
+                                        hintText: 'Paste image link here...',
+                                        border: OutlineInputBorder(),
                                       ),
                                     ),
-                                    // Delete button
-                                    Positioned(
-                                      top: 2,
-                                      right: 2,
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          setDialogState(() {
-                                            _designPhotoUrls.removeAt(index);
-                                            if (_focusedPhotoIndex != null && _focusedPhotoIndex! >= index) {
-                                              _focusedPhotoIndex = _focusedPhotoIndex! > 0 ? _focusedPhotoIndex! - 1 : null;
-                                            }
-                                          });
-                                          setState(() {});
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(2),
-                                          decoration: const BoxDecoration(
-                                            color: Colors.red,
-                                            shape: BoxShape.circle,
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          ElevatedButton(
+                                            onPressed: () async {
+                                              final picked = await ImagePicker()
+                                                  .pickImage(
+                                                    source: ImageSource.gallery,
+                                                  );
+                                              if (picked == null) return;
+                                              final bytes =
+                                                  await picked.readAsBytes();
+                                              final encoded = base64Encode(
+                                                bytes,
+                                              );
+                                              setDialogState(() {
+                                                _designPhotoUrls.add(encoded);
+                                                _focusedPhotoIndex =
+                                                    _designPhotoUrls.length - 1;
+                                              });
+                                              setState(() {});
+                                            },
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(
+                                                0xFF1976D2,
+                                              ),
+                                              foregroundColor: Colors.white,
+                                            ),
+                                            child: const Text('Upload Photo'),
                                           ),
-                                          child: const Icon(Icons.close, size: 14, color: Colors.white),
-                                        ),
+                                          ElevatedButton(
+                                            onPressed: () {
+                                              final input =
+                                                  _designPhotoCtrl.text.trim();
+                                              if (input.isEmpty) return;
+                                              if (_isLikelyDesignBoardAsset(
+                                                input,
+                                              )) {
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'Logo/asset links are not added to the design board. Please use event inspiration photos.',
+                                                    ),
+                                                  ),
+                                                );
+                                                return;
+                                              }
+                                              setDialogState(() {
+                                                _designPhotoUrls.add(input);
+                                                _designPhotoCtrl.clear();
+                                              });
+                                              setState(() {});
+                                            },
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(
+                                                0xFFFFC024,
+                                              ),
+                                              foregroundColor: Colors.black87,
+                                            ),
+                                            child: const Text('Add URL'),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ],
+                                )
+                              else
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: _designPhotoCtrl,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Photo URL',
+                                          hintText: 'Paste image link here...',
+                                          border: OutlineInputBorder(),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton(
+                                      onPressed: () async {
+                                        final picked = await ImagePicker()
+                                            .pickImage(
+                                              source: ImageSource.gallery,
+                                            );
+                                        if (picked == null) return;
+                                        final bytes =
+                                            await picked.readAsBytes();
+                                        final encoded = base64Encode(bytes);
+                                        setDialogState(() {
+                                          _designPhotoUrls.add(encoded);
+                                          _focusedPhotoIndex =
+                                              _designPhotoUrls.length - 1;
+                                        });
+                                        setState(() {});
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFF1976D2,
+                                        ),
+                                        foregroundColor: Colors.white,
+                                      ),
+                                      child: const Text('Upload Photo'),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        final input =
+                                            _designPhotoCtrl.text.trim();
+                                        if (input.isEmpty) return;
+                                        if (_isLikelyDesignBoardAsset(input)) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Logo/asset links are not added to the design board. Please use event inspiration photos.',
+                                              ),
+                                            ),
+                                          );
+                                          return;
+                                        }
+                                        setDialogState(() {
+                                          _designPhotoUrls.add(input);
+                                          _designPhotoCtrl.clear();
+                                        });
+                                        setState(() {});
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFFFFC024,
+                                        ),
+                                        foregroundColor: Colors.black87,
+                                      ),
+                                      child: const Text('Add URL'),
+                                    ),
+                                  ],
                                 ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3D0),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '${designBoardPhotos.length} design board photo(s)',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: Color(0xFF7A4E00),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (designBoardPhotos.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            height: previewHeight,
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey.shade300),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: _designImagePreview(
+                                _focusedPhotoIndex != null &&
+                                        _focusedPhotoIndex! <
+                                            designBoardPhotos.length
+                                    ? designBoardPhotos[_focusedPhotoIndex!]
+                                    : designBoardPhotos.first,
+                                fit: BoxFit.contain,
                               ),
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            height: thumbStripHeight,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: designBoardPhotos.length,
+                              itemBuilder: (ctx, index) {
+                                final isFocused =
+                                    _focusedPhotoIndex == index ||
+                                    (_focusedPhotoIndex == null && index == 0);
+                                return GestureDetector(
+                                  onTap: () {
+                                    setDialogState(() {
+                                      _focusedPhotoIndex = index;
+                                    });
+                                  },
+                                  child: Container(
+                                    width: thumbSize,
+                                    margin: const EdgeInsets.only(right: 8),
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color:
+                                            isFocused
+                                                ? const Color(0xFFFFC024)
+                                                : Colors.grey.shade300,
+                                        width: isFocused ? 3 : 1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          _designImagePreview(
+                                            designBoardPhotos[index],
+                                            fit: BoxFit.cover,
+                                          ),
+                                          Positioned(
+                                            top: 2,
+                                            right: 2,
+                                            child: GestureDetector(
+                                              onTap: () {
+                                                final photoToRemove =
+                                                    designBoardPhotos[index];
+                                                setDialogState(() {
+                                                  _designPhotoUrls.remove(
+                                                    photoToRemove,
+                                                  );
+                                                  if (_focusedPhotoIndex !=
+                                                          null &&
+                                                      _focusedPhotoIndex! >=
+                                                          index) {
+                                                    _focusedPhotoIndex =
+                                                        _focusedPhotoIndex! > 0
+                                                            ? _focusedPhotoIndex! -
+                                                                1
+                                                            : null;
+                                                  }
+                                                });
+                                                setState(() {});
+                                              },
+                                              child: Container(
+                                                padding: const EdgeInsets.all(
+                                                  2,
+                                                ),
+                                                decoration: const BoxDecoration(
+                                                  color: Colors.red,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.close,
+                                                  size: 14,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
+                  ),
+                ),
+                actions: [
+                  SizedBox(
+                    width: 140,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1DB954),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('DONE'),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 140,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.grey.shade400,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('CANCEL'),
+                    ),
+                  ),
                 ],
-              ),
-            ),
+              );
+            },
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Done'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

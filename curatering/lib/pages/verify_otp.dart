@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:curatering/services/auth_api.dart';
 import 'package:flutter/material.dart';
+import '../utils/responsive_layout.dart';
 
 class VerifyOtp extends StatefulWidget {
   final String email;
@@ -94,13 +95,13 @@ class _VerifyOtpState extends State<VerifyOtp> {
       appBar: AppBar(title: const Text("Verify Account")),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
+          constraints: BoxConstraints(maxWidth: isMobileWidth(context) ? 340 : 460),
           child: Card(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
             child: Padding(
-              padding: const EdgeInsets.all(24),
+              padding: appPagePadding(context),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [

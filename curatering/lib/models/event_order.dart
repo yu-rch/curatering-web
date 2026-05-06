@@ -27,12 +27,22 @@ class EventThemeDesignDto {
   final bool tintEnabled;
   final String? tintColorHex; // #RRGGBB
   final String? colorPrompt;
+  final bool wantsCustomDesign;
+  final String? customerThemeRequest;
+  final double? dishCost;
+  final double? laborCost;
+  final double? travelCost;
 
   const EventThemeDesignDto({
     required this.picksBase64,
     required this.tintEnabled,
     this.tintColorHex,
     this.colorPrompt,
+    this.wantsCustomDesign = false,
+    this.customerThemeRequest,
+    this.dishCost,
+    this.laborCost,
+    this.travelCost,
   });
 }
 
@@ -50,8 +60,8 @@ class PostAnalysisDto {
 
 class EventOrderDto {
   final String id;
-  final String source; // new_event | online_inquiry
-  final String status; // new_event | online_inquiries | for_processing | for_post_analysis | completed
+  final String source;
+  final String status;
 
   final String eventTitle;
   final String orderType; // catering | catering_event
@@ -85,6 +95,9 @@ class EventOrderDto {
   // Final status
   final String finalStatus; // successful | cancelled
 
+  /// True when [listSummaryOnly] was returned: theme image payloads omitted; use [EventsApi.getEventOrder] for full data.
+  final bool themeAssetsDeferred;
+
   const EventOrderDto({
     required this.id,
     required this.source,
@@ -111,6 +124,7 @@ class EventOrderDto {
     this.checklist = const [],
     this.actualEventImages = const [],
     this.finalStatus = 'successful',
+    this.themeAssetsDeferred = false,
   });
 }
 
