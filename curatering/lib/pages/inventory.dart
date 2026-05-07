@@ -117,6 +117,7 @@ class _InventoryState extends State<Inventory> {
   String? _selectedCategory;
   String _sortBy = 'name'; // name, quantity, category, lastUpdated
   bool _sortAscending = true;
+  bool _isTabularView = false;
 
   final List<String> _categories = [
     'Ingredients',
@@ -168,6 +169,122 @@ class _InventoryState extends State<Inventory> {
       AuthSession.instance.currentRole == Role.supervisor ||
       AuthSession.instance.currentRole == Role.cashier ||
       _isManager;
+
+  Widget _buildViewToggleButton(
+    String label,
+    bool isTabular,
+    VoidCallback onPressed,
+  ) {
+    final isSelected = _isTabularView == isTabular;
+    return GestureDetector(
+      onTap: onPressed,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFFFC024) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? const Color(0xFFFFC024) : Colors.grey.shade300,
+            width: 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.grey.shade700,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabularView() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          headingRowColor: const WidgetStatePropertyAll<Color>(
+            Color(0xFFF5F7F9),
+          ),
+          headingTextStyle: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF242424),
+          ),
+          dataRowColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return const Color(0xFFFFC024).withOpacity(0.1);
+            }
+            return Colors.white;
+          }),
+          columns: const [
+            DataColumn(label: Text('Name'), numeric: false),
+            DataColumn(label: Text('Category'), numeric: false),
+            DataColumn(label: Text('Quantity'), numeric: false),
+            DataColumn(label: Text('Unit'), numeric: false),
+            DataColumn(label: Text('Unit Cost'), numeric: false),
+            DataColumn(label: Text('Last Updated'), numeric: false),
+            DataColumn(label: Text('Status'), numeric: false),
+          ],
+          rows:
+              _filteredItems.map((item) {
+                return DataRow(
+                  cells: [
+                    DataCell(Text(item.name)),
+                    DataCell(Text(item.category)),
+                    DataCell(Text('${item.quantity}')),
+                    DataCell(Text(item.unit)),
+                    DataCell(Text('₱${item.unitCost.toStringAsFixed(2)}')),
+                    DataCell(Text(_formatDate(item.lastUpdated))),
+                    DataCell(
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color:
+                              item.lowStock
+                                  ? Colors.red.shade100
+                                  : Colors.green.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          item.lowStock ? 'Low Stock' : 'In Stock',
+                          style: TextStyle(
+                            color:
+                                item.lowStock
+                                    ? Colors.red.shade700
+                                    : Colors.green.shade700,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGridView() {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: _filteredItems.length,
+      itemBuilder: (context, index) {
+        return _buildInventoryCard(_filteredItems[index]);
+      },
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
 
   Future<void> _loadInventoryItems() async {
     setState(() => _isLoading = true);
@@ -885,7 +1002,28 @@ class _InventoryState extends State<Inventory> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                _buildStatsRow(),
+                Row(
+                  children: [
+                    Expanded(child: _buildStatsRow()),
+                    const SizedBox(width: 12),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          _buildViewToggleButton('Grid', false, () {
+                            setState(() => _isTabularView = false);
+                          }),
+                          _buildViewToggleButton('Table', true, () {
+                            setState(() => _isTabularView = true);
+                          }),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -938,13 +1076,9 @@ class _InventoryState extends State<Inventory> {
                         ],
                       ),
                     )
-                    : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: _filteredItems.length,
-                      itemBuilder: (context, index) {
-                        return _buildInventoryCard(_filteredItems[index]);
-                      },
-                    ),
+                    : _isTabularView
+                    ? _buildTabularView()
+                    : _buildGridView(),
           ),
         ],
       ),

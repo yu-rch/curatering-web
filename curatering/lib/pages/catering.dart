@@ -288,10 +288,7 @@ class _ThemeTemplate {
   });
 }
 
-class _ManageEventsState extends State<ManageEvents>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
-
+class _ManageEventsState extends State<ManageEvents> {
   final TextEditingController _eventSearchController = TextEditingController();
   final TextEditingController _inquirySearchController =
       TextEditingController();
@@ -327,27 +324,6 @@ class _ManageEventsState extends State<ManageEvents>
     super.initState();
     _allDishes = MenuStore.instance.activeDishes;
     MenuStore.instance.addListener(_onMenuStoreChanged);
-    _tabController = TabController(
-      length: EventStatus.values.length,
-      vsync: this,
-      initialIndex: _selectedStatus.index,
-    )..addListener(() {
-      if (!_tabController.indexIsChanging) return;
-      final newStatus = EventStatus.values[_tabController.index];
-      setState(() {
-        _selectedStatus = newStatus;
-        if (newStatus != EventStatus.forProcessing) {
-          _selectedProcessingOrderDto = null;
-        }
-        if (newStatus != EventStatus.forPostAnalysis) {
-          _selectedPostAnalysisOrderDto = null;
-        }
-        if (newStatus != EventStatus.completed) {
-          _selectedCompletedOrderDto = null;
-        }
-      });
-    });
-
     _loadThemeTemplates();
     AuthSession.instance.currentUser.addListener(_handleAuthSessionChange);
     _refreshOrders();
@@ -355,7 +331,6 @@ class _ManageEventsState extends State<ManageEvents>
 
   @override
   void dispose() {
-    _tabController.dispose();
     AuthSession.instance.currentUser.removeListener(_handleAuthSessionChange);
     MenuStore.instance.removeListener(_onMenuStoreChanged);
     _eventSearchController.dispose();
@@ -726,6 +701,53 @@ class _ManageEventsState extends State<ManageEvents>
       EventFormalityLevel.semiFormal => 'semi_formal',
       EventFormalityLevel.formal => 'formal',
     };
+  }
+
+  Widget _buildEventTabButton(String title, int index) {
+    final selected = _selectedStatus.index == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap:
+            () => setState(() => _selectedStatus = EventStatus.values[index]),
+        child: Container(
+          height: 48,
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFFFC024) : Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: selected ? const Color(0xFFFFC024) : Colors.grey.shade300,
+              width: 1.5,
+            ),
+            boxShadow: [
+              if (selected)
+                BoxShadow(
+                  color: const Color(0xFFFFC024).withOpacity(0.25),
+                  blurRadius: 12,
+                  offset: const Offset(0, 3),
+                )
+              else
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+            ],
+          ),
+          child: Center(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                fontSize: 13,
+                letterSpacing: 0.6,
+                color: selected ? Colors.white : Colors.grey.shade700,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   String _themeTintColorHex(Color c) {
@@ -2729,56 +2751,54 @@ class _ManageEventsState extends State<ManageEvents>
                                 style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                               const SizedBox(height: 8),
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  child: Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children:
-                                        (() {
-                                          final grouped =
-                                              <String, List<SegmentedObject>>{};
-                                          for (final obj
-                                              in _currentSegmentationResult!
-                                                  .objects) {
-                                            grouped
-                                                .putIfAbsent(
-                                                  obj.label,
-                                                  () => <SegmentedObject>[],
-                                                )
-                                                .add(obj);
-                                          }
-                                          return grouped.entries.map((entry) {
-                                            final ids =
-                                                entry.value
-                                                    .map((o) => o.id)
-                                                    .toSet();
-                                            final isSelected = ids.any(
-                                              _selectedObjectIds.contains,
-                                            );
-                                            final label =
-                                                entry.value.length > 1
-                                                    ? '${entry.key} (${entry.value.length})'
-                                                    : entry.key;
-                                            return FilterChip(
-                                              label: Text(label),
-                                              selected: isSelected,
-                                              onSelected: (_) {
-                                                setState(() {
-                                                  _selectedObjectIds
-                                                    ..clear()
-                                                    ..addAll(ids);
-                                                });
-                                              },
-                                              backgroundColor:
-                                                  Colors.grey.shade200,
-                                              selectedColor: Colors.blue
-                                                  .withOpacity(0.3),
-                                              checkmarkColor: Colors.blue,
-                                            );
-                                          }).toList();
-                                        })(),
-                                  ),
+                              SingleChildScrollView(
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children:
+                                      (() {
+                                        final grouped =
+                                            <String, List<SegmentedObject>>{};
+                                        for (final obj
+                                            in _currentSegmentationResult!
+                                                .objects) {
+                                          grouped
+                                              .putIfAbsent(
+                                                obj.label,
+                                                () => <SegmentedObject>[],
+                                              )
+                                              .add(obj);
+                                        }
+                                        return grouped.entries.map((entry) {
+                                          final ids =
+                                              entry.value
+                                                  .map((o) => o.id)
+                                                  .toSet();
+                                          final isSelected = ids.any(
+                                            _selectedObjectIds.contains,
+                                          );
+                                          final label =
+                                              entry.value.length > 1
+                                                  ? '${entry.key} (${entry.value.length})'
+                                                  : entry.key;
+                                          return FilterChip(
+                                            label: Text(label),
+                                            selected: isSelected,
+                                            onSelected: (_) {
+                                              setState(() {
+                                                _selectedObjectIds
+                                                  ..clear()
+                                                  ..addAll(ids);
+                                              });
+                                            },
+                                            backgroundColor:
+                                                Colors.grey.shade200,
+                                            selectedColor: Colors.blue
+                                                .withOpacity(0.3),
+                                            checkmarkColor: Colors.blue,
+                                          );
+                                        }).toList();
+                                      })(),
                                 ),
                               ),
                             ],
@@ -2827,21 +2847,6 @@ class _ManageEventsState extends State<ManageEvents>
         ),
       ),
     );
-  }
-
-  String _statusLabel(EventStatus status) {
-    switch (status) {
-      case EventStatus.onlineInquiries:
-        return 'Online Inquiries';
-      case EventStatus.forProcessing:
-        return 'For Processing';
-      case EventStatus.forPostAnalysis:
-        return 'For Post-Analysis';
-      case EventStatus.completed:
-        return 'Completed';
-      case EventStatus.newEvent:
-        return 'New Order';
-    }
   }
 
   //Online Inquiries View
@@ -4753,7 +4758,7 @@ class _ManageEventsState extends State<ManageEvents>
       setState(() {
         _selectedProcessingOrderDto = null;
       });
-      _tabController.animateTo(EventStatus.forPostAnalysis.index);
+      setState(() => _selectedStatus = EventStatus.forPostAnalysis);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -6041,53 +6046,62 @@ class _ManageEventsState extends State<ManageEvents>
 
     if (isNarrow) {
       // Narrow layout - stack vertically with tabs
-      return DefaultTabController(
-        length: 2,
-        child: Column(
-          children: [
-            TabBar(
-              labelColor: const Color(0xFFF4511E),
-              unselectedLabelColor: Colors.grey,
-              indicatorColor: const Color(0xFFF4511E),
-              tabs: const [
-                Tab(text: 'For Processing'),
-                Tab(text: 'Post-Analysis'),
+      return Column(
+        children: [
+          // Custom tab buttons
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Row(
+              children: [
+                _buildEventTabButton('New Event', 0),
+                const SizedBox(width: 2),
+                _buildEventTabButton('Online Inquiries', 1),
+                const SizedBox(width: 2),
+                _buildEventTabButton('For Processing', 2),
+                const SizedBox(width: 2),
+                _buildEventTabButton('Post-Analysis', 3),
+                const SizedBox(width: 2),
+                _buildEventTabButton('Completed', 4),
               ],
             ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  // For Processing Tab
-                  SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        _buildProcessingOrdersListSection(processingOrders),
-                        if (_selectedProcessingOrderDto != null) ...[
-                          const SizedBox(height: 20),
-                          _buildEventInformationSection(),
-                          const SizedBox(height: 20),
-                          _buildProcessingMenuSection(),
+          ),
+          Expanded(
+            child:
+                _selectedStatus.index == 0
+                    ? SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          _buildProcessingOrdersListSection(processingOrders),
+                          if (_selectedProcessingOrderDto != null) ...[
+                            const SizedBox(height: 20),
+                            _buildEventInformationSection(),
+                            const SizedBox(height: 20),
+                            _buildProcessingMenuSection(),
+                          ],
                         ],
-                      ],
-                    ),
-                  ),
-                  // Post-Analysis Tab
-                  SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        _buildPostAnalysisOrdersListSection(postAnalysisOrders),
-                        if (_selectedPostAnalysisOrderDto != null) ...[
-                          const SizedBox(height: 20),
-                          _buildPostAnalysisDetailsSection(),
+                      ),
+                    )
+                    : SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          _buildPostAnalysisOrdersListSection(
+                            postAnalysisOrders,
+                          ),
+                          if (_selectedPostAnalysisOrderDto != null) ...[
+                            const SizedBox(height: 20),
+                            _buildEventInformationSection(),
+                            const SizedBox(height: 20),
+                            _buildPostAnalysisDetailsSection(),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 
@@ -7082,8 +7096,8 @@ class _ManageEventsState extends State<ManageEvents>
                           _resetForm();
 
                           // switch tab
-                          _tabController.animateTo(
-                            EventStatus.forProcessing.index,
+                          setState(
+                            () => _selectedStatus = EventStatus.forProcessing,
                           );
                         } catch (e) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -7782,35 +7796,48 @@ class _ManageEventsState extends State<ManageEvents>
                       ),
                     ],
                   ),
-                  child: TabBar(
-                    padding: const EdgeInsets.all(6),
-                    controller: _tabController,
-                    isScrollable: true,
-                    labelColor: Colors.white,
-                    unselectedLabelColor: const Color(0xFF2E2E2E),
-                    labelStyle: const TextStyle(fontWeight: FontWeight.w700),
-                    indicator: BoxDecoration(
-                      color: const Color(0xFFF4511E),
-                      borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(24),
                     ),
-                    dividerColor: Colors.transparent,
-                    tabs:
-                        EventStatus.values
-                            .map((status) => Tab(text: _statusLabel(status)))
-                            .toList(),
+                    child: Row(
+                      children: [
+                        _buildEventTabButton('New Event', 0),
+                        const SizedBox(width: 2),
+                        _buildEventTabButton('Online Inquiries', 1),
+                        const SizedBox(width: 2),
+                        _buildEventTabButton('For Processing', 2),
+                        const SizedBox(width: 2),
+                        _buildEventTabButton('Post-Analysis', 3),
+                        const SizedBox(width: 2),
+                        _buildEventTabButton('Completed', 4),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
                 Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children:
-                        EventStatus.values
-                            .map(
-                              (status) => _buildBodyContent(status, isNarrow),
-                            )
-                            .toList(),
-                  ),
+                  child:
+                      _selectedStatus.index == 0
+                          ? _buildBodyContent(EventStatus.newEvent, isNarrow)
+                          : _selectedStatus.index == 1
+                          ? _buildBodyContent(
+                            EventStatus.onlineInquiries,
+                            isNarrow,
+                          )
+                          : _selectedStatus.index == 2
+                          ? _buildBodyContent(
+                            EventStatus.forProcessing,
+                            isNarrow,
+                          )
+                          : _selectedStatus.index == 3
+                          ? _buildBodyContent(
+                            EventStatus.forPostAnalysis,
+                            isNarrow,
+                          )
+                          : _buildBodyContent(EventStatus.completed, isNarrow),
                 ),
               ],
             );

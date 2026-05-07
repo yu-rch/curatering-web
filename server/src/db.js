@@ -550,6 +550,28 @@ export async function initDb() {
     );
   `);
 
+  // Create inventory table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      item_name TEXT NOT NULL,
+      description TEXT,
+      category TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 0,
+      unit TEXT NOT NULL DEFAULT 'pieces',
+      min_stock_level INTEGER DEFAULT 0,
+      max_stock_level INTEGER,
+      unit_cost DECIMAL(10,2),
+      supplier TEXT,
+      location TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'discontinued')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_by TEXT REFERENCES users(id),
+      updated_by TEXT REFERENCES users(id)
+    );
+  `);
+
   // Initialize ID counters
   await pool.query(`
     INSERT INTO id_counters (prefix, last_number) VALUES ('CUS', 0)

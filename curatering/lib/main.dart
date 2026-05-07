@@ -117,6 +117,15 @@ class MyApp extends StatelessWidget {
                     child: const Menu(),
                   ),
                 ),
+            '/inventory':
+                (context) => RoleGuard(
+                  requiredRole: Role.manager,
+                  allowedRoles: {Role.manager, Role.supervisor},
+                  child: PagePermissionGuard(
+                    route: PagePermissionRoutes.inventory,
+                    child: const Inventory(),
+                  ),
+                ),
             '/restaurant-orders':
                 (context) => RoleGuard(
                   requiredRole: Role.manager,
@@ -153,15 +162,6 @@ class MyApp extends StatelessWidget {
                   child: PagePermissionGuard(
                     route: PagePermissionRoutes.archive,
                     child: Archive(),
-                  ),
-                ),
-            '/inventory':
-                (context) => RoleGuard(
-                  requiredRole: Role.supervisor,
-                  allowedRoles: {Role.manager, Role.supervisor, Role.cashier},
-                  child: PagePermissionGuard(
-                    route: PagePermissionRoutes.inventory,
-                    child: const Inventory(),
                   ),
                 ),
             '/website':
