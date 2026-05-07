@@ -3909,7 +3909,6 @@ class _InquireFormState extends State<_InquireForm> {
   int? _focusedPhotoIndex;
   final _themeRequestCtrl =
       TextEditingController(); // For "I want to design my event" prompt
-  final _addByPromptCtrl = TextEditingController();
   bool _isDetectingAiObjects = false;
   bool _isSearchingThemeImages = false;
   bool _isExtractingThemeObjects = false;
@@ -4021,7 +4020,6 @@ class _InquireFormState extends State<_InquireForm> {
     _linkedBaseUrlCtrl.dispose();
     _objectsStripScrollCtrl.dispose();
     _themeRequestCtrl.dispose();
-    _addByPromptCtrl.dispose();
     super.dispose();
   }
 
@@ -5964,85 +5962,7 @@ class _InquireFormState extends State<_InquireForm> {
     }
   }
 
-  Future<void> _addObjectsByPromptAndRender() async {
-    final prompt = _addByPromptCtrl.text.trim();
-    if (_selectedBaseImage == null || prompt.isEmpty) return;
-    setState(() => _isAddingByPrompt = true);
-    try {
-      final baseBytes = await _resolveDesignPhotoBytes(_selectedBaseImage!);
-      final response = await PublicEventsApi.instance.addThemeObjectsByPrompt(
-        baseImageBase64: base64Encode(baseBytes),
-        eventTitle: _eventTitle.text.trim(),
-        eventType: _eventType,
-        formalityLevel: _formality,
-        prompt: prompt,
-        baseImageUrl: _selectedBaseImage,
-      );
-      final imageBase64 = (response['imageBase64'] ?? '').toString().trim();
-      final placements =
-          (response['placements'] as List<dynamic>? ?? const [])
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
-      if (imageBase64.isEmpty) {
-        if (mounted) {
-          final msg =
-              (response['error'] ?? 'Prompt add returned no image.').toString();
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(msg)));
-        }
-        return;
-      }
-      setState(() {
-        _confirmedCompositeBase64 = imageBase64;
-        if (placements.isNotEmpty) {
-          _placedThemeObjects
-            ..clear()
-            ..addAll(
-              placements.map(
-                (p) => {
-                  'id': p['id'] ?? 'prompt_obj',
-                  'objectImageBase64':
-                      (p['objectImageBase64'] ?? '').toString(),
-                  'x': p['x'],
-                  'y': p['y'],
-                  'width': p['width'],
-                  'height': p['height'],
-                  'rotation': p['rotation'] ?? 0,
-                  'zIndex': p['zIndex'] ?? 0,
-                  'intensity': p['intensity'] ?? 1.0,
-                  'targetHex': p['targetHex'],
-                  '_checked': true,
-                },
-              ),
-            );
-          _isPlacementSaved = true;
-        }
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Prompt objects added and rendered.')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              e is Exception
-                  ? e.toString().replaceFirst('Exception: ', '')
-                  : 'Failed to add by prompt.',
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isAddingByPrompt = false);
-    }
-  }
-
-  void _showThemeImageEnlargeDialog(
+void _showThemeImageEnlargeDialog(
     BuildContext dialogContext,
     String imageUrl,
   ) {

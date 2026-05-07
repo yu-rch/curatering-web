@@ -88,7 +88,6 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
         )
         .whenComplete(() {
           _linkedBaseUrlCtrl.clear();
-          _addByPromptCtrl.clear();
           baseCarouselCtrl.dispose();
           addonCarouselCtrl.dispose();
         });
@@ -818,53 +817,6 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
             ),
             const SizedBox(height: 10),
             if (_designEventWizardStep == 2) ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _addByPromptCtrl,
-                      onChanged: (_) => refreshDialog(),
-                      onSubmitted: (_) {
-                        if (_selectedBaseImage != null &&
-                            _addByPromptCtrl.text.trim().isNotEmpty &&
-                            !_isAddingByPrompt) {
-                          _themeEditorAddByPrompt(refreshDialog);
-                        }
-                      },
-                      decoration: const InputDecoration(
-                        labelText: 'Add by prompt',
-                        hintText: 'e.g. add more flowers on table',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed:
-                        (_selectedBaseImage != null &&
-                                _addByPromptCtrl.text.trim().isNotEmpty &&
-                                !_isAddingByPrompt)
-                            ? () async => _themeEditorAddByPrompt(refreshDialog)
-                            : null,
-                    icon:
-                        _isAddingByPrompt
-                            ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                            : const Icon(Icons.send, size: 18),
-                    label: Text(_isAddingByPrompt ? 'Adding' : ''),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -1005,11 +957,6 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
 
   Future<void> _themeEditorAutoPlace(VoidCallback refreshDialog) async {
     await _autoPlaceSelectedObjects();
-    if (mounted) refreshDialog();
-  }
-
-  Future<void> _themeEditorAddByPrompt(VoidCallback refreshDialog) async {
-    await _addObjectsByPromptAndRender();
     if (mounted) refreshDialog();
   }
 

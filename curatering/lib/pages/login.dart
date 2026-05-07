@@ -67,7 +67,6 @@ class _LoginState extends State<Login> {
         Role.superAdmin => '/manage-accounts',
         Role.supervisor => '/dashboard',
         Role.manager => '/manage-events',
-        Role.admin => '/dashboard', // Deprecated - treat as supervisor
         Role.cashier => '/dashboard',
       };
       
