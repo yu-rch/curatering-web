@@ -32,9 +32,6 @@ jobs:
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
-      - name: Copy Vercel config to build directory
-        run: cp vercel.json curatering/build/web/
-
       - name: Install Vercel CLI
         run: npm i -g vercel
 
@@ -42,5 +39,5 @@ jobs:
         run: vercel link --token=${{ secrets.VERCEL_TOKEN }} --yes
 
       - name: Deploy to Vercel
-        run: npx vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }} --yes curatering/build/web
+        run: npx vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }} --yes build/web
 
