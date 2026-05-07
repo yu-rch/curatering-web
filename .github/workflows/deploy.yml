@@ -36,8 +36,10 @@ jobs:
         run: npm i -g vercel
 
       - name: Link Vercel project
+        working-directory: curatering
         run: vercel link --token=${{ secrets.VERCEL_TOKEN }} --yes
 
       - name: Deploy to Vercel
+        working-directory: curatering
         run: npx vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }} --yes build/web
 
