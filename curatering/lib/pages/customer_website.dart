@@ -6662,7 +6662,7 @@ class _InquireFormState extends State<_InquireForm> {
     Map<String, String>? displayMap,
   }) {
     return DropdownButtonFormField<String>(
-      initialValue: value,
+      value: value,
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),

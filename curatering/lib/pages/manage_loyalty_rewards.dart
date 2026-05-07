@@ -1036,7 +1036,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                                 ),
                                 Expanded(
                                   child: DropdownButtonFormField<String>(
-                                    initialValue: selectedOrderType,
+                                    value: selectedOrderType,
                                     decoration: const InputDecoration(
                                       isDense: true,
                                       border: OutlineInputBorder(),

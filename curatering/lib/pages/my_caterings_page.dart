@@ -58,7 +58,9 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
 
       // Fetch event orders for this customer
       final response = await http.get(
-        Uri.parse('$_apiBaseUrl/api/customer/events/orders?customerId=$customerId'),
+        Uri.parse(
+          '$_apiBaseUrl/api/customer/events/orders?customerId=$customerId',
+        ),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -111,19 +113,22 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Session Expired'),
-        content: const Text('Your session has expired. Please log in again.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).pop('login_required');
-            },
-            child: const Text('OK'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Session Expired'),
+            content: const Text(
+              'Your session has expired. Please log in again.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  Navigator.of(context).pop('login_required');
+                },
+                child: const Text('OK'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -262,19 +267,11 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
 
   Map<String, String> _extractPrimarySlot(List<dynamic> slots) {
     if (slots.isEmpty) {
-      return {
-        'date': '',
-        'startTime': '',
-        'endTime': '',
-      };
+      return {'date': '', 'startTime': '', 'endTime': ''};
     }
     final first = slots.first;
     if (first is! Map) {
-      return {
-        'date': '',
-        'startTime': '',
-        'endTime': '',
-      };
+      return {'date': '', 'startTime': '', 'endTime': ''};
     }
     final s = Map<String, dynamic>.from(first);
     return {
@@ -304,23 +301,29 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     );
     final primarySlot = _extractPrimarySlot(slots);
     final menuList = _parseDynamicList(catering['menu']);
-    final initialDishNames = menuList
-        .map((item) {
-          if (item is! Map) return '';
-          final m = Map<String, dynamic>.from(item);
-          return (m['dishName'] ?? m['dish_name'] ?? m['name'] ?? '').toString().trim();
-        })
-        .where((name) => name.isNotEmpty)
-        .toList();
+    final initialDishNames =
+        menuList
+            .map((item) {
+              if (item is! Map) return '';
+              final m = Map<String, dynamic>.from(item);
+              return (m['dishName'] ?? m['dish_name'] ?? m['name'] ?? '')
+                  .toString()
+                  .trim();
+            })
+            .where((name) => name.isNotEmpty)
+            .toList();
 
     final guestCtrl = TextEditingController(
-      text: (catering['guestCount'] ?? catering['guest_count'] ?? '').toString(),
+      text:
+          (catering['guestCount'] ?? catering['guest_count'] ?? '').toString(),
     );
     final venueCtrl = TextEditingController(
       text: (catering['address'] ?? '').toString(),
     );
     final dateCtrl = TextEditingController(text: primarySlot['date'] ?? '');
-    final startCtrl = TextEditingController(text: primarySlot['startTime'] ?? '');
+    final startCtrl = TextEditingController(
+      text: primarySlot['startTime'] ?? '',
+    );
     final endCtrl = TextEditingController(text: primarySlot['endTime'] ?? '');
     final dishCtrl = TextEditingController();
     final editableDishes = List<String>.from(initialDishNames);
@@ -344,9 +347,14 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     String menuSelectionType = 'custom';
     String? selectedPresetMenuId;
     for (final preset in presetMenus) {
-      final dishes = (preset['dishes'] as List<dynamic>).map((e) => e.toString().toLowerCase()).toSet();
+      final dishes =
+          (preset['dishes'] as List<dynamic>)
+              .map((e) => e.toString().toLowerCase())
+              .toSet();
       final existing = editableDishes.map((e) => e.toLowerCase()).toSet();
-      if (existing.isNotEmpty && dishes.length == existing.length && dishes.difference(existing).isEmpty) {
+      if (existing.isNotEmpty &&
+          dishes.length == existing.length &&
+          dishes.difference(existing).isEmpty) {
         menuSelectionType = 'preset';
         selectedPresetMenuId = preset['id'].toString();
         break;
@@ -417,7 +425,9 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                                 final selected = await showDatePicker(
                                   context: context,
                                   initialDate: now,
-                                  firstDate: now.subtract(const Duration(days: 1)),
+                                  firstDate: now.subtract(
+                                    const Duration(days: 1),
+                                  ),
                                   lastDate: now.add(const Duration(days: 3650)),
                                 );
                                 if (selected != null) {
@@ -438,7 +448,9 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                                 border: OutlineInputBorder(),
                               ),
                               onTap: () async {
-                                final initial = parseTime(startCtrl.text) ?? const TimeOfDay(hour: 9, minute: 0);
+                                final initial =
+                                    parseTime(startCtrl.text) ??
+                                    const TimeOfDay(hour: 9, minute: 0);
                                 final selected = await showTimePicker(
                                   context: context,
                                   initialTime: initial,
@@ -460,7 +472,9 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                                 border: OutlineInputBorder(),
                               ),
                               onTap: () async {
-                                final initial = parseTime(endCtrl.text) ?? const TimeOfDay(hour: 12, minute: 0);
+                                final initial =
+                                    parseTime(endCtrl.text) ??
+                                    const TimeOfDay(hour: 12, minute: 0);
                                 final selected = await showTimePicker(
                                   context: context,
                                   initialTime: initial,
@@ -500,15 +514,23 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                               setLocalState(() {
                                 menuSelectionType = 'preset';
                                 selectedPresetMenuId ??=
-                                    presetMenus.isNotEmpty ? presetMenus.first['id'].toString() : null;
+                                    presetMenus.isNotEmpty
+                                        ? presetMenus.first['id'].toString()
+                                        : null;
                                 if (selectedPresetMenuId != null) {
                                   final selectedPreset = presetMenus.firstWhere(
-                                    (m) => m['id'].toString() == selectedPresetMenuId,
+                                    (m) =>
+                                        m['id'].toString() ==
+                                        selectedPresetMenuId,
                                     orElse: () => presetMenus.first,
                                   );
                                   editableDishes
                                     ..clear()
-                                    ..addAll((selectedPreset['dishes'] as List<dynamic>).map((e) => e.toString()));
+                                    ..addAll(
+                                      (selectedPreset['dishes']
+                                              as List<dynamic>)
+                                          .map((e) => e.toString()),
+                                    );
                                 }
                               });
                             },
@@ -518,19 +540,20 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                       if (menuSelectionType == 'preset') ...[
                         const SizedBox(height: 10),
                         DropdownButtonFormField<String>(
-                          initialValue: selectedPresetMenuId,
+                          value: selectedPresetMenuId,
                           decoration: const InputDecoration(
                             labelText: 'Select Catering Menu',
                             border: OutlineInputBorder(),
                           ),
-                          items: presetMenus
-                              .map(
-                                (menu) => DropdownMenuItem<String>(
-                                  value: menu['id'].toString(),
-                                  child: Text(menu['name'].toString()),
-                                ),
-                              )
-                              .toList(),
+                          items:
+                              presetMenus
+                                  .map(
+                                    (menu) => DropdownMenuItem<String>(
+                                      value: menu['id'].toString(),
+                                      child: Text(menu['name'].toString()),
+                                    ),
+                                  )
+                                  .toList(),
                           onChanged: (value) {
                             if (value == null) return;
                             setLocalState(() {
@@ -541,7 +564,10 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                               );
                               editableDishes
                                 ..clear()
-                                ..addAll((selectedPreset['dishes'] as List<dynamic>).map((e) => e.toString()));
+                                ..addAll(
+                                  (selectedPreset['dishes'] as List<dynamic>)
+                                      .map((e) => e.toString()),
+                                );
                             });
                           },
                         ),
@@ -576,7 +602,10 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                       else
                         Text(
                           'Set menu dishes are auto-filled. Switch to Custom Menu to edit manually.',
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade700,
+                          ),
                         ),
                       const SizedBox(height: 10),
                       if (editableDishes.isEmpty)
@@ -605,77 +634,89 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed: isSubmitting ? null : () => Navigator.of(context).pop(),
+                  onPressed:
+                      isSubmitting ? null : () => Navigator.of(context).pop(),
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
-                  onPressed: isSubmitting
-                      ? null
-                      : () async {
-                          final guestCount = int.tryParse(guestCtrl.text.trim()) ?? 0;
-                          final venue = venueCtrl.text.trim();
-                          final date = dateCtrl.text.trim();
-                          final start = startCtrl.text.trim();
-                          final end = endCtrl.text.trim();
-                          if (guestCount <= 0 ||
-                              venue.isEmpty ||
-                              date.isEmpty ||
-                              start.isEmpty ||
-                              end.isEmpty ||
-                              editableDishes.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Please complete all required fields.'),
-                              ),
-                            );
-                            return;
-                          }
+                  onPressed:
+                      isSubmitting
+                          ? null
+                          : () async {
+                            final guestCount =
+                                int.tryParse(guestCtrl.text.trim()) ?? 0;
+                            final venue = venueCtrl.text.trim();
+                            final date = dateCtrl.text.trim();
+                            final start = startCtrl.text.trim();
+                            final end = endCtrl.text.trim();
+                            if (guestCount <= 0 ||
+                                venue.isEmpty ||
+                                date.isEmpty ||
+                                start.isEmpty ||
+                                end.isEmpty ||
+                                editableDishes.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Please complete all required fields.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
 
-                          setLocalState(() => isSubmitting = true);
-                          try {
-                            await _editInquiry(
-                              orderId: catering['id'].toString(),
-                              guestCount: guestCount,
-                              address: venue,
-                              scheduleSlots: [
-                                {
-                                  'date': date,
-                                  'startTime': start,
-                                  'endTime': end,
-                                },
-                              ],
-                              menu: editableDishes
-                                  .map((dish) => {'dishName': dish})
-                                  .toList(),
-                            );
-                            if (!mounted) return;
-                            Navigator.of(context).pop();
-                            await _loadCaterings();
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Inquiry updated successfully.'),
-                              ),
-                            );
-                          } catch (e) {
-                            if (!mounted) return;
-                            setLocalState(() => isSubmitting = false);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Update failed: $e')),
-                            );
-                          }
-                        },
+                            setLocalState(() => isSubmitting = true);
+                            try {
+                              await _editInquiry(
+                                orderId: catering['id'].toString(),
+                                guestCount: guestCount,
+                                address: venue,
+                                scheduleSlots: [
+                                  {
+                                    'date': date,
+                                    'startTime': start,
+                                    'endTime': end,
+                                  },
+                                ],
+                                menu:
+                                    editableDishes
+                                        .map((dish) => {'dishName': dish})
+                                        .toList(),
+                              );
+                              if (!mounted) return;
+                              Navigator.of(context).pop();
+                              await _loadCaterings();
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Inquiry updated successfully.',
+                                  ),
+                                ),
+                              );
+                            } catch (e) {
+                              if (!mounted) return;
+                              setLocalState(() => isSubmitting = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Update failed: $e')),
+                              );
+                            }
+                          },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF1E1E1E),
                     foregroundColor: Colors.white,
                   ),
-                  child: isSubmitting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Text('Save Changes'),
+                  child:
+                      isSubmitting
+                          ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                          : const Text('Save Changes'),
                 ),
               ],
             );
@@ -708,7 +749,9 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       builder: (context) {
         return AlertDialog(
           title: Text(
-            catering['event_title'] ?? catering['eventTitle'] ?? 'Catering Details',
+            catering['event_title'] ??
+                catering['eventTitle'] ??
+                'Catering Details',
           ),
           content: SizedBox(
             width: 720,
@@ -726,59 +769,95 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Text('Event Type: ${_getEventTypeDisplay(catering['event_type'] ?? catering['eventType'])}'),
-                  Text('Guests: ${(catering['guest_count'] ?? catering['guestCount'] ?? 'N/A')}'),
-                  Text('Created: ${_formatDate(catering['created_at'] ?? catering['createdAt'])}'),
+                  Text(
+                    'Event Type: ${_getEventTypeDisplay(catering['event_type'] ?? catering['eventType'])}',
+                  ),
+                  Text(
+                    'Guests: ${(catering['guest_count'] ?? catering['guestCount'] ?? 'N/A')}',
+                  ),
+                  Text(
+                    'Created: ${_formatDate(catering['created_at'] ?? catering['createdAt'])}',
+                  ),
                   const SizedBox(height: 12),
-                  const Text('Schedule', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const Text(
+                    'Schedule',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                   const SizedBox(height: 6),
                   if (slots.isEmpty)
                     const Text('- No schedule provided')
                   else
                     ...slots.map((slot) {
-                      final s = slot is Map ? Map<String, dynamic>.from(slot) : <String, dynamic>{};
+                      final s =
+                          slot is Map
+                              ? Map<String, dynamic>.from(slot)
+                              : <String, dynamic>{};
                       final date = (s['date'] ?? '').toString();
-                      final start = (s['startTime'] ?? s['start_time'] ?? '').toString();
-                      final end = (s['endTime'] ?? s['end_time'] ?? '').toString();
+                      final start =
+                          (s['startTime'] ?? s['start_time'] ?? '').toString();
+                      final end =
+                          (s['endTime'] ?? s['end_time'] ?? '').toString();
                       return Text('- $date  $start - $end');
                     }),
                   const SizedBox(height: 12),
-                  const Text('Menu', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const Text(
+                    'Menu',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                   const SizedBox(height: 6),
                   if (menuList.isEmpty)
                     const Text('- No menu provided')
                   else
                     ...menuList.map((item) {
-                      final m = item is Map ? Map<String, dynamic>.from(item) : <String, dynamic>{};
-                      final dish = (m['dishName'] ?? m['dish_name'] ?? 'Dish').toString();
-                      final pax = (m['paxOption'] ?? m['pax_option'] ?? '').toString();
+                      final m =
+                          item is Map
+                              ? Map<String, dynamic>.from(item)
+                              : <String, dynamic>{};
+                      final dish =
+                          (m['dishName'] ?? m['dish_name'] ?? 'Dish')
+                              .toString();
+                      final pax =
+                          (m['paxOption'] ?? m['pax_option'] ?? '').toString();
                       final price = _formatPeso(m['price']);
-                      return Text('- $dish ${pax.isEmpty ? '' : '($pax)'}  $price');
+                      return Text(
+                        '- $dish ${pax.isEmpty ? '' : '($pax)'}  $price',
+                      );
                     }),
                   const SizedBox(height: 12),
-                  const Text('Cost Breakdown', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const Text(
+                    'Cost Breakdown',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                   const SizedBox(height: 6),
                   Builder(
                     builder: (_) {
                       final breakdown = themeDesign['costBreakdown'];
-                      if (breakdown is! Map) return const Text('- No breakdown available');
+                      if (breakdown is! Map)
+                        return const Text('- No breakdown available');
                       final b = Map<String, dynamic>.from(breakdown);
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('- Dish Cost: ${_formatPeso(b['dishCost'])}'),
                           Text('- Labor Cost: ${_formatPeso(b['laborCost'])}'),
-                          Text('- Travel Cost: ${_formatPeso(b['travelCost'])}'),
+                          Text(
+                            '- Travel Cost: ${_formatPeso(b['travelCost'])}',
+                          ),
                         ],
                       );
                     },
                   ),
                   if (themeDesign['managerUpdateNotice'] is Map) ...[
                     const SizedBox(height: 12),
-                    const Text('Manager Notes', style: TextStyle(fontWeight: FontWeight.w700)),
+                    const Text(
+                      'Manager Notes',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
                     const SizedBox(height: 6),
                     Text(
-                      (themeDesign['managerUpdateNotice']['message'] ?? 'Your inquiry was updated.').toString(),
+                      (themeDesign['managerUpdateNotice']['message'] ??
+                              'Your inquiry was updated.')
+                          .toString(),
                     ),
                   ],
                 ],
@@ -866,9 +945,9 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       CustomerPageTab.tracking => const MyOrderTrackingPage(),
       CustomerPageTab.caterings => const MyCateringsPage(),
     };
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => route),
-    );
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => route));
   }
 
   @override
@@ -899,28 +978,32 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
             onTabSelected: _navigateFromTopBar,
           ),
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
+            child:
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
                     ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(_error!, style: const TextStyle(color: Colors.red)),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadCaterings,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E1E1E),
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('Retry'),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            _error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: _loadCaterings,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1E1E1E),
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Retry'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                )
+                    )
                     : _caterings.isEmpty
-                        ? Center(
+                    ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -958,17 +1041,19 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                         ],
                       ),
                     )
-                        : ListView.builder(
+                    : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                       itemCount: _caterings.length,
                       itemBuilder: (context, index) {
                         final catering = _caterings[index];
                         final status = catering['status'] ?? 'online_inquiries';
-                        final isCurrent = status != 'completed' && status != 'cancelled';
+                        final isCurrent =
+                            status != 'completed' && status != 'cancelled';
                         final themeDesign = _parseThemeDesign(
                           catering['themeDesign'] ?? catering['theme_design'],
                         );
-                        final managerNotice = themeDesign['managerUpdateNotice'];
+                        final managerNotice =
+                            themeDesign['managerUpdateNotice'];
                         final hasPreferenceChangeNotice =
                             managerNotice is Map &&
                             managerNotice['preferencesChanged'] == true;
@@ -977,112 +1062,85 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                           borderRadius: BorderRadius.circular(14),
                           onTap: () => _showCateringDetailsDialog(catering),
                           child: Card(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            side: BorderSide(color: Colors.black.withOpacity(0.08)),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        catering['event_title'] ?? catering['eventTitle'] ?? 'Untitled Event',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    if (isCurrent)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green.shade100,
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
+                            margin: const EdgeInsets.only(bottom: 16),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              side: BorderSide(
+                                color: Colors.black.withOpacity(0.08),
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
                                         child: Text(
-                                          'ACTIVE',
-                                          style: TextStyle(
-                                            fontSize: 10,
+                                          catering['event_title'] ??
+                                              catering['eventTitle'] ??
+                                              'Untitled Event',
+                                          style: const TextStyle(
                                             fontWeight: FontWeight.bold,
-                                            color: Colors.green.shade700,
+                                            fontSize: 16,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (isCurrent)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green.shade100,
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'ACTIVE',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.green.shade700,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    if (hasPreferenceChangeNotice) ...[
-                                      const SizedBox(width: 8),
-                                      Tooltip(
-                                        message:
-                                            'Macrina\'s posted updates to your preferences. Please review your latest estimate.',
-                                        child: const Icon(
-                                          Icons.info_outline,
-                                          color: Color(0xFF1976D2),
-                                          size: 20,
+                                      if (hasPreferenceChangeNotice) ...[
+                                        const SizedBox(width: 8),
+                                        Tooltip(
+                                          message:
+                                              'Macrina\'s posted updates to your preferences. Please review your latest estimate.',
+                                          child: const Icon(
+                                            Icons.info_outline,
+                                            color: Color(0xFF1976D2),
+                                            size: 20,
+                                          ),
                                         ),
-                                      ),
+                                      ],
                                     ],
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.event,
-                                      size: 16,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      _getEventTypeDisplay(catering['event_type'] ?? catering['eventType']),
-                                      style: TextStyle(
-                                        color: Colors.grey.shade700,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.calendar_today,
-                                      size: 16,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      _formatDate(catering['created_at'] ?? catering['createdAt']),
-                                      style: TextStyle(
-                                        color: Colors.grey.shade700,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (catering['guest_count'] != null || catering['guestCount'] != null) ...[
-                                  const SizedBox(height: 8),
+                                  ),
+                                  const SizedBox(height: 12),
                                   Row(
                                     children: [
                                       Icon(
-                                        Icons.people,
+                                        Icons.event,
                                         size: 16,
                                         color: Colors.grey.shade600,
                                       ),
                                       const SizedBox(width: 8),
                                       Text(
-                                        '${catering['guest_count'] ?? catering['guestCount']} guests',
+                                        _getEventTypeDisplay(
+                                          catering['event_type'] ??
+                                              catering['eventType'],
+                                        ),
                                         style: TextStyle(
                                           color: Colors.grey.shade700,
                                           fontSize: 14,
@@ -1090,59 +1148,103 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                                       ),
                                     ],
                                   ),
-                                ],
-                                const Divider(height: 24),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Chip(
-                                      label: Text(
-                                        _formatStatus(status),
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          color: Colors.white,
-                                        ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_today,
+                                        size: 16,
+                                        color: Colors.grey.shade600,
                                       ),
-                                      backgroundColor: _getStatusColor(status),
-                                      padding: EdgeInsets.zero,
-                                    ),
-                                    if (catering['total_cost'] != null ||
-                                        catering['totalCost'] != null)
+                                      const SizedBox(width: 8),
                                       Text(
-                                        '₱${catering['total_cost'] ?? catering['totalCost']}',
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: Color(0xFFF4511E),
+                                        _formatDate(
+                                          catering['created_at'] ??
+                                              catering['createdAt'],
+                                        ),
+                                        style: TextStyle(
+                                          color: Colors.grey.shade700,
+                                          fontSize: 14,
                                         ),
                                       ),
-                                  ],
-                                ),
-                                if (status == 'online_inquiries') ...[
-                                  const SizedBox(height: 12),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFE3F2FD),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: const Color(0xFF90CAF9),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      'Review your latest cost estimate above. Once you approve, your inquiry can be confirmed for processing.',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.blue.shade900,
-                                      ),
-                                    ),
+                                    ],
                                   ),
+                                  if (catering['guest_count'] != null ||
+                                      catering['guestCount'] != null) ...[
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.people,
+                                          size: 16,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '${catering['guest_count'] ?? catering['guestCount']} guests',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade700,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                  const Divider(height: 24),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Chip(
+                                        label: Text(
+                                          _formatStatus(status),
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        backgroundColor: _getStatusColor(
+                                          status,
+                                        ),
+                                        padding: EdgeInsets.zero,
+                                      ),
+                                      if (catering['total_cost'] != null ||
+                                          catering['totalCost'] != null)
+                                        Text(
+                                          '₱${catering['total_cost'] ?? catering['totalCost']}',
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFFF4511E),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  if (status == 'online_inquiries') ...[
+                                    const SizedBox(height: 12),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFE3F2FD),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: const Color(0xFF90CAF9),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'Review your latest cost estimate above. Once you approve, your inquiry can be confirmed for processing.',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.blue.shade900,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
                           ),
-                        ),
                         );
                       },
                     ),

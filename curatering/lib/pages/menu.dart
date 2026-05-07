@@ -461,7 +461,7 @@ class _MenuState extends State<Menu> {
                         _buildSauceEditor(dialogSetState),
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
-                          initialValue:
+                          value:
                               _restaurantMealTypes.contains(_editingType)
                                   ? _editingType
                                   : null,

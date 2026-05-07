@@ -59,7 +59,9 @@ class _SettingsState extends State<Settings> {
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                      side: BorderSide(
+                        color: Colors.black.withValues(alpha: 0.08),
+                      ),
                     ),
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
@@ -82,7 +84,9 @@ class _SettingsState extends State<Settings> {
                       elevation: 0,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                        side: BorderSide(
+                          color: Colors.black.withValues(alpha: 0.08),
+                        ),
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
@@ -99,7 +103,7 @@ class _SettingsState extends State<Settings> {
                                 Expanded(
                                   flex: 1,
                                   child: DropdownButtonFormField<String>(
-                                    initialValue: _selectedIssue,
+                                    value: _selectedIssue,
                                     items: [
                                       const DropdownMenuItem(
                                         value: 'Select problem',
@@ -128,29 +132,45 @@ class _SettingsState extends State<Settings> {
                                 ),
                                 const SizedBox(width: 12),
                                 ElevatedButton(
-                                  onPressed: _selectedIssue == 'Select problem'
-                                      ? null
-                                      : () async {
-                                          final messenger = ScaffoldMessenger.of(context);
-                                          try {
-                                            await UserApi.instance.requestHelp(issue: _selectedIssue);
-                                            if (!mounted) return;
-                                            messenger.showSnackBar(
-                                              const SnackBar(content: Text('Help request sent.')),
-                                            );
-                                          } catch (e) {
-                                            if (!mounted) return;
-                                            messenger.showSnackBar(
-                                              const SnackBar(content: Text('Failed to send request.')),
-                                            );
-                                          }
-                                        },
+                                  onPressed:
+                                      _selectedIssue == 'Select problem'
+                                          ? null
+                                          : () async {
+                                            final messenger =
+                                                ScaffoldMessenger.of(context);
+                                            try {
+                                              await UserApi.instance
+                                                  .requestHelp(
+                                                    issue: _selectedIssue,
+                                                  );
+                                              if (!mounted) return;
+                                              messenger.showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Help request sent.',
+                                                  ),
+                                                ),
+                                              );
+                                            } catch (e) {
+                                              if (!mounted) return;
+                                              messenger.showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Failed to send request.',
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFFF4511E),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(10),
                                     ),
-                                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 18,
+                                      vertical: 16,
+                                    ),
                                   ),
                                   child: const Text('send'),
                                 ),
@@ -165,7 +185,9 @@ class _SettingsState extends State<Settings> {
                       elevation: 0,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                        side: BorderSide(
+                          color: Colors.black.withValues(alpha: 0.08),
+                        ),
                       ),
                       child: const Padding(
                         padding: EdgeInsets.all(16.0),
