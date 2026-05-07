@@ -28,8 +28,8 @@ jobs:
       - name: Build web
         working-directory: curatering
         run: |
-          flutter build web --release
-            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          flutter build web --release \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
       - name: Link Vercel project
