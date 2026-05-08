@@ -280,16 +280,12 @@ class _MenuState extends State<Menu> {
     _typeController.clear();
     _nameController.clear();
     _priceController.clear();
-    _paxController.clear();
     _editingPaxOptions =
         category == 'catering'
             ? ['10-20 pax', '25-40 pax', '50-70 pax', '80-100 pax', '100+ pax']
-            : ['1 pax'];
-    _editingPaxPrices = {for (var pax in _editingPaxOptions) pax: ''};
+            : [];
+    _editingPaxPrices = {};
     _paxPriceControllers.clear();
-    for (var pax in _editingPaxOptions) {
-      _paxPriceControllers[pax] = TextEditingController(text: '');
-    }
     _editingSauces = [];
     _newPaxController.clear();
     _newSauceController.clear();
@@ -448,61 +444,46 @@ class _MenuState extends State<Menu> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      if (category != 'catering')
-                        _buildPaxEditor(dialogSetState),
-                      if (category == 'catering')
-                        Text(
-                          'PAX options are disabled for catering dishes. Pricing is guest-count based.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade700,
-                          ),
+                      if (category == 'restaurant') const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        value:
+                            _restaurantMealTypes.contains(_editingType)
+                                ? _editingType
+                                : null,
+                        decoration: const InputDecoration(
+                          labelText: 'Meal Type',
+                          helperText: 'Select the meal type for grouping',
                         ),
-                      if (category == 'restaurant') ...[
-                        const SizedBox(height: 16),
-                        _buildSauceEditor(dialogSetState),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          value:
-                              _restaurantMealTypes.contains(_editingType)
-                                  ? _editingType
-                                  : null,
-                          decoration: const InputDecoration(
-                            labelText: 'Meal Type',
-                            helperText: 'Select the meal type for grouping',
-                          ),
-                          items:
-                              _restaurantMealTypes
-                                  .map(
-                                    (type) => DropdownMenuItem(
-                                      value: type,
-                                      child: Text(
-                                        type
-                                            .split(' ')
-                                            .map(
-                                              (word) =>
-                                                  word.isEmpty
-                                                      ? word
-                                                      : '${word[0].toUpperCase()}${word.substring(1)}',
-                                            )
-                                            .join(' '),
-                                      ),
+                        items:
+                            _restaurantMealTypes
+                                .map(
+                                  (type) => DropdownMenuItem(
+                                    value: type,
+                                    child: Text(
+                                      type
+                                          .split(' ')
+                                          .map(
+                                            (word) =>
+                                                word.isEmpty
+                                                    ? word
+                                                    : '${word[0].toUpperCase()}${word.substring(1)}',
+                                          )
+                                          .join(' '),
                                     ),
-                                  )
-                                  .toList(),
-                          onChanged: (value) {
-                            if (value != null) {
-                              dialogSetState(() {
-                                _editingType = _normalizeRestaurantMealType(
-                                  value,
-                                );
-                                _typeController.text = _editingType;
-                              });
-                            }
-                          },
-                        ),
-                      ],
-                      const SizedBox(height: 16),
+                                  ),
+                                )
+                                .toList(),
+                        onChanged: (value) {
+                          if (value != null) {
+                            dialogSetState(() {
+                              _editingType = _normalizeRestaurantMealType(
+                                value,
+                              );
+                              _typeController.text = _editingType;
+                            });
+                          }
+                        },
+                      ),
                       TextField(
                         controller: _priceController,
                         decoration: const InputDecoration(labelText: 'Price'),
@@ -591,129 +572,6 @@ class _MenuState extends State<Menu> {
           },
         );
       },
-    );
-  }
-
-  Widget _buildPaxEditor(void Function(VoidCallback fn) dialogSetState) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'PAX OPTIONS & PRICES',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        // Individual pax options with prices
-        ..._editingPaxOptions.map((option) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8.0),
-            child: Row(
-              children: [
-                // Pax option chip
-                InputChip(
-                  label: Text(option),
-                  onDeleted: () {
-                    dialogSetState(() {
-                      _editingPaxOptions.remove(option);
-                      _editingPaxPrices.remove(option);
-                    });
-                  },
-                ),
-                const SizedBox(width: 12),
-                // Price input for this pax
-                Expanded(
-                  flex: 2,
-                  child: TextField(
-                    decoration: InputDecoration(
-                      labelText: 'Price for $option',
-                      border: const OutlineInputBorder(),
-                      prefixText: '\$',
-                    ),
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    controller:
-                        _paxPriceControllers[option] ??
-                        TextEditingController(text: ''),
-                    onChanged: (value) {
-                      dialogSetState(() {
-                        _editingPaxPrices[option] = value;
-                      });
-                    },
-                  ),
-                ),
-              ],
-            ),
-          );
-        }).toList(),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _newPaxController,
-                decoration: const InputDecoration(
-                  labelText: 'Add PAX option',
-                  hintText: 'e.g. 20-30 pax',
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton(
-              onPressed: () {
-                dialogSetState(_addPaxOption);
-              },
-              child: const Text('Add'),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSauceEditor(void Function(VoidCallback fn) dialogSetState) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('SAUCES', style: TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children:
-              _editingSauces.map((sauce) {
-                return InputChip(
-                  label: Text(sauce),
-                  onDeleted: () {
-                    dialogSetState(() {
-                      _editingSauces.remove(sauce);
-                    });
-                  },
-                );
-              }).toList(),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _newSauceController,
-                decoration: const InputDecoration(
-                  labelText: 'Add sauce',
-                  hintText: 'e.g. gravy',
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton(
-              onPressed: () {
-                dialogSetState(_addSauceOption);
-              },
-              child: const Text('Add'),
-            ),
-          ],
-        ),
-      ],
     );
   }
 

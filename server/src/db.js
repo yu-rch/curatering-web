@@ -581,6 +581,45 @@ export async function initDb() {
     INSERT INTO id_counters (prefix, last_number) VALUES ('INQ', 0)
     ON CONFLICT (prefix) DO NOTHING;
   `);
+
+  // Create cart tables for synchronization
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cart_sessions (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      device_id TEXT NOT NULL,
+      customer_token TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cart_items (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      session_id uuid REFERENCES cart_sessions(id) ON DELETE CASCADE,
+      dish_id TEXT NOT NULL,
+      dish_name TEXT NOT NULL,
+      dish_price TEXT NOT NULL,
+      dish_category TEXT NOT NULL,
+      dish_type TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      selected_sauce TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cart_sessions_device ON cart_sessions(device_id);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cart_sessions_token ON cart_sessions(customer_token);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cart_items_session ON cart_items(session_id);
+  `);
   await pool.query(`
     INSERT INTO id_counters (prefix, last_number) VALUES ('MINQ', 0)
     ON CONFLICT (prefix) DO NOTHING;

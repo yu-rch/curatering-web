@@ -5935,12 +5935,20 @@ runInitDbWithRetries()
     console.log('Serving static web files from:', webBuildPath);
     app.use(express.static(webBuildPath));
 
-    // SPA fallback - serve index.html for all non-API routes
-    app.get('*', (req, res) => {
-      if (!req.path.startsWith('/api')) {
-        res.sendFile(path.join(webBuildPath, 'index.html'));
-      }
-    });
+    // Import cart API
+const CartAPI = require('./cart_api');
+
+// Cart API routes
+app.get('/api/cart', CartAPI.getCart);
+app.post('/api/cart/sync', CartAPI.syncCart);
+app.post('/api/cart/clear', CartAPI.clearCart);
+
+// SPA fallback - serve index.html for all non-API routes
+app.get('*', (req, res) => {
+  if (!req.path.startsWith('/api')) {
+    res.sendFile(path.join(webBuildPath, 'index.html'));
+  }
+});
     
     app.listen(PORT, () => {
       console.log(`Curatering server listening on port ${PORT}`);
