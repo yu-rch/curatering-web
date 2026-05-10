@@ -5,10 +5,6 @@ import base64
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, UploadFile, File, Form
 from fastapi.responses import JSONResponse
-from .routers.inference import router as inference_router
-from .services.pipeline import AiPipeline
-
-app = FastAPI()
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL)
@@ -18,7 +14,7 @@ logger = logging.getLogger("ai-service")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Configure RunPod service URL
-    runpod_url = os.getenv("RUNPOD_URL", "https://your-runpod-url.runpod.run")
+    runpod_url = os.getenv("RUNPOD_URL", "https://jlkopaaa0g50dg-8000.proxy.runpod.net/")
     app.state.runpod_url = runpod_url
     logger.info(f"Configured RunPod service at: {runpod_url}")
     
@@ -36,7 +32,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Curatering AI Service", version="1.0.0", lifespan=lifespan)
-app.include_router(inference_router, prefix="/v1")
 
 
 @app.middleware("http")
@@ -79,6 +74,7 @@ def health_ready(request: Request):
         "service": "api-gateway",
     }
 
+
 def build_prompt(event_type: str, color_scheme: str, style: str, guest_count: int, custom_prompt: str = "") -> str:
     """Build comprehensive AI prompt for event theme generation"""
     base_prompt = f"Create an elegant {event_type} event theme with {color_scheme} color scheme in {style} style"
@@ -92,6 +88,7 @@ def build_prompt(event_type: str, color_scheme: str, style: str, guest_count: in
     base_prompt += ", professional event decoration, high quality, detailed, realistic lighting"
     
     return base_prompt
+
 
 @app.post("/generate-theme")
 async def generate_theme(
@@ -120,11 +117,11 @@ async def generate_theme(
             'file': ('image.jpg', contents, 'image/jpeg')
         }
         data = {
-            'event_type': eventType,
-            'theme': colorScheme,
+            'event_type': event_type,
+            'theme': color_scheme,
             'mood': style,
-            'colors': f"{colorScheme} palette for {guestCount} guests",
-            'extra': customPrompt
+            'colors': f"{color_scheme} palette for {guest_count} guests",
+            'extra': custom_prompt
         }
         
         response = requests.post(
@@ -138,7 +135,6 @@ async def generate_theme(
             # Handle streaming response (image/png)
             if 'image/png' in response.headers.get('content-type', ''):
                 # Convert image to base64
-                import base64
                 image_data = response.content
                 encoded = base64.b64encode(image_data).decode()
                 logger.info("Theme generation completed successfully via RunPod")
