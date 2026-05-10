@@ -6,6 +6,5 @@ diffusers
 transformers
 accelerate
 xformers
-opencv-python
 pillow
 numpy

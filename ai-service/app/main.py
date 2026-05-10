@@ -3,7 +3,7 @@ import os
 import requests
 import base64
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, UploadFile, File, Form
+from fastapi import FastAPI, Request, UploadFile, File, Form, Depends, HTTPException, Header
 from fastapi.responses import JSONResponse
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -51,6 +51,22 @@ async def internal_auth_middleware(request: Request, call_next):
 
     response = await call_next(request)
     return response
+
+
+def verify_internal_token(authorization: str = Header(None)):
+    """Dependency to verify internal API token"""
+    expected = os.getenv("INTERNAL_API_TOKEN", "")
+    if not expected:
+        raise HTTPException(
+            status_code=500,
+            detail={"message": "INTERNAL_API_TOKEN is not configured", "code": "missing_internal_token"}
+        )
+    
+    if not authorization or authorization != f"Bearer {expected}":
+        raise HTTPException(
+            status_code=401,
+            detail={"message": "Unauthorized", "code": "invalid_internal_token"}
+        )
 
 
 @app.get("/health/live")
@@ -172,3 +188,8 @@ async def generate_theme(
             "error": str(e),
             "success": False
         }, status_code=500)
+
+
+@app.post("/generate")
+async def generate(request: Request, _=Depends(verify_internal_token)):
+    return {"status": "ok"}
