@@ -29,7 +29,8 @@ class AiPipeline:
 
     def load_models(self) -> None:
         if not self.yolo_model_path:
-            raise ValueError("YOLO_MODEL_PATH is required")
+            print("YOLO not loaded - skipping detection")
+            return
 
         model_path = Path(self.yolo_model_path)
         if not model_path.exists():
