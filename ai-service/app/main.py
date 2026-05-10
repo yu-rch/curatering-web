@@ -1,95 +1,39 @@
 import logging
 import os
 import requests
-import base64
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, UploadFile, File, Form, Depends, HTTPException, Header
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request, Header, HTTPException
+from pydantic import BaseModel
 
+app = FastAPI()
+
+# Configure logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL)
 logger = logging.getLogger("ai-service")
 
+# Environment variables
+RUNPOD_URL = os.getenv("RUNPOD_URL", "https://jlkopaaa0g50dg-8888.proxy.runpod.net/")
+INTERNAL_TOKEN = os.getenv("INTERNAL_API_TOKEN")
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Configure RunPod service URL
-    runpod_url = os.getenv("RUNPOD_URL", "https://jlkopaaa0g50dg-8000.proxy.runpod.net/")
-    app.state.runpod_url = runpod_url
-    logger.info(f"Configured RunPod service at: {runpod_url}")
-    
-    # Test RunPod connection
-    try:
-        response = requests.get(f"{runpod_url}/health", timeout=10)
-        if response.status_code == 200:
-            logger.info("Successfully connected to RunPod service")
-        else:
-            logger.warning(f"RunPod service returned status: {response.status_code}")
-    except Exception as e:
-        logger.error(f"Failed to connect to RunPod service: {e}")
-    
-    yield
+logger.info(f"RunPod URL: {RUNPOD_URL}")
+logger.info(f"Internal token configured: {bool(INTERNAL_TOKEN)}")
 
-
-app = FastAPI(title="Curatering AI Service", version="1.0.0", lifespan=lifespan)
-
-
-@app.middleware("http")
-async def internal_auth_middleware(request: Request, call_next):
-    if request.url.path.startswith("/health"):
-        return await call_next(request)
-
-    expected = os.getenv("INTERNAL_API_TOKEN", "")
-    auth_header = request.headers.get("authorization", "")
-    if not expected:
-        return JSONResponse(
-            status_code=500,
-            content={"message": "INTERNAL_API_TOKEN is not configured", "code": "missing_internal_token"},
-        )
-    if auth_header != f"Bearer {expected}":
-        return JSONResponse(status_code=401, content={"message": "Unauthorized", "code": "invalid_internal_token"})
-
-    response = await call_next(request)
-    return response
-
-
-def verify_internal_token(authorization: str = Header(None)):
-    """Dependency to verify internal API token"""
-    expected = os.getenv("INTERNAL_API_TOKEN", "")
-    if not expected:
-        raise HTTPException(
-            status_code=500,
-            detail={"message": "INTERNAL_API_TOKEN is not configured", "code": "missing_internal_token"}
-        )
-    
-    if not authorization or authorization != f"Bearer {expected}":
-        raise HTTPException(
-            status_code=401,
-            detail={"message": "Unauthorized", "code": "invalid_internal_token"}
-        )
-
+class GeneratePayload(BaseModel):
+    # Define your payload structure here
+    event_type: str
+    theme: str
+    mood: str
+    colors: str
+    extra: str = ""
 
 @app.get("/health/live")
 def health_live():
     return {"ok": True}
 
-
 @app.get("/health/ready")
-def health_ready(request: Request):
-    runpod_url = request.app.state.runpod_url
-    
-    # Skip RunPod connection check if URL is not configured or is default
-    if not runpod_url or "your-runpod-url.runpod.run" in runpod_url:
-        return {
-            "ok": True,
-            "runpod_connected": False,
-            "runpod_url": runpod_url,
-            "service": "api-gateway",
-            "status": "runpod_not_configured"
-        }
-    
+def health_ready():
     try:
-        response = requests.get(f"{runpod_url}/health", timeout=5)
+        response = requests.get(f"{RUNPOD_URL}/health", timeout=5)
         runpod_healthy = response.status_code == 200
     except:
         runpod_healthy = False
@@ -97,99 +41,55 @@ def health_ready(request: Request):
     return {
         "ok": True,
         "runpod_connected": runpod_healthy,
-        "runpod_url": runpod_url,
+        "runpod_url": RUNPOD_URL,
         "service": "api-gateway",
-        "status": "healthy" if runpod_healthy else "runpod_unavailable"
     }
 
+@app.post("/generate")
+async def generate(payload: dict, x_internal_token: str = Header(None)):
+    # 1. Validate Flutter request (optional auth layer)
+    if not x_internal_token:
+        raise HTTPException(status_code=401, detail="Missing token")
 
-def build_prompt(event_type: str, color_scheme: str, style: str, guest_count: int, custom_prompt: str = "") -> str:
-    """Build comprehensive AI prompt for event theme generation"""
-    base_prompt = f"Create an elegant {event_type} event theme with {color_scheme} color scheme in {style} style"
-    
-    if guest_count > 0:
-        base_prompt += f", designed for {guest_count} guests"
-    
-    if custom_prompt:
-        base_prompt += f", {custom_prompt}"
-    
-    base_prompt += ", professional event decoration, high quality, detailed, realistic lighting"
-    
-    return base_prompt
+    # 2. Forward to RunPod (IMPORTANT PART)
+    response = requests.post(
+        f"{RUNPOD_URL}/generate",
+        json=payload,
+        headers={
+            "x-internal-token": INTERNAL_TOKEN
+        }
+    )
 
+    return response.json()
 
 @app.post("/generate-theme")
-async def generate_theme(
-    image: UploadFile = File(...),
-    event_type: str = Form(...),
-    color_scheme: str = Form(...),
-    style: str = Form(...),
-    guest_count: int = Form(50),
-    custom_prompt: str = Form(""),
-    negative_prompt: str = Form("blurry, distorted, unrealistic, poor quality"),
-    strength: float = Form(0.5),
+async def generate_theme_legacy(
+    image: str = None,
+    event_type: str = None,
+    theme: str = None,
+    mood: str = None,
+    colors: str = None,
+    extra: str = ""
 ):
-    try:
-        runpod_url = app.state.runpod_url
-        
-        # Build comprehensive prompt
-        prompt = build_prompt(event_type, color_scheme, style, guest_count, custom_prompt)
-        
-        logger.info(f"Forwarding theme generation to RunPod: {prompt[:100]}...")
-        
-        # Read image and prepare payload
-        contents = await image.read()
-        
-        # Forward request to RunPod
-        files = {
-            'file': ('image.jpg', contents, 'image/jpeg')
+    """Legacy endpoint for Flutter compatibility"""
+    if not all([image, event_type, theme, mood, colors]):
+        raise HTTPException(status_code=400, detail="Missing required fields")
+    
+    payload = {
+        "event_type": event_type,
+        "theme": theme,
+        "mood": mood,
+        "colors": colors,
+        "extra": extra,
+        "image": image
+    }
+    
+    response = requests.post(
+        f"{RUNPOD_URL}/generate",
+        json=payload,
+        headers={
+            "x-internal-token": INTERNAL_TOKEN
         }
-        data = {
-            'event_type': event_type,
-            'theme': color_scheme,
-            'mood': style,
-            'colors': f"{color_scheme} palette for {guest_count} guests",
-            'extra': custom_prompt
-        }
-        
-        response = requests.post(
-            f"{runpod_url}/generate",
-            files=files,
-            data=data,
-            timeout=300  # 5 minute timeout
-        )
-        
-        if response.status_code == 200:
-            # Handle streaming response (image/png)
-            if 'image/png' in response.headers.get('content-type', ''):
-                # Convert image to base64
-                image_data = response.content
-                encoded = base64.b64encode(image_data).decode()
-                logger.info("Theme generation completed successfully via RunPod")
-                return JSONResponse({
-                    "image": encoded,
-                    "success": True
-                })
-            else:
-                # Handle JSON response
-                result = response.json()
-                logger.info("Theme generation completed successfully via RunPod")
-                return JSONResponse(result)
-        else:
-            logger.error(f"RunPod error: {response.status_code} - {response.text}")
-            return JSONResponse({
-                "error": f"RunPod service error: {response.status_code}",
-                "success": False
-            }, status_code=502)
+    )
 
-    except Exception as e:
-        logger.error(f"Error forwarding to RunPod: {str(e)}")
-        return JSONResponse({
-            "error": str(e),
-            "success": False
-        }, status_code=500)
-
-
-@app.post("/generate")
-async def generate(request: Request, _=Depends(verify_internal_token)):
-    return {"status": "ok"}
+    return response.json()
