@@ -14,6 +14,11 @@ import 'pages/reports.dart';
 import 'pages/transactions.dart';
 import 'pages/settings.dart';
 import 'pages/customer_website.dart';
+import 'pages/gallery_page.dart';
+import 'pages/contact_us_page.dart';
+import 'pages/inquire_page.dart';
+import 'pages/restaurant_order_page.dart';
+import 'pages/catering_menu_page.dart';
 import 'auth/auth_session.dart';
 import 'auth/page_permissions.dart';
 import 'auth/role_guard.dart';
@@ -58,6 +63,31 @@ class MyApp extends StatelessWidget {
             '/login': (context) => const Login(),
             '/':
                 (context) => const CustomerWebsiteScreen(
+                  contentEditable: false,
+                  showStaffChrome: false,
+                ),
+            '/gallery':
+                (context) => const GalleryPage(
+                  contentEditable: false,
+                  showStaffChrome: false,
+                ),
+            '/contact-us':
+                (context) => const ContactUsPage(
+                  contentEditable: false,
+                  showStaffChrome: false,
+                ),
+            '/inquire':
+                (context) => const InquirePage(
+                  contentEditable: false,
+                  showStaffChrome: false,
+                ),
+            '/restaurant':
+                (context) => const RestaurantOrderPage(
+                  contentEditable: false,
+                  showStaffChrome: false,
+                ),
+            '/catering-menu':
+                (context) => const CateringMenuPage(
                   contentEditable: false,
                   showStaffChrome: false,
                 ),

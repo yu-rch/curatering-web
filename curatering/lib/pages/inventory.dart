@@ -227,6 +227,7 @@ class _InventoryState extends State<Inventory> {
             DataColumn(label: Text('Unit Cost'), numeric: false),
             DataColumn(label: Text('Last Updated'), numeric: false),
             DataColumn(label: Text('Status'), numeric: false),
+            DataColumn(label: Text('Actions'), numeric: false),
           ],
           rows:
               _filteredItems.map((item) {
@@ -262,6 +263,33 @@ class _InventoryState extends State<Inventory> {
                             fontSize: 12,
                           ),
                         ),
+                      ),
+                    ),
+                    DataCell(
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, size: 16),
+                            onPressed: () => _showAddEditDialog(item),
+                            color: Colors.blue,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            icon: const Icon(Icons.delete, size: 16),
+                            onPressed: () => _deleteInventoryItem(item.id),
+                            color: Colors.red,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],

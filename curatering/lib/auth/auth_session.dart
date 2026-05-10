@@ -7,6 +7,7 @@ class UserProfile {
   final String fullName;
   final Role role;
   final bool isVerified;
+
   /// When empty or null, all sidebar pages are allowed (for manager/supervisor).
   final Map<String, dynamic>? pagePermissions;
 
@@ -26,7 +27,9 @@ class AuthSession {
   static final AuthSession instance = AuthSession._();
 
   final ValueNotifier<bool> isLoggedIn = ValueNotifier<bool>(false);
-  final ValueNotifier<UserProfile?> currentUser = ValueNotifier<UserProfile?>(null);
+  final ValueNotifier<UserProfile?> currentUser = ValueNotifier<UserProfile?>(
+    null,
+  );
 
   // For demo purposes we keep the token in memory only.
   String? _token;
@@ -44,8 +47,11 @@ class AuthSession {
     isLoggedIn.value = false;
   }
 
+  void clearSession() {
+    clear();
+  }
+
   Role? get currentRole => currentUser.value?.role;
 
   bool get hasToken => _token != null && _token!.isNotEmpty;
 }
-

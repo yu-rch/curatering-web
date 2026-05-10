@@ -76,11 +76,12 @@ class _SoftObjectOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final strokeColor = isSelected ? Colors.blue : Colors.red.withOpacity(0.75);
+    final strokeColor =
+        isSelected ? Colors.blue : Colors.red.withValues(alpha: 0.75);
     final fillColor =
         isSelected
-            ? Colors.blue.withOpacity(0.20)
-            : Colors.red.withOpacity(0.06);
+            ? Colors.blue.withValues(alpha: 0.20)
+            : Colors.red.withValues(alpha: 0.06);
     return CustomPaint(
       size: Size.infinite,
       painter: _SoftObjectOverlayPainter(
@@ -315,7 +316,6 @@ class _ManageEventsState extends State<ManageEvents> {
   List<EventOrderDto> _processingOrdersDto = const <EventOrderDto>[];
   List<EventOrderDto> _postAnalysisOrdersDto = const <EventOrderDto>[];
   List<EventOrderDto> _completedOrdersDto = const <EventOrderDto>[];
-  List<EventOrderDto> _newEventOrdersDto = const <EventOrderDto>[];
   EventOrderDto? _selectedOnlineInquiryOrder;
   Role? _lastLoadedRole;
 
@@ -557,7 +557,6 @@ class _ManageEventsState extends State<ManageEvents> {
         _processingOrdersDto = const <EventOrderDto>[];
         _postAnalysisOrdersDto = const <EventOrderDto>[];
         _completedOrdersDto = const <EventOrderDto>[];
-        _newEventOrdersDto = const <EventOrderDto>[];
         _selectedOnlineInquiryOrder = null;
         return;
       }
@@ -586,7 +585,6 @@ class _ManageEventsState extends State<ManageEvents> {
           ),
         ]);
         _processingOrdersDto = [...lists[0], ...lists[1]];
-        _newEventOrdersDto = lists[1];
         _onlineInquiryOrders = const <EventOrderDto>[];
         _postAnalysisOrdersDto = lists[2];
         _completedOrdersDto = lists[3];
@@ -620,7 +618,6 @@ class _ManageEventsState extends State<ManageEvents> {
         ]);
         _onlineInquiryOrders = lists[0];
         _processingOrdersDto = [...lists[1], ...lists[2]];
-        _newEventOrdersDto = lists[2];
         _postAnalysisOrdersDto = lists[3];
         _completedOrdersDto = lists[4];
       } else {
@@ -629,7 +626,6 @@ class _ManageEventsState extends State<ManageEvents> {
         _processingOrdersDto = const <EventOrderDto>[];
         _postAnalysisOrdersDto = const <EventOrderDto>[];
         _completedOrdersDto = const <EventOrderDto>[];
-        _newEventOrdersDto = const <EventOrderDto>[];
       }
       _selectedOnlineInquiryOrder = null;
     } catch (e) {
@@ -639,7 +635,6 @@ class _ManageEventsState extends State<ManageEvents> {
       _processingOrdersDto = const <EventOrderDto>[];
       _postAnalysisOrdersDto = const <EventOrderDto>[];
       _completedOrdersDto = const <EventOrderDto>[];
-      _newEventOrdersDto = const <EventOrderDto>[];
       _selectedOnlineInquiryOrder = null;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -722,13 +717,13 @@ class _ManageEventsState extends State<ManageEvents> {
             boxShadow: [
               if (selected)
                 BoxShadow(
-                  color: const Color(0xFFFFC024).withOpacity(0.25),
+                  color: const Color(0xFFFFC024).withValues(alpha: 0.25),
                   blurRadius: 12,
                   offset: const Offset(0, 3),
                 )
               else
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
+                  color: Colors.black.withValues(alpha: 0.08),
                   blurRadius: 6,
                   offset: const Offset(0, 2),
                 ),
@@ -751,7 +746,7 @@ class _ManageEventsState extends State<ManageEvents> {
   }
 
   String _themeTintColorHex(Color c) {
-    final rgb = c.value & 0xFFFFFF;
+    final rgb = c.toARGB32() & 0xFFFFFF;
     return '#${rgb.toRadixString(16).padLeft(6, '0')}';
   }
 
@@ -2199,23 +2194,6 @@ class _ManageEventsState extends State<ManageEvents> {
     }
   }
 
-  Color _colorFromThemePrompt(String rawPrompt) {
-    final p = rawPrompt.trim().toLowerCase();
-    final hex = RegExp(r'^\s*#?([0-9a-f]{6})\s*$').firstMatch(rawPrompt);
-    if (hex != null) {
-      final hexValue = hex.group(1)!;
-      return Color(int.parse(hexValue, radix: 16) + 0xFF000000);
-    }
-
-    if (p.contains('orange')) return const Color(0xFFF4511E);
-    if (p.contains('green')) return const Color(0xFF1DB954);
-    if (p.contains('blue')) return const Color(0xFF1976D2);
-    if (p.contains('pink')) return const Color(0xFFE91E63);
-    if (p.contains('purple')) return const Color(0xFF6A1B9A);
-    if (p.contains('yellow')) return const Color(0xFFFFC024);
-    return _themeTintColor;
-  }
-
   Future<bool> _runEditObjectsFlow(Uint8List imageBytes) async {
     setState(() {
       _isDetecting = true;
@@ -2704,8 +2682,8 @@ class _ManageEventsState extends State<ManageEvents> {
                                       const Color(0xFF212121),
                                     ].map((c) {
                                       final isSelected =
-                                          c.value ==
-                                          _objectSelectionColor.value;
+                                          c.toARGB32() ==
+                                          _objectSelectionColor.toARGB32();
                                       return GestureDetector(
                                         onTap: () {
                                           setState(() {
@@ -2794,7 +2772,7 @@ class _ManageEventsState extends State<ManageEvents> {
                                             backgroundColor:
                                                 Colors.grey.shade200,
                                             selectedColor: Colors.blue
-                                                .withOpacity(0.3),
+                                                .withValues(alpha: 0.3),
                                             checkmarkColor: Colors.blue,
                                           );
                                         }).toList();
@@ -2884,7 +2862,7 @@ class _ManageEventsState extends State<ManageEvents> {
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: Colors.black.withOpacity(0.08)),
+              side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
             ),
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -3131,7 +3109,7 @@ class _ManageEventsState extends State<ManageEvents> {
           border: Border.all(color: borderColor),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -3170,7 +3148,7 @@ class _ManageEventsState extends State<ManageEvents> {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.1),
+                    color: statusColor.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: statusColor),
                   ),
@@ -6038,102 +6016,6 @@ class _ManageEventsState extends State<ManageEvents> {
     );
   }
 
-  Widget _buildCombinedProcessingAndAnalysisView(bool isNarrow) {
-    final processingOrders = _filterEventOrdersBySearch(_processingOrdersDto);
-    final postAnalysisOrders = _filterEventOrdersBySearch(
-      _postAnalysisOrdersDto,
-    );
-
-    if (isNarrow) {
-      // Narrow layout - stack vertically with tabs
-      return Column(
-        children: [
-          // Custom tab buttons
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Row(
-              children: [
-                _buildEventTabButton('New Event', 0),
-                const SizedBox(width: 2),
-                _buildEventTabButton('Online Inquiries', 1),
-                const SizedBox(width: 2),
-                _buildEventTabButton('For Processing', 2),
-                const SizedBox(width: 2),
-                _buildEventTabButton('Post-Analysis', 3),
-                const SizedBox(width: 2),
-                _buildEventTabButton('Completed', 4),
-              ],
-            ),
-          ),
-          Expanded(
-            child:
-                _selectedStatus.index == 0
-                    ? SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          _buildProcessingOrdersListSection(processingOrders),
-                          if (_selectedProcessingOrderDto != null) ...[
-                            const SizedBox(height: 20),
-                            _buildEventInformationSection(),
-                            const SizedBox(height: 20),
-                            _buildProcessingMenuSection(),
-                          ],
-                        ],
-                      ),
-                    )
-                    : SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          _buildPostAnalysisOrdersListSection(
-                            postAnalysisOrders,
-                          ),
-                          if (_selectedPostAnalysisOrderDto != null) ...[
-                            const SizedBox(height: 20),
-                            _buildEventInformationSection(),
-                            const SizedBox(height: 20),
-                            _buildPostAnalysisDetailsSection(),
-                          ],
-                        ],
-                      ),
-                    ),
-          ),
-        ],
-      );
-    }
-
-    // Wide layout - side by side
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Left: For Processing Orders
-        Expanded(
-          flex: 2,
-          child: SingleChildScrollView(
-            child: _buildProcessingOrdersListSection(processingOrders),
-          ),
-        ),
-        const SizedBox(width: 20),
-        // Middle: Post-Analysis Orders
-        Expanded(
-          flex: 2,
-          child: SingleChildScrollView(
-            child: _buildPostAnalysisOrdersListSection(postAnalysisOrders),
-          ),
-        ),
-        const SizedBox(width: 20),
-        // Right: Details Panel
-        Expanded(
-          flex: 3,
-          child: SingleChildScrollView(child: _buildCombinedDetailsSection()),
-        ),
-      ],
-    );
-  }
-
   Widget _buildProcessingOrdersListSection(List<EventOrderDto> orders) {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -6876,7 +6758,7 @@ class _ManageEventsState extends State<ManageEvents> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: color),
       ),
@@ -7787,10 +7669,12 @@ class _ManageEventsState extends State<ManageEvents> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.black.withOpacity(0.08)),
+                    border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.08),
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
+                        color: Colors.black.withValues(alpha: 0.03),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),
