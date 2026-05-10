@@ -61,6 +61,17 @@ def health_live():
 @app.get("/health/ready")
 def health_ready(request: Request):
     runpod_url = request.app.state.runpod_url
+    
+    # Skip RunPod connection check if URL is not configured or is default
+    if not runpod_url or "your-runpod-url.runpod.run" in runpod_url:
+        return {
+            "ok": True,
+            "runpod_connected": False,
+            "runpod_url": runpod_url,
+            "service": "api-gateway",
+            "status": "runpod_not_configured"
+        }
+    
     try:
         response = requests.get(f"{runpod_url}/health", timeout=5)
         runpod_healthy = response.status_code == 200
@@ -72,6 +83,7 @@ def health_ready(request: Request):
         "runpod_connected": runpod_healthy,
         "runpod_url": runpod_url,
         "service": "api-gateway",
+        "status": "healthy" if runpod_healthy else "runpod_unavailable"
     }
 
 
