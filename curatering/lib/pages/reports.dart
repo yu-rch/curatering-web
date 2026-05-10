@@ -17,7 +17,11 @@ class _ReportsState extends State<Reports> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
-  DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
+  DateTime _selectedMonth = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    1,
+  );
   List<EventOrderDto> _completedOrders = const <EventOrderDto>[];
   List<DateTime> _availableMonths = const <DateTime>[];
 
@@ -59,8 +63,7 @@ class _ReportsState extends State<Reports> {
         months.add(DateTime(d.year, d.month, 1));
       }
 
-      final sortedMonths = months.toList()
-        ..sort((a, b) => b.compareTo(a));
+      final sortedMonths = months.toList()..sort((a, b) => b.compareTo(a));
 
       // If there are no orders yet, show a reasonable default range.
       final fallback = List<DateTime>.generate(6, (i) {
@@ -70,8 +73,7 @@ class _ReportsState extends State<Reports> {
 
       setState(() {
         _completedOrders = orders;
-        _availableMonths =
-            sortedMonths.isEmpty ? fallback : sortedMonths;
+        _availableMonths = sortedMonths.isEmpty ? fallback : sortedMonths;
         if (!_availableMonths.contains(_selectedMonth) &&
             _availableMonths.isNotEmpty) {
           _selectedMonth = _availableMonths.first;
@@ -87,7 +89,9 @@ class _ReportsState extends State<Reports> {
   }
 
   Widget _monthTile(DateTime month) {
-    final isSelected = month.year == _selectedMonth.year && month.month == _selectedMonth.month;
+    final isSelected =
+        month.year == _selectedMonth.year &&
+        month.month == _selectedMonth.month;
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -114,7 +118,9 @@ class _ReportsState extends State<Reports> {
             const SizedBox(height: 6),
             Text(
               'Monthly reports',
-              style: TextStyle(color: isSelected ? Colors.white70 : Colors.grey.shade600),
+              style: TextStyle(
+                color: isSelected ? Colors.white70 : Colors.grey.shade600,
+              ),
             ),
           ],
         ),
@@ -150,7 +156,13 @@ class _ReportsState extends State<Reports> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey.shade800)),
+            Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade800,
+              ),
+            ),
             const SizedBox(height: 16),
             Expanded(
               child: Container(
@@ -182,9 +194,18 @@ class _ReportsState extends State<Reports> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey.shade800)),
+            Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade800,
+              ),
+            ),
             const SizedBox(height: 14),
-            Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            Text(
+              value,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 6),
             Text(
               dateLabel,
@@ -198,19 +219,24 @@ class _ReportsState extends State<Reports> {
 
   @override
   Widget build(BuildContext context) {
-    final monthOrders = _completedOrders.where((o) {
-      if (o.scheduleSlots.isEmpty) return false;
-      final d = DateTime.tryParse(o.scheduleSlots.first.date);
-      if (d == null) return false;
-      return d.year == _selectedMonth.year && d.month == _selectedMonth.month;
-    }).toList();
+    final monthOrders =
+        _completedOrders.where((o) {
+          if (o.scheduleSlots.isEmpty) return false;
+          final d = DateTime.tryParse(o.scheduleSlots.first.date);
+          if (d == null) return false;
+          return d.year == _selectedMonth.year &&
+              d.month == _selectedMonth.month;
+        }).toList();
 
-    final filteredOrders = _searchQuery.isEmpty
-        ? monthOrders
-        : monthOrders.where((o) {
-            final haystack = '${o.eventTitle} ${o.customerName} ${o.eventType}'.toLowerCase();
-            return haystack.contains(_searchQuery);
-          }).toList();
+    final filteredOrders =
+        _searchQuery.isEmpty
+            ? monthOrders
+            : monthOrders.where((o) {
+              final haystack =
+                  '${o.eventTitle} ${o.customerName} ${o.eventType}'
+                      .toLowerCase();
+              return haystack.contains(_searchQuery);
+            }).toList();
 
     final totalSales = filteredOrders.fold<double>(
       0.0,
@@ -225,23 +251,31 @@ class _ReportsState extends State<Reports> {
         dishCounts[item.dishName] = (dishCounts[item.dishName] ?? 0) + 1;
       }
     }
-    final popularDish = dishCounts.entries.isEmpty
-        ? 'N/A'
-        : dishCounts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
-    final mostFrequentEventType = eventTypeCounts.entries.isEmpty
-        ? 'N/A'
-        : eventTypeCounts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+    final popularDish =
+        dishCounts.entries.isEmpty
+            ? 'N/A'
+            : dishCounts.entries
+                .reduce((a, b) => a.value >= b.value ? a : b)
+                .key;
+    final mostFrequentEventType =
+        eventTypeCounts.entries.isEmpty
+            ? 'N/A'
+            : eventTypeCounts.entries
+                .reduce((a, b) => a.value >= b.value ? a : b)
+                .key;
 
-    final topDishes = dishCounts.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final top5RequestedDish = topDishes.isEmpty
-        ? 'N/A'
-        : topDishes.take(5).map((e) => e.key).join(', ');
+    final topDishes =
+        dishCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final top5RequestedDish =
+        topDishes.isEmpty
+            ? 'N/A'
+            : topDishes.take(5).map((e) => e.key).join(', ');
 
     return AppScaffold(
       showSearch: true,
       searchController: _searchController,
-      onSearchChanged: (v) => setState(() => _searchQuery = v.trim().toLowerCase()),
+      onSearchChanged:
+          (v) => setState(() => _searchQuery = v.trim().toLowerCase()),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -272,11 +306,7 @@ class _ReportsState extends State<Reports> {
             ),
             const SizedBox(height: 16),
             if (_isLoading)
-              const Expanded(
-                child: Center(
-                  child: CircularProgressIndicator(),
-                ),
-              )
+              const Expanded(child: Center(child: CircularProgressIndicator()))
             else if (_errorMessage != null)
               Expanded(
                 child: Center(
@@ -345,26 +375,28 @@ class _ReportsState extends State<Reports> {
                     const SizedBox(width: 20),
                     Expanded(
                       flex: 2,
-                      child: Column(
-                        children: [
-                          _buildInfoCard(
-                            'Top Requested Dish',
-                            top5RequestedDish,
-                            '${_selectedMonth.month.toString().padLeft(2, '0')} ${_selectedMonth.year}',
-                          ),
-                          const SizedBox(height: 12),
-                          _buildInfoCard(
-                            'Most Popular Dish',
-                            popularDish,
-                            '${_selectedMonth.month.toString().padLeft(2, '0')} ${_selectedMonth.year}',
-                          ),
-                          const SizedBox(height: 12),
-                          _buildInfoCard(
-                            'Most Frequent Event Type',
-                            mostFrequentEventType,
-                            '${_selectedMonth.month.toString().padLeft(2, '0')} ${_selectedMonth.year}',
-                          ),
-                        ],
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            _buildInfoCard(
+                              'Top Requested Dish',
+                              top5RequestedDish,
+                              '${_selectedMonth.month.toString().padLeft(2, '0')} ${_selectedMonth.year}',
+                            ),
+                            const SizedBox(height: 12),
+                            _buildInfoCard(
+                              'Most Popular Dish',
+                              popularDish,
+                              '${_selectedMonth.month.toString().padLeft(2, '0')} ${_selectedMonth.year}',
+                            ),
+                            const SizedBox(height: 12),
+                            _buildInfoCard(
+                              'Most Frequent Event Type',
+                              mostFrequentEventType,
+                              '${_selectedMonth.month.toString().padLeft(2, '0')} ${_selectedMonth.year}',
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],

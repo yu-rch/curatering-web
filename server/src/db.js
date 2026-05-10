@@ -550,6 +550,28 @@ export async function initDb() {
     );
   `);
 
+  // Create inventory table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      item_name TEXT NOT NULL,
+      description TEXT,
+      category TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 0,
+      unit TEXT NOT NULL DEFAULT 'pieces',
+      min_stock_level INTEGER DEFAULT 0,
+      max_stock_level INTEGER,
+      unit_cost DECIMAL(10,2),
+      supplier TEXT,
+      location TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'discontinued')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_by TEXT REFERENCES users(id),
+      updated_by TEXT REFERENCES users(id)
+    );
+  `);
+
   // Initialize ID counters
   await pool.query(`
     INSERT INTO id_counters (prefix, last_number) VALUES ('CUS', 0)
@@ -558,6 +580,45 @@ export async function initDb() {
   await pool.query(`
     INSERT INTO id_counters (prefix, last_number) VALUES ('INQ', 0)
     ON CONFLICT (prefix) DO NOTHING;
+  `);
+
+  // Create cart tables for synchronization
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cart_sessions (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      device_id TEXT NOT NULL,
+      customer_token TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cart_items (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      session_id uuid REFERENCES cart_sessions(id) ON DELETE CASCADE,
+      dish_id TEXT NOT NULL,
+      dish_name TEXT NOT NULL,
+      dish_price TEXT NOT NULL,
+      dish_category TEXT NOT NULL,
+      dish_type TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      selected_sauce TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cart_sessions_device ON cart_sessions(device_id);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cart_sessions_token ON cart_sessions(customer_token);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cart_items_session ON cart_items(session_id);
   `);
   await pool.query(`
     INSERT INTO id_counters (prefix, last_number) VALUES ('MINQ', 0)

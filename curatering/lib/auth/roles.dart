@@ -1,5 +1,4 @@
 enum Role {
-  admin,
   manager,
   supervisor,
   superAdmin,
@@ -9,7 +8,6 @@ enum Role {
 extension RoleX on Role {
   String get displayName {
     return switch (this) {
-      Role.admin => 'Admin',
       Role.manager => 'Manager',
       Role.supervisor => 'Supervisor',
       Role.superAdmin => 'Super Admin',
@@ -21,7 +19,6 @@ extension RoleX on Role {
 Role roleFromString(String raw) {
   final normalized = raw.trim().toLowerCase();
   return switch (normalized) {
-    'admin' => Role.admin,
     'manager' => Role.manager,
     'supervisor' => Role.supervisor,
     'super_admin' || 'superadmin' || 'super-admin' => Role.superAdmin,
@@ -32,7 +29,6 @@ Role roleFromString(String raw) {
 
 String roleToString(Role role) {
   return switch (role) {
-    Role.admin => 'admin',
     Role.manager => 'manager',
     Role.supervisor => 'supervisor',
     Role.superAdmin => 'super_admin',

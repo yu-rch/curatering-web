@@ -292,7 +292,7 @@ class _ManageAccountsState extends State<ManageAccounts> {
                             value: role,
                             items:
                                 Role.values
-                                    .where((r) => r != Role.admin)
+                                    .where((r) => r != Role.manager)
                                     .map(
                                       (r) => DropdownMenuItem(
                                         value: r,
@@ -548,7 +548,7 @@ class _ManageAccountsState extends State<ManageAccounts> {
                             value: role,
                             items:
                                 Role.values
-                                    .where((r) => r != Role.admin)
+                                    .where((r) => r != Role.manager)
                                     .map(
                                       (r) => DropdownMenuItem(
                                         value: r,
@@ -892,7 +892,7 @@ class _ManageAccountsState extends State<ManageAccounts> {
                       child: Text('All Roles'),
                     ),
                     ...Role.values
-                        .where((r) => r != Role.admin)
+                        .where((r) => r != Role.manager)
                         .map(
                           (r) => DropdownMenuItem<Role?>(
                             value: r,

@@ -11,6 +11,7 @@ class PagePermissionRoutes {
   static const String reports = '/reports';
   static const String orderHistory = '/order-history';
   static const String archive = '/archive';
+  static const String inventory = '/inventory';
   static const String website = '/website';
   static const String settings = '/settings';
 
@@ -23,6 +24,7 @@ class PagePermissionRoutes {
     ('Reports', reports),
     ('Order History', orderHistory),
     ('Archive', archive),
+    ('Inventory', inventory),
     ('Website', website),
     ('Settings', settings),
   ];

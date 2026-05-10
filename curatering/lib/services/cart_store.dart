@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/menu_dish.dart';
+import 'cart_sync_service.dart';
 
 class CartItem {
   final MenuDish dish;
@@ -71,12 +72,18 @@ class CartStore extends ChangeNotifier {
 
     _saveCart();
     notifyListeners();
+
+    // Sync to server after adding item
+    CartSyncService.instance.syncToServer();
   }
 
   void removeItem(String dishId) {
     _items.removeWhere((item) => item.dish.id == dishId);
     _saveCart();
     notifyListeners();
+
+    // Sync to server after removing item
+    CartSyncService.instance.syncToServer();
   }
 
   void updateQuantity(String dishId, int quantity) {
@@ -90,6 +97,9 @@ class CartStore extends ChangeNotifier {
       _items[existingIndex].quantity = quantity;
       _saveCart();
       notifyListeners();
+
+      // Sync to server after updating quantity
+      CartSyncService.instance.syncToServer();
     }
   }
 
@@ -97,6 +107,9 @@ class CartStore extends ChangeNotifier {
     _items.clear();
     _saveCart();
     notifyListeners();
+
+    // Clear on server
+    CartSyncService.instance.clearCart();
   }
 
   Future<void> _saveCart() async {
@@ -126,5 +139,7 @@ class CartStore extends ChangeNotifier {
 
   Future<void> init() async {
     await _loadCart();
+    // Initialize sync service
+    await CartSyncService.instance.initialize();
   }
 }
