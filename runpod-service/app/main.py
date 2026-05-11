@@ -40,6 +40,7 @@ except Exception as e:
     logger.error(f" Failed to load models: {e}")
     raise
 
+
 @app.get("/health")
 def health():
     return {"status": "healthy", "device": device}
@@ -58,4 +59,4 @@ async def generate(request: Request):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8888)

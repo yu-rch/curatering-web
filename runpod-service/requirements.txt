@@ -1,12 +1,10 @@
 fastapi
-uvicorn
+uvicorn[standard]
 diffusers
 transformers
-torch
-torchvision
 accelerate
 xformers
-opencv-python
+opencv-python-headless
 pillow
 numpy
 python-multipart

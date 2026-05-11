@@ -26,6 +26,14 @@ class GeneratePayload(BaseModel):
     colors: str
     extra: str = ""
 
+@app.get("/")
+def root():
+    return {"status": "AI worker running"}
+
+@app.get("/health")
+def health():
+    return {"ok": True}
+
 @app.get("/health/live")
 def health_live():
     return {"ok": True}
