@@ -1,10 +1,13 @@
+runpod
 fastapi
-uvicorn[standard]
+uvicorn
 diffusers
 transformers
+torch
+torchvision
 accelerate
 xformers
-opencv-python-headless
+opencv-python
 pillow
 numpy
 python-multipart
