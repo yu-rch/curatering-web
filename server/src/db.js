@@ -135,21 +135,6 @@ async function generateSequentialId(prefix, padding = 4) {
   }
 }
 
-const cateringSets = [
-  { name: 'Set Menu A', ingredients: ['Chicken Adobo', 'Pancit Canton', 'Steamed Rice', 'Lumpiang Shanghai', 'Fruit Salad'] },
-  { name: 'Set Menu B', ingredients: ['Beef Caldereta', 'Chopsuey', 'Garlic Rice', 'Fish Fillet', 'Leche Flan'] },
-  { name: 'Set Menu C', ingredients: ['Pork Sinigang', 'Grilled Tilapia', 'Java Rice', 'Pork BBQ', 'Buko Pandan'] },
-];
-
-const restaurantItems = [
-  { name: 'Chicken Adobo', price: '180.00', category: 'main_course', ingredients: ['Chicken', 'Soy Sauce', 'Vinegar', 'Garlic'], sauces: [] },
-  { name: 'Beef Caldereta', price: '220.00', category: 'main_course', ingredients: ['Beef', 'Tomato Sauce', 'Potatoes', 'Carrots'], sauces: [] },
-  { name: 'Pancit Canton', price: '150.00', category: 'noodles', ingredients: ['Egg Noodles', 'Vegetables', 'Soy Sauce'], sauces: [] },
-  { name: 'Lumpiang Shanghai', price: '120.00', category: 'appetizer', ingredients: ['Ground Pork', 'Vegetables', 'Wrapper'], sauces: ['Sweet & Sour Sauce'] },
-  { name: 'Steamed Rice', price: '35.00', category: 'rice', ingredients: ['Rice'], sauces: [] },
-  { name: 'Leche Flan', price: '60.00', category: 'dessert', ingredients: ['Eggs', 'Milk', 'Sugar'], sauces: [] },
-];
-
 export async function initDb() {
   await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
 
@@ -767,60 +752,6 @@ export async function initDb() {
   } catch (err) {
     console.log('Migration check for invalid status values:', err.message);
   }
-
-  // Migrations commented out - no longer needed
-  // Migration: Update coordinate columns precision to float8 (async, non-blocking)
-  /*
-  try {
-    // Run coordinate column updates in background without blocking startup
-    setTimeout(async () => {
-      try {
-        console.log('Background: Updating coordinate columns precision...');
-        // Use a separate connection for migrations to avoid pool interference
-        const client = await pool.connect();
-        try {
-          await client.query(`ALTER TABLE restaurant_orders ALTER COLUMN delivery_lat TYPE float8 USING delivery_lat::float8`);
-          await client.query(`ALTER TABLE restaurant_orders ALTER COLUMN delivery_lng TYPE float8 USING delivery_lng::float8`);
-          await client.query(`ALTER TABLE customer_profiles ALTER COLUMN delivery_lat TYPE float8 USING delivery_lat::float8`);
-          await client.query(`ALTER TABLE customer_profiles ALTER COLUMN delivery_lng TYPE float8 USING delivery_lng::float8`);
-          console.log('Background: Coordinate columns precision updated successfully');
-        } finally {
-          client.release();
-        }
-      } catch (err) {
-        console.log('Background: Coordinate columns precision update:', err.message);
-      }
-    }, 5000); // Start after 5 seconds to allow server to fully initialize
-  } catch (err) {
-    console.log('Migration check for coordinate columns precision:', err.message);
-  }
-  */
-
-  // Migration: Add performance indexes for restaurant orders (async, non-blocking)
-  /*
-  try {
-    // Run index creation in background without blocking startup
-    setTimeout(async () => {
-      try {
-        console.log('Background: Creating restaurant orders indexes...');
-        // Use a separate connection for migrations to avoid pool interference
-        const client = await pool.connect();
-        try {
-          await client.query(`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_restaurant_orders_status ON restaurant_orders(status)`);
-          await client.query(`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_restaurant_orders_created_at ON restaurant_orders(created_at DESC)`);
-          await client.query(`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_restaurant_orders_status_created_at ON restaurant_orders(status, created_at DESC)`);
-          console.log('Background: Restaurant orders indexes created successfully');
-        } finally {
-          client.release();
-        }
-      } catch (err) {
-        console.log('Background: Restaurant orders indexes creation:', err.message);
-      }
-    }, 6000); // Start after 6 seconds to allow server to fully initialize
-  } catch (err) {
-    console.log('Migration check for restaurant orders indexes:', err.message);
-  }
-  */
 
   // Insert default dishes from CSV if table is empty
   const dishCount = await pool.query(`SELECT COUNT(*) FROM menu_dishes`);

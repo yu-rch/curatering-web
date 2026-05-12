@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' hide Placeholder;
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'config.dart';
 import 'pages/login.dart';
 import 'pages/dashboard.dart';
@@ -35,6 +36,15 @@ import 'data_store.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   setUrlStrategy(PathUrlStrategy());
+
+  // For web deployment, environment variables are set through build config
+  // or platform-specific methods, not through .env file loading
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    // Ignore .env loading error for web deployment
+    // Environment variables will be loaded from platform or build config
+  }
 
   await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
 

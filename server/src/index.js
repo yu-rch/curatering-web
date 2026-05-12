@@ -21,7 +21,17 @@ const __dirname = path.dirname(__filename);
 const websiteContentPath = path.join(__dirname, "website-content.json");
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:49798',
+    'http://localhost:*',
+    'https://curatering-web-production-4978.up.railway.app'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 

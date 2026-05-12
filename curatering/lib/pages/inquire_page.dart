@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../services/public_events_api.dart';
+import '../services/runpod_service.dart';
 import '../widgets/customer_website_topbar.dart';
 
 const String _primaryFont = 'Inter';
@@ -57,6 +58,7 @@ class _InquirePageState extends State<InquirePage> {
   String _eventType = 'Birthday';
   String _formality = 'casual';
   bool _submitting = false;
+  String? _generatedImageUrl;
 
   // Service Type Selection
   String _serviceType = 'catering'; // 'catering' or 'catering+event'
@@ -550,23 +552,75 @@ class _InquirePageState extends State<InquirePage> {
 
                     // Event Design Section (Prompt Based GenAI)
                     if (_serviceType == 'catering+event') ...[
-                      Text(
-                        'Event Design',
-                        style: GoogleFonts.getFont(
-                          _primaryFont,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF1E1E1E),
+                      if (_generatedImageUrl != null) ...[
+                        Column(
+                          children: [
+                            Text(
+                              'Generated Event Design',
+                              style: GoogleFonts.getFont(
+                                _primaryFont,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF1E1E1E),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              width: double.infinity,
+                              height: 300,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  _generatedImageUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stack) {
+                                    return Container(
+                                      color: Colors.grey.shade200,
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.error,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Your custom event design is ready!',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF1E1E1E),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Use our AI to design your event. Select your preferences below:',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey.shade600,
+                      ] else ...[
+                        Text(
+                          'Event Design',
+                          style: GoogleFonts.getFont(
+                            _primaryFont,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF1E1E1E),
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Use our AI to design your event. Select your preferences below:',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 24),
 
                       // Event Type
@@ -894,7 +948,7 @@ class _InquirePageState extends State<InquirePage> {
     }
   }
 
-  void _generateDesignPrompt() {
+  void _generateDesignPrompt() async {
     // Validate that at least some selections are made
     if (_selectedEventType == null &&
         _selectedStyle == null &&
@@ -905,44 +959,60 @@ class _InquirePageState extends State<InquirePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Please select at least one option or provide custom instructions',
+            'Please select at least one option or provide instructions.',
           ),
-          backgroundColor: Colors.orange,
+          backgroundColor: Colors.red,
         ),
       );
       return;
     }
 
-    // Build the design prompt
-    final designData = {
-      'eventType': _selectedEventType,
-      'style': _selectedStyle,
-      'mood': _selectedMood,
-      'colorPalette': _selectedColors,
-      'decorElements': _selectedDecor,
-      'customInstructions': _designPromptController.text,
-      'venuePhoto': _venuePhotoBase64,
-      'timestamp': DateTime.now().toIso8601String(),
-    };
-
-    print('Event Design Prompt: $designData');
-
-    // TODO: Send to backend (Node.js → FastAPI for image generation)
-    // This will be integrated with your GenAI service
-
-    // Show success feedback
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Design preferences saved! Our AI will generate a custom design for your event.',
-        ),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 3),
-      ),
-    );
-
     setState(() {
-      _wantsCustomDesign = true;
+      _submitting = true;
     });
+
+    try {
+      // Build the design prompt
+      final prompt =
+          _designPromptController.text.isNotEmpty
+              ? _designPromptController.text
+              : '${_selectedEventType ?? ''} ${_selectedStyle ?? ''} ${_selectedMood ?? ''} ${_selectedColors.join(', ')}';
+
+      // Generate image using RunPod service
+      final imageUrl = await RunPodService.generateImageWithPolling(
+        prompt,
+        user_id:
+            'customer_${DateTime.now().millisecondsSinceEpoch}', // Generate unique user ID
+      );
+
+      if (imageUrl != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Event design generated successfully!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+
+        setState(() {
+          _wantsCustomDesign = true;
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to generate design. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() {
+        _submitting = false;
+      });
+    }
   }
 }

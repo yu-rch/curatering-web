@@ -18,13 +18,26 @@ INTERNAL_TOKEN = os.getenv("INTERNAL_API_TOKEN")
 logger.info(f"RunPod URL: {RUNPOD_URL}")
 logger.info(f"Internal token configured: {bool(INTERNAL_TOKEN)}")
 
-class GeneratePayload(BaseModel):
-    # Define your payload structure here
-    event_type: str
+class EventDetails(BaseModel):
+    type: str
     theme: str
-    mood: str
-    colors: str
-    extra: str = ""
+    formality: str
+
+class ObjectItem(BaseModel):
+    name: str
+    image: str
+
+class Settings(BaseModel):
+    auto_place: bool = True
+    color_match: bool = True
+    lighting_match: bool = True
+
+class GeneratePayload(BaseModel):
+    prompt: str
+    event: EventDetails
+    base_image: str
+    objects: list[ObjectItem] = []
+    settings: Settings
 
 @app.get("/")
 def root():
@@ -54,15 +67,37 @@ def health_ready():
     }
 
 @app.post("/generate")
-async def generate(payload: dict, x_internal_token: str = Header(None)):
+async def generate(payload: GeneratePayload, x_internal_token: str = Header(None)):
     # 1. Validate Flutter request (optional auth layer)
     if not x_internal_token:
         raise HTTPException(status_code=401, detail="Missing token")
 
-    # 2. Forward to RunPod (IMPORTANT PART)
+    # 2. Convert structured payload to RunPod format
+    runpod_payload = {
+        "input": {
+            "prompt": payload.prompt,
+            "event_type": payload.event.type,
+            "theme": payload.event.theme,
+            "formality": payload.event.formality,
+            "base_image": payload.base_image,
+            "objects": [
+                {
+                    "label": obj.name,
+                    "image_url": obj.image
+                } for obj in payload.objects
+            ],
+            "options": {
+                "auto_place": payload.settings.auto_place,
+                "color_match": payload.settings.color_match,
+                "lighting_match": payload.settings.lighting_match
+            }
+        }
+    }
+
+    # 3. Forward to RunPod (IMPORTANT PART)
     response = requests.post(
         f"{RUNPOD_URL}/generate",
-        json=payload,
+        json=runpod_payload,
         headers={
             "x-internal-token": INTERNAL_TOKEN
         }

@@ -1,30 +1,111 @@
 import runpod
+import base64
+from io import BytesIO
+from diffusers import StableDiffusionPipeline
+import torch
+import os
+from supabase import create_client
 
-# 🔥 Load models ONCE (important for performance)
-print("Loading models...")
-# example:
-# yolo_model = load_yolo()
-# sam_model = load_sam()
+# -------------------------
+# CONFIG
+# -------------------------
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("SUPABASE_URL and SUPABASE_KEY environment variables are required")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# -------------------------
+# LOAD MODEL
+# -------------------------
+print("Loading Stable Diffusion model...")
+pipe = StableDiffusionPipeline.from_pretrained(
+    "runwayml/stable-diffusion-v1-5",
+    torch_dtype=torch.float16
+).to("cuda")
+print("Model loaded successfully!")
+
+# -------------------------
+# IMAGE GENERATION
+# -------------------------
+def generate_image(prompt):
+    image = pipe(prompt).images[0]
+    
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    
+    return buffer.getvalue()
+
+# -------------------------
+# UPLOAD TO SUPABASE
+# -------------------------
+def upload_to_supabase(image_bytes, filename):
+    try:
+        supabase.storage.from_("ai-images").upload(
+            path=filename,
+            file=image_bytes,
+            file_options={"content-type": "image/png"}
+        )
+
+        public_url = supabase.storage.from_("ai-images").get_public_url(filename)
+        return public_url
+    except Exception as e:
+        print(f"Error uploading to Supabase: {e}")
+        raise
+
+# -------------------------
+# HANDLER
+# -------------------------
 def handler(event):
-    input_data = event.get("input", {})
+    try:
+        input_data = event.get("input", {})
+        prompt = input_data.get("prompt")
+        user_id = input_data.get("user_id")
+        event_type = input_data.get("event_type", "")
+        theme = input_data.get("theme", "")
+        formality = input_data.get("formality", "")
+        base_image = input_data.get("base_image", "")
+        objects = input_data.get("objects", [])
+        options = input_data.get("options", {})
 
-    prompt = input_data.get("prompt", "")
-    image_url = input_data.get("image_url")
+        if not prompt:
+            return {"error": "Prompt is required"}
 
-    print(f"Received: {prompt}")
+        # 1. Generate image
+        print(f"Generating image for prompt: {prompt}")
+        image_bytes = generate_image(prompt)
 
-    # 🔥 Your pipeline here
-    # result = run_yolo_sam_pipeline(image_url, prompt)
+        # 2. Upload to Supabase
+        filename = f"{user_id}_{torch.randint(0,100000,(1,)).item()}.png"
+        image_url = upload_to_supabase(image_bytes, filename)
 
-    result = {
-        "message": f"Processed prompt: {prompt}",
-        "image_url": image_url
-    }
+        # 3. Save metadata
+        metadata = {
+            "user_id": user_id,
+            "prompt": prompt,
+            "image_url": image_url,
+            "event_type": event_type,
+            "theme": theme,
+            "formality": formality,
+            "base_image": base_image,
+            "objects": objects,
+            "options": options
+        }
+        
+        supabase.table("ai_generations").insert(metadata).execute()
 
-    return result
+        print(f"Successfully generated and uploaded image: {image_url}")
+        return {
+            "status": "success",
+            "image_url": image_url,
+            "metadata": metadata
+        }
 
+    except Exception as e:
+        print(f"Error in handler: {e}")
+        return {"status": "error", "message": str(e)}
 
-runpod.serverless.start({
-    "handler": handler
-})
+print("Starting RunPod serverless handler...")
+runpod.serverless.start({"handler": handler})
