@@ -1,6 +1,9 @@
 import 'dart:convert';
 
+import 'package:intl/intl.dart';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 
@@ -357,7 +360,13 @@ class _InquirePageState extends State<InquirePage> {
                                     .toList(),
                             onChanged: (value) {
                               if (value != null) {
-                                setState(() => _eventType = value);
+                                setState(() {
+                                  _eventType = value;
+                                  // Auto-populate event type in event design section
+                                  if (_serviceType == 'catering+event') {
+                                    _selectedEventType = value;
+                                  }
+                                });
                               }
                             },
                           ),
@@ -436,6 +445,11 @@ class _InquirePageState extends State<InquirePage> {
                               border: OutlineInputBorder(),
                             ),
                             keyboardType: TextInputType.phone,
+                            maxLength: 13,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(13),
+                            ],
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -489,12 +503,45 @@ class _InquirePageState extends State<InquirePage> {
                         ),
                         const SizedBox(width: 16),
                         Expanded(
-                          child: TextField(
-                            controller: _dateController,
-                            decoration: const InputDecoration(
-                              labelText: 'Event Date',
-                              border: OutlineInputBorder(),
-                              hintText: 'YYYY-MM-DD',
+                          child: InkWell(
+                            onTap: () async {
+                              final now = DateTime.now();
+                              final pickedDate = await showDatePicker(
+                                context: context,
+                                initialDate:
+                                    DateTime.tryParse(_dateController.text) ??
+                                    now,
+                                firstDate: now,
+                                lastDate: now.add(
+                                  const Duration(days: 365 * 2),
+                                ),
+                              );
+                              if (pickedDate != null) {
+                                _dateController.text = DateFormat(
+                                  'yyyy-MM-dd',
+                                ).format(pickedDate);
+                              }
+                            },
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Event Date',
+                                border: OutlineInputBorder(),
+                                hintText: 'YYYY-MM-DD',
+                                suffixIcon: Icon(Icons.calendar_today),
+                              ),
+                              child: IgnorePointer(
+                                child: TextField(
+                                  controller: _dateController,
+                                  enabled: false,
+                                  decoration: const InputDecoration(
+                                    border: InputBorder.none,
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 16,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -502,12 +549,45 @@ class _InquirePageState extends State<InquirePage> {
                     ),
                     const SizedBox(height: 16),
 
-                    TextField(
-                      controller: _timeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Event Time',
-                        border: OutlineInputBorder(),
-                        hintText: 'e.g., 6:00 PM',
+                    InkWell(
+                      onTap: () async {
+                        final pickedTime = await showTimePicker(
+                          context: context,
+                          initialTime:
+                              _timeController.text.isNotEmpty
+                                  ? TimeOfDay.fromDateTime(
+                                    DateFormat(
+                                      'h:mm a',
+                                    ).parse(_timeController.text),
+                                  )
+                                  : const TimeOfDay(hour: 10, minute: 0),
+                        );
+                        if (pickedTime != null) {
+                          _timeController.text = pickedTime
+                              .format(context)
+                              .replaceAll(' ', '');
+                        }
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Event Time',
+                          border: OutlineInputBorder(),
+                          hintText: 'e.g., 6:00 PM',
+                          suffixIcon: Icon(Icons.access_time),
+                        ),
+                        child: IgnorePointer(
+                          child: TextField(
+                            controller: _timeController,
+                            enabled: false,
+                            decoration: const InputDecoration(
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 16,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),

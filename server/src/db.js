@@ -540,7 +540,7 @@ export async function initDb() {
     );
   `);
 
-  // Create inventory table
+  // Create inventory table for non-perishable catering business
   await pool.query(`
     CREATE TABLE IF NOT EXISTS inventory (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -554,7 +554,13 @@ export async function initDb() {
       unit_cost DECIMAL(10,2),
       supplier TEXT,
       location TEXT,
-      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'discontinued')),
+      storage_requirements TEXT, -- e.g., 'Dry storage', 'Climate controlled', 'Secure storage'
+      maintenance_schedule TEXT, -- For equipment that needs regular maintenance
+      warranty_expiry TIMESTAMPTZ, -- For equipment with warranty periods
+      condition TEXT DEFAULT 'good' CHECK (condition IN ('excellent', 'good', 'fair', 'poor')),
+      last_maintenance_date TIMESTAMPTZ, -- For equipment maintenance tracking
+      next_maintenance_date TIMESTAMPTZ, -- For equipment maintenance scheduling
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'discontinued', 'maintenance')),
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       created_by TEXT REFERENCES users(id),
@@ -757,6 +763,30 @@ export async function initDb() {
   } catch (err) {
     console.log('Migration check for invalid status values:', err.message);
   }
+
+  // Migration: Add non-perishable catering business fields to inventory table
+  try {
+    await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS storage_requirements TEXT`);
+    await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS maintenance_schedule TEXT`);
+    await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS warranty_expiry TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS condition TEXT DEFAULT 'good' CHECK (condition IN ('excellent', 'good', 'fair', 'poor'))`);
+    await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS last_maintenance_date TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS next_maintenance_date TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'discontinued', 'maintenance'))`);
+    console.log('Migration: Added non-perishable catering business fields to inventory table');
+  } catch (err) {
+    console.log('Migration check for inventory fields:', err.message);
+  }
+
+  // Create website_content table for persistent staff edits
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS website_content (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      content JSONB NOT NULL DEFAULT '{}',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
 
   // Insert default dishes from CSV if table is empty
   const dishCount = await pool.query(`SELECT COUNT(*) FROM menu_dishes`);

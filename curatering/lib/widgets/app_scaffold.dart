@@ -151,7 +151,7 @@ class AppScaffold extends StatelessWidget {
         children: [
           // top bar
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: const Color(0xFF111111),
               boxShadow: [
@@ -164,198 +164,32 @@ class AppScaffold extends StatelessWidget {
             ),
             child: Row(
               children: [
-                // App title with enhanced styling
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFC024).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFFFFC024).withOpacity(0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 6,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFC024),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Curatering',
-                        style: TextStyle(
-                          color: const Color(0xFFFFC024),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 18,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 24),
-                if (showSearch)
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: TextField(
-                        controller: searchController,
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: Colors.white,
-                          prefixIcon: Container(
-                            padding: const EdgeInsets.all(12),
-                            child: Icon(
-                              Icons.search,
-                              color: Colors.grey.shade600,
-                              size: 20,
-                            ),
-                          ),
-                          hintText: 'Search...',
-                          hintStyle: TextStyle(color: Colors.grey.shade500),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 12,
-                            horizontal: 16,
-                          ),
-                        ),
-                        onChanged: onSearchChanged,
-                      ),
-                    ),
-                  ),
-                if (showSearch) const SizedBox(width: 16),
-                // Enhanced filter button
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.tune,
-                        size: 18,
-                        color: const Color(0xFF242424),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Filter',
-                        style: TextStyle(
-                          color: const Color(0xFF242424),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
+                // Left logo
+                Image.asset(
+                  'lib/assets/main.png',
+                  height: 32,
+                  fit: BoxFit.contain,
                 ),
                 const Spacer(),
-                // Enhanced logo
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+                // User name with right logo
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      userName,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
                       ),
-                    ],
-                  ),
-                  child: Image.asset(
-                    'lib/assets/main-2.png',
-                    height: 32,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                // Enhanced profile section
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundColor: const Color(
-                          0xFFFFC024,
-                        ).withOpacity(0.1),
-                        backgroundImage: const AssetImage(
-                          'lib/assets/profileicon 1.png',
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            userName,
-                            style: TextStyle(
-                              color: const Color(0xFF111111),
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                          ),
-                          Text(
-                            AuthSession.instance.currentRole?.displayName ??
-                                'Staff',
-                            style: TextStyle(
-                              color: const Color(0xFF242424),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 12),
+                    Image.asset(
+                      'lib/assets/main-2.png',
+                      height: 24,
+                      fit: BoxFit.contain,
+                    ),
+                  ],
                 ),
               ],
             ),

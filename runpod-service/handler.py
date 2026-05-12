@@ -5,10 +5,10 @@ from diffusers import StableDiffusionPipeline
 import torch
 import os
 from supabase import create_client
+import random
 
 # -------------------------
 # CONFIG
-# -------------------------
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
@@ -19,17 +19,31 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # -------------------------
 # LOAD MODEL
-# -------------------------
 print("Loading Stable Diffusion model...")
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Using device: {device}")
+
 pipe = StableDiffusionPipeline.from_pretrained(
     "runwayml/stable-diffusion-v1-5",
-    torch_dtype=torch.float16
-).to("cuda")
-print("Model loaded successfully!")
+    torch_dtype=torch.float16 if device == "cuda" else torch.float32
+)
 
+pipe = pipe.to(device)
+pipe.enable_attention_slicing()
+pipe.enable_vae_slicing()
+
+# Optional but recommended
+if device == "cuda":
+    try:
+        pipe.enable_xformers_memory_efficient_attention()
+        print("xformers enabled")
+    except Exception as e:
+        print("xformers not available:", e)
+
+print("Model loaded successfully!")
 # -------------------------
 # IMAGE GENERATION
-# -------------------------
 def generate_image(prompt):
     image = pipe(prompt).images[0]
     
@@ -40,7 +54,6 @@ def generate_image(prompt):
 
 # -------------------------
 # UPLOAD TO SUPABASE
-# -------------------------
 def upload_to_supabase(image_bytes, filename):
     try:
         supabase.storage.from_("ai-images").upload(
@@ -57,7 +70,6 @@ def upload_to_supabase(image_bytes, filename):
 
 # -------------------------
 # HANDLER
-# -------------------------
 def handler(event):
     try:
         input_data = event.get("input", {})
@@ -78,7 +90,7 @@ def handler(event):
         image_bytes = generate_image(prompt)
 
         # 2. Upload to Supabase
-        filename = f"{user_id}_{torch.randint(0,100000,(1,)).item()}.png"
+        filename = f"{user_id}_{random.randint(0,100000)}.png"
         image_url = upload_to_supabase(image_bytes, filename)
 
         # 3. Save metadata

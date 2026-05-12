@@ -3,8 +3,22 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class RunPodService {
-  static String get _endpointId => dotenv.env['RUNPOD_ENDPOINT_ID'] ?? '';
-  static String get _apiKey => dotenv.env['RUNPOD_API_KEY'] ?? '';
+  static String get _endpointId {
+    final endpointId = dotenv.env['RUNPOD_ENDPOINT_ID'];
+    if (endpointId == null || endpointId.isEmpty) {
+      throw Exception('RUNPOD_ENDPOINT_ID environment variable is not set');
+    }
+    return endpointId;
+  }
+
+  static String get _apiKey {
+    final apiKey = dotenv.env['RUNPOD_API_KEY'];
+    if (apiKey == null || apiKey.isEmpty) {
+      throw Exception('RUNPOD_API_KEY environment variable is not set');
+    }
+    return apiKey;
+  }
+
   static const String _baseUrl = 'https://api.runpod.ai/v2';
 
   static Future<String?> generateImage(String prompt) async {

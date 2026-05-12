@@ -1714,21 +1714,36 @@ app.get(
 // Manager: create/list/finalize event orders
 async function readWebsiteContent() {
   try {
-    const raw = await fs.readFile(websiteContentPath, "utf8");
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
+    const result = await pool.query(`
+      SELECT content FROM website_content 
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `);
+    
+    if (result.rows.length > 0) {
+      return result.rows[0].content;
+    }
+    return {};
   } catch (error) {
-    if (error?.code === "ENOENT") return {};
-    throw error;
+    console.error('Error reading website content from database:', error);
+    return {};
   }
 }
 
 async function writeWebsiteContent(content) {
-  await fs.writeFile(
-    websiteContentPath,
-    JSON.stringify(content ?? {}, null, 2),
-    "utf8",
-  );
+  try {
+    await pool.query(`
+      INSERT INTO website_content (content, created_at, updated_at)
+      VALUES ($1, NOW(), NOW())
+      ON CONFLICT (id) 
+      DO UPDATE SET 
+        content = $1,
+        updated_at = NOW()
+    `, [content]);
+  } catch (error) {
+    console.error('Error writing website content to database:', error);
+    throw error;
+  }
 }
 
 app.get("/api/website-content", async (req, res) => {

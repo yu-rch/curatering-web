@@ -120,17 +120,22 @@ class _InventoryState extends State<Inventory> {
   bool _isTabularView = false;
 
   final List<String> _categories = [
-    'Ingredients',
-    'Beverages',
-    'Supplies',
-    'Equipment',
-    'Packaging',
-    'Cleaning',
+    'Cooking Equipment',
+    'Serving Equipment',
+    'Tableware & Cutlery',
+    'Non-Perishable Ingredients',
+    'Beverages & Liquids',
+    'Packaging & Disposables',
+    'Transport & Storage',
+    'Cleaning Supplies',
+    'Decor & Ambiance',
+    'Safety & First Aid',
     'Other',
   ];
 
   final List<String> _units = [
     'pcs',
+    'sets',
     'kg',
     'g',
     'L',
@@ -138,6 +143,11 @@ class _InventoryState extends State<Inventory> {
     'boxes',
     'bottles',
     'packs',
+    'cases',
+    'bags',
+    'rolls',
+    'pairs',
+    'dozens',
   ];
 
   @override

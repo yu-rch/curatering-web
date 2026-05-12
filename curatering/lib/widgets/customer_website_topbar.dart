@@ -48,16 +48,18 @@ class CustomerWebsiteTopBar extends StatelessWidget
 
           // Navigation Links
           Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                if (constraints.maxWidth < 800) {
-                  // Mobile layout
-                  return _buildMobileNav(context);
-                } else {
-                  // Desktop layout
-                  return _buildDesktopNav(context);
-                }
-              },
+            child: Center(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  if (constraints.maxWidth < 800) {
+                    // Mobile layout
+                    return _buildMobileNav(context);
+                  } else {
+                    // Desktop layout
+                    return _buildDesktopNav(context);
+                  }
+                },
+              ),
             ),
           ),
 
@@ -119,21 +121,34 @@ class CustomerWebsiteTopBar extends StatelessWidget
               // Login/Profile Button
               if (AuthSession.instance.isLoggedIn.value)
                 PopupMenuButton<String>(
-                  icon: Container(
+                  child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: CircleAvatar(
-                      backgroundColor: Colors.grey.shade300,
-                      child: Icon(Icons.person, color: Colors.white, size: 20),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: Colors.grey.shade300,
+                          child: Icon(
+                            Icons.person,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          AuthSession.instance.currentUser.value?.fullName ??
+                              'Customer',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  child: Text(
-                    AuthSession.instance.currentUser.value?.fullName ??
-                        'Customer',
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
                   ),
                   itemBuilder:
                       (context) => [
