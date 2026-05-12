@@ -31,16 +31,40 @@ app.use(cors({
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  preflightContinue: true
 }));
+
+// Handle CORS preflight requests properly
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    console.log('CORS preflight request:', {
+      origin: req.headers.origin,
+      method: req.headers['access-control-request-method'],
+      headers: req.headers['access-control-request-headers']
+    });
+    
+    // Set CORS headers for preflight
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.status(200).end();
+    return;
+  }
+  next();
+});
 app.use(express.json({ limit: "50mb" }));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ 
+  console.log('Health check requested at:', new Date().toISOString());
+  res.status(200).json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    service: 'curatering-backend'
+    service: 'curatering-backend',
+    port: PORT,
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -5980,6 +6004,9 @@ app.get('*', (req, res) => {
     
     app.listen(PORT, () => {
       console.log(`Curatering server listening on port ${PORT}`);
+      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`Database URL configured: ${connectionString ? 'Yes' : 'No'}`);
+      console.log(`Health check available at: https://curatering.up.railway.app/health`);
     });
   })
   .catch((err) => {

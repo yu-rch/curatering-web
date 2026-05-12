@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static const String baseUrl = "curatering-web-production-4978.up.railway.app";
+  static const String baseUrl = "curatering.up.railway.app";
 
   static Future<Map<String, dynamic>?> generateTheme({
     required File imageFile,
