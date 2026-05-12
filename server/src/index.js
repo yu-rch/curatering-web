@@ -15,6 +15,7 @@ import {
   generateUserId,
   generateSequentialId,
 } from "./db.js";
+import CartAPI from './cart_api.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,13 +27,22 @@ app.use(cors({
     'http://localhost:3000',
     'http://localhost:49798',
     'http://localhost:*',
-    'https://curatering-web-production-4978.up.railway.app'
+    'https://curatering.up.railway.app'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 app.use(express.json({ limit: "50mb" }));
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    service: 'curatering-backend'
+  });
+});
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
@@ -5945,10 +5955,18 @@ runInitDbWithRetries()
     console.log('Serving static web files from:', webBuildPath);
     app.use(express.static(webBuildPath));
 
-    // Import cart API
-const CartAPI = require('./cart_api');
+    // Health check endpoint for Railway
+    app.get('/health', (req, res) => {
+      res.status(200).json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        port: PORT,
+        environment: process.env.NODE_ENV || 'development'
+      });
+    });
 
-// Cart API routes
+    // Cart API routes
 app.get('/api/cart', CartAPI.getCart);
 app.post('/api/cart/sync', CartAPI.syncCart);
 app.post('/api/cart/clear', CartAPI.clearCart);

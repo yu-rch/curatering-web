@@ -10,7 +10,7 @@ const String _supabaseAnonKey = String.fromEnvironment(
 
 const String _apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'https://curatering-web-production-4978.up.railway.app',
+  defaultValue: 'https://curatering.up.railway.app',
 );
 
 // Runtime getters with fallbacks for dev mode (String.fromEnvironment doesn't work in JIT mode)
@@ -25,6 +25,4 @@ String get supabaseAnonKey =>
         : _supabaseAnonKey;
 
 String get apiBaseUrl =>
-    _apiBaseUrl.isEmpty
-        ? 'https://curatering-web-production-4978.up.railway.app'
-        : _apiBaseUrl;
+    _apiBaseUrl.isEmpty ? 'https://curatering.up.railway.app' : _apiBaseUrl;

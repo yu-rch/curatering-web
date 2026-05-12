@@ -417,15 +417,20 @@ export async function initDb() {
   `);
 
   // Update catering_orders status constraint to include 'cancelled'
-  await pool.query(`
-    ALTER TABLE catering_orders
-    DROP CONSTRAINT IF EXISTS catering_orders_status_check;
-  `);
+  try {
+    await pool.query(`
+      ALTER TABLE catering_orders
+      DROP CONSTRAINT IF EXISTS catering_orders_status_check;
+    `);
 
-  await pool.query(`
-    ALTER TABLE catering_orders
-    ADD CONSTRAINT catering_orders_status_check CHECK (status IN ('new_event','online_inquiries','for_processing','for_post_analysis','completed','cancelled'));
-  `);
+    await pool.query(`
+      ALTER TABLE catering_orders
+      ADD CONSTRAINT catering_orders_status_check CHECK (status IN ('new_event','online_inquiries','for_processing','for_post_analysis','completed','cancelled'));
+    `);
+  } catch (err) {
+    // Constraint might already exist with different definition, log but don't fail
+    console.warn('Warning: Could not update catering_orders_status_check constraint:', err.message);
+  }
 
   await pool.query(`
     ALTER TABLE event_orders

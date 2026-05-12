@@ -1,5 +1,5 @@
-const express = require('express');
-const { Pool } = require('./db');
+import express from 'express';
+import { pool } from './db.js';
 
 class CartAPI {
   static async getCart(req, res) {
@@ -10,7 +10,7 @@ class CartAPI {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      const result = await Pool.query(`
+      const result = await pool.query(`
         SELECT 
           cs.device_id,
           ci.dish_id,
@@ -51,10 +51,10 @@ class CartAPI {
       }
 
       // Start transaction
-      await Pool.query('BEGIN');
+      await pool.query('BEGIN');
 
       // Get or create cart session
-      let sessionResult = await Pool.query(`
+      let sessionResult = await pool.query(`
         SELECT id FROM cart_sessions 
         WHERE customer_token = $1 AND device_id = $2
         ORDER BY updated_at DESC 
@@ -64,7 +64,7 @@ class CartAPI {
       let sessionId;
       if (sessionResult.rows.length === 0) {
         // Create new session
-        const newSession = await Pool.query(`
+        const newSession = await pool.query(`
           INSERT INTO cart_sessions (customer_token, device_id)
           VALUES ($1, $2)
           RETURNING id
@@ -76,7 +76,7 @@ class CartAPI {
       }
 
       // Clear existing items for this session
-      await Pool.query(`
+      await pool.query(`
         DELETE FROM cart_items 
         WHERE session_id = $1
       `, [sessionId]);
@@ -96,24 +96,24 @@ class CartAPI {
 
         const placeholders = cart.map(() => '($1, $2, $3, $4, $5, $6, $7, $8)').join(', ');
 
-        await Pool.query(`
+        await pool.query(`
           INSERT INTO cart_items (session_id, dish_id, dish_name, dish_price, dish_category, dish_type, quantity, selected_sauce, updated_at)
           VALUES ${placeholders.join(', ')}
         `, values.flat());
       }
 
       // Update session timestamp
-      await Pool.query(`
+      await pool.query(`
         UPDATE cart_sessions 
         SET updated_at = NOW()
         WHERE id = $1
       `, [sessionId]);
 
-      await Pool.query('COMMIT');
+      await pool.query('COMMIT');
 
       res.json({ success: true, session_id: sessionId });
     } catch (error) {
-      await Pool.query('ROLLBACK');
+      await pool.query('ROLLBACK');
       console.error('Error syncing cart:', error);
       res.status(500).json({ error: 'Failed to sync cart' });
     }
@@ -128,7 +128,7 @@ class CartAPI {
       }
 
       // Get session and clear items
-      const sessionResult = await Pool.query(`
+      const sessionResult = await pool.query(`
         SELECT id FROM cart_sessions 
         WHERE customer_token = $1
         ORDER BY updated_at DESC 
@@ -138,31 +138,31 @@ class CartAPI {
       if (sessionResult.rows.length > 0) {
         const sessionId = sessionResult.rows[0].id;
 
-        await Pool.query('BEGIN');
+        await pool.query('BEGIN');
 
         // Clear items
-        await Pool.query(`
+        await pool.query(`
           DELETE FROM cart_items 
           WHERE session_id = $1
         `, [sessionId]);
 
         // Update session timestamp
-        await Pool.query(`
+        await pool.query(`
           UPDATE cart_sessions 
           SET updated_at = NOW()
           WHERE id = $1
         `, [sessionId]);
 
-        await Pool.query('COMMIT');
+        await pool.query('COMMIT');
       }
 
       res.json({ success: true });
     } catch (error) {
-      await Pool.query('ROLLBACK');
+      await pool.query('ROLLBACK');
       console.error('Error clearing cart:', error);
       res.status(500).json({ error: 'Failed to clear cart' });
     }
   }
 }
 
-module.exports = CartAPI;
+export default CartAPI;
