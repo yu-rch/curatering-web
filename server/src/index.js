@@ -24,9 +24,7 @@ const websiteContentPath = path.join(__dirname, "website-content.json");
 const app = express();
 app.use(cors({
   origin: [
-    'http://localhost:3000',
-    'http://localhost:49798',
-    'http://localhost:*',
+    /^http:\/\/localhost:\d+$/,
     'https://curatering.up.railway.app'
   ],
   credentials: true,
