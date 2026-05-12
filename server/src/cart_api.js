@@ -1,5 +1,4 @@
-const express = require('express');
-const { Pool } = require('./db');
+import { pool as Pool } from './db.js';
 
 class CartAPI {
   static async getCart(req, res) {
@@ -165,4 +164,4 @@ class CartAPI {
   }
 }
 
-module.exports = CartAPI;
+export default CartAPI;

@@ -15,6 +15,7 @@ import {
   generateUserId,
   generateSequentialId,
 } from "./db.js";
+import CartAPI from "./cart_api.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -5944,9 +5945,6 @@ runInitDbWithRetries()
     const webBuildPath = process.env.WEB_BUILD_PATH || path.join(__dirname, '../../curatering/build/web');
     console.log('Serving static web files from:', webBuildPath);
     app.use(express.static(webBuildPath));
-
-    // Import cart API
-const CartAPI = require('./cart_api');
 
 // Cart API routes
 app.get('/api/cart', CartAPI.getCart);
