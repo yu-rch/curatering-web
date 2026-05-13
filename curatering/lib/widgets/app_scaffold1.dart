@@ -75,7 +75,7 @@ class AppScaffold1 extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: isActive ? const Color(0xFF242424) : const Color(0xFFF5F7F9),
+              color: isActive ? const Color(0xFF1E1E1E) : const Color(0xFFF5F7F9),
               size: 20,
             ),
             const SizedBox(width: 12),
@@ -83,7 +83,7 @@ class AppScaffold1 extends StatelessWidget {
               child: Text(
                 label,
                 style: TextStyle(
-                  color: isActive ? const Color(0xFF242424) : const Color(0xFFF5F7F9),
+                  color: isActive ? const Color(0xFF1E1E1E) : const Color(0xFFF5F7F9),
                   fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                 ),
               ),

@@ -29,7 +29,14 @@ class CartSyncService {
           await prefs.setString(_cartKey, cartJson);
           await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());
 
-          // Clear current cart and add synced items
+          final localCount = CartStore.instance.items.length;
+          if (cartItems.isEmpty && localCount > 0) {
+            // Server has no cart but this device still has items (e.g. after logout/login).
+            // Push local cart up instead of wiping it.
+            await syncToServer();
+            return;
+          }
+
           CartStore.instance.clearCart();
           for (final item in cartItems) {
             CartStore.instance.addItem(

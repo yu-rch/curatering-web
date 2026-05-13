@@ -103,12 +103,16 @@ class AppScaffold extends StatelessWidget {
       },
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+        decoration: BoxDecoration(
+          color: isActive ? const Color(0xFFFFC024) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Row(
           children: [
             Icon(
               icon,
               color:
-                  isActive ? const Color(0xFF242424) : const Color(0xFFF5F7F9),
+                  isActive ? const Color(0xFF1E1E1E) : const Color(0xFFF5F7F9),
               size: 18,
             ),
             const SizedBox(width: 12),
@@ -118,7 +122,7 @@ class AppScaffold extends StatelessWidget {
                 style: TextStyle(
                   color:
                       isActive
-                          ? const Color(0xFF242424)
+                          ? const Color(0xFF1E1E1E)
                           : const Color(0xFFF5F7F9),
                   fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                   fontSize: 13,

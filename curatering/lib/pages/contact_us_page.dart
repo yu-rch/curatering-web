@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/website_content_store.dart';
+import '../widgets/centered_viewport_scroll.dart';
 import '../widgets/contact_address_map.dart';
 import '../widgets/customer_website_topbar.dart';
 
@@ -151,7 +152,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
             showCartAndCustomerAuth: !widget.contentEditable,
           ),
           Expanded(
-            child: SingleChildScrollView(
+            child: CenteredViewportScroll(
               padding: websitePagePadding(context),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

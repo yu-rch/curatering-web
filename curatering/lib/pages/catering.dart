@@ -20,6 +20,66 @@ import '../utils/order_calculations.dart';
 import '../utils/web_html.dart' as html;
 // import 'package:segment_anything/segment_anything.dart';
 
+/// Reuse Manage Events order lists briefly so leaving and returning the page
+/// does not always show a full reload.
+class ManageEventsOrdersCache {
+  ManageEventsOrdersCache._();
+  static final ManageEventsOrdersCache instance = ManageEventsOrdersCache._();
+
+  Role? _role;
+  DateTime? _fetchedAt;
+  List<EventOrderDto> _onlineInquiries = const [];
+  List<EventOrderDto> _processing = const [];
+  List<EventOrderDto> _postAnalysis = const [];
+  List<EventOrderDto> _completed = const [];
+
+  static const Duration _ttl = Duration(minutes: 5);
+
+  void clear() {
+    _fetchedAt = null;
+    _role = null;
+    _onlineInquiries = const [];
+    _processing = const [];
+    _postAnalysis = const [];
+    _completed = const [];
+  }
+
+  bool tryRestore({
+    required Role? role,
+    required void Function({
+      required List<EventOrderDto> onlineInquiries,
+      required List<EventOrderDto> processing,
+      required List<EventOrderDto> postAnalysis,
+      required List<EventOrderDto> completed,
+    }) onData,
+  }) {
+    if (_fetchedAt == null || _role != role) return false;
+    if (DateTime.now().difference(_fetchedAt!) > _ttl) return false;
+    onData(
+      onlineInquiries: List<EventOrderDto>.from(_onlineInquiries),
+      processing: List<EventOrderDto>.from(_processing),
+      postAnalysis: List<EventOrderDto>.from(_postAnalysis),
+      completed: List<EventOrderDto>.from(_completed),
+    );
+    return true;
+  }
+
+  void save({
+    required Role? role,
+    required List<EventOrderDto> onlineInquiries,
+    required List<EventOrderDto> processing,
+    required List<EventOrderDto> postAnalysis,
+    required List<EventOrderDto> completed,
+  }) {
+    _role = role;
+    _fetchedAt = DateTime.now();
+    _onlineInquiries = List<EventOrderDto>.unmodifiable(onlineInquiries);
+    _processing = List<EventOrderDto>.unmodifiable(processing);
+    _postAnalysis = List<EventOrderDto>.unmodifiable(postAnalysis);
+    _completed = List<EventOrderDto>.unmodifiable(completed);
+  }
+}
+
 // SAM Segmentation Classes (existing)
 class SegmentedObject {
   final String id;
@@ -327,7 +387,28 @@ class _ManageEventsState extends State<ManageEvents> {
     MenuStore.instance.addListener(_onMenuStoreChanged);
     _loadThemeTemplates();
     AuthSession.instance.currentUser.addListener(_handleAuthSessionChange);
-    _refreshOrders();
+    final role = AuthSession.instance.currentRole;
+    final restored = ManageEventsOrdersCache.instance.tryRestore(
+      role: role,
+      onData: ({
+        required List<EventOrderDto> onlineInquiries,
+        required List<EventOrderDto> processing,
+        required List<EventOrderDto> postAnalysis,
+        required List<EventOrderDto> completed,
+      }) {
+        if (!mounted) return;
+        setState(() {
+          _onlineInquiryOrders = onlineInquiries;
+          _processingOrdersDto = processing;
+          _postAnalysisOrdersDto = postAnalysis;
+          _completedOrdersDto = completed;
+          _lastLoadedRole = role;
+        });
+      },
+    );
+    if (!restored) {
+      _refreshOrders();
+    }
   }
 
   @override
@@ -629,7 +710,15 @@ class _ManageEventsState extends State<ManageEvents> {
         _completedOrdersDto = const <EventOrderDto>[];
       }
       _selectedOnlineInquiryOrder = null;
+      ManageEventsOrdersCache.instance.save(
+        role: role,
+        onlineInquiries: _onlineInquiryOrders,
+        processing: _processingOrdersDto,
+        postAnalysis: _postAnalysisOrdersDto,
+        completed: _completedOrdersDto,
+      );
     } catch (e) {
+      ManageEventsOrdersCache.instance.clear();
       // print('DEBUG: Error in _refreshOrders: $e'); // Debug line
       // print('DEBUG: Error type: ${e.runtimeType}'); // Debug line
       _onlineInquiryOrders = const <EventOrderDto>[];
@@ -664,6 +753,7 @@ class _ManageEventsState extends State<ManageEvents> {
   }
 
   Future<void> _refreshOrdersFromButton() async {
+    ManageEventsOrdersCache.instance.clear();
     await _refreshOrders();
   }
 

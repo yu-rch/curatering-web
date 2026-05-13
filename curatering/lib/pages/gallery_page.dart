@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../services/website_content_store.dart';
+import '../widgets/centered_viewport_scroll.dart';
 import '../widgets/customer_website_topbar.dart';
 import '../widgets/pexels_attribution_badge.dart';
 
@@ -62,7 +63,12 @@ class _GalleryPageState extends State<GalleryPage> {
             CustomerWebsiteTopBar(
               showCartAndCustomerAuth: !widget.contentEditable,
             ),
-            Expanded(child: _buildGalleryDetail(w, cat)),
+            Expanded(
+              child: CenteredViewportScroll(
+                padding: websitePagePadding(context),
+                child: _buildGalleryDetail(w, cat),
+              ),
+            ),
           ],
         ),
       );
@@ -76,16 +82,19 @@ class _GalleryPageState extends State<GalleryPage> {
           CustomerWebsiteTopBar(
             showCartAndCustomerAuth: !widget.contentEditable,
           ),
-          Expanded(child: _buildGallery(w)),
+          Expanded(
+            child: CenteredViewportScroll(
+              padding: websitePagePadding(context),
+              child: _buildGallery(w),
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildGallery(WebsiteContentStore w) {
-    return SingleChildScrollView(
-      padding: websitePagePadding(context),
-      child: Column(
+    return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 24),
@@ -223,7 +232,6 @@ class _GalleryPageState extends State<GalleryPage> {
           const SizedBox(height: 48),
           const PexelsAttributionBadge(photographer: 'Curatering Gallery'),
         ],
-      ),
     );
   }
 
@@ -235,9 +243,7 @@ class _GalleryPageState extends State<GalleryPage> {
                 .where((img) => img.toLowerCase().contains(_gallerySearchQuery))
                 .toList();
 
-    return SingleChildScrollView(
-      padding: websitePagePadding(context),
-      child: Column(
+    return Column(
         children: [
           const SizedBox(height: 24),
           Row(
@@ -346,7 +352,6 @@ class _GalleryPageState extends State<GalleryPage> {
               },
             ),
         ],
-      ),
     );
   }
 }

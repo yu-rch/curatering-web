@@ -14,6 +14,8 @@ import {
   poolQueryWithRetry,
   generateUserId,
   generateSequentialId,
+  getRoleAccountLimits,
+  setRoleAccountLimits,
 } from "./db.js";
 import CartAPI from './cart_api.js';
 
@@ -1547,6 +1549,56 @@ app.get(
   },
 );
 
+app.get(
+  "/api/super-admin/role-limits",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    try {
+      const limits = await getRoleAccountLimits();
+      return res.json({ limits });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ message: "Failed to load role limits" });
+    }
+  },
+);
+
+app.put(
+  "/api/super-admin/role-limits",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    try {
+      const raw = req.body?.limits;
+      if (!raw || typeof raw !== "object") {
+        return res.status(400).json({ message: "limits object is required" });
+      }
+      const existing = await getRoleAccountLimits();
+      const merged = { ...existing };
+      for (const role of allowedRoles) {
+        if (role === "super_admin") continue;
+        if (!Object.prototype.hasOwnProperty.call(raw, role)) continue;
+        const v = raw[role];
+        if (v === null || v === "" || v === undefined) {
+          delete merged[role];
+          continue;
+        }
+        const n = Number(v);
+        if (!Number.isFinite(n) || n < 1) {
+          return res.status(400).json({ message: `Invalid limit for ${role}` });
+        }
+        merged[role] = Math.floor(n);
+      }
+      await setRoleAccountLimits(merged);
+      return res.json({ ok: true, limits: await getRoleAccountLimits() });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ message: "Failed to save role limits" });
+    }
+  },
+);
+
 //create account
 app.post("/api/super-admin/users", authRequired, requireSuperAdmin, async (req, res) => {
     try {
@@ -1573,7 +1625,23 @@ app.post("/api/super-admin/users", authRequired, requireSuperAdmin, async (req, 
       if (existing.rows.length > 0) {
         return res.status(400).json({ message: "Email already exists" });
       }
-      
+
+      if (role !== "super_admin") {
+        const limits = await getRoleAccountLimits();
+        const cap = limits[role];
+        if (cap != null && Number.isFinite(Number(cap)) && Number(cap) > 0) {
+          const cnt = await pool.query(
+            `SELECT COUNT(*)::int AS n FROM users WHERE role = $1 AND archived = FALSE`,
+            [role],
+          );
+          if (cnt.rows[0].n >= Number(cap)) {
+            return res.status(400).json({
+              message: `Role limit reached: at most ${Number(cap)} active ${role} account(s). Raise the cap under Manage Accounts → Role limits.`,
+            });
+          }
+        }
+      }
+
       const userId = generateUserId();
       await pool.query(
         `INSERT INTO users 
@@ -4964,13 +5032,28 @@ runInitDbWithRetries()
           console.log('Auth failed: role is', decoded.role, 'expected customer');
           return res.status(403).json({ error: 'Customer access required' });
         }
-        req.customer = { id: decoded.customerId };
+        const cid = decoded.customerId ?? decoded.id ?? decoded.sub;
+        if (cid == null || String(cid).trim() === '') {
+          return res.status(401).json({ error: 'Invalid customer token' });
+        }
+        req.customer = { id: String(cid) };
         next();
       } catch (error) {
         console.log('Token verification failed:', error.message);
         return res.status(401).json({ error: 'Invalid or expired token', details: error.message });
       }
     };
+
+    function serializeRestaurantOrderRow(order, parsedItems) {
+      const o = { ...order, items: parsedItems };
+      if (o.id != null) o.id = String(o.id);
+      for (const k of Object.keys(o)) {
+        const v = o[k];
+        if (v instanceof Date) o[k] = v.toISOString();
+        if (typeof v === 'bigint') o[k] = Number(v);
+      }
+      return o;
+    }
 
     app.post('/api/restaurant/orders', customerAuthRequired, async (req, res) => {
       try {
@@ -4988,9 +5071,10 @@ runInitDbWithRetries()
         // Generate sequential order number (ORD-0001, ORD-0002, etc.)
         const orderNo = await generateSequentialId('ORD', 4);
 
+        // delivery_time: some DBs enforce NOT NULL; client may send null — default to now().
         const result = await pool.query(
           `INSERT INTO restaurant_orders (order_no, customer_id, full_name, phone, items, total_amount, delivery_address, delivery_lat, delivery_lng, delivery_time, delivery_notes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::timestamptz, now()), $11)
            RETURNING *`,
           [
             orderNo,
@@ -5045,7 +5129,7 @@ runInitDbWithRetries()
         const result = await pool.query(
           `UPDATE restaurant_orders
            SET payment_reference = $1, payment_status = 'paid', status = 'confirmed', updated_at = now()
-           WHERE id = $2::uuid AND customer_id = $3::text
+           WHERE id = $2::uuid AND customer_id::text = $3
            RETURNING *`,
           [paymentReference, orderId, req.customer.id]
         );
@@ -5066,7 +5150,7 @@ runInitDbWithRetries()
         const { orderId } = req.params;
         
         const result = await pool.query(
-          'SELECT * FROM restaurant_orders WHERE id = $1::uuid AND customer_id = $2::text',
+          'SELECT * FROM restaurant_orders WHERE id = $1::uuid AND customer_id::text = $2',
           [orderId, req.customer.id],
         );
 
@@ -5074,7 +5158,23 @@ runInitDbWithRetries()
           return res.status(404).json({ error: 'Order not found' });
         }
 
-        res.json({ order: result.rows[0] });
+        const order = result.rows[0];
+        let parsedItems = order.items;
+        if (typeof order.items === 'string') {
+          const trimmed = order.items.trim();
+          if (trimmed.length > 0) {
+            try {
+              parsedItems = JSON.parse(trimmed);
+            } catch (e) {
+              parsedItems = [];
+            }
+          } else {
+            parsedItems = [];
+          }
+        }
+        if (!Array.isArray(parsedItems)) parsedItems = [];
+
+        res.json({ order: serializeRestaurantOrderRow(order, parsedItems) });
       } catch (error) {
         console.error('Error fetching order:', error);
         res.status(500).json({ error: 'Failed to fetch order' });
@@ -5084,7 +5184,7 @@ runInitDbWithRetries()
     app.get('/api/restaurant/orders', customerAuthRequired, async (req, res) => {
       try {
         const result = await pool.query(
-          'SELECT * FROM restaurant_orders WHERE customer_id = $1::text ORDER BY created_at DESC',
+          'SELECT * FROM restaurant_orders WHERE customer_id::text = $1 ORDER BY created_at DESC',
           [req.customer.id],
         );
         const orders = result.rows.map((order) => {
@@ -5104,7 +5204,7 @@ runInitDbWithRetries()
             }
           }
           if (!Array.isArray(parsedItems)) parsedItems = [];
-          return { ...order, items: parsedItems };
+          return serializeRestaurantOrderRow(order, parsedItems);
         });
         res.json({ orders });
       } catch (error) {
@@ -5313,7 +5413,7 @@ runInitDbWithRetries()
 
         const customerResult = await pool.query(
           "SELECT email, full_name FROM customer_accounts WHERE id = $1 LIMIT 1",
-          [orderId],
+          [result.rows[0].customer_id],
         );
         if (customerResult.rowCount > 0) {
           await sendCustomerNotificationEmail({
@@ -5834,11 +5934,8 @@ runInitDbWithRetries()
 
         // Get customer account info with loyalty points
         const accountResult = await pool.query(
-          `SELECT id, email, full_name, phone, created_at,
-                  restaurant_loyalty_points, catering_loyalty_points
-           FROM customer_accounts
-           WHERE id = $1`,
-          [customerId]
+          `SELECT * FROM customer_accounts WHERE id = $1`,
+          [customerId],
         );
 
         if (accountResult.rows.length === 0) {
@@ -5877,21 +5974,24 @@ runInitDbWithRetries()
         }
         const profile = profileResult.rows[0] || {};
 
-        const restaurantPoints = account.restaurant_loyalty_points || 0;
-        const cateringPoints = account.catering_loyalty_points || 0;
+        const restaurantPoints = Number(account.restaurant_loyalty_points ?? 0);
+        const cateringPoints = Number(account.catering_loyalty_points ?? 0);
 
         res.json({
-          id: account.id,
+          id: account.id != null ? String(account.id) : account.id,
           email: account.email,
           fullName: account.full_name,
           phone: account.phone,
-          createdAt: account.created_at,
+          createdAt:
+            account.created_at instanceof Date
+              ? account.created_at.toISOString()
+              : account.created_at,
           loyaltyPoints: restaurantPoints + cateringPoints,
           restaurantLoyaltyPoints: restaurantPoints,
           cateringLoyaltyPoints: cateringPoints,
           deliveryAddress: profile.delivery_address || null,
-          deliveryLat: profile.delivery_lat || null,
-          deliveryLng: profile.delivery_lng || null,
+          deliveryLat: profile.delivery_lat != null ? Number(profile.delivery_lat) : null,
+          deliveryLng: profile.delivery_lng != null ? Number(profile.delivery_lng) : null,
         });
       } catch (error) {
         console.error('Error fetching customer profile:', error);
@@ -6080,7 +6180,7 @@ runInitDbWithRetries()
           const customerId = customer.id;
 
           const restaurantPoints = await pool.query(
-            `SELECT COALESCE(SUM(points_earned), 0) as total FROM restaurant_orders WHERE customer_id = $1 AND status = 'delivered'`,
+            `SELECT COALESCE(SUM(points_earned), 0) as total FROM restaurant_orders WHERE customer_id::text = $1 AND status = 'delivered'`,
             [customerId]
           );
 

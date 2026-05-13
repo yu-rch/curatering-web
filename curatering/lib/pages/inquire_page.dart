@@ -7,9 +7,13 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 
+import '../services/menu_store.dart';
 import '../services/public_events_api.dart';
 import '../services/runpod_service.dart';
+import '../services/set_menu_store.dart';
+import '../widgets/centered_viewport_scroll.dart';
 import '../widgets/customer_website_topbar.dart';
+import '../widgets/inquiry_menu_selection_dialog.dart';
 import '../widgets/map_picker.dart';
 
 const String _primaryFont = 'Inter';
@@ -72,6 +76,7 @@ class _InquirePageState extends State<InquirePage> {
   // Menu Selection State
   String _menuChoice = 'suggest'; // 'yes' or 'suggest'
   final List<String> _selectedDishIds = [];
+  final List<Map<String, dynamic>> _menuSelections = [];
 
   // Event Design - Prompt Based GenAI
   bool _wantsCustomDesign = false;
@@ -128,6 +133,13 @@ class _InquirePageState extends State<InquirePage> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    MenuStore.instance.loadDishes();
+    SetMenuStore.instance.loadSetMenus();
+  }
+
+  @override
   void dispose() {
     _eventTitle.dispose();
     _customer.dispose();
@@ -165,6 +177,7 @@ class _InquirePageState extends State<InquirePage> {
         'serviceType': _serviceType,
         'menuChoice': _menuChoice,
         'selectedDishIds': _selectedDishIds,
+        if (_menuSelections.isNotEmpty) 'menuSelections': _menuSelections,
         'wantsCustomDesign': _wantsCustomDesign,
         'eventDesign':
             _serviceType == 'catering+event'
@@ -245,6 +258,7 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   void _clearForm() {
+    setState(() {
     _eventTitle.clear();
     _customer.clear();
     _contactPerson.clear();
@@ -261,6 +275,7 @@ class _InquirePageState extends State<InquirePage> {
     _serviceType = 'catering';
     _menuChoice = 'suggest';
     _selectedDishIds.clear();
+    _menuSelections.clear();
     // Reset event design
     _wantsCustomDesign = false;
     _selectedEventType = null;
@@ -270,6 +285,87 @@ class _InquirePageState extends State<InquirePage> {
     _selectedDecor.clear();
     _designPromptController.clear();
     _venuePhotoBase64 = null;
+    });
+  }
+
+  void _applyMenuSelections(List<Map<String, dynamic>> blocks) {
+    final ids = <String>{};
+    for (final b in blocks) {
+      final list = b['dishIds'] as List<dynamic>? ?? const [];
+      for (final id in list) {
+        if (id is String && id.isNotEmpty) ids.add(id);
+      }
+    }
+    setState(() {
+      _menuSelections
+        ..clear()
+        ..addAll(blocks.map((e) => Map<String, dynamic>.from(e)));
+      _selectedDishIds
+        ..clear()
+        ..addAll(ids);
+    });
+  }
+
+  Future<void> _openMenuPicker() async {
+    await MenuStore.instance.loadDishes();
+    await SetMenuStore.instance.loadSetMenus();
+    if (!mounted) return;
+    final catering =
+        MenuStore.instance.activeDishes
+            .where(
+              (d) =>
+                  d.category.toLowerCase().trim() == 'catering' &&
+                  !d.archived &&
+                  d.available,
+            )
+            .toList()
+          ..sort((a, b) => a.name.compareTo(b.name));
+    final sets = SetMenuStore.instance.activeSetMenus;
+    final result = await showInquiryMenuSelectionDialog(
+      context,
+      cateringDishes: catering,
+      setMenus: sets,
+      initialSelections: List<Map<String, dynamic>>.from(_menuSelections),
+    );
+    if (result != null && mounted) {
+      _applyMenuSelections(result);
+    }
+  }
+
+  Widget _buildMenuSelectionSummary(Map<String, dynamic> block) {
+    final kind = block['kind'] as String? ?? 'custom';
+    final names =
+        (block['dishNames'] as List<dynamic>?)?.cast<String>().join(', ') ??
+        '';
+    if (kind == 'set') {
+      final title = block['setMenuName'] as String? ?? 'Set menu';
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text(
+              names,
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+            ),
+          ],
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('À la carte', style: TextStyle(fontWeight: FontWeight.w700)),
+          Text(
+            names,
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -283,7 +379,7 @@ class _InquirePageState extends State<InquirePage> {
             showCartAndCustomerAuth: !widget.contentEditable,
           ),
           Expanded(
-            child: SingleChildScrollView(
+            child: CenteredViewportScroll(
               padding: websitePagePadding(context),
               child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -690,6 +786,56 @@ class _InquirePageState extends State<InquirePage> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 24),
+
+                    Text(
+                      'Menu preferences',
+                      style: GoogleFonts.getFont(
+                        _primaryFont,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF1E1E1E),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    RadioListTile<String>(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Suggest a menu for us'),
+                      value: 'suggest',
+                      groupValue: _menuChoice,
+                      onChanged: (v) {
+                        if (v != null) setState(() => _menuChoice = v);
+                      },
+                    ),
+                    RadioListTile<String>(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('I want to pick dishes from your menus'),
+                      value: 'yes',
+                      groupValue: _menuChoice,
+                      onChanged: (v) {
+                        if (v != null) setState(() => _menuChoice = v);
+                      },
+                    ),
+                    if (_menuChoice == 'yes') ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _openMenuPicker,
+                        icon: const Icon(Icons.restaurant_menu),
+                        label: const Text('Choose catering & set menu dishes'),
+                      ),
+                      if (_menuSelections.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          'Selected',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        ..._menuSelections.map(_buildMenuSelectionSummary),
+                      ],
+                    ],
                     const SizedBox(height: 24),
 
                     // Event Design Section (Prompt Based GenAI)

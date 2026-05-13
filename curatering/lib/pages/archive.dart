@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+
+import '../auth/auth_session.dart';
 import '../auth/roles.dart';
-import '../widgets/app_scaffold.dart';
+import '../models/user.dart';
+import '../services/api_client.dart';
 import '../services/menu_store.dart';
 import '../services/super_admin_api.dart';
-import '../models/user.dart';
+import '../widgets/app_scaffold.dart';
+import 'inventory.dart';
 
 class ArchivedTransaction {
   final String OrderNo;
@@ -56,7 +60,7 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _loadArchivedUsers();
   }
 
@@ -103,7 +107,7 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFFFC107) : Colors.grey.shade200,
+          color: isSelected ? const Color(0xFFFFC024) : Colors.grey.shade200,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
@@ -138,8 +142,11 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(columns: columns, rows: rows),
+          scrollDirection: Axis.vertical,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(columns: columns, rows: rows),
+          ),
         ),
       ),
     );
@@ -260,8 +267,9 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
                   style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 16),
-                // Tab buttons
-                Row(
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
                   children: [
                     _buildTabButton('Menu', 0),
                     const SizedBox(width: 8),
@@ -270,7 +278,10 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
                     _buildTabButton('Events', 2),
                     const SizedBox(width: 8),
                     _buildTabButton('Accounts', 3),
+                    const SizedBox(width: 8),
+                    _buildTabButton('Inventory', 4),
                   ],
+                ),
                 ),
                 const SizedBox(height: 16),
                 // Tab content
@@ -283,6 +294,7 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
                       _buildLoyaltyArchiveTab(),
                       _buildEventsArchiveTab(),
                       _buildAccountsArchiveTab(),
+                      const ArchiveInventoryTab(),
                     ],
                   ),
                 ),
@@ -291,6 +303,241 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
           ),
         );
       },
+    );
+  }
+}
+
+class ArchiveInventoryTab extends StatefulWidget {
+  const ArchiveInventoryTab({super.key});
+
+  @override
+  State<ArchiveInventoryTab> createState() => _ArchiveInventoryTabState();
+}
+
+class _ArchiveInventoryTabState extends State<ArchiveInventoryTab> {
+  final TextEditingController _search = TextEditingController();
+  List<InventoryItem> _items = [];
+  bool _loading = true;
+
+  bool get _isManager =>
+      AuthSession.instance.currentRole == Role.manager ||
+      AuthSession.instance.currentRole == Role.superAdmin;
+
+  @override
+  void initState() {
+    super.initState();
+    _search.addListener(() => setState(() {}));
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final decoded = await ApiClient.instance.getJson(
+        '/api/inventory',
+        queryParameters: const {'archived': 'true'},
+        useCache: false,
+      );
+      final raw = decoded['items'];
+      final list = <InventoryItem>[];
+      if (raw is List) {
+        for (final e in raw) {
+          if (e is Map<String, dynamic>) {
+            list.add(InventoryItem.fromApi(e));
+          }
+        }
+      }
+      if (mounted) setState(() => _items = list);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to load archived inventory.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _fmt(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+  List<InventoryItem> get _filtered {
+    final q = _search.text.toLowerCase().trim();
+    if (q.isEmpty) return _items;
+    return _items
+        .where(
+          (i) =>
+              i.name.toLowerCase().contains(q) ||
+              i.category.toLowerCase().contains(q),
+        )
+        .toList();
+  }
+
+  Future<void> _restore(InventoryItem item) async {
+    try {
+      await ApiClient.instance.postJson(
+        '/api/inventory/${item.id}/archive',
+        body: {'archived': false},
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Restored "${item.name}"')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
+  }
+
+  Future<void> _deleteForever(InventoryItem item) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Delete permanently'),
+            content: Text('Remove "${item.name}" forever?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await ApiClient.instance.delete('/api/inventory/${item.id}');
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Item deleted')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final rows = _filtered;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _search,
+          decoration: InputDecoration(
+            hintText: 'Search archived inventory…',
+            prefixIcon: const Icon(Icons.search),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            filled: true,
+            fillColor: Colors.grey.shade100,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child:
+              rows.isEmpty
+                  ? Center(
+                    child: Text(
+                      _items.isEmpty
+                          ? 'No archived inventory items.'
+                          : 'No matches.',
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                  )
+                  : Scrollbar(
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.vertical,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: DataTable(
+                          headingRowColor: const WidgetStatePropertyAll(
+                            Color(0xFFF5F7F9),
+                          ),
+                          columns: const [
+                            DataColumn(label: Text('Name')),
+                            DataColumn(label: Text('Category')),
+                            DataColumn(label: Text('Qty')),
+                            DataColumn(label: Text('Unit')),
+                            DataColumn(label: Text('Unit cost')),
+                            DataColumn(label: Text('Updated')),
+                            DataColumn(label: Text('Actions')),
+                          ],
+                          rows:
+                              rows.map((item) {
+                                return DataRow(
+                                  cells: [
+                                    DataCell(Text(item.name)),
+                                    DataCell(Text(item.category)),
+                                    DataCell(Text('${item.quantity}')),
+                                    DataCell(Text(item.unit)),
+                                    DataCell(
+                                      Text('₱${item.unitCost.toStringAsFixed(2)}'),
+                                    ),
+                                    DataCell(Text(_fmt(item.lastUpdated))),
+                                    DataCell(
+                                      _isManager
+                                          ? Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              IconButton(
+                                                tooltip: 'Restore',
+                                                icon: const Icon(
+                                                  Icons.unarchive,
+                                                  color: Colors.blue,
+                                                ),
+                                                onPressed: () => _restore(item),
+                                              ),
+                                              IconButton(
+                                                tooltip: 'Delete',
+                                                icon: const Icon(
+                                                  Icons.delete_forever,
+                                                  color: Colors.red,
+                                                ),
+                                                onPressed:
+                                                    () => _deleteForever(item),
+                                              ),
+                                            ],
+                                          )
+                                          : const Text('—'),
+                                    ),
+                                  ],
+                                );
+                              }).toList(),
+                        ),
+                      ),
+                    ),
+                  ),
+        ),
+      ],
     );
   }
 }

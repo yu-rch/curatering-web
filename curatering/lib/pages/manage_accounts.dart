@@ -6,6 +6,7 @@ import '../auth/auth_session.dart';
 import '../auth/page_permissions.dart';
 import '../auth/roles.dart';
 import '../models/user.dart';
+import '../services/api_client.dart';
 import '../services/super_admin_api.dart';
 import '../widgets/app_scaffold.dart';
 
@@ -351,11 +352,13 @@ class _ManageAccountsState extends State<ManageAccounts> {
                           );
                           if (!context.mounted) return;
                           Navigator.of(context).pop(true);
-                        } catch (_) {
+                        } catch (e) {
                           if (!context.mounted) return;
-                          setStateDialog(
-                            () => errorMessage = 'Failed to create account.',
-                          );
+                          final msg =
+                              e is ApiError
+                                  ? e.message
+                                  : 'Failed to create account.';
+                          setStateDialog(() => errorMessage = msg);
                         }
                       },
                       style: ElevatedButton.styleFrom(
@@ -387,6 +390,152 @@ class _ManageAccountsState extends State<ManageAccounts> {
     );
 
     if (ok == true) await _fetch();
+  }
+
+  Future<void> _editRoleLimits() async {
+    Map<String, dynamic> existing;
+    try {
+      existing = await SuperAdminApi.instance.getRoleLimits();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not load role limits.')),
+        );
+      }
+      return;
+    }
+
+    String capText(String role) {
+      final v = existing[role];
+      if (v == null) return '';
+      return v.toString();
+    }
+
+    final adminCtrl = TextEditingController(text: capText('admin'));
+    final managerCtrl = TextEditingController(text: capText('manager'));
+    final supervisorCtrl = TextEditingController(text: capText('supervisor'));
+    final cashierCtrl = TextEditingController(text: capText('cashier'));
+    String? err;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialog) {
+            return AlertDialog(
+              title: const Text('Role account limits'),
+              content: SingleChildScrollView(
+                child: SizedBox(
+                  width: 380,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Maximum active (non-archived) accounts per role. Leave blank for unlimited. Super admin is never capped.',
+                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                      ),
+                      const SizedBox(height: 16),
+                      _limitField('Admin', adminCtrl),
+                      _limitField('Manager', managerCtrl),
+                      _limitField('Supervisor', supervisorCtrl),
+                      _limitField('Cashier', cashierCtrl),
+                      if (err != null) ...[
+                        const SizedBox(height: 12),
+                        Text(err!, style: const TextStyle(color: Colors.redAccent)),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    int? parse(String raw) {
+                      final t = raw.trim();
+                      if (t.isEmpty) return null;
+                      final n = int.tryParse(t);
+                      if (n == null || n < 1) return -1;
+                      return n;
+                    }
+
+                    final limits = <String, dynamic>{
+                      'admin': parse(adminCtrl.text),
+                      'manager': parse(managerCtrl.text),
+                      'supervisor': parse(supervisorCtrl.text),
+                      'cashier': parse(cashierCtrl.text),
+                    };
+                    if (limits.values.any((v) => v == -1)) {
+                      setDialog(() => err = 'Enter positive whole numbers or leave blank.');
+                      return;
+                    }
+                    for (final e in limits.entries) {
+                      if (e.value == null) {
+                        limits[e.key] = null;
+                      }
+                    }
+                    Navigator.pop(ctx, true);
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (ok == true) {
+      int? parse(String raw) {
+        final t = raw.trim();
+        if (t.isEmpty) return null;
+        return int.tryParse(t);
+      }
+
+      final limits = <String, dynamic>{
+        'admin': parse(adminCtrl.text),
+        'manager': parse(managerCtrl.text),
+        'supervisor': parse(supervisorCtrl.text),
+        'cashier': parse(cashierCtrl.text),
+      };
+      try {
+        await SuperAdminApi.instance.putRoleLimits(limits);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Role limits saved.')),
+          );
+        }
+      } catch (e) {
+        final msg = e is ApiError ? e.message : 'Failed to save limits.';
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+        }
+      }
+    }
+
+    adminCtrl.dispose();
+    managerCtrl.dispose();
+    supervisorCtrl.dispose();
+    cashierCtrl.dispose();
+  }
+
+  Widget _limitField(String label, TextEditingController c) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: TextField(
+        controller: c,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          hintText: 'Unlimited if empty',
+        ),
+      ),
+    );
   }
 
   Future<void> _editUser(UserDto user) async {
@@ -928,6 +1077,12 @@ class _ManageAccountsState extends State<ManageAccounts> {
                   },
                 ),
                 const Spacer(),
+                OutlinedButton.icon(
+                  onPressed: _loading ? null : _editRoleLimits,
+                  icon: const Icon(Icons.groups_outlined),
+                  label: const Text('Role limits'),
+                ),
+                const SizedBox(width: 8),
                 ElevatedButton.icon(
                   onPressed: _createUser,
                   icon: const Icon(Icons.add),

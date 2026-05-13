@@ -87,12 +87,8 @@ class Inventory extends StatefulWidget {
   State<Inventory> createState() => _InventoryState();
 }
 
-class _InventoryState extends State<Inventory>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _InventoryState extends State<Inventory> {
   final TextEditingController _searchController = TextEditingController();
-  final TextEditingController _archiveSearchController =
-      TextEditingController();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
   final TextEditingController _unitCostController = TextEditingController();
@@ -107,9 +103,7 @@ class _InventoryState extends State<Inventory>
   );
 
   List<InventoryItem> _activeItems = [];
-  List<InventoryItem> _archivedItems = [];
   List<InventoryItem> _filteredActive = [];
-  List<InventoryItem> _filteredArchived = [];
 
   bool _isLoading = false;
   String? _editingItemId;
@@ -154,38 +148,14 @@ class _InventoryState extends State<Inventory>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(_onTabChanged);
-    _loadInventory(archived: false);
+    _loadInventory();
     _searchController.addListener(_onSearchChanged);
-    _archiveSearchController.addListener(_onArchiveSearchChanged);
-  }
-
-  void _onTabChanged() {
-    if (_tabController.indexIsChanging) return;
-    if (_tabController.index == 0) {
-      if (_activeItems.isEmpty && !_isLoading) {
-        _loadInventory(archived: false);
-      } else {
-        _applyActiveFilter();
-      }
-    } else {
-      if (_archivedItems.isEmpty && !_isLoading) {
-        _loadInventory(archived: true);
-      } else {
-        _applyArchiveFilter();
-      }
-    }
   }
 
   @override
   void dispose() {
-    _tabController.removeListener(_onTabChanged);
-    _tabController.dispose();
     _searchController.removeListener(_onSearchChanged);
-    _archiveSearchController.removeListener(_onArchiveSearchChanged);
     _searchController.dispose();
-    _archiveSearchController.dispose();
     _nameController.dispose();
     _quantityController.dispose();
     _unitCostController.dispose();
@@ -206,12 +176,12 @@ class _InventoryState extends State<Inventory>
       AuthSession.instance.currentRole == Role.cashier ||
       _isManager;
 
-  Future<void> _loadInventory({required bool archived}) async {
+  Future<void> _loadInventory() async {
     setState(() => _isLoading = true);
     try {
       final decoded = await ApiClient.instance.getJson(
         '/api/inventory',
-        queryParameters: {if (archived) 'archived': 'true' else 'archived': 'false'},
+        queryParameters: const {'archived': 'false'},
         useCache: false,
       );
       final raw = decoded['items'];
@@ -224,13 +194,8 @@ class _InventoryState extends State<Inventory>
         }
       }
       setState(() {
-        if (archived) {
-          _archivedItems = list;
-          _applyArchiveFilter();
-        } else {
-          _activeItems = list;
-          _applyActiveFilter();
-        }
+        _activeItems = list;
+        _applyActiveFilter();
       });
     } catch (e) {
       if (mounted) {
@@ -252,12 +217,6 @@ class _InventoryState extends State<Inventory>
     });
   }
 
-  void _onArchiveSearchChanged() {
-    _searchDebouncer.debounce(() {
-      if (mounted) setState(_applyArchiveFilter);
-    });
-  }
-
   void _applyActiveFilter() {
     final q = _searchController.text.toLowerCase().trim();
     _filteredActive =
@@ -268,18 +227,6 @@ class _InventoryState extends State<Inventory>
               (item.notes?.toLowerCase().contains(q) ?? false);
         }).toList();
     _sortList(_filteredActive);
-  }
-
-  void _applyArchiveFilter() {
-    final q = _archiveSearchController.text.toLowerCase().trim();
-    _filteredArchived =
-        _archivedItems.where((item) {
-          if (q.isEmpty) return true;
-          return item.name.toLowerCase().contains(q) ||
-              item.category.toLowerCase().contains(q) ||
-              (item.notes?.toLowerCase().contains(q) ?? false);
-        }).toList();
-    _sortList(_filteredArchived);
   }
 
   void _sortList(List<InventoryItem> list) {
@@ -491,7 +438,7 @@ class _InventoryState extends State<Inventory>
       if (!mounted) return;
       Navigator.pop(dialogContext);
       _clearControllers();
-      await _loadInventory(archived: _tabController.index == 1);
+      await _loadInventory();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -536,74 +483,11 @@ class _InventoryState extends State<Inventory>
         '/api/inventory/${item.id}/archive',
         body: {'archived': true},
       );
-      await _loadInventory(archived: false);
-      await _loadInventory(archived: true);
+      await _loadInventory();
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Item archived')));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    }
-  }
-
-  Future<void> _restoreItem(InventoryItem item) async {
-    try {
-      await ApiClient.instance.postJson(
-        '/api/inventory/${item.id}/archive',
-        body: {'archived': false},
-      );
-      await _loadInventory(archived: true);
-      await _loadInventory(archived: false);
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Item restored')));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    }
-  }
-
-  Future<void> _deletePermanent(InventoryItem item) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder:
-          (ctx) => AlertDialog(
-            title: const Text('Delete permanently'),
-            content: Text(
-              'Remove "${item.name}" forever? This cannot be undone.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Delete'),
-              ),
-            ],
-          ),
-    );
-    if (ok != true || !mounted) return;
-    try {
-      await ApiClient.instance.delete('/api/inventory/${item.id}');
-      await _loadInventory(archived: true);
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Item deleted')));
       }
     } catch (e) {
       if (mounted) {
@@ -654,11 +538,15 @@ class _InventoryState extends State<Inventory>
     );
   }
 
-  Widget _buildTabularView(List<InventoryItem> items, {required bool archive}) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: DataTable(
+  Widget _buildTabularView(List<InventoryItem> items) {
+    return Scrollbar(
+      thumbVisibility: true,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.vertical,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: DataTable(
         headingRowColor: const WidgetStatePropertyAll(Color(0xFFF5F7F9)),
         columns: const [
           DataColumn(label: Text('Name')),
@@ -710,59 +598,39 @@ class _InventoryState extends State<Inventory>
                     _isManager
                         ? Row(
                           mainAxisSize: MainAxisSize.min,
-                          children:
-                              archive
-                                  ? [
-                                    IconButton(
-                                      tooltip: 'Restore',
-                                      icon: const Icon(
-                                        Icons.unarchive,
-                                        size: 20,
-                                        color: Colors.blue,
-                                      ),
-                                      onPressed: () => _restoreItem(item),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'Delete permanently',
-                                      icon: const Icon(
-                                        Icons.delete_forever,
-                                        size: 20,
-                                        color: Colors.red,
-                                      ),
-                                      onPressed: () => _deletePermanent(item),
-                                    ),
-                                  ]
-                                  : [
-                                    IconButton(
-                                      tooltip: 'Edit',
-                                      icon: const Icon(
-                                        Icons.edit,
-                                        size: 20,
-                                        color: Colors.blue,
-                                      ),
-                                      onPressed: () => _showAddEditDialog(item),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'Archive',
-                                      icon: const Icon(
-                                        Icons.archive_outlined,
-                                        size: 20,
-                                        color: Colors.orange,
-                                      ),
-                                      onPressed: () => _archiveItem(item),
-                                    ),
-                                  ],
+                          children: [
+                            IconButton(
+                              tooltip: 'Edit',
+                              icon: const Icon(
+                                Icons.edit,
+                                size: 20,
+                                color: Colors.blue,
+                              ),
+                              onPressed: () => _showAddEditDialog(item),
+                            ),
+                            IconButton(
+                              tooltip: 'Archive',
+                              icon: const Icon(
+                                Icons.archive_outlined,
+                                size: 20,
+                                color: Colors.orange,
+                              ),
+                              onPressed: () => _archiveItem(item),
+                            ),
+                          ],
                         )
                         : const Text('—'),
                   ),
                 ],
               );
             }).toList(),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildGridCard(InventoryItem item, {required bool archive}) {
+  Widget _buildGridCard(InventoryItem item) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
@@ -794,35 +662,18 @@ class _InventoryState extends State<Inventory>
               Wrap(
                 spacing: 8,
                 alignment: WrapAlignment.end,
-                children:
-                    archive
-                        ? [
-                          OutlinedButton.icon(
-                            onPressed: () => _restoreItem(item),
-                            icon: const Icon(Icons.unarchive, size: 18),
-                            label: const Text('Restore'),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: () => _deletePermanent(item),
-                            icon: const Icon(Icons.delete_forever, size: 18),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.red,
-                            ),
-                            label: const Text('Delete'),
-                          ),
-                        ]
-                        : [
-                          TextButton.icon(
-                            onPressed: () => _showAddEditDialog(item),
-                            icon: const Icon(Icons.edit, size: 18),
-                            label: const Text('Edit'),
-                          ),
-                          TextButton.icon(
-                            onPressed: () => _archiveItem(item),
-                            icon: const Icon(Icons.archive_outlined, size: 18),
-                            label: const Text('Archive'),
-                          ),
-                        ],
+                children: [
+                  TextButton.icon(
+                    onPressed: () => _showAddEditDialog(item),
+                    icon: const Icon(Icons.edit, size: 18),
+                    label: const Text('Edit'),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => _archiveItem(item),
+                    icon: const Icon(Icons.archive_outlined, size: 18),
+                    label: const Text('Archive'),
+                  ),
+                ],
               ),
             ],
           ],
@@ -831,20 +682,21 @@ class _InventoryState extends State<Inventory>
     );
   }
 
-  Widget _buildGridView(List<InventoryItem> items, {required bool archive}) {
+  Widget _buildGridView(List<InventoryItem> items) {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: items.length,
       itemBuilder: (context, index) {
-        return _buildGridCard(items[index], archive: archive);
+        return _buildGridCard(items[index]);
       },
     );
   }
 
-  Widget _buildStatsRow(List<InventoryItem> items) {
+  Widget _buildStatsRow(List<InventoryItem> items, int totalActiveInSystem) {
     final total = items.length;
     final low = items.where((e) => e.lowStock).length;
     final value = items.fold<double>(0, (s, e) => s + e.totalValue);
+    final showTotalHint = totalActiveInSystem > 0 && total != totalActiveInSystem;
     return Row(
       children: [
         Expanded(
@@ -863,6 +715,17 @@ class _InventoryState extends State<Inventory>
                     ),
                   ),
                   const Text('Items'),
+                  if (showTotalHint)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'of $totalActiveInSystem total',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -928,59 +791,36 @@ class _InventoryState extends State<Inventory>
       );
     }
 
-    final archiveTab = _tabController.index == 1;
-    final displayList = archiveTab ? _filteredArchived : _filteredActive;
+    final displayList = _filteredActive;
 
     return AppScaffold(
       showSearch: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Material(
-            color: Theme.of(context).colorScheme.surface,
-            child: TabBar(
-              controller: _tabController,
-              labelColor: Colors.black87,
-              tabs: const [
-                Tab(text: 'Active inventory'),
-                Tab(text: 'Archive'),
-              ],
-            ),
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child:
-                archiveTab
-                    ? TextField(
-                      controller: _archiveSearchController,
-                      decoration: InputDecoration(
-                        hintText: 'Filter archived items…',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
-                      ),
-                    )
-                    : TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: 'Search active inventory…',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
-                      ),
-                    ),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search inventory…',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade100,
+              ),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(child: _buildStatsRow(displayList)),
+                Expanded(
+                  child: _buildStatsRow(displayList, _activeItems.length),
+                ),
                 const SizedBox(width: 12),
                 Column(
                   children: [
@@ -997,7 +837,7 @@ class _InventoryState extends State<Inventory>
                     ),
                   ],
                 ),
-                if (!archiveTab && _isManager) ...[
+                if (_isManager) ...[
                   const SizedBox(width: 12),
                   ElevatedButton.icon(
                     onPressed: () => _showAddEditDialog(),
@@ -1015,15 +855,15 @@ class _InventoryState extends State<Inventory>
                     : displayList.isEmpty
                     ? Center(
                       child: Text(
-                        archiveTab
-                            ? 'No archived items'
-                            : 'No inventory items',
+                        _activeItems.isEmpty
+                            ? 'No inventory items'
+                            : 'No matches for your search',
                         style: TextStyle(color: Colors.grey.shade600),
                       ),
                     )
                     : _isTabularView
-                    ? _buildTabularView(displayList, archive: archiveTab)
-                    : _buildGridView(displayList, archive: archiveTab),
+                    ? _buildTabularView(displayList)
+                    : _buildGridView(displayList),
           ),
         ],
       ),

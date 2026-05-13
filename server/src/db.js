@@ -750,6 +750,17 @@ export async function initDb() {
     );
   }
 
+  // Some deployments have delivery_time NOT NULL without a default; allow null
+  // and rely on INSERT COALESCE(now()) so legacy clients stay valid.
+  try {
+    await pool.query(
+      `ALTER TABLE restaurant_orders ALTER COLUMN delivery_time DROP NOT NULL`,
+    );
+    console.log('Migration: delivery_time may be null on restaurant_orders');
+  } catch (err) {
+    console.log('Migration check restaurant_orders delivery_time nullability:', err.message);
+  }
+
   // Migration: Add full_name and phone columns if they don't exist (for existing tables)
   try {
     await pool.query(`ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS full_name TEXT`);
@@ -851,6 +862,14 @@ export async function initDb() {
     )
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS system_settings (
+      key TEXT PRIMARY KEY,
+      value JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
   // Insert default dishes from CSV if table is empty
   const dishCount = await pool.query(`SELECT COUNT(*) FROM menu_dishes`);
   if (parseInt(dishCount.rows[0].count) === 0) {
@@ -873,6 +892,34 @@ export async function initDb() {
     
     console.log('Default menu dishes inserted successfully');
   }
+}
+
+const ROLE_ACCOUNT_LIMITS_KEY = 'role_account_limits';
+
+/** @returns {Record<string, number>} */
+export async function getRoleAccountLimits() {
+  try {
+    const r = await pool.query(
+      `SELECT value FROM system_settings WHERE key = $1`,
+      [ROLE_ACCOUNT_LIMITS_KEY],
+    );
+    if (r.rows.length === 0) return {};
+    const v = r.rows[0].value;
+    if (!v || typeof v !== 'object') return {};
+    return v;
+  } catch (e) {
+    console.log('getRoleAccountLimits:', e.message);
+    return {};
+  }
+}
+
+export async function setRoleAccountLimits(limits) {
+  await pool.query(
+    `INSERT INTO system_settings (key, value, updated_at)
+     VALUES ($1, $2::jsonb, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    [ROLE_ACCOUNT_LIMITS_KEY, JSON.stringify(limits ?? {})],
+  );
 }
 
 export { pool, generateUserId, generateSequentialId };

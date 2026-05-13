@@ -1,12 +1,16 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/menu_store.dart';
 import '../services/cart_store.dart';
 import '../models/menu_dish.dart';
 import '../widgets/customer_website_topbar.dart';
+import 'checkout_page.dart';
+import 'customer_login.dart';
 
 // Font constants
 const String _primaryFont = 'Inter';
@@ -152,11 +156,16 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
         // Left side - Menu
         Expanded(
           flex: 3,
-          child: SingleChildScrollView(
-            padding: websitePagePadding(context, vertical: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding: websitePagePadding(context, vertical: 20),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                 // Title
                 Text(
                   'RESTAURANT',
@@ -221,8 +230,11 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                       return _buildDishCard(dish);
                     },
                   ),
-              ],
-            ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
         ),
         if (!isMobile(context))
@@ -247,6 +259,57 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
           ),
       ],
     );
+  }
+
+  /// [closeOverlay] runs before opening checkout (e.g. pop the mobile cart bottom sheet).
+  Future<void> _proceedToCheckout({VoidCallback? closeOverlay}) async {
+    if (CartStore.instance.items.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Your cart is empty')),
+      );
+      return;
+    }
+
+    var prefs = await SharedPreferences.getInstance();
+    var token = prefs.getString('customer_token');
+    if (token == null || token.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to continue to checkout.')),
+      );
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => const CustomerLoginPage(),
+      );
+      if (!mounted) return;
+      prefs = await SharedPreferences.getInstance();
+      token = prefs.getString('customer_token');
+      if (token == null || token.isEmpty) {
+        return;
+      }
+    }
+
+    closeOverlay?.call();
+    await WidgetsBinding.instance.endOfFrame;
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    if (!mounted) return;
+
+    try {
+      await Navigator.of(context, rootNavigator: true).push<void>(
+        MaterialPageRoute<void>(
+          builder: (context) => const CheckoutPage(),
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('RestaurantOrderPage checkout navigation failed: $e\n$st');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open checkout. ${e.toString()}'),
+        ),
+      );
+    }
   }
 
   Widget _buildCategoryTabs(List<MenuDish> restaurantDishes) {
@@ -412,131 +475,148 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     );
   }
 
-  Widget _buildCartSidebar() {
-    final cartItems = CartStore.instance.items;
-    final totalAmount = CartStore.instance.totalAmount;
+  Widget _buildCartSidebar({VoidCallback? closeOverlay}) {
+    return ListenableBuilder(
+      listenable: CartStore.instance,
+      builder: (context, _) {
+        final cartItems = CartStore.instance.items;
+        final totalAmount = CartStore.instance.totalAmount;
+        final itemCount = CartStore.instance.itemCount;
 
-    return Column(
-      children: [
-        // Header
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: const BoxDecoration(
-            color: Color(0xFF1E1E1E),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.shopping_cart, color: Colors.white),
-              const SizedBox(width: 8),
-              const Text(
-                'Your Cart',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+        return Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Color(0xFF1E1E1E),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
               ),
-              const Spacer(),
-              Text(
-                '${cartItems.length} items',
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-              ),
-            ],
-          ),
-        ),
-        // Cart items
-        Expanded(
-          child:
-              cartItems.isEmpty
-                  ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.shopping_cart_outlined,
-                          size: 48,
-                          color: Colors.grey.shade400,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Your cart is empty',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Add items from the restaurant menu',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                  : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: cartItems.length,
-                    itemBuilder: (context, index) {
-                      final item = cartItems[index];
-                      return _buildCartItem(item);
-                    },
-                  ),
-        ),
-        // Footer
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            borderRadius: const BorderRadius.vertical(
-              bottom: Radius.circular(12),
-            ),
-          ),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Row(
                 children: [
-                  const Text(
-                    'Total:',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  const Icon(Icons.shopping_cart, color: Colors.white),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Your Cart',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                   Text(
-                    '₱${totalAmount.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E1E1E),
+                    itemCount == 0
+                        ? '0 items'
+                        : '$itemCount ${itemCount == 1 ? 'item' : 'items'}',
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child:
+                  cartItems.isEmpty
+                      ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.shopping_cart_outlined,
+                              size: 48,
+                              color: Colors.grey.shade400,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Your cart is empty',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Add items from the restaurant menu',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                      : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: cartItems.length,
+                        itemBuilder: (context, index) {
+                          final item = cartItems[index];
+                          return _buildCartItem(item);
+                        },
+                      ),
+            ),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(12),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Total:',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        '₱${totalAmount.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E1E1E),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed:
+                          cartItems.isEmpty
+                              ? null
+                              : () => unawaited(
+                                _proceedToCheckout(closeOverlay: closeOverlay),
+                              ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1E1E1E),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text(
+                        'PROCEED TO CHECKOUT',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: cartItems.isEmpty ? null : _proceedToCheckout,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E1E1E),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text(
-                    'PROCEED TO CHECKOUT',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -623,48 +703,49 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   void _openCartSidebar() {
     // For mobile, show bottom sheet
     if (isMobile(context)) {
-      showModalBottomSheet(
+      showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
-        builder:
-            (context) => DraggableScrollableSheet(
-              initialChildSize: 0.7,
-              maxChildSize: 0.9,
-              minChildSize: 0.5,
-              builder:
-                  (context, scrollController) => Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(20),
+        builder: (sheetContext) {
+          return DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            maxChildSize: 0.9,
+            minChildSize: 0.5,
+            builder: (context, scrollController) {
+              return Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(20),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                    child: Column(
-                      children: [
-                        // Handle bar
-                        Container(
-                          width: 40,
-                          height: 4,
-                          margin: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade300,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        // Cart content
-                        Expanded(child: _buildCartSidebar()),
-                      ],
+                    Expanded(
+                      child: _buildCartSidebar(
+                        closeOverlay: () {
+                          if (Navigator.of(sheetContext).canPop()) {
+                            Navigator.of(sheetContext).pop();
+                          }
+                        },
+                      ),
                     ),
-                  ),
-            ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
       );
     }
-  }
-
-  void _proceedToCheckout() {
-    // TODO: Navigate to checkout page
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Proceeding to checkout...')));
   }
 }

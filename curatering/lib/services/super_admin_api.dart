@@ -166,5 +166,23 @@ class SuperAdminApi {
       );
     }).toList();
   }
+
+  /// Keys: `admin`, `manager`, `supervisor`, `cashier`. Values are positive ints
+  /// or absent / null for unlimited (server merges with existing).
+  Future<Map<String, dynamic>> getRoleLimits() async {
+    final decoded = await ApiClient.instance.getJson('/api/super-admin/role-limits');
+    final raw = decoded['limits'];
+    if (raw is! Map) return <String, dynamic>{};
+    return Map<String, dynamic>.from(
+      raw.map((k, v) => MapEntry(k.toString(), v)),
+    );
+  }
+
+  Future<void> putRoleLimits(Map<String, dynamic> limits) async {
+    await ApiClient.instance.putJson(
+      '/api/super-admin/role-limits',
+      body: {'limits': limits},
+    );
+  }
 }
 
