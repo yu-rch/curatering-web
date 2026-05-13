@@ -51,8 +51,16 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const CustomerWebsiteTopBar(),
-      body: _buildRestaurantMenu(),
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CustomerWebsiteTopBar(
+            showCartAndCustomerAuth: !widget.contentEditable,
+          ),
+          Expanded(child: _buildRestaurantMenu()),
+        ],
+      ),
     );
   }
 

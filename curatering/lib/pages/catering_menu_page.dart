@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../services/menu_store.dart';
+import '../widgets/catering_dish_info_dialog.dart';
 import '../widgets/customer_website_topbar.dart';
 
 // Font constants
@@ -39,6 +40,21 @@ class CateringMenuPage extends StatelessWidget {
   final bool contentEditable;
   final bool showStaffChrome;
 
+  Widget _withHomepageTopBar(BuildContext context, {required Widget child}) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CustomerWebsiteTopBar(
+            showCartAndCustomerAuth: !contentEditable,
+          ),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final allDishes = MenuStore.instance.activeDishes;
@@ -47,9 +63,9 @@ class CateringMenuPage extends StatelessWidget {
 
     // Show loading state if dishes are empty or currently loading
     if (MenuStore.instance.isLoading || allDishes.isEmpty) {
-      return Scaffold(
-        appBar: const CustomerWebsiteTopBar(),
-        body: Center(
+      return _withHomepageTopBar(
+        context,
+        child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -79,9 +95,9 @@ class CateringMenuPage extends StatelessWidget {
 
     // Show error state
     if (MenuStore.instance.error != null) {
-      return Scaffold(
-        appBar: CustomerWebsiteTopBar(),
-        body: Center(
+      return _withHomepageTopBar(
+        context,
+        child: Center(
           child: Padding(
             padding: const EdgeInsets.all(32),
             child: Column(
@@ -165,9 +181,9 @@ class CateringMenuPage extends StatelessWidget {
       );
     }
 
-    return Scaffold(
-      appBar: CustomerWebsiteTopBar(),
-      body: SingleChildScrollView(
+    return _withHomepageTopBar(
+      context,
+      child: SingleChildScrollView(
         padding: websitePagePadding(context),
         child: Center(
           child: ConstrainedBox(
@@ -243,50 +259,60 @@ class CateringMenuPage extends StatelessWidget {
                             itemBuilder: (ctx, i) {
                               final d = cateringDishes[i];
                               return Card(
+                                clipBehavior: Clip.antiAlias,
                                 elevation: 2,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: Column(
-                                  children: [
-                                    Expanded(
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.vertical(
-                                          top: Radius.circular(8),
-                                        ),
-                                        child:
-                                            d.imageBase64 != null &&
-                                                    d.imageBase64!.isNotEmpty
-                                                ? Image.memory(
-                                                  base64Decode(d.imageBase64!),
-                                                  fit: BoxFit.cover,
-                                                )
-                                                : Container(
-                                                  color: Colors.grey.shade200,
-                                                  child: Icon(
-                                                    Icons.fastfood,
-                                                    size: 48,
-                                                  ),
-                                                ),
+                                child: InkWell(
+                                  onTap:
+                                      () => showCateringDishInfoDialog(
+                                        context,
+                                        d,
                                       ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            d.name.toUpperCase(),
-                                            textAlign: TextAlign.center,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 12,
-                                            ),
+                                  child: Column(
+                                    children: [
+                                      Expanded(
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.vertical(
+                                            top: Radius.circular(8),
                                           ),
-                                        ],
+                                          child:
+                                              d.imageBase64 != null &&
+                                                      d.imageBase64!.isNotEmpty
+                                                  ? Image.memory(
+                                                    base64Decode(
+                                                      d.imageBase64!,
+                                                    ),
+                                                    fit: BoxFit.cover,
+                                                  )
+                                                  : Container(
+                                                    color: Colors.grey.shade200,
+                                                    child: Icon(
+                                                      Icons.fastfood,
+                                                      size: 48,
+                                                    ),
+                                                  ),
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                      Padding(
+                                        padding: const EdgeInsets.all(8.0),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              d.name.toUpperCase(),
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               );
                             },

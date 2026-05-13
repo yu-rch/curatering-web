@@ -15,6 +15,7 @@ import '../services/events_api.dart';
 import '../services/menu_store.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/map_picker.dart';
+import '../widgets/processing_seating_section.dart';
 import '../utils/order_calculations.dart';
 import '../utils/web_html.dart' as html;
 // import 'package:segment_anything/segment_anything.dart';
@@ -1091,7 +1092,7 @@ class _ManageEventsState extends State<ManageEvents> {
                                       CrossAxisAlignment.stretch,
                                   children: [
                                     _buildLabeledReadonlyCost(
-                                      'Dish Cost (500 x PAX per dish)',
+                                      'Dish cost (menu prices × guests)',
                                       dishCost,
                                     ),
                                     const SizedBox(height: 8),
@@ -1844,6 +1845,11 @@ class _ManageEventsState extends State<ManageEvents> {
     ];
   }
 
+  double _parseMenuDishPrice(MenuDish? d) {
+    if (d == null) return 0;
+    return double.tryParse(d.price.replaceAll(',', '').trim()) ?? 0;
+  }
+
   double _calculateOnlineInquiryDishCost({
     required String menuChoice,
     required List<String> selectedDishIds,
@@ -1851,16 +1857,36 @@ class _ManageEventsState extends State<ManageEvents> {
     required int guestCount,
   }) {
     final pax = guestCount > 0 ? guestCount : 1;
+    final dishes = MenuStore.instance.allDishes;
+
+    MenuDish? dishById(String id) {
+      for (final d in dishes) {
+        if (d.id == id) return d;
+      }
+      return null;
+    }
+
     if (menuChoice == 'yes') {
-      return selectedDishIds.length * 500.0 * pax;
+      double sum = 0;
+      for (final id in selectedDishIds) {
+        sum += _parseMenuDishPrice(dishById(id));
+      }
+      return sum * pax;
     }
     if (selectedSetMenuId != null) {
       final setMenu = _onlineInquirySetMenus().firstWhere(
         (s) => s['id'] == selectedSetMenuId,
         orElse: () => {'dishes': const <String>[]},
       );
-      final dishes = (setMenu['dishes'] as List<dynamic>? ?? const []).length;
-      return dishes * 500.0 * pax;
+      final ids =
+          (setMenu['dishes'] as List<dynamic>? ?? const [])
+              .map((e) => e.toString())
+              .toList();
+      double sum = 0;
+      for (final id in ids) {
+        sum += _parseMenuDishPrice(dishById(id));
+      }
+      return sum * pax;
     }
     return 0.0;
   }
@@ -3278,14 +3304,12 @@ class _ManageEventsState extends State<ManageEvents> {
             ),
             const SizedBox(height: 20),
 
-            // Event Information Section
+            // Event information, seating, and menu
             if (_selectedProcessingOrderDto != null) ...[
               _buildEventInformationSection(),
               const SizedBox(height: 20),
-            ],
-
-            // Menu Section
-            if (_selectedProcessingOrderDto != null) ...[
+              _buildProcessingSeatingSection(),
+              const SizedBox(height: 20),
               _buildProcessingMenuSection(),
               const SizedBox(height: 20),
             ],
@@ -3393,6 +3417,8 @@ class _ManageEventsState extends State<ManageEvents> {
                     child: Column(
                       children: [
                         _buildEventInformationSection(),
+                        const SizedBox(height: 20),
+                        _buildProcessingSeatingSection(),
                         const SizedBox(height: 20),
                         _buildProcessingMenuSection(),
                       ],
@@ -3617,7 +3643,7 @@ class _ManageEventsState extends State<ManageEvents> {
             Row(
               children: [
                 // Only show theme design button for catering+event orders
-                if (selectedOrder.orderType == 'catering_event') ...[
+                if (_isCateringPlusEventOrder(selectedOrder)) ...[
                   Expanded(
                     child: ElevatedButton(
                       onPressed: _showThemeDesignDialog,
@@ -3758,6 +3784,23 @@ class _ManageEventsState extends State<ManageEvents> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Staff “catering + event” rows: DB uses `catering_event`; some APIs use `event` or omit type when an event title exists.
+  bool _isCateringPlusEventOrder(EventOrderDto o) {
+    final t = o.orderType.trim().toLowerCase();
+    if (t == 'catering_event' || t == 'event') return true;
+    if (t == 'catering') return false;
+    return o.eventTitle.trim().isNotEmpty;
+  }
+
+  Widget _buildProcessingSeatingSection() {
+    final o = _selectedProcessingOrderDto!;
+    if (!_isCateringPlusEventOrder(o)) return const SizedBox.shrink();
+    return ProcessingSeatingSection(
+      order: o,
+      onSaved: _refreshOrders,
     );
   }
 
@@ -5711,7 +5754,7 @@ class _ManageEventsState extends State<ManageEvents> {
             // Actual Event Photos Section - Only for catering+event orders
             if (!_isSupervisor &&
                 selPost != null &&
-                selPost.orderType == 'catering_event') ...[
+                _isCateringPlusEventOrder(selPost)) ...[
               const Text(
                 'Actual Event Photos',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),

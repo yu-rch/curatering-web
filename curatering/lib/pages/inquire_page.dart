@@ -10,6 +10,7 @@ import 'package:file_picker/file_picker.dart';
 import '../services/public_events_api.dart';
 import '../services/runpod_service.dart';
 import '../widgets/customer_website_topbar.dart';
+import '../widgets/map_picker.dart';
 
 const String _primaryFont = 'Inter';
 bool isMobile(BuildContext context) => MediaQuery.of(context).size.width < 700;
@@ -53,6 +54,8 @@ class _InquirePageState extends State<InquirePage> {
   final _phone = TextEditingController();
   final _email = TextEditingController();
   final _address = TextEditingController();
+  double? _addressLat;
+  double? _addressLng;
   final _guests = TextEditingController();
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
@@ -154,6 +157,8 @@ class _InquirePageState extends State<InquirePage> {
         'contactNumber': _phone.text.trim(),
         'emailAddress': _email.text.trim(),
         'address': _address.text.trim(),
+        if (_addressLat != null) 'addressLat': _addressLat,
+        if (_addressLng != null) 'addressLng': _addressLng,
         'guestCount': int.tryParse(_guests.text) ?? 0,
         'eventDate': _dateController.text.trim(),
         'eventTime': _timeController.text.trim(),
@@ -246,6 +251,8 @@ class _InquirePageState extends State<InquirePage> {
     _phone.clear();
     _email.clear();
     _address.clear();
+    _addressLat = null;
+    _addressLng = null;
     _guests.clear();
     _dateController.clear();
     _timeController.clear();
@@ -268,10 +275,17 @@ class _InquirePageState extends State<InquirePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const CustomerWebsiteTopBar(),
-      body: SingleChildScrollView(
-        padding: websitePagePadding(context),
-        child: Column(
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CustomerWebsiteTopBar(
+            showCartAndCustomerAuth: !widget.contentEditable,
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: websitePagePadding(context),
+              child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 24),
@@ -482,6 +496,31 @@ class _InquirePageState extends State<InquirePage> {
                       ),
                       maxLines: 2,
                     ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final res = await showMapPicker(
+                            context: context,
+                            initialLatitude: _addressLat,
+                            initialLongitude: _addressLng,
+                            initialAddress:
+                                _address.text.isNotEmpty
+                                    ? _address.text
+                                    : null,
+                          );
+                          if (res == null || !mounted) return;
+                          setState(() {
+                            _address.text = res.address;
+                            _addressLat = res.latitude;
+                            _addressLng = res.longitude;
+                          });
+                        },
+                        icon: const Icon(Icons.map_outlined, size: 20),
+                        label: const Text('Pick on map'),
+                      ),
+                    ),
                     const SizedBox(height: 24),
 
                     // Event Details Section
@@ -613,31 +652,41 @@ class _InquirePageState extends State<InquirePage> {
 
                     Row(
                       children: [
-                        RadioListTile<String>(
-                          title: const Text(
-                            'Catering Only',
-                            style: TextStyle(fontSize: 14),
+                        Expanded(
+                          child: RadioListTile<String>(
+                            title: const Text(
+                              'Catering Only',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                            value: 'catering',
+                            groupValue: _serviceType,
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() => _serviceType = value);
+                              }
+                            },
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                            ),
                           ),
-                          value: 'catering',
-                          groupValue: _serviceType,
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() => _serviceType = value);
-                            }
-                          },
                         ),
-                        RadioListTile<String>(
-                          title: const Text(
-                            'Catering + Event Design',
-                            style: TextStyle(fontSize: 14),
+                        Expanded(
+                          child: RadioListTile<String>(
+                            title: const Text(
+                              'Catering + Event Design',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                            value: 'catering+event',
+                            groupValue: _serviceType,
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() => _serviceType = value);
+                              }
+                            },
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                            ),
                           ),
-                          value: 'catering+event',
-                          groupValue: _serviceType,
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() => _serviceType = value);
-                            }
-                          },
                         ),
                       ],
                     ),
@@ -888,7 +937,10 @@ class _InquirePageState extends State<InquirePage> {
               ),
             ),
           ],
+            ),
+          ),
         ),
+        ],
       ),
     );
   }
@@ -1089,6 +1141,7 @@ class _InquirePageState extends State<InquirePage> {
 
         setState(() {
           _wantsCustomDesign = true;
+          _generatedImageUrl = imageUrl;
         });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(

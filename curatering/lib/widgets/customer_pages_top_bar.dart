@@ -50,13 +50,18 @@ class CustomerPagesTopBar extends StatelessWidget {
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(icon, size: 16, color: const Color(0xFF1E1E1E)),
+            Icon(
+              icon,
+              size: 16,
+              color: selected ? Colors.white : const Color(0xFF1E1E1E),
+            ),
             const SizedBox(width: 6),
             Text(
               label,
-              style: const TextStyle(
-                color: Color(0xFF1E1E1E),
+              style: TextStyle(
+                color: selected ? Colors.white : const Color(0xFF1E1E1E),
                 fontWeight: FontWeight.w600,
                 fontSize: 12,
               ),

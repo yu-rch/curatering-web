@@ -55,14 +55,30 @@ class _GalleryPageState extends State<GalleryPage> {
     if (_galleryDetailIndex != null) {
       final cat = w.galleryCategories[_galleryDetailIndex!];
       return Scaffold(
-        appBar: const CustomerWebsiteTopBar(),
-        body: _buildGalleryDetail(w, cat),
+        backgroundColor: const Color(0xFFF5F5F5),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            CustomerWebsiteTopBar(
+              showCartAndCustomerAuth: !widget.contentEditable,
+            ),
+            Expanded(child: _buildGalleryDetail(w, cat)),
+          ],
+        ),
       );
     }
 
     return Scaffold(
-      appBar: const CustomerWebsiteTopBar(),
-      body: _buildGallery(w),
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CustomerWebsiteTopBar(
+            showCartAndCustomerAuth: !widget.contentEditable,
+          ),
+          Expanded(child: _buildGallery(w)),
+        ],
+      ),
     );
   }
 

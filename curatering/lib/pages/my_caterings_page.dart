@@ -4,7 +4,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
+import '../models/seating_plan.dart';
+import '../services/menu_store.dart';
+import '../services/set_menu_store.dart';
+import '../widgets/app_snackbar.dart';
 import '../widgets/customer_pages_top_bar.dart';
+import '../widgets/seating_plan_canvas.dart';
 import 'customer_website.dart';
 import 'my_order_tracking_page.dart';
 import 'my_orders_page.dart';
@@ -21,7 +26,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
   List<dynamic> _caterings = [];
   bool _isLoading = true;
   String? _error;
-  Map<String, dynamic>? _customerData;
+  bool _gridView = false;
 
   String get _apiBaseUrl {
     return apiBaseUrl;
@@ -37,7 +42,6 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
-      final customerData = prefs.getString('customer_data');
 
       if (token == null || token.isEmpty) {
         if (mounted) {
@@ -46,26 +50,14 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
         return;
       }
 
-      if (customerData != null) {
-        _customerData = jsonDecode(customerData);
-      }
-
-      // Get customer ID from stored data
-      final customerId = _customerData?['id'];
-      if (customerId == null) {
-        throw Exception('Customer ID not found');
-      }
-
-      // Fetch event orders for this customer
+      // Fetch event orders for this customer (auth uses bearer token)
       final response = await http.get(
-        Uri.parse(
-          '$_apiBaseUrl/api/customer/events/orders?customerId=$customerId',
-        ),
+        Uri.parse('$_apiBaseUrl/api/customer/events/orders'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
-      );
+      ).timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 401) {
         await prefs.remove('customer_token');
@@ -285,16 +277,55 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     final status = (catering['status'] ?? '').toString();
     if (!_isEditableInquiryStatus(status)) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'This catering is no longer editable because it is already finalized for processing.',
-            ),
-          ),
+        showAppSnackBar(
+          context,
+          'This catering is no longer editable because it is already finalized for processing.',
         );
       }
       return;
     }
+
+    await MenuStore.instance.loadDishes();
+    await SetMenuStore.instance.loadSetMenus();
+
+    List<Map<String, dynamic>> buildPresetMenusList() {
+      final dishById = {
+        for (final d in MenuStore.instance.allDishes) d.id: d,
+      };
+      final fromApi =
+          SetMenuStore.instance.activeSetMenus.map((sm) {
+            final names =
+                sm.dishIds
+                    .map((id) => dishById[id]?.name ?? '')
+                    .where((n) => n.isNotEmpty)
+                    .toList();
+            return <String, dynamic>{
+              'id': sm.id,
+              'name': sm.name,
+              'dishes': names,
+            };
+          }).where((m) => (m['dishes'] as List).isNotEmpty).toList();
+      if (fromApi.isNotEmpty) return fromApi;
+      return [
+        {
+          'id': 'filipino_feast',
+          'name': 'Filipino Feast',
+          'dishes': ['Bistek', 'Sinigang', 'Lechon Kawali', 'Kare-Kare'],
+        },
+        {
+          'id': 'classic_party',
+          'name': 'Classic Party Set',
+          'dishes': ['Bistek', 'Sinigang', 'Lechon Kawali'],
+        },
+        {
+          'id': 'light_refreshments',
+          'name': 'Light Refreshments',
+          'dishes': ['Vegetable Salad', 'Shrimp Croquette', 'Lemon Iced Tea'],
+        },
+      ];
+    }
+
+    final presetMenus = buildPresetMenusList();
 
     final slots = _parseDynamicList(
       catering['scheduleSlots'] ?? catering['schedule_slots'],
@@ -325,25 +356,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       text: primarySlot['startTime'] ?? '',
     );
     final endCtrl = TextEditingController(text: primarySlot['endTime'] ?? '');
-    final dishCtrl = TextEditingController();
     final editableDishes = List<String>.from(initialDishNames);
-    final presetMenus = <Map<String, dynamic>>[
-      {
-        'id': 'filipino_feast',
-        'name': 'Filipino Feast',
-        'dishes': ['Bistek', 'Sinigang', 'Lechon Kawali', 'Kare-Kare'],
-      },
-      {
-        'id': 'classic_party',
-        'name': 'Classic Party Set',
-        'dishes': ['Bistek', 'Sinigang', 'Lechon Kawali'],
-      },
-      {
-        'id': 'light_refreshments',
-        'name': 'Light Refreshments',
-        'dishes': ['Vegetable Salad', 'Shrimp Croquette', 'Lemon Iced Tea'],
-      },
-    ];
     String menuSelectionType = 'custom';
     String? selectedPresetMenuId;
     for (final preset in presetMenus) {
@@ -377,6 +390,14 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       final m = time.minute.toString().padLeft(2, '0');
       return '$h:$m';
     }
+
+    final cateringPickDishes =
+        MenuStore.instance.activeDishes
+            .where((d) => d.category.trim().toLowerCase() == 'catering')
+            .toList()
+          ..sort(
+            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+          );
 
     await showDialog<void>(
       context: context,
@@ -573,40 +594,59 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                         ),
                       ],
                       const SizedBox(height: 8),
-                      if (menuSelectionType == 'custom')
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: dishCtrl,
-                                decoration: const InputDecoration(
-                                  hintText: 'Add dish name',
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            ElevatedButton(
-                              onPressed: () {
-                                final value = dishCtrl.text.trim();
-                                if (value.isEmpty) return;
-                                setLocalState(() {
-                                  editableDishes.add(value);
-                                  dishCtrl.clear();
-                                });
-                              },
-                              child: const Text('Add'),
-                            ),
-                          ],
-                        )
-                      else
+                      if (menuSelectionType == 'custom') ...[
                         Text(
-                          'Set menu dishes are auto-filled. Switch to Custom Menu to edit manually.',
+                          'Tap dishes from your catering menu to include them.',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey.shade700,
                           ),
                         ),
+                        const SizedBox(height: 8),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 240),
+                          child: SingleChildScrollView(
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children:
+                                  cateringPickDishes.map((d) {
+                                    final sel = editableDishes.contains(
+                                      d.name,
+                                    );
+                                    return FilterChip(
+                                      label: Text(
+                                        d.name,
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                      selected: sel,
+                                      onSelected: (on) {
+                                        setLocalState(() {
+                                          if (on) {
+                                            if (!editableDishes.contains(
+                                              d.name,
+                                            )) {
+                                              editableDishes.add(d.name);
+                                            }
+                                          } else {
+                                            editableDishes.remove(d.name);
+                                          }
+                                        });
+                                      },
+                                    );
+                                  }).toList(),
+                            ),
+                          ),
+                        ),
+                      ] else ...[
+                        Text(
+                          'Choose a set menu below; dishes match your inquiry page catalog.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 10),
                       if (editableDishes.isEmpty)
                         Text(
@@ -655,12 +695,11 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                                 start.isEmpty ||
                                 end.isEmpty ||
                                 editableDishes.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Please complete all required fields.',
-                                  ),
-                                ),
+                              showAppSnackBar(
+                                context,
+                                'Please complete all required fields.',
+                                error: true,
+                                icon: Icons.warning_amber_rounded,
                               );
                               return;
                             }
@@ -687,18 +726,18 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                               Navigator.of(context).pop();
                               await _loadCaterings();
                               if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Inquiry updated successfully.',
-                                  ),
-                                ),
+                              showAppSnackBar(
+                                context,
+                                'Inquiry updated successfully.',
+                                icon: Icons.check_circle_outline,
                               );
                             } catch (e) {
                               if (!mounted) return;
                               setLocalState(() => isSubmitting = false);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Update failed: $e')),
+                              showAppSnackBar(
+                                context,
+                                'Update failed: $e',
+                                error: true,
                               );
                             }
                           },
@@ -730,7 +769,100 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     dateCtrl.dispose();
     startCtrl.dispose();
     endCtrl.dispose();
-    dishCtrl.dispose();
+  }
+
+  Future<void> _showCustomerSeatingEditor(
+    String orderId,
+    SeatingPlanData initial,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('customer_token');
+    if (token == null || token.isEmpty) return;
+
+    var plan = initial;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setSt) {
+            return AlertDialog(
+              title: const Text('Edit seating layout'),
+              content: SizedBox(
+                width: 760,
+                child: SingleChildScrollView(
+                  child: SeatingPlanInteractive(
+                    plan: plan,
+                    editable: true,
+                    onChanged: (p) => setSt(() => plan = p),
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    try {
+                      final uri = Uri.parse(
+                        '$_apiBaseUrl/api/customer/events/orders/$orderId/seating',
+                      );
+                      var res = await http.post(
+                        uri,
+                        headers: {
+                          'Authorization': 'Bearer $token',
+                          'Content-Type': 'application/json',
+                        },
+                        body: jsonEncode({'seatingPlan': plan.toJson()}),
+                      );
+                      if (res.statusCode == 404 || res.statusCode == 405) {
+                        res = await http.put(
+                          uri,
+                          headers: {
+                            'Authorization': 'Bearer $token',
+                            'Content-Type': 'application/json',
+                          },
+                          body: jsonEncode({'seatingPlan': plan.toJson()}),
+                        );
+                      }
+                      if (res.statusCode != 200) {
+                        throw Exception(
+                          res.body.isNotEmpty ? res.body : 'HTTP ${res.statusCode}',
+                        );
+                      }
+                      if (dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                      }
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Seating layout saved.'),
+                            backgroundColor: Color(0xFF1DB954),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (dialogContext.mounted) {
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          SnackBar(
+                            content: Text('Save failed: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _showCateringDetailsDialog(Map<String, dynamic> catering) async {
@@ -743,6 +875,12 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     final slots = _parseDynamicList(
       catering['scheduleSlots'] ?? catering['schedule_slots'],
     );
+    final orderType = (catering['order_type'] ?? '').toString();
+    final isEventOrder = orderType == 'event';
+    final seatingPlan = SeatingPlanData.fromJson(
+      catering['seatingPlan'] ?? catering['seating_plan'],
+    );
+    final showSeatingBlock = status == 'for_processing' && isEventOrder;
 
     await showDialog<void>(
       context: context,
@@ -860,6 +998,37 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                           .toString(),
                     ),
                   ],
+                  if (showSeatingBlock) ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Seating layout',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    if (seatingPlan.isEffectivelyEmpty)
+                      Text(
+                        'No seating layout has been set yet.',
+                        style: TextStyle(color: Colors.grey.shade600),
+                      )
+                    else
+                      SeatingPlanInteractive(
+                        plan: seatingPlan,
+                        editable: false,
+                      ),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: () async {
+                        Navigator.of(context).pop();
+                        await _showCustomerSeatingEditor(
+                          catering['id'].toString(),
+                          seatingPlan,
+                        );
+                        if (mounted) await _loadCaterings();
+                      },
+                      icon: const Icon(Icons.edit_location_alt_outlined, size: 18),
+                      label: const Text('Edit seating layout'),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -936,6 +1105,62 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     );
   }
 
+  Widget _buildCateringGridTile(Map<String, dynamic> catering) {
+    final status = (catering['status'] ?? 'online_inquiries').toString();
+    final title =
+        catering['event_title'] ?? catering['eventTitle'] ?? 'Catering';
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => _showCateringDetailsDialog(catering),
+      child: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                _formatStatus(status),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: _getStatusColor(status),
+                ),
+              ),
+              if (catering['total_cost'] != null ||
+                  catering['totalCost'] != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    '₱${catering['total_cost'] ?? catering['totalCost']}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFF4511E),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _navigateFromTopBar(CustomerPageTab tab) {
     if (tab == CustomerPageTab.caterings) return;
     final route = switch (tab) {
@@ -964,6 +1189,11 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
           style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
         ),
         actions: [
+          IconButton(
+            icon: Icon(_gridView ? Icons.view_list : Icons.grid_view),
+            tooltip: _gridView ? 'List view' : 'Grid view',
+            onPressed: () => setState(() => _gridView = !_gridView),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadCaterings,
@@ -1040,6 +1270,35 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                           ),
                         ],
                       ),
+                    )
+                    : _gridView
+                    ? LayoutBuilder(
+                      builder: (context, c) {
+                        final cross =
+                            c.maxWidth >= 900
+                                ? 3
+                                : c.maxWidth >= 520
+                                ? 2
+                                : 1;
+                        return GridView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: cross,
+                                mainAxisSpacing: 12,
+                                crossAxisSpacing: 12,
+                                childAspectRatio: cross == 1 ? 1.4 : 0.95,
+                              ),
+                          itemCount: _caterings.length,
+                          itemBuilder: (context, index) {
+                            final raw = _caterings[index];
+                            if (raw is! Map) return const SizedBox.shrink();
+                            return _buildCateringGridTile(
+                              Map<String, dynamic>.from(raw),
+                            );
+                          },
+                        );
+                      },
                     )
                     : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),

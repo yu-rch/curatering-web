@@ -3,18 +3,30 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class RunPodService {
+  /// Avoid [NotInitializedError] when `.env` was not loaded (e.g. web build).
+  static String? _env(String key) {
+    if (!dotenv.isInitialized) return null;
+    final v = dotenv.env[key];
+    if (v == null || v.isEmpty) return null;
+    return v;
+  }
+
   static String get _endpointId {
-    final endpointId = dotenv.env['RUNPOD_ENDPOINT_ID'];
-    if (endpointId == null || endpointId.isEmpty) {
-      throw Exception('RUNPOD_ENDPOINT_ID environment variable is not set');
+    final endpointId = _env('RUNPOD_ENDPOINT_ID');
+    if (endpointId == null) {
+      throw Exception(
+        'RUNPOD_ENDPOINT_ID is not set. For web, use --dart-define or ensure .env loads.',
+      );
     }
     return endpointId;
   }
 
   static String get _apiKey {
-    final apiKey = dotenv.env['RUNPOD_API_KEY'];
-    if (apiKey == null || apiKey.isEmpty) {
-      throw Exception('RUNPOD_API_KEY environment variable is not set');
+    final apiKey = _env('RUNPOD_API_KEY');
+    if (apiKey == null) {
+      throw Exception(
+        'RUNPOD_API_KEY is not set. For web, use --dart-define or ensure .env loads.',
+      );
     }
     return apiKey;
   }
@@ -79,7 +91,13 @@ class RunPodService {
         final jobId = data['id'];
 
         if (data["status"] == "COMPLETED") {
-          return data["output"]["image_url"]; // Return image URL directly
+          final out = data["output"];
+          if (out is Map && out["status"] == "error") {
+            throw Exception(
+              out["message"]?.toString() ?? 'Worker returned status error',
+            );
+          }
+          return out is Map ? out["image_url"] as String? : null;
         } else if (data["status"] == "IN_PROGRESS" ||
             data["status"] == "IN_QUEUE") {
           // Poll for completion
@@ -117,7 +135,13 @@ class RunPodService {
           final data = jsonDecode(response.body);
 
           if (data["status"] == "COMPLETED") {
-            return data["output"]["image_url"]; // Return image URL
+            final out = data["output"];
+            if (out is Map && out["status"] == "error") {
+              throw Exception(
+                out["message"]?.toString() ?? 'Worker returned status error',
+              );
+            }
+            return out is Map ? out["image_url"] as String? : null;
           } else if (data["status"] == "FAILED") {
             throw Exception('Job failed: ${data["error"] ?? 'Unknown error'}');
           }

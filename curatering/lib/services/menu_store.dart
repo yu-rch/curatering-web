@@ -121,6 +121,8 @@ class MenuStore extends ChangeNotifier {
           : null,
       type: json['type'] as String? ?? '',
       setMenus: (json['set_menus'] as List<dynamic>?)?.cast<String>() ?? [],
+      publicDescription: json['public_description'] as String? ?? '',
+      allergens: json['allergens'] as String? ?? '',
     );
   }
 
@@ -143,6 +145,8 @@ class MenuStore extends ChangeNotifier {
     List<String> ingredients = const [],
     String type = '',
     bool available = true,
+    String publicDescription = '',
+    String allergens = '',
   }) async {
     try {
       final decoded = await ApiClient.instance.postJson(
@@ -157,6 +161,8 @@ class MenuStore extends ChangeNotifier {
           'imageBase64': imageBase64,
           'type': type,
           'available': available,
+          'publicDescription': publicDescription.trim(),
+          'allergens': allergens.trim(),
         },
       );
       
@@ -180,8 +186,13 @@ class MenuStore extends ChangeNotifier {
     List<String>? ingredients,
     String? type,
     bool? available,
+    String? publicDescription,
+    String? allergens,
   }) async {
     try {
+      final idx = _items.indexWhere((d) => d.id == id);
+      final setMenusToKeep = idx >= 0 ? _items[idx].setMenus : <String>[];
+
       final decoded = await ApiClient.instance.putJson(
         '/api/menu/dishes/$id',
         body: {
@@ -194,6 +205,9 @@ class MenuStore extends ChangeNotifier {
           'imageBase64': imageBase64,
           'type': type ?? '',
           'available': available ?? true,
+          'setMenus': setMenusToKeep,
+          'publicDescription': (publicDescription ?? '').trim(),
+          'allergens': (allergens ?? '').trim(),
         },
       );
       
@@ -217,7 +231,10 @@ class MenuStore extends ChangeNotifier {
       sauces: dish.sauces,
       ingredients: ingredients,
       imageBase64: dish.imageBase64,
+      type: dish.type,
       available: dish.available,
+      publicDescription: dish.publicDescription,
+      allergens: dish.allergens,
     );
   }
 

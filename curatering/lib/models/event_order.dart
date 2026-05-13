@@ -1,3 +1,5 @@
+import 'seating_plan.dart';
+
 class EventScheduleSlotDto {
   final String date; // yyyy-mm-dd
   final String startTime; // HH:mm
@@ -79,6 +81,7 @@ class EventOrderDto {
 
   final List<EventMenuItemDto> menu;
   final EventThemeDesignDto themeDesign;
+  final SeatingPlanData seatingPlan;
   final PostAnalysisDto? postAnalysis;
 
   // Payment information
@@ -115,6 +118,7 @@ class EventOrderDto {
     required this.guestCount,
     required this.menu,
     required this.themeDesign,
+    this.seatingPlan = const SeatingPlanData(),
     this.postAnalysis,
     this.downPaymentAmount = 0.0,
     this.downPaymentStatus = 'pending',

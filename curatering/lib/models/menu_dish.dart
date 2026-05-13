@@ -12,6 +12,10 @@ class MenuDish {
   final List<String> ingredients;
   final String type; // For restaurant dish grouping (RICE MEALS, PASTA, etc.)
   final List<String> setMenus; // Array of set names this dish belongs to
+  /// Short description for the dish on the public catering menu (tap for details).
+  final String publicDescription;
+  /// Free-text allergen notice (e.g. "Contains dairy, nuts").
+  final String allergens;
 
   const MenuDish({
     required this.id,
@@ -27,6 +31,8 @@ class MenuDish {
     this.ingredients = const [],
     this.type = '',
     this.setMenus = const [],
+    this.publicDescription = '',
+    this.allergens = '',
   });
 
   MenuDish copyWith({
@@ -43,6 +49,8 @@ class MenuDish {
     List<String>? ingredients,
     String? type,
     List<String>? setMenus,
+    String? publicDescription,
+    String? allergens,
   }) {
     return MenuDish(
       id: id ?? this.id,
@@ -58,6 +66,8 @@ class MenuDish {
       ingredients: ingredients ?? this.ingredients,
       type: type ?? this.type,
       setMenus: setMenus ?? this.setMenus,
+      publicDescription: publicDescription ?? this.publicDescription,
+      allergens: allergens ?? this.allergens,
     );
   }
 }

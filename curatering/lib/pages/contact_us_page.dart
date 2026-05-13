@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/website_content_store.dart';
+import '../widgets/contact_address_map.dart';
 import '../widgets/customer_website_topbar.dart';
 
 // Font constants
@@ -51,7 +52,21 @@ class _ContactUsPageState extends State<ContactUsPage> {
   bool _isSubmitting = false;
 
   @override
+  void initState() {
+    super.initState();
+    WebsiteContentStore.instance.addListener(_onContent);
+    WebsiteContentStore.instance.ensureLoaded().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  void _onContent() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    WebsiteContentStore.instance.removeListener(_onContent);
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
@@ -128,12 +143,19 @@ class _ContactUsPageState extends State<ContactUsPage> {
     final w = WebsiteContentStore.instance;
 
     return Scaffold(
-      appBar: const CustomerWebsiteTopBar(),
-      body: SingleChildScrollView(
-        padding: websitePagePadding(context),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CustomerWebsiteTopBar(
+            showCartAndCustomerAuth: !widget.contentEditable,
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: websitePagePadding(context),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
             const SizedBox(height: 24),
             Text(
               'GET IN TOUCH',
@@ -172,8 +194,11 @@ class _ContactUsPageState extends State<ContactUsPage> {
                   _buildContactInfo(w),
                 ],
               ),
-          ],
-        ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -325,6 +350,8 @@ class _ContactUsPageState extends State<ContactUsPage> {
           subtitle: w.contactAddress,
           onTap: () => _launchMap(w.contactAddress),
         ),
+        const SizedBox(height: 10),
+        ContactAddressMap(address: w.contactAddress),
         const SizedBox(height: 16),
 
         _ContactCard(

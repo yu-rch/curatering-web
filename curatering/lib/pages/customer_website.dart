@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
+import '../config.dart';
 import '../models/menu_dish.dart';
 import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
@@ -21,7 +22,9 @@ import '../services/cart_store.dart';
 import '../services/loyalty_rewards_store.dart';
 import '../services/api_client.dart';
 import '../widgets/map_picker.dart';
+import '../widgets/app_snackbar.dart';
 import '../widgets/pexels_attribution_badge.dart';
+import '../widgets/catering_dish_info_dialog.dart';
 import 'customer_login.dart';
 import 'checkout_page.dart';
 import 'my_orders_page.dart';
@@ -226,6 +229,54 @@ EdgeInsets websitePagePadding(BuildContext context, {double vertical = 24}) {
   return EdgeInsets.symmetric(horizontal: horizontal, vertical: vertical);
 }
 
+/// Builds each main tab only after it has been opened once, then keeps it in an [IndexedStack].
+class _LazyMainTabStack extends StatefulWidget {
+  const _LazyMainTabStack({
+    required this.index,
+    required this.childBuilder,
+  });
+
+  final int index;
+  final Widget Function(int index) childBuilder;
+
+  @override
+  State<_LazyMainTabStack> createState() => _LazyMainTabStackState();
+}
+
+class _LazyMainTabStackState extends State<_LazyMainTabStack> {
+  final Set<int> _activated = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _activated.add(widget.index.clamp(0, 5));
+  }
+
+  @override
+  void didUpdateWidget(covariant _LazyMainTabStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _activated.add(widget.index.clamp(0, 5));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final idx = widget.index.clamp(0, 5);
+    return IndexedStack(
+      index: idx,
+      sizing: StackFit.passthrough,
+      children: List.generate(6, (i) {
+        if (!_activated.contains(i)) {
+          return const SizedBox.shrink();
+        }
+        return KeyedSubtree(
+          key: ValueKey<String>('site-tab-$i'),
+          child: widget.childBuilder(i),
+        );
+      }),
+    );
+  }
+}
+
 class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _navIndex = 0;
@@ -234,6 +285,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Map<String, dynamic>? _customerData;
   bool _isCustomerLoggedIn = false;
   String _selectedRestaurantType = 'RICE MEALS'; // Default selected category
+  List<Map<String, dynamic>> _reorderDishes = [];
+  bool _loadingReorder = false;
 
   @override
   void initState() {
@@ -270,6 +323,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         }
       });
     }
+    if (mounted && _isCustomerLoggedIn) {
+      unawaited(_loadPopularOrdersForHome());
+    }
   }
 
   Future<void> _handleLogin() async {
@@ -282,6 +338,106 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     }
   }
 
+  Future<void> _loadPopularOrdersForHome() async {
+    if (!_isCustomerLoggedIn) {
+      if (_reorderDishes.isNotEmpty && mounted) {
+        setState(() => _reorderDishes = []);
+      }
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('customer_token');
+    if (token == null || token.isEmpty) return;
+    if (mounted) setState(() => _loadingReorder = true);
+    try {
+      final res = await http
+          .get(
+            Uri.parse('$apiBaseUrl/api/restaurant/orders'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 12));
+      if (res.statusCode != 200) {
+        if (mounted) setState(() => _loadingReorder = false);
+        return;
+      }
+      final data = jsonDecode(res.body);
+      final orders = data['orders'] as List<dynamic>? ?? const [];
+      final counts = <String, int>{};
+      for (final o in orders) {
+        if (o is! Map) continue;
+        final m = Map<String, dynamic>.from(o);
+        if ((m['status'] ?? '').toString() != 'delivered') continue;
+        var rawItems = m['items'];
+        List<dynamic> items = const [];
+        if (rawItems is String) {
+          try {
+            items = jsonDecode(rawItems) as List<dynamic>;
+          } catch (_) {
+            items = const [];
+          }
+        } else if (rawItems is List) {
+          items = rawItems;
+        }
+        for (final it in items) {
+          if (it is! Map) continue;
+          final im = Map<String, dynamic>.from(it);
+          final id = (im['id'] ?? im['dishId'] ?? im['dish_id'] ?? '')
+              .toString()
+              .trim();
+          final name =
+              (im['name'] ?? im['dishName'] ?? im['dish_name'] ?? '')
+                  .toString()
+                  .trim();
+          final key = id.isNotEmpty ? 'id:$id' : 'n:$name';
+          if (key == 'n:') continue;
+          final q = int.tryParse('${im['quantity'] ?? 1}') ?? 1;
+          counts[key] = (counts[key] ?? 0) + q;
+        }
+      }
+      final sorted = counts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      final out = <Map<String, dynamic>>[];
+      for (final e in sorted.take(10)) {
+        final key = e.key;
+        MenuDish? d;
+        if (key.startsWith('id:')) {
+          final id = key.substring(3);
+          for (final x in MenuStore.instance.activeDishes) {
+            if (x.id == id) {
+              d = x;
+              break;
+            }
+          }
+        }
+        if (d == null && key.startsWith('n:')) {
+          final name = key.substring(2);
+          for (final x in MenuStore.instance.activeDishes) {
+            if (x.name.toLowerCase() == name.toLowerCase()) {
+              d = x;
+              break;
+            }
+          }
+        }
+        if (d != null && d.available) {
+          out.add({'dish': d, 'count': e.value});
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _reorderDishes = out;
+          _loadingReorder = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _loadingReorder = false);
+      }
+    }
+  }
+
   Future<void> _handleLogout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('customer_token');
@@ -290,15 +446,22 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       setState(() {
         _isCustomerLoggedIn = false;
         _customerData = null;
+        _reorderDishes = [];
+        _loadingReorder = false;
       });
-      ScaffoldMessenger.of(
+      showAppSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Logged out successfully')));
+        'Logged out successfully',
+        icon: Icons.logout,
+      );
     }
   }
 
   void _onMenuChanged() {
     if (mounted) setState(() {});
+    if (_isCustomerLoggedIn) {
+      unawaited(_loadPopularOrdersForHome());
+    }
   }
 
   void _onCartChanged() {
@@ -307,8 +470,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   void _addToCart(MenuDish dish) {
     if (!dish.available) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${dish.name} is currently not available')),
+      showAppSnackBar(
+        context,
+        '${dish.name} is currently not available',
+        error: true,
+        icon: Icons.block,
       );
       return;
     }
@@ -320,12 +486,15 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       // Add directly if no sauce or single sauce
       final selectedSauce = dish.sauces.isNotEmpty ? dish.sauces.first : null;
       CartStore.instance.addItem(dish, selectedSauce: selectedSauce);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${dish.name} added to cart'),
-          duration: const Duration(seconds: 1),
-        ),
+      showAppSnackBar(
+        context,
+        '${dish.name} added to cart',
+        icon: Icons.shopping_bag_outlined,
+        duration: const Duration(seconds: 2),
       );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scaffoldKey.currentState?.openEndDrawer();
+      });
     }
   }
 
@@ -387,14 +556,17 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                   selectedSauce: selectedSauce,
                                 );
                                 Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      '${dish.name} with $selectedSauce added to cart',
-                                    ),
-                                    duration: const Duration(seconds: 1),
-                                  ),
-                                );
+                                final rootCtx = this.context;
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  if (!mounted) return;
+                                  showAppSnackBar(
+                                    rootCtx,
+                                    '${dish.name} with $selectedSauce added to cart',
+                                    icon: Icons.shopping_bag_outlined,
+                                    duration: const Duration(seconds: 2),
+                                  );
+                                  _scaffoldKey.currentState?.openEndDrawer();
+                                });
                               }
                               : null,
                       style: ElevatedButton.styleFrom(
@@ -416,16 +588,56 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     _scaffoldKey.currentState?.openEndDrawer();
   }
 
-  void _navigateToCheckout() {
+  Future<void> _navigateToCheckout() async {
     if (CartStore.instance.items.isEmpty) {
-      ScaffoldMessenger.of(
+      showAppSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Your cart is empty')));
+        'Your cart is empty',
+        icon: Icons.shopping_cart_outlined,
+      );
       return;
     }
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (context) => const CheckoutPage()));
+    var prefs = await SharedPreferences.getInstance();
+    var token = prefs.getString('customer_token');
+    if (token == null || token.isEmpty) {
+      showAppSnackBar(
+        context,
+        'Please log in to continue to checkout.',
+        icon: Icons.login,
+      );
+      await _handleLogin();
+      if (!mounted) return;
+      prefs = await SharedPreferences.getInstance();
+      token = prefs.getString('customer_token');
+      if (token == null || token.isEmpty) {
+        return;
+      }
+      await _checkCustomerAuth();
+    }
+    if (!mounted) return;
+    if (!_isCustomerLoggedIn) {
+      setState(() => _isCustomerLoggedIn = true);
+    }
+    if (!mounted) return;
+    // Defer push so drawer close / scroll layout can finish (web + sidebar tray).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        Navigator.of(context, rootNavigator: true).push(
+          MaterialPageRoute<void>(
+            builder: (context) => const CheckoutPage(),
+          ),
+        );
+      } catch (e, st) {
+        debugPrint('Navigate to checkout failed: $e\n$st');
+        if (!mounted) return;
+        showAppSnackBar(
+          context,
+          'Could not open checkout. Please try again.',
+          icon: Icons.error_outline,
+        );
+      }
+    });
   }
 
   Future<void> _navigateToMyOrders() async {
@@ -761,6 +973,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       color: const Color(0xFF1E1E1E),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Image.asset('lib/assets/main-2.png', height: 34, fit: BoxFit.contain),
           const SizedBox(width: 16),
@@ -769,6 +982,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               spacing: 2,
               runSpacing: 4,
               alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 _navLink('Home', 0),
                 _navLink('Gallery', 1),
@@ -992,15 +1206,17 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             _navIndex = index;
           }),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
               label,
               style: TextStyle(
-                color: on ? Colors.black : Colors.white,
-                fontWeight: on ? FontWeight.bold : FontWeight.normal,
+                color: on ? Colors.white : Colors.white70,
+                fontWeight: on ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
             if (on)
@@ -1173,6 +1389,94 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
+  Widget _buildOrderAgainStrip() {
+    if (_loadingReorder) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 8),
+        child: LinearProgressIndicator(minHeight: 3),
+      );
+    }
+    if (_reorderDishes.isEmpty) return const SizedBox.shrink();
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Order again',
+            style: GoogleFonts.poppins(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Popular picks from your past restaurant orders',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 128,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _reorderDishes.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (ctx, i) {
+                final row = _reorderDishes[i];
+                final d = row['dish'] as MenuDish;
+                final c = row['count'] as int;
+                return SizedBox(
+                  width: 200,
+                  child: Material(
+                    color: Colors.white,
+                    elevation: 1,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => _addToCart(d),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              d.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                            Text(
+                              'Ordered ${c}x before',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              '₱${d.price}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.amber.shade800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildHome(WebsiteContentStore w) {
     return ListenableBuilder(
       listenable: w,
@@ -1320,6 +1624,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           ),
                         ),
                         const SizedBox(height: 32),
+                        if (_isCustomerLoggedIn) ...[
+                          _buildOrderAgainStrip(),
+                          const SizedBox(height: 24),
+                        ],
                         Card(
                           elevation: 4,
                           shape: RoundedRectangleBorder(
@@ -2417,50 +2725,55 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         itemBuilder: (ctx, i) {
                           final d = cateringDishes[i];
                           return Card(
+                            clipBehavior: Clip.antiAlias,
                             elevation: 2,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Column(
-                              children: [
-                                Expanded(
-                                  child: ClipRRect(
-                                    borderRadius: const BorderRadius.vertical(
-                                      top: Radius.circular(8),
-                                    ),
-                                    child:
-                                        d.imageBase64 != null &&
-                                                d.imageBase64!.isNotEmpty
-                                            ? _b64Image(
-                                              d.imageBase64,
-                                              fit: BoxFit.cover,
-                                            )
-                                            : Container(
-                                              color: Colors.grey.shade200,
-                                              child: const Icon(
-                                                Icons.fastfood,
-                                                size: 48,
-                                              ),
-                                            ),
-                                  ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        d.name.toUpperCase(),
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 12,
-                                        ),
+                            child: InkWell(
+                              onTap:
+                                  () => showCateringDishInfoDialog(context, d),
+                              child: Column(
+                                children: [
+                                  Expanded(
+                                    child: ClipRRect(
+                                      borderRadius: const BorderRadius.vertical(
+                                        top: Radius.circular(8),
                                       ),
-                                    ],
+                                      child:
+                                          d.imageBase64 != null &&
+                                                  d.imageBase64!.isNotEmpty
+                                              ? _b64Image(
+                                                d.imageBase64,
+                                                fit: BoxFit.cover,
+                                              )
+                                              : Container(
+                                                color: Colors.grey.shade200,
+                                                child: const Icon(
+                                                  Icons.fastfood,
+                                                  size: 48,
+                                                ),
+                                              ),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                  Padding(
+                                    padding: const EdgeInsets.all(8.0),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          d.name.toUpperCase(),
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           );
                         },
@@ -2558,15 +2871,19 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           return dishType == selectedType;
         }).toList();
 
+    final panelH = (MediaQuery.sizeOf(context).height * 0.72).clamp(280.0, 880.0);
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Left side - Menu
+        // Left side - Menu (bounded height so the row stays viewport-sized and the tray checkout stays reachable)
         Expanded(
           flex: 3,
-          child: SingleChildScrollView(
-            padding: websitePagePadding(context, vertical: 20),
-            child: Column(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: panelH),
+            child: SingleChildScrollView(
+              padding: websitePagePadding(context, vertical: 20),
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Title and Login button
@@ -2806,14 +3123,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               ],
             ),
           ),
+          ),
         ),
         // Right side - Cart Sidebar
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 600),
-          child: Container(
+        Padding(
+          padding: const EdgeInsets.only(right: 24, top: 8, bottom: 8),
+          child: SizedBox(
             width: 280,
-            margin: const EdgeInsets.only(right: 24, top: 24, bottom: 24),
-            decoration: BoxDecoration(
+            height: panelH,
+            child: Container(
+              decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.grey.shade300),
@@ -2826,7 +3145,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               ],
             ),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // Header
                 Container(
@@ -2846,7 +3165,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   ),
                 ),
                 // Cart items
-                Flexible(
+                Expanded(
                   child:
                       cartItems.isEmpty
                           ? Center(
@@ -2957,7 +3276,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           ),
                 ),
                 // Footer with total and checkout
-                if (cartItems.isNotEmpty || true)
+                if (cartItems.isNotEmpty)
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -2990,15 +3309,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed:
-                                _isCustomerLoggedIn
-                                    ? () => Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder:
-                                            (context) => const CheckoutPage(),
-                                      ),
-                                    )
-                                    : _handleLogin,
+                            onPressed: () {
+                              unawaited(_navigateToCheckout());
+                            },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFFFC024),
                               foregroundColor: Colors.black,
@@ -3024,6 +3337,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               ],
             ),
           ),
+        ),
         ),
       ],
     );
@@ -3062,19 +3376,24 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     if (_galleryDetailIndex != null && _navIndex == 1) {
       body = _buildGallery(w);
     } else {
-      body = switch (_navIndex) {
-        0 => _buildHome(w),
-        1 => _buildGallery(w),
-        2 => _buildCateringMenu(),
-        3 => _buildRestaurantMenu(),
-        4 => const _InquireForm(),
-        5 => _ContactSection(
-          store: w,
-          contentEditable: widget.contentEditable,
-          pickB64: _pickImageB64,
-        ),
-        _ => _buildHome(w),
-      };
+      body = _LazyMainTabStack(
+        index: _navIndex.clamp(0, 5),
+        childBuilder: (i) {
+          return switch (i) {
+            0 => _buildHome(w),
+            1 => _buildGallery(w),
+            2 => _buildCateringMenu(),
+            3 => _buildRestaurantMenu(),
+            4 => const _InquireForm(),
+            5 => _ContactSection(
+              store: w,
+              contentEditable: widget.contentEditable,
+              pickB64: _pickImageB64,
+            ),
+            _ => _buildHome(w),
+          };
+        },
+      );
     }
 
     return Scaffold(
@@ -3151,34 +3470,39 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
     return Drawer(
       width: 400,
-      child: SafeArea(
-        child: Column(
-          children: [
-            // Header
-            Container(
-              color: const Color(0xFF1E1E1E),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              child: Row(
-                children: [
-                  const Icon(Icons.shopping_cart, color: Colors.white),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'Your Cart',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+      child: Builder(
+        builder: (drawerContext) {
+          return SafeArea(
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  color: const Color(0xFF1E1E1E),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 16,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.shopping_cart, color: Colors.white),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Your Cart',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
-                    ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () => Navigator.pop(drawerContext),
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
-            ),
+                ),
             // Cart items
             Expanded(
               child:
@@ -3365,8 +3689,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         width: double.infinity,
                         child: ElevatedButton(
                           onPressed: () {
-                            Navigator.of(context).pop();
-                            _navigateToCheckout();
+                            Navigator.pop(drawerContext);
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!mounted) return;
+                              unawaited(_navigateToCheckout());
+                            });
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF1E1E1E),
@@ -3389,8 +3716,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   ),
                 ),
               ),
-          ],
-        ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

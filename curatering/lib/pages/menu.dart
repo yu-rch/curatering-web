@@ -9,6 +9,7 @@ import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
 import '../utils/debouncer.dart';
 import '../utils/image_cache.dart';
+import '../widgets/allergen_selector_field.dart';
 
 // Lazy loading image widget for dish images
 class LazyDishImage extends StatefulWidget {
@@ -178,6 +179,9 @@ class _MenuState extends State<Menu> {
   final TextEditingController _newSauceController = TextEditingController();
   final TextEditingController _setMenuNameController = TextEditingController();
   final TextEditingController _typeController = TextEditingController();
+  final TextEditingController _publicDescriptionController =
+      TextEditingController();
+  final TextEditingController _allergensController = TextEditingController();
 
   String? _editingImageBase64;
   String _editingType = ''; // For restaurant dish type grouping
@@ -257,6 +261,8 @@ class _MenuState extends State<Menu> {
     _newSauceController.dispose();
     _setMenuNameController.dispose();
     _typeController.dispose();
+    _publicDescriptionController.dispose();
+    _allergensController.dispose();
     for (var controller in _paxPriceControllers.values) {
       controller.dispose();
     }
@@ -283,18 +289,28 @@ class _MenuState extends State<Menu> {
     _editingPaxOptions =
         category == 'catering'
             ? ['10-20 pax', '25-40 pax', '50-70 pax', '80-100 pax', '100+ pax']
-            : [];
+            : ['1 pax'];
+    if (category == 'restaurant') {
+      _editingType = 'others';
+      _typeController.text = 'others';
+    }
     _editingPaxPrices = {};
     _paxPriceControllers.clear();
     _editingSauces = [];
     _newPaxController.clear();
     _newSauceController.clear();
+    _publicDescriptionController.clear();
+    _allergensController.clear();
   }
 
   void _startEditingDish(MenuDish dish) {
     _editingAvailable = dish.available;
     _editingImageBase64 = dish.imageBase64;
     _editingType = _normalizeRestaurantMealType(dish.type);
+    if (dish.category == 'restaurant' &&
+        (_editingType.isEmpty || !_restaurantMealTypes.contains(_editingType))) {
+      _editingType = 'others';
+    }
     _typeController.text = _editingType;
     _nameController.text = dish.name;
     _priceController.text = dish.price;
@@ -310,6 +326,8 @@ class _MenuState extends State<Menu> {
     _editingSauces = dish.sauces.toList();
     _newPaxController.clear();
     _newSauceController.clear();
+    _publicDescriptionController.text = dish.publicDescription;
+    _allergensController.text = dish.allergens;
   }
 
   void _addPaxOption() {
@@ -444,46 +462,48 @@ class _MenuState extends State<Menu> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      if (category == 'restaurant') const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value:
-                            _restaurantMealTypes.contains(_editingType)
-                                ? _editingType
-                                : null,
-                        decoration: const InputDecoration(
-                          labelText: 'Meal Type',
-                          helperText: 'Select the meal type for grouping',
-                        ),
-                        items:
-                            _restaurantMealTypes
-                                .map(
-                                  (type) => DropdownMenuItem(
-                                    value: type,
-                                    child: Text(
-                                      type
-                                          .split(' ')
-                                          .map(
-                                            (word) =>
-                                                word.isEmpty
-                                                    ? word
-                                                    : '${word[0].toUpperCase()}${word.substring(1)}',
-                                          )
-                                          .join(' '),
+                      if (category == 'restaurant') ...[
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          value:
+                              _restaurantMealTypes.contains(_editingType)
+                                  ? _editingType
+                                  : 'others',
+                          decoration: const InputDecoration(
+                            labelText: 'Meal Type',
+                            helperText: 'Select the meal type for grouping',
+                          ),
+                          items:
+                              _restaurantMealTypes
+                                  .map(
+                                    (type) => DropdownMenuItem(
+                                      value: type,
+                                      child: Text(
+                                        type
+                                            .split(' ')
+                                            .map(
+                                              (word) =>
+                                                  word.isEmpty
+                                                      ? word
+                                                      : '${word[0].toUpperCase()}${word.substring(1)}',
+                                            )
+                                            .join(' '),
+                                      ),
                                     ),
-                                  ),
-                                )
-                                .toList(),
-                        onChanged: (value) {
-                          if (value != null) {
-                            dialogSetState(() {
-                              _editingType = _normalizeRestaurantMealType(
-                                value,
-                              );
-                              _typeController.text = _editingType;
-                            });
-                          }
-                        },
-                      ),
+                                  )
+                                  .toList(),
+                          onChanged: (value) {
+                            if (value != null) {
+                              dialogSetState(() {
+                                _editingType = _normalizeRestaurantMealType(
+                                  value,
+                                );
+                                _typeController.text = _editingType;
+                              });
+                            }
+                          },
+                        ),
+                      ],
                       TextField(
                         controller: _priceController,
                         decoration: const InputDecoration(labelText: 'Price'),
@@ -491,6 +511,25 @@ class _MenuState extends State<Menu> {
                           decimal: true,
                         ),
                       ),
+                      if (category == 'catering') ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _publicDescriptionController,
+                          decoration: const InputDecoration(
+                            labelText: 'Dish description',
+                            alignLabelWithHint: true,
+                            hintText:
+                                'Brief description shown when customers tap the dish on the catering menu',
+                          ),
+                          maxLines: 3,
+                        ),
+                        const SizedBox(height: 12),
+                        AllergenSelectorField(
+                          key: ValueKey('allergens_${dish?.id ?? 'new'}'),
+                          initialSerialized: _allergensController.text,
+                          onChanged: (s) => _allergensController.text = s,
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
@@ -521,6 +560,17 @@ class _MenuState extends State<Menu> {
                     if (name.isEmpty ||
                         price.isEmpty ||
                         _editingPaxOptions.isEmpty) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              name.isEmpty || price.isEmpty
+                                  ? 'Please enter name and price.'
+                                  : 'Add at least one PAX / size option for this dish.',
+                            ),
+                          ),
+                        );
+                      }
                       return;
                     }
                     try {
@@ -537,6 +587,14 @@ class _MenuState extends State<Menu> {
                                   : const [],
                           type: _editingType,
                           available: _editingAvailable,
+                          publicDescription:
+                              category == 'catering'
+                                  ? _publicDescriptionController.text
+                                  : '',
+                          allergens:
+                              category == 'catering'
+                                  ? _allergensController.text
+                                  : '',
                         );
                       } else {
                         await MenuStore.instance.updateDish(
@@ -552,6 +610,14 @@ class _MenuState extends State<Menu> {
                                   : const [],
                           type: _editingType,
                           available: _editingAvailable,
+                          publicDescription:
+                              category == 'catering'
+                                  ? _publicDescriptionController.text
+                                  : dish.publicDescription,
+                          allergens:
+                              category == 'catering'
+                                  ? _allergensController.text
+                                  : dish.allergens,
                         );
                       }
                       if (context.mounted) {
@@ -588,6 +654,8 @@ class _MenuState extends State<Menu> {
         ingredients: dish.ingredients,
         type: dish.type,
         available: !dish.available,
+        publicDescription: dish.publicDescription,
+        allergens: dish.allergens,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -611,6 +679,82 @@ class _MenuState extends State<Menu> {
         );
       }
     }
+  }
+
+  Future<void> _showBulkCateringPriceDialog() async {
+    final priceCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Apply price to all catering dishes'),
+          content: TextField(
+            controller: priceCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Price (PHP)',
+              hintText: 'Same base price for every active catering dish',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('CANCEL'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('APPLY TO ALL'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    final price = priceCtrl.text.trim();
+    if (price.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a price')),
+      );
+      return;
+    }
+    final dishes =
+        MenuStore.instance.activeDishes
+            .where((d) => d.category == 'catering')
+            .toList();
+    if (dishes.isEmpty) return;
+    var done = 0;
+    var failed = 0;
+    for (final d in dishes) {
+      try {
+        await MenuStore.instance.updateDish(
+          id: d.id,
+          name: d.name,
+          price: price,
+          paxOptions: d.paxOptions,
+          imageBase64: d.imageBase64,
+          category: d.category,
+          sauces: d.sauces,
+          ingredients: d.ingredients,
+          type: d.type,
+          available: d.available,
+          publicDescription: d.publicDescription,
+          allergens: d.allergens,
+        );
+        done++;
+      } catch (_) {
+        failed++;
+      }
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          failed == 0
+              ? 'Updated $done catering dish(es).'
+              : 'Updated $done, failed $failed.',
+        ),
+      ),
+    );
   }
 
   Future<void> _confirmArchiveDish(MenuDish dish) async {
@@ -1027,6 +1171,8 @@ class _MenuState extends State<Menu> {
                         ingredients: dish.ingredients,
                         type: dish.type,
                         available: !dish.available,
+                        publicDescription: dish.publicDescription,
+                        allergens: dish.allergens,
                       );
                     } catch (e) {
                       if (context.mounted) {
@@ -1489,6 +1635,12 @@ class _MenuState extends State<Menu> {
                 ),
               ),
               const SizedBox(width: 12),
+              IconButton.filledTonal(
+                tooltip: 'Apply one price to all catering dishes',
+                onPressed: _showBulkCateringPriceDialog,
+                icon: const Icon(Icons.price_change_outlined),
+              ),
+              const SizedBox(width: 4),
               ElevatedButton.icon(
                 onPressed: () => _openDishDialog(category: 'catering'),
                 icon: const Icon(Icons.add),

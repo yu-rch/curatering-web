@@ -20,4 +20,5 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 # copy handler
 COPY handler_minimal.py handler.py
 
+# Runtime: inject SUPABASE_URL and SUPABASE_KEY through RunPod secrets (do not bake into the image).
 CMD ["python", "-u", "handler.py"]

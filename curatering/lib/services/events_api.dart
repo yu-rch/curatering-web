@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/event_order.dart';
+import '../models/seating_plan.dart';
 import 'api_client.dart';
 import 'public_events_api.dart';
 
@@ -80,6 +81,17 @@ class EventsApi {
     await ApiClient.instance.postJson(
       '/api/supervisor/events/orders/$orderId',
       body: payload,
+    );
+  }
+
+  Future<void> putStaffSeatingPlan({
+    required String orderId,
+    required Map<String, dynamic> seatingPlan,
+  }) async {
+    final encoded = Uri.encodeComponent(orderId);
+    await ApiClient.instance.putJson(
+      '/api/events/orders/$encoded/seating',
+      body: {'seatingPlan': seatingPlan},
     );
   }
 
@@ -386,6 +398,10 @@ class EventsApi {
       ),
     );
 
+    final seatingPlan = SeatingPlanData.fromJson(
+      map['seatingPlan'] ?? map['seating_plan'],
+    );
+
     PostAnalysisDto? postAnalysis;
     final paRaw = map['postAnalysis'] ?? map['post_analysis'];
     final pm = _toMap(paRaw);
@@ -424,13 +440,22 @@ class EventsApi {
       if (value.isNotEmpty) actualEventImages.add(value);
     }
 
+    final eventTitleStr =
+        (map['eventTitle'] ?? map['event_title'] ?? '').toString().trim();
+    final rawOrderType =
+        (map['orderType'] ?? map['order_type'])?.toString().trim() ?? '';
+    final orderType =
+        rawOrderType.isNotEmpty
+            ? rawOrderType
+            : (eventTitleStr.isNotEmpty ? 'catering_event' : 'catering');
+
     return EventOrderDto(
       id: (map['id'] ?? '').toString(),
       source: (map['source'] ?? '').toString(),
       status: (map['status'] ?? '').toString(),
       themeAssetsDeferred: _toBool(map['listSummaryOnly']),
-      eventTitle: map['eventTitle'] as String? ?? '',
-      orderType: map['orderType'] as String? ?? 'catering',
+      eventTitle: eventTitleStr,
+      orderType: orderType,
       eventType: map['eventType'] as String? ?? '',
       formalityLevel: map['formalityLevel'] as String? ?? '',
       customerName:
@@ -446,6 +471,7 @@ class EventsApi {
       guestCount: _toInt(map['guestCount'] ?? map['guest_count']),
       menu: menu,
       themeDesign: themeDesign,
+      seatingPlan: seatingPlan,
       postAnalysis: postAnalysis,
       downPaymentAmount: _toDouble(
         map['downPaymentAmount'] ?? map['down_payment_amount'],

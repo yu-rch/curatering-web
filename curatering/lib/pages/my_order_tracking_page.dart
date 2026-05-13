@@ -22,7 +22,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
   List<dynamic> _activeOrders = [];
   bool _isLoading = true;
   String? _error;
-  static const Duration _requestTimeout = Duration(seconds: 20);
+  static const Duration _requestTimeout = Duration(seconds: 12);
 
   String get _apiBaseUrl {
     return apiBaseUrl;

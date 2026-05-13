@@ -32,6 +32,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
   Map<String, dynamic>? _customerData;
   int _currentPoints = 0; // User's current points - in production from API
 
+  // Delivery time selection
+  // - NOW: send no delivery_time
+  // - LATER: send a concrete timestamp (resolved to today/tomorrow)
+  String _deliveryTimeMode = 'NOW';
+  TimeOfDay _selectedDeliveryTime = TimeOfDay.now();
+
   @override
   void initState() {
     super.initState();
@@ -143,9 +149,19 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Future<void> _handlePlaceOrder() async {
+    // Prevent checkout when the cart is empty (even if user navigates here directly).
+    if (CartStore.instance.items.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Your cart is empty')),
+        );
+      }
+      return;
+    }
+
     // Check if user is logged in first
     if (_customerData == null) {
-      final result = await Navigator.of(context).push(
+      final result = await Navigator.of(context, rootNavigator: true).push(
         MaterialPageRoute(
           builder:
               (context) => const CustomerLoginPage(redirectToCheckout: true),
@@ -172,12 +188,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
       return;
     }
 
-    if (_phoneController.text.isEmpty ||
-        _phoneController.text.length != 11 ||
-        !RegExp(r'^\d{11}$').hasMatch(_phoneController.text)) {
+    final phoneDigits = _phoneController.text.replaceAll(RegExp(r'\D'), '');
+    if (phoneDigits.isEmpty ||
+        phoneDigits.length < 10 ||
+        phoneDigits.length > 15) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter a valid 11-digit contact number'),
+          content: Text(
+            'Please enter a valid phone number (10–15 digits).',
+          ),
         ),
       );
       return;
@@ -218,11 +237,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
       final orderData = {
         'items': items,
         'fullName': _nameController.text,
-        'phone': _phoneController.text,
+        'phone': phoneDigits,
         'deliveryAddress': _addressController.text,
         'deliveryLat': _deliveryLat,
         'deliveryLng': _deliveryLng,
         'deliveryNotes': _notesController.text.trim(),
+        // Only send when user chose "LATER"
+        'deliveryTime': _resolveDeliveryTime()?.toIso8601String(),
         'totalAmount': CartStore.instance.totalAmount,
       };
 
@@ -235,16 +256,45 @@ class _CheckoutPageState extends State<CheckoutPage> {
         body: jsonEncode(orderData),
       );
 
-      final data = jsonDecode(response.body);
+      Map<String, dynamic> data = {};
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          data = decoded;
+        }
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Server error (${response.statusCode}). Please try again.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
 
       if (response.statusCode == 201) {
+        final rawOrder = data['order'];
+        if (rawOrder is! Map) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Order created but response was invalid. Contact support.'),
+              ),
+            );
+          }
+          return;
+        }
+        final orderMap = Map<String, dynamic>.from(rawOrder);
         CartStore.instance.clearCart();
         // Save address to profile if checkbox is checked
         await _saveAddressToProfile();
         if (mounted) {
-          Navigator.of(context).pushReplacement(
+          Navigator.of(context, rootNavigator: true).pushReplacement(
             MaterialPageRoute(
-              builder: (context) => PaymentPage(orderData: data['order']),
+              builder: (context) => PaymentPage(orderData: orderMap),
             ),
           );
         }
@@ -266,11 +316,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -308,7 +362,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 const SizedBox(height: 24),
                 // Continue ordering button
                 OutlinedButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: Colors.amber.shade400),
                     padding: const EdgeInsets.symmetric(
@@ -567,7 +621,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     '',
                                     controller: _phoneController,
                                     keyboardType: TextInputType.number,
-                                    maxLength: 11,
+                                    maxLength: 20,
                                     digitsOnly: true,
                                   ),
                                   const SizedBox(height: 16),
@@ -593,12 +647,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     ],
                                   ),
                                   const SizedBox(height: 16),
-                                  // Time of delivery
-                                  _buildLabelAndDropdown(
-                                    'TIME OF DELIVERY',
-                                    'NOW',
-                                    ['NOW', 'LATER'],
-                                  ),
+                                  // Time of delivery (NOW / LATER)
+                                  _buildDeliveryTimePicker(),
                                   const SizedBox(height: 16),
                                   // Mode of payment
                                   _buildLabelAndDropdown(
@@ -611,7 +661,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                   Center(
                                     child: ElevatedButton(
                                       onPressed:
-                                          _isLoading ? null : _handlePlaceOrder,
+                                          (_isLoading || cartItems.isEmpty)
+                                              ? null
+                                              : _handlePlaceOrder,
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: const Color(
                                           0xFFFFC024,
@@ -892,6 +944,126 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
+  Future<void> _pickDeliveryTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedDeliveryTime,
+      helpText: 'Select delivery time',
+    );
+    if (picked == null) return;
+    setState(() => _selectedDeliveryTime = picked);
+  }
+
+  String _formatTimeOfDay(TimeOfDay t) {
+    final hh = t.hour.toString().padLeft(2, '0');
+    final mm = t.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  DateTime? _resolveDeliveryTime() {
+    if (_deliveryTimeMode != 'LATER') return null;
+
+    final now = DateTime.now();
+    final candidate = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      _selectedDeliveryTime.hour,
+      _selectedDeliveryTime.minute,
+    );
+
+    // If user picks a time earlier than "now", schedule for tomorrow.
+    return candidate.isBefore(now)
+        ? candidate.add(const Duration(days: 1))
+        : candidate;
+  }
+
+  Widget _buildDeliveryTimePicker() {
+    final isNow = _deliveryTimeMode == 'NOW';
+    final isLater = _deliveryTimeMode == 'LATER';
+
+    return Row(
+      children: [
+        const SizedBox(
+          width: 100,
+          child: Text(
+            'TIME OF DELIVERY',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.black54,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ToggleButtons(
+                  borderRadius: BorderRadius.circular(6),
+                  constraints: const BoxConstraints(minHeight: 36),
+                  isSelected: [isNow, isLater],
+                  onPressed: (index) async {
+                    if (index == 0) {
+                      setState(() => _deliveryTimeMode = 'NOW');
+                      return;
+                    }
+
+                    setState(() => _deliveryTimeMode = 'LATER');
+                    await _pickDeliveryTime();
+                  },
+                  children: const [
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text('NOW'),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text('LATER'),
+                    ),
+                  ],
+                ),
+                if (isLater) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.access_time_rounded, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Scheduled: ${_formatTimeOfDay(_selectedDeliveryTime)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade800,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _pickDeliveryTime,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('Change'),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   // Redeem/Loyalty Banner - shows points and rewards
   Widget _buildRedeemBanner() {
     // Get values from store (with defaults)
@@ -1052,7 +1224,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   Align(
                     alignment: Alignment.topRight,
                     child: IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
                       icon: const Icon(Icons.close, color: Colors.black),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -1117,7 +1289,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                         onTap:
                             canRedeem
                                 ? () {
-                                  Navigator.of(context).pop();
+                                  Navigator.of(context, rootNavigator: true).pop();
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(
@@ -1136,7 +1308,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFFFC024),
                         foregroundColor: Colors.black,

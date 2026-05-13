@@ -458,6 +458,26 @@ export async function initDb() {
     ADD COLUMN IF NOT EXISTS inquiry_id TEXT UNIQUE;
   `);
 
+  await pool.query(`
+    ALTER TABLE catering_orders
+    ADD COLUMN IF NOT EXISTS address_lat DOUBLE PRECISION;
+  `);
+
+  await pool.query(`
+    ALTER TABLE catering_orders
+    ADD COLUMN IF NOT EXISTS address_lng DOUBLE PRECISION;
+  `);
+
+  await pool.query(`
+    ALTER TABLE event_orders
+    ADD COLUMN IF NOT EXISTS address_lat DOUBLE PRECISION;
+  `);
+
+  await pool.query(`
+    ALTER TABLE event_orders
+    ADD COLUMN IF NOT EXISTS address_lng DOUBLE PRECISION;
+  `);
+
   // List queries filter by status and sort by created_at (manager/supervisor order APIs).
   try {
     await pool.query(
@@ -505,6 +525,16 @@ export async function initDb() {
   await pool.query(`
     ALTER TABLE menu_dishes
     ADD COLUMN IF NOT EXISTS set_menus JSONB NOT NULL DEFAULT '[]'::jsonb;
+  `);
+
+  await pool.query(`
+    ALTER TABLE menu_dishes
+    ADD COLUMN IF NOT EXISTS public_description TEXT NOT NULL DEFAULT '';
+  `);
+
+  await pool.query(`
+    ALTER TABLE menu_dishes
+    ADD COLUMN IF NOT EXISTS allergens TEXT NOT NULL DEFAULT '';
   `);
 
   // Create indexes for menu_dishes to improve query performance
@@ -566,6 +596,15 @@ export async function initDb() {
       created_by TEXT REFERENCES users(id),
       updated_by TEXT REFERENCES users(id)
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE inventory
+    ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+  await pool.query(`
+    ALTER TABLE inventory
+    ADD COLUMN IF NOT EXISTS image_base64 TEXT;
   `);
 
   // Initialize ID counters
@@ -686,6 +725,7 @@ export async function initDb() {
       delivery_address TEXT NOT NULL,
       delivery_lat DECIMAL(10,8),
       delivery_lng DECIMAL(10,8),
+      delivery_time TIMESTAMPTZ,
       delivery_notes TEXT,
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled')),
       payment_reference TEXT,
@@ -696,6 +736,19 @@ export async function initDb() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  // Migration: Add delivery_time column if it doesn't exist
+  try {
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS delivery_time TIMESTAMPTZ`,
+    );
+    console.log('Migration: Added delivery_time column to restaurant_orders');
+  } catch (err) {
+    console.log(
+      'Migration check for restaurant_orders delivery_time:',
+      err.message,
+    );
+  }
 
   // Migration: Add full_name and phone columns if they don't exist (for existing tables)
   try {
@@ -736,6 +789,16 @@ export async function initDb() {
     console.log('Migration: Added points_earned column to event_orders');
   } catch (err) {
     console.log('Migration check for event_orders points_earned:', err.message);
+  }
+
+  // Migration: seating plan (floor image + tables + seats) for event_orders
+  try {
+    await pool.query(
+      `ALTER TABLE event_orders ADD COLUMN IF NOT EXISTS seating_plan JSONB NOT NULL DEFAULT '{}'::jsonb`,
+    );
+    console.log('Migration: Added seating_plan column to event_orders');
+  } catch (err) {
+    console.log('Migration check for event_orders seating_plan:', err.message);
   }
 
   // Migration: Fix invalid status values in existing restaurant_orders data

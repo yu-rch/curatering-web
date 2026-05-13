@@ -1,321 +1,593 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../pages/checkout_page.dart';
+import '../pages/customer_login.dart';
+import '../pages/my_caterings_page.dart';
+import '../pages/my_order_tracking_page.dart';
+import '../pages/my_orders_page.dart';
+import '../pages/my_profile_page.dart';
 import '../services/cart_store.dart';
-import '../auth/auth_session.dart';
 
-/// Responsive topbar for customer website pages
-/// Provides consistent navigation across Gallery, Inquire, Contact Us, and Restaurant pages
-class CustomerWebsiteTopBar extends StatelessWidget
-    implements PreferredSizeWidget {
+/// Public site header matching the homepage (`CustomerWebsiteScreen`) styling:
+/// dark bar, centered wrap nav, red cart badge, customer login from SharedPreferences.
+class CustomerWebsiteTopBar extends StatefulWidget {
   const CustomerWebsiteTopBar({
     super.key,
-    this.title,
-    this.showBackButton = false,
-    this.onBack,
-    this.showCart = true,
+    this.showCartAndCustomerAuth = true,
   });
 
-  final String? title;
-  final bool showBackButton;
-  final VoidCallback? onBack;
-  final bool showCart;
+  /// When false (e.g. staff preview with content editing), cart and login strip are hidden.
+  final bool showCartAndCustomerAuth;
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+  State<CustomerWebsiteTopBar> createState() => _CustomerWebsiteTopBarState();
+}
+
+class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
+  bool _isCustomerLoggedIn = false;
+  Map<String, dynamic>? _customerData;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF1E1E1E),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      child: Row(
-        children: [
-          // Logo
-          InkWell(
-            onTap:
-                () => Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  '/',
-                  (route) => false,
-                ),
-            child: Image.asset(
-              'lib/assets/main-2.png',
-              height: 25,
-              fit: BoxFit.contain,
-            ),
+  void initState() {
+    super.initState();
+    CartStore.instance.addListener(_onCartChanged);
+    _refreshCustomerAuth();
+  }
+
+  @override
+  void dispose() {
+    CartStore.instance.removeListener(_onCartChanged);
+    super.dispose();
+  }
+
+  void _onCartChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _refreshCustomerAuth() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('customer_token');
+    final raw = prefs.getString('customer_data');
+    Map<String, dynamic>? data;
+    if (raw != null) {
+      try {
+        data = jsonDecode(raw) as Map<String, dynamic>?;
+      } catch (_) {
+        data = null;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _isCustomerLoggedIn = token != null && token.isNotEmpty;
+      _customerData = data;
+    });
+  }
+
+  Future<void> _handleLogin() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => const CustomerLoginPage(),
+    );
+    await _refreshCustomerAuth();
+  }
+
+  Future<void> _handleLogout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('customer_token');
+    await prefs.remove('customer_data');
+    if (!mounted) return;
+    setState(() {
+      _isCustomerLoggedIn = false;
+      _customerData = null;
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Logged out successfully')));
+  }
+
+  void _openCart() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(ctx).bottom,
           ),
-          const SizedBox(width: 16),
-
-          // Navigation Links
-          Expanded(
-            child: Center(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  if (constraints.maxWidth < 800) {
-                    // Mobile layout
-                    return _buildMobileNav(context);
-                  } else {
-                    // Desktop layout
-                    return _buildDesktopNav(context);
-                  }
-                },
-              ),
-            ),
-          ),
-
-          const SizedBox(width: 16),
-
-          // Cart and Login/Profile
-          Row(
-            children: [
-              // Cart Icon
-              if (showCart) ...[
-                AnimatedBuilder(
-                  animation: CartStore.instance,
-                  builder: (context, child) {
-                    final cartStore = CartStore.instance;
-                    final cartItemCount = cartStore.items.fold<int>(
-                      0,
-                      (sum, item) => sum + item.quantity,
-                    );
-
-                    return Stack(
-                      children: [
-                        IconButton(
-                          icon: const Icon(
-                            Icons.shopping_cart,
-                            color: Colors.white,
-                          ),
-                          onPressed: () => _openCart(context),
-                          tooltip: 'View cart',
+          child: DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.55,
+            minChildSize: 0.35,
+            maxChildSize: 0.92,
+            builder: (context, scrollController) {
+              return AnimatedBuilder(
+                animation: CartStore.instance,
+                builder: (context, _) {
+                  final cartItems = CartStore.instance.items;
+                  final totalAmount = CartStore.instance.totalAmount;
+                  return Column(
+                    children: [
+                      const SizedBox(height: 8),
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                        if (cartItemCount > 0)
-                          Positioned(
-                            right: 8,
-                            top: 8,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFFC024),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.shopping_cart),
+                            const SizedBox(width: 8),
+                            const Expanded(
                               child: Text(
-                                '$cartItemCount',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
+                                'Your cart',
+                                style: TextStyle(
+                                  fontSize: 18,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
-                          ),
-                      ],
-                    );
-                  },
-                ),
-              ],
-
-              // Login/Profile Button
-              if (AuthSession.instance.isLoggedIn.value)
-                PopupMenuButton<String>(
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: Colors.grey.shade300,
-                          child: Icon(
-                            Icons.person,
-                            color: Colors.white,
-                            size: 20,
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed: () => Navigator.of(context).pop(),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Expanded(
+                        child:
+                            cartItems.isEmpty
+                                ? Center(
+                                  child: Text(
+                                    'Your cart is empty',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                )
+                                : ListView.builder(
+                                  controller: scrollController,
+                                  padding: const EdgeInsets.all(12),
+                                  itemCount: cartItems.length,
+                                  itemBuilder: (context, index) {
+                                    final item = cartItems[index];
+                                    return Card(
+                                      margin: const EdgeInsets.only(
+                                        bottom: 10,
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(10),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    item.dish.name,
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                  if (item.selectedSauce !=
+                                                      null)
+                                                    Text(
+                                                      'Sauce: ${item.selectedSauce}',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color:
+                                                            Colors
+                                                                .grey
+                                                                .shade600,
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.remove_circle_outline,
+                                              ),
+                                              onPressed: () {
+                                                if (item.quantity > 1) {
+                                                  CartStore.instance
+                                                      .updateQuantity(
+                                                        item.dish.id,
+                                                        item.quantity - 1,
+                                                      );
+                                                } else {
+                                                  CartStore.instance.removeItem(
+                                                    item.dish.id,
+                                                  );
+                                                }
+                                              },
+                                            ),
+                                            Text('${item.quantity}'),
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.add_circle_outline,
+                                              ),
+                                              onPressed: () {
+                                                CartStore.instance
+                                                    .updateQuantity(
+                                                      item.dish.id,
+                                                      item.quantity + 1,
+                                                    );
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                      ),
+                      if (cartItems.isNotEmpty)
+                        SafeArea(
+                          top: false,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Total',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    Text(
+                                      '₱${totalAmount.toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton(
+                                    onPressed: () {
+                                      Navigator.of(context).pop();
+                                      Navigator.of(this.context).push(
+                                        MaterialPageRoute<void>(
+                                          builder:
+                                              (_) => const CheckoutPage(),
+                                        ),
+                                      );
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF1E1E1E),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                    ),
+                                    child: const Text('Proceed to checkout'),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          AuthSession.instance.currentUser.value?.fullName ??
-                              'Customer',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  itemBuilder:
-                      (context) => [
-                        const PopupMenuItem(
-                          value: 'my_profile',
-                          child: Row(
-                            children: [
-                              Icon(Icons.person, size: 18),
-                              SizedBox(width: 8),
-                              Text('My Profile'),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'my_orders',
-                          child: Row(
-                            children: [
-                              Icon(Icons.receipt_long, size: 18),
-                              SizedBox(width: 8),
-                              Text('My Orders'),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'my_caterings',
-                          child: Row(
-                            children: [
-                              Icon(Icons.event, size: 18),
-                              SizedBox(width: 8),
-                              Text('My Caterings'),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'order_tracking',
-                          child: Row(
-                            children: [
-                              Icon(Icons.local_shipping, size: 18),
-                              SizedBox(width: 8),
-                              Text('Order Tracking'),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuDivider(),
-                        const PopupMenuItem(
-                          value: 'logout',
-                          child: Row(
-                            children: [
-                              Icon(Icons.logout, size: 18, color: Colors.red),
-                              SizedBox(width: 8),
-                              Text(
-                                'Logout',
-                                style: TextStyle(color: Colors.red),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                  onSelected: (value) {
-                    switch (value) {
-                      case 'my_profile':
-                        Navigator.pushNamed(context, '/customer-profile');
-                        break;
-                      case 'my_orders':
-                        Navigator.pushNamed(context, '/customer-orders');
-                        break;
-                      case 'my_caterings':
-                        Navigator.pushNamed(context, '/customer-caterings');
-                        break;
-                      case 'order_tracking':
-                        Navigator.pushNamed(context, '/order-tracking');
-                        break;
-                      case 'logout':
-                        AuthSession.instance.clear();
-                        Navigator.pushNamedAndRemoveUntil(
-                          context,
-                          '/customer-login',
-                          (route) => false,
-                        );
-                        break;
-                    }
-                  },
-                )
-              else
-                TextButton.icon(
-                  onPressed:
-                      () => Navigator.pushNamed(context, '/customer-login'),
-                  icon: const Icon(Icons.login, color: Colors.white, size: 18),
-                  label: const Text(
-                    'Login',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-            ],
+                    ],
+                  );
+                },
+              );
+            },
           ),
+        );
+      },
+    );
+  }
+
+  String _currentRoute(BuildContext context) {
+    return ModalRoute.of(context)?.settings.name ?? '/';
+  }
+
+  bool _isActive(BuildContext context, String route) {
+    return _currentRoute(context) == route;
+  }
+
+  Widget _navLabel(String label, {required bool active}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: active ? Colors.black : Colors.white,
+              fontWeight: active ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          if (active)
+            Container(
+              height: 2,
+              width: 32,
+              color: const Color(0xFFFFC024),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildMobileNav(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildNavLink('Home', '/', context),
-        _buildNavLink('Gallery', '/gallery', context),
-        _buildNavLink('Catering Menu', '/catering-menu', context),
-        _buildNavLink('Restaurant', '/restaurant', context),
-        _buildNavLink('Inquire Now', '/inquire', context),
-        _buildNavLink('Contact Us', '/contact-us', context),
-      ],
-    );
+  void _goHome(BuildContext context) {
+    Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
   }
 
-  Widget _buildDesktopNav(BuildContext context) {
-    return Row(
-      children: [
-        _buildNavLink('Home', '/', context),
-        _buildNavLink('Gallery', '/gallery', context),
-        _buildNavLink('Catering Menu', '/catering-menu', context),
-        _buildNavLink('Restaurant', '/restaurant', context),
-        _buildNavLink('Inquire Now', '/inquire', context),
-        _buildNavLink('Contact Us', '/contact-us', context),
-      ],
-    );
-  }
-
-  Widget _buildNavLink(String label, String route, BuildContext context) {
-    final currentRoute = ModalRoute.of(context)?.settings.name ?? '/';
-    final isActive = _isRouteActive(currentRoute, label);
-
-    return InkWell(
-      onTap: () => _navigateTo(context, route),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isActive ? const Color(0xFFFFC024) : Colors.white,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            fontSize: 14,
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _navigateTo(BuildContext context, String route) {
-    if (ModalRoute.of(context)?.settings.name != route) {
+  void _go(BuildContext context, String route) {
+    if (_currentRoute(context) != route) {
       Navigator.pushNamed(context, route);
     }
   }
 
-  void _openCart(BuildContext context) {
-    // Show cart drawer for instant access
-    Scaffold.of(context).openEndDrawer();
-  }
+  @override
+  Widget build(BuildContext context) {
+    final route = _currentRoute(context);
 
-  bool _isRouteActive(String currentRoute, String label) {
-    final routeMap = {
-      'Home': '/',
-      'Gallery': '/gallery',
-      'Catering Menu': '/catering-menu',
-      'Restaurant': '/restaurant',
-      'Inquire Now': '/inquire',
-      'Contact Us': '/contact-us',
-    };
-    return routeMap[label] == currentRoute;
+    return Material(
+      color: const Color(0xFF1E1E1E),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              InkWell(
+                onTap: () => _goHome(context),
+                child: Image.asset(
+                  'lib/assets/main-2.png',
+                  height: 34,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Wrap(
+                  spacing: 2,
+                  runSpacing: 4,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    InkWell(
+                      onTap: () => _goHome(context),
+                      child: _navLabel('Home', active: route == '/'),
+                    ),
+                    InkWell(
+                      onTap: () => _go(context, '/gallery'),
+                      child: _navLabel(
+                        'Gallery',
+                        active: route == '/gallery',
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () => _go(context, '/catering-menu'),
+                      child: _navLabel(
+                        'Catering Menu',
+                        active: route == '/catering-menu',
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () => _go(context, '/restaurant'),
+                      child: _navLabel(
+                        'Restaurant',
+                        active: route == '/restaurant',
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () => _go(context, '/inquire'),
+                      child: _navLabel(
+                        'Inquire Now',
+                        active: route == '/inquire',
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () => _go(context, '/contact-us'),
+                      child: _navLabel(
+                        'Contact Us',
+                        active: route == '/contact-us',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (widget.showCartAndCustomerAuth) ...[
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.shopping_cart,
+                        color: Colors.white,
+                      ),
+                      onPressed: _openCart,
+                      tooltip: 'View cart',
+                    ),
+                    if (CartStore.instance.itemCount > 0)
+                      Positioned(
+                        right: 6,
+                        top: 6,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 18,
+                            minHeight: 18,
+                          ),
+                          child: Text(
+                            '${CartStore.instance.itemCount}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 8),
+                if (_isCustomerLoggedIn)
+                  PopupMenuButton<String>(
+                    onSelected: (value) async {
+                      switch (value) {
+                        case 'my_profile':
+                          await Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const MyProfilePage(),
+                            ),
+                          );
+                          break;
+                        case 'my_orders':
+                          await Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const MyOrdersPage(),
+                            ),
+                          );
+                          break;
+                        case 'my_caterings':
+                          await Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const MyCateringsPage(),
+                            ),
+                          );
+                          break;
+                        case 'order_tracking':
+                          await Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const MyOrderTrackingPage(),
+                            ),
+                          );
+                          break;
+                        case 'logout':
+                          await _handleLogout();
+                          break;
+                      }
+                    },
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.person,
+                          color: Colors.amber.shade400,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 4),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 120),
+                          child: Text(
+                            _customerData?['fullName'] ?? 'Customer',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        const Icon(Icons.arrow_drop_down, color: Colors.white),
+                      ],
+                    ),
+                    itemBuilder:
+                        (context) => const [
+                          PopupMenuItem(
+                            value: 'my_profile',
+                            child: Row(
+                              children: [
+                                Icon(Icons.person, size: 18),
+                                SizedBox(width: 8),
+                                Text('My Profile'),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'my_orders',
+                            child: Row(
+                              children: [
+                                Icon(Icons.receipt_long, size: 18),
+                                SizedBox(width: 8),
+                                Text('My Orders'),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'my_caterings',
+                            child: Row(
+                              children: [
+                                Icon(Icons.event, size: 18),
+                                SizedBox(width: 8),
+                                Text('My Caterings'),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'order_tracking',
+                            child: Row(
+                              children: [
+                                Icon(Icons.local_shipping, size: 18),
+                                SizedBox(width: 8),
+                                Text('Order Tracking'),
+                              ],
+                            ),
+                          ),
+                          PopupMenuDivider(),
+                          PopupMenuItem(
+                            value: 'logout',
+                            child: Row(
+                              children: [
+                                Icon(Icons.logout, size: 18, color: Colors.red),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Logout',
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                  )
+                else
+                  TextButton.icon(
+                    onPressed: _handleLogin,
+                    icon: const Icon(
+                      Icons.login,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                    label: const Text(
+                      'Login',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

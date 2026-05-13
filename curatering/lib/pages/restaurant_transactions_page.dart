@@ -167,6 +167,19 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     return 0.0;
   }
 
+  String _formatDateTimeCell(dynamic raw) {
+    if (raw == null) return 'N/A';
+    final s = raw.toString().trim();
+    if (s.isEmpty || s == 'null') return 'N/A';
+
+    final dt = DateTime.tryParse(s);
+    if (dt == null) return s;
+
+    final local = dt.toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} ${two(local.hour)}:${two(local.minute)}';
+  }
+
   List<dynamic> _parseResponse(String responseBody) {
     try {
       final parsed = jsonDecode(responseBody);
@@ -239,6 +252,37 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error updating order: $e')));
+      }
+    }
+  }
+
+  Future<void> _setPaymentStatus(String orderId, String paymentStatus) async {
+    try {
+      final token = await _getAuthToken();
+      final response = await http.put(
+        Uri.parse('$apiBaseUrl/api/manager/restaurant/orders/$orderId'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'payment_status': paymentStatus}),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to update payment status');
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Payment marked $paymentStatus')),
+        );
+        await _loadOrders(forceRefresh: true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Payment update error: $e')),
+        );
       }
     }
   }
@@ -731,12 +775,42 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                               item['name'] ??
                               item['dishName'] ??
                               'Unknown dish';
+                          final desc = (item['description'] ??
+                                  item['public_description'] ??
+                                  item['publicDescription'] ??
+                                  item['category'] ??
+                                  '')
+                              .toString()
+                              .trim();
                           final qty = item['quantity'] ?? 1;
                           final price = item['price'] ?? '0';
-                          return Row(
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(child: Text('$name x$qty')),
-                              Text('$_currencySymbol$price'),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      '$name x$qty',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  Text('$_currencySymbol$price'),
+                                ],
+                              ),
+                              if (desc.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    desc,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  ),
+                                ),
                             ],
                           );
                         },
@@ -883,7 +957,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               Expanded(
                 flex: 1,
                 child: _buildTableCell(
-                  '${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}',
+                  _formatDateTimeCell(order['delivery_time'] ?? order['created_at']),
                 ),
               ),
               Expanded(
@@ -926,6 +1000,65 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                           ),
                         ),
                       ),
+                    ),
+                    const SizedBox(width: 8),
+                    Builder(
+                      builder: (context) {
+                        final ps =
+                            order['payment_status'] as String? ?? 'pending';
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildPaymentStatusBadge(ps),
+                            IconButton(
+                              tooltip: 'Mark paid',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              icon: Icon(
+                                Icons.payments_outlined,
+                                size: 20,
+                                color:
+                                    ps == 'paid'
+                                        ? Colors.grey
+                                        : Colors.green.shade700,
+                              ),
+                              onPressed:
+                                  ps == 'paid'
+                                      ? null
+                                      : () => _setPaymentStatus(
+                                        order['id'].toString(),
+                                        'paid',
+                                      ),
+                            ),
+                            IconButton(
+                              tooltip: 'Mark payment failed',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              icon: Icon(
+                                Icons.money_off_csred_outlined,
+                                size: 20,
+                                color:
+                                    ps == 'failed'
+                                        ? Colors.grey
+                                        : Colors.red.shade700,
+                              ),
+                              onPressed:
+                                  ps == 'failed'
+                                      ? null
+                                      : () => _setPaymentStatus(
+                                        order['id'].toString(),
+                                        'failed',
+                                      ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
@@ -1071,7 +1204,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               Expanded(
                 flex: 1,
                 child: _buildTableCell(
-                  '${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}',
+                  _formatDateTimeCell(order['delivery_time'] ?? order['created_at']),
                 ),
               ),
               Expanded(
@@ -1114,6 +1247,65 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                           ),
                         ),
                       ),
+                    ),
+                    const SizedBox(width: 8),
+                    Builder(
+                      builder: (context) {
+                        final ps =
+                            order['payment_status'] as String? ?? 'pending';
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildPaymentStatusBadge(ps),
+                            IconButton(
+                              tooltip: 'Mark paid',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              icon: Icon(
+                                Icons.payments_outlined,
+                                size: 20,
+                                color:
+                                    ps == 'paid'
+                                        ? Colors.grey
+                                        : Colors.green.shade700,
+                              ),
+                              onPressed:
+                                  ps == 'paid'
+                                      ? null
+                                      : () => _setPaymentStatus(
+                                        order['id'].toString(),
+                                        'paid',
+                                      ),
+                            ),
+                            IconButton(
+                              tooltip: 'Mark payment failed',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              icon: Icon(
+                                Icons.money_off_csred_outlined,
+                                size: 20,
+                                color:
+                                    ps == 'failed'
+                                        ? Colors.grey
+                                        : Colors.red.shade700,
+                              ),
+                              onPressed:
+                                  ps == 'failed'
+                                      ? null
+                                      : () => _setPaymentStatus(
+                                        order['id'].toString(),
+                                        'failed',
+                                      ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(width: 8),
                     if (status == 'confirmed' || status == 'preparing') ...[
@@ -1240,7 +1432,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               Expanded(
                 flex: 1,
                 child: _buildTableCell(
-                  '${order['created_at']?.toString().substring(0, 10) ?? 'N/A'}',
+                  _formatDateTimeCell(order['delivery_time'] ?? order['created_at']),
                 ),
               ),
               Expanded(
