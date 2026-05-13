@@ -1,10 +1,13 @@
 runpod
+
+torch==2.1.0
+torchvision==0.16.0
+
 diffusers==0.25.0
 transformers==4.36.2
 accelerate==0.25.0
 
-opencv-python
 pillow
 numpy==1.26.4
-python-multipart
 supabase
+requests

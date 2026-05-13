@@ -1,131 +1,134 @@
 import runpod
+import torch
 import base64
+import os
+import requests
 from io import BytesIO
 from diffusers import StableDiffusionPipeline
-import torch
-import os
 from supabase import create_client
-import random
-import torch
 
-# -------------------------
-# CONFIG
+# ---------------------------
+# SUPABASE CONFIG
+# ---------------------------
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-MODEL_DIR = "/app/huggingface"
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("SUPABASE_URL and SUPABASE_KEY environment variables are required")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# -------------------------
-# Prevent any weird device detection
-if not torch.cuda.is_available():
-    print("⚠️ CUDA not available, using CPU")
-
-# -------------------------
-# LOAD MODEL
-print("Loading Stable Diffusion model...")
-
+# ---------------------------
+# DEVICE SETUP
+# ---------------------------
 device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using device: {device}")
+print("Device:", device)
 
+# ---------------------------
+# LOAD MODEL ONCE (cold start optimized)
+# ---------------------------
 pipe = StableDiffusionPipeline.from_pretrained(
     "runwayml/stable-diffusion-v1-5",
-    cache_dir=MODEL_DIR,
-    torch_dtype=torch.float16
+    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
 )
 
 pipe = pipe.to(device)
+
 pipe.enable_attention_slicing()
 pipe.enable_vae_slicing()
 
-# Optional but recommended
-if device == "cuda":
-    try:
-        pipe.enable_xformers_memory_efficient_attention()
-        print("xformers enabled")
-    except Exception as e:
-        print("xformers not available:", e)
+print("Model loaded")
 
-print("Model loaded successfully!")
-# -------------------------
+# ---------------------------
+# PROMPT ENGINE (IMPORTANT)
+# ---------------------------
+def build_prompt(data):
+    base = data.get("prompt", "")
+
+    event = data.get("event_type", "")
+    theme = data.get("theme", "")
+    formality = data.get("formality", "")
+
+    enriched = f"""
+    {base},
+    event: {event},
+    theme: {theme},
+    formality: {formality},
+    high quality, detailed, realistic lighting, professional composition
+    """
+
+    return enriched.strip()
+
+# ---------------------------
 # IMAGE GENERATION
-def generate_image(prompt):
+# ---------------------------
+def generate(prompt):
     image = pipe(prompt).images[0]
-    
+
     buffer = BytesIO()
     image.save(buffer, format="PNG")
-    
+
     return buffer.getvalue()
 
-# -------------------------
-# UPLOAD TO SUPABASE
-def upload_to_supabase(image_bytes, filename):
-    try:
-        supabase.storage.from_("ai-images").upload(
-            path=filename,
-            file=image_bytes,
-            file_options={"content-type": "image/png"}
-        )
+# ---------------------------
+# SUPABASE UPLOAD
+# ---------------------------
+def upload_image(image_bytes, filename):
+    supabase.storage.from_("ai-images").upload(
+        path=filename,
+        file=image_bytes,
+        file_options={"content-type": "image/png"}
+    )
 
-        public_url = supabase.storage.from_("ai-images").get_public_url(filename)
-        return public_url
-    except Exception as e:
-        print(f"Error uploading to Supabase: {e}")
-        raise
+    return supabase.storage.from_("ai-images").get_public_url(filename)
 
-# -------------------------
+# ---------------------------
+# DATABASE SAVE
+# ---------------------------
+def save_to_db(data):
+    supabase.table("ai_generations").insert(data).execute()
+
+# ---------------------------
 # HANDLER
+# ---------------------------
 def handler(event):
     try:
-        input_data = event.get("input", {})
-        prompt = input_data.get("prompt")
-        user_id = input_data.get("user_id")
-        event_type = input_data.get("event_type", "")
-        theme = input_data.get("theme", "")
-        formality = input_data.get("formality", "")
-        base_image = input_data.get("base_image", "")
-        objects = input_data.get("objects", [])
-        options = input_data.get("options", {})
+        data = event["input"]
 
-        if not prompt:
-            return {"error": "Prompt is required"}
+        prompt = build_prompt(data)
+        user_id = data.get("user_id", "anonymous")
 
-        # 1. Generate image
-        print(f"Generating image for prompt: {prompt}")
-        image_bytes = generate_image(prompt)
+        print("Prompt:", prompt)
 
-        # 2. Upload to Supabase
-        filename = f"{user_id}_{random.randint(0,100000)}.png"
-        image_url = upload_to_supabase(image_bytes, filename)
+        # 1. generate image
+        img_bytes = generate(prompt)
 
-        # 3. Save metadata
-        metadata = {
+        # 2. upload
+        filename = f"{user_id}_{torch.randint(0,999999,(1,)).item()}.png"
+        url = upload_image(img_bytes, filename)
+
+        # 3. save metadata
+        record = {
             "user_id": user_id,
             "prompt": prompt,
-            "image_url": image_url,
-            "event_type": event_type,
-            "theme": theme,
-            "formality": formality,
-            "base_image": base_image,
-            "objects": objects,
-            "options": options
+            "image_url": url,
+            "event_type": data.get("event_type"),
+            "theme": data.get("theme"),
+            "formality": data.get("formality"),
         }
-        
-        supabase.table("ai_generations").insert(metadata).execute()
 
-        print(f"Successfully generated and uploaded image: {image_url}")
+        save_to_db(record)
+
         return {
             "status": "success",
-            "image_url": image_url,
-            "metadata": metadata
+            "image_url": url
         }
 
     except Exception as e:
-        print(f"Error in handler: {e}")
-        return {"status": "error", "message": str(e)}
+        print("ERROR:", str(e))
+        return {
+            "status": "error",
+            "message": str(e)
+        }
 
-print("Starting RunPod serverless handler...")
+# ---------------------------
+# START SERVERLESS
+# ---------------------------
 runpod.serverless.start({"handler": handler})
