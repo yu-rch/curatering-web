@@ -7,14 +7,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git ffmpeg libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
-# IMPORTANT: prevent numpy 2.x breakage
+# upgrade pip FIRST
+RUN pip install --no-cache-dir --upgrade pip
+
+# force stable numpy FIRST (critical for torch/diffusers)
 RUN pip install --no-cache-dir numpy==1.26.4
 
-COPY requirements.txt .
+# install requirements AFTER numpy is stable
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-COPY . .
+# copy handler
+COPY handler_minimal.py handler.py
 
 CMD ["python", "-u", "handler.py"]

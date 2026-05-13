@@ -22,17 +22,18 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print("Device:", device)
 
 # ---------------------------
-# LOAD MODEL ONCE (cold start optimized)
-# ---------------------------
-pipe = StableDiffusionPipeline.from_pretrained(
-    "runwayml/stable-diffusion-v1-5",
-    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-)
+# LOAD MODEL
+print("Model loading disabled - handler ready for testing")
 
-pipe = pipe.to(device)
-
-pipe.enable_attention_slicing()
-pipe.enable_vae_slicing()
+# Model loading disabled - uncomment to enable
+# pipe = StableDiffusionPipeline.from_pretrained(
+#     "runwayml/stable-diffusion-v1-5",
+#     torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+# )
+#
+# pipe = pipe.to(device)
+# pipe.enable_attention_slicing()
+# pipe.enable_vae_slicing()
 
 print("Model loaded")
 
@@ -60,11 +61,20 @@ def build_prompt(data):
 # IMAGE GENERATION
 # ---------------------------
 def generate(prompt):
-    image = pipe(prompt).images[0]
-
+    # Model disabled - return mock response for testing
+    print("Model generation disabled - returning mock image")
+    
+    # Create a simple mock image (1x1 pixel)
+    from PIL import Image
+    import numpy as np
+    
+    # Create a simple test image
+    img_array = np.random.randint(0, 255, (512, 512, 3), dtype=np.uint8)
+    image = Image.fromarray(img_array)
+    
     buffer = BytesIO()
     image.save(buffer, format="PNG")
-
+    
     return buffer.getvalue()
 
 # ---------------------------
