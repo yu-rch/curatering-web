@@ -81,11 +81,18 @@ class _InquirePageState extends State<InquirePage> {
   String? _venuePhotoBase64;
 
   final _eventTypes = [
-    "Wedding",
     "Birthday",
-    "Corporate",
+    "Wedding",
     "Debut",
-    "Anniversary",
+    "Baptism",
+    "Corporate",
+    "Sports",
+    "Government",
+    "Show",
+    "Educational",
+    "Reunion",
+    "Gala",
+    "Dinner",
     "Other",
   ];
   final _styles = [
@@ -604,10 +611,13 @@ class _InquirePageState extends State<InquirePage> {
                     ),
                     const SizedBox(height: 16),
 
-                    Column(
+                    Row(
                       children: [
                         RadioListTile<String>(
-                          title: const Text('Catering Only'),
+                          title: const Text(
+                            'Catering Only',
+                            style: TextStyle(fontSize: 14),
+                          ),
                           value: 'catering',
                           groupValue: _serviceType,
                           onChanged: (value) {
@@ -617,7 +627,10 @@ class _InquirePageState extends State<InquirePage> {
                           },
                         ),
                         RadioListTile<String>(
-                          title: const Text('Catering + Event Design'),
+                          title: const Text(
+                            'Catering + Event Design',
+                            style: TextStyle(fontSize: 14),
+                          ),
                           value: 'catering+event',
                           groupValue: _serviceType,
                           onChanged: (value) {

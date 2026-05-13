@@ -230,7 +230,7 @@ class _EventThemeDesignerState extends State<EventThemeDesigner> {
                   }).toList(),
               onChanged: (value) {
                 if (value != null) {
-                  setState(() => _selectedEventType = value!);
+                  setState(() => _selectedEventType = value);
                 }
               },
             ),
@@ -269,7 +269,7 @@ class _EventThemeDesignerState extends State<EventThemeDesigner> {
                   }).toList(),
               onChanged: (value) {
                 if (value != null) {
-                  setState(() => _selectedColorScheme = value!);
+                  setState(() => _selectedColorScheme = value);
                 }
               },
             ),
@@ -308,7 +308,7 @@ class _EventThemeDesignerState extends State<EventThemeDesigner> {
                   }).toList(),
               onChanged: (value) {
                 if (value != null) {
-                  setState(() => _selectedStyle = value!);
+                  setState(() => _selectedStyle = value);
                 }
               },
             ),
@@ -493,17 +493,56 @@ class _EventThemeDesignerState extends State<EventThemeDesigner> {
             const SizedBox(height: 12),
             Container(
               width: double.infinity,
-              height: 300,
+              height: 250,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.grey.shade300),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Image.memory(
-                  base64Decode(_generatedImageBase64!),
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
+                child: InkWell(
+                  onTap: () {
+                    showDialog(
+                      context: context,
+                      builder: (BuildContext context) {
+                        return Dialog(
+                          child: Container(
+                            width: MediaQuery.of(context).size.width * 0.9,
+                            height: MediaQuery.of(context).size.height * 0.8,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Expanded(
+                                  child: InteractiveViewer(
+                                    child: Image.memory(
+                                      base64Decode(_generatedImageBase64!),
+                                      fit: BoxFit.contain,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      TextButton(
+                                        onPressed: () => Navigator.of(context).pop(),
+                                        child: const Text('Close'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                  child: Image.memory(
+                    base64Decode(_generatedImageBase64!),
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
                     return Container(
                       height: double.infinity,
                       width: double.infinity,
@@ -526,7 +565,7 @@ class _EventThemeDesignerState extends State<EventThemeDesigner> {
                 ),
               ),
             ),
-          ],
+        ),],
         ),
       ),
     );

@@ -6,16 +6,23 @@ import torch
 import os
 from supabase import create_client
 import random
+import torch
 
 # -------------------------
 # CONFIG
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+MODEL_DIR = "/app/huggingface"
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL and SUPABASE_KEY environment variables are required")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# -------------------------
+# Prevent any weird device detection
+if not torch.cuda.is_available():
+    print("⚠️ CUDA not available, using CPU")
 
 # -------------------------
 # LOAD MODEL
@@ -26,7 +33,8 @@ print(f"Using device: {device}")
 
 pipe = StableDiffusionPipeline.from_pretrained(
     "runwayml/stable-diffusion-v1-5",
-    torch_dtype=torch.float16 if device == "cuda" else torch.float32
+    cache_dir=MODEL_DIR,
+    torch_dtype=torch.float16
 )
 
 pipe = pipe.to(device)
