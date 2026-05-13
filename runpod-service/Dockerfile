@@ -17,8 +17,12 @@ RUN sed -i 's/archive.ubuntu.com/mirror.kakao.com/g' /etc/apt/sources.list && \
 
 # install python deps FIRST (for caching)
 COPY requirements.txt .
+
+# ✅ FORCE numpy first
+RUN pip install --no-cache-dir "numpy==1.26.4"
+
+RUN pip install --no-cache-dir runpod
 RUN pip install --no-cache-dir --upgrade pip \
- && pip install --no-cache-dir "numpy<2.0" \
  && pip install --no-cache-dir -r requirements.txt
 
 # copy code

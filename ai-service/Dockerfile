@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir runpod
 
 COPY app ./app
 # Weights: ensure files exist in ./models at build time (or mount in other environments).

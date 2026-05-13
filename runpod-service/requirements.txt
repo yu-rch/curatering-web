@@ -1,14 +1,10 @@
-fastapi
-uvicorn
-
-torch
-torchvision
-
+runpod
 diffusers==0.25.0
 transformers==4.36.2
 accelerate==0.25.0
 
 opencv-python
 pillow
-numpy<2.0
+numpy==1.26.4
 python-multipart
+supabase
