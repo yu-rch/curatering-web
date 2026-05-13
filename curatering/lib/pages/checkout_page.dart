@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/cart_store.dart';
+import '../services/customer_orders_cache.dart';
 import '../services/loyalty_rewards_store.dart';
 import '../config.dart';
 import '../widgets/map_picker.dart';
@@ -33,7 +35,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   int _currentPoints = 0; // User's current points - in production from API
 
   // Delivery time selection
-  // - NOW: send no delivery_time
+  // - ASAP (internal 'NOW'): send no delivery_time
   // - LATER: send a concrete timestamp (resolved to today/tomorrow)
   String _deliveryTimeMode = 'NOW';
   TimeOfDay _selectedDeliveryTime = TimeOfDay.now();
@@ -73,6 +75,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
+  double? _parseCoord(dynamic v) {
+    if (v == null) return null;
+    if (v is double) return v;
+    if (v is int) return v.toDouble();
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v.trim());
+    return null;
+  }
+
   Future<void> _loadSavedAddress() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -94,8 +105,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
             data['deliveryAddress'].isNotEmpty) {
           setState(() {
             _addressController.text = data['deliveryAddress'];
-            _deliveryLat = data['deliveryLat']?.toDouble();
-            _deliveryLng = data['deliveryLng']?.toDouble();
+            _deliveryLat =
+                _parseCoord(data['deliveryLat']) ??
+                _parseCoord(data['delivery_lat']);
+            _deliveryLng =
+                _parseCoord(data['deliveryLng']) ??
+                _parseCoord(data['delivery_lng']);
           });
         }
       }
@@ -289,6 +304,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         }
         final orderMap = Map<String, dynamic>.from(rawOrder);
         CartStore.instance.clearCart();
+        CustomerOrdersCache.instance.invalidateRestaurant();
         // Save address to profile if checkbox is checked
         await _saveAddressToProfile();
         if (mounted) {
@@ -335,12 +351,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E1E1E),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text(''),
-      ),
       body: SingleChildScrollView(
         padding: appPagePadding(context),
         child: Center(
@@ -627,6 +637,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                   const SizedBox(height: 16),
                                   // Delivery Address with Map Picker
                                   _buildAddressFieldWithMap(),
+                                  const SizedBox(height: 16),
+                                  _buildLabelAndField(
+                                    'DELIVERY NOTES (OPTIONAL)',
+                                    '',
+                                    controller: _notesController,
+                                    maxLines: 3,
+                                  ),
                                   const SizedBox(height: 8),
                                   // Save Address Checkbox
                                   Row(
@@ -647,7 +664,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     ],
                                   ),
                                   const SizedBox(height: 16),
-                                  // Time of delivery (NOW / LATER)
+                                  // Time of delivery (ASAP / LATER)
                                   _buildDeliveryTimePicker(),
                                   const SizedBox(height: 16),
                                   // Mode of payment
@@ -795,44 +812,114 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Widget _buildAddressFieldWithMap() {
-    return Row(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 100,
-          child: Text(
-            'DELIVERY ADDRESS',
-            style: TextStyle(
-              fontSize: 10,
-              color: Colors.grey.shade700,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        Expanded(
-          child: TextField(
-            controller: _addressController,
-            maxLines: 3,
-            style: const TextStyle(fontSize: 12),
-            decoration: InputDecoration(
-              isDense: true,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
-                borderSide: BorderSide(color: Colors.grey.shade300),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.map, size: 20),
-                onPressed: _showMapPicker,
-                tooltip: 'Pick from map',
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 100,
+              child: Text(
+                'DELIVERY ADDRESS',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-          ),
+            Expanded(
+              child: TextField(
+                controller: _addressController,
+                maxLines: 3,
+                style: const TextStyle(fontSize: 12),
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.map, size: 20),
+                    onPressed: _showMapPicker,
+                    tooltip: 'Pick from map',
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
+        if (_deliveryLat != null && _deliveryLng != null) ...[
+          const SizedBox(height: 12),
+          _buildCheckoutMapEmbed(),
+        ] else ...[
+          const SizedBox(height: 8),
+          Text(
+            'Use the map icon to drop a pin so we can find your location.',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
+        ],
       ],
+    );
+  }
+
+  Widget _buildCheckoutMapEmbed() {
+    final lat = _deliveryLat!;
+    final lng = _deliveryLng!;
+    final pos = LatLng(lat, lng);
+    return Material(
+      elevation: 1,
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: _showMapPicker,
+        child: SizedBox(
+          height: 180,
+          width: double.infinity,
+          child: Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: pos,
+                  zoom: 16,
+                ),
+                markers: {
+                  Marker(
+                    markerId: const MarkerId('checkout_delivery'),
+                    position: pos,
+                  ),
+                },
+                zoomControlsEnabled: false,
+                myLocationButtonEnabled: false,
+                liteModeEnabled: false,
+                onTap: (_) => _showMapPicker(),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Text(
+                      'Tap map to adjust pin',
+                      style: TextStyle(fontSize: 10),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1021,7 +1108,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   children: const [
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: Text('NOW'),
+                      child: Text('ASAP'),
                     ),
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 16),

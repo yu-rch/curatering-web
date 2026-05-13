@@ -41,13 +41,16 @@ class _LoginState extends State<Login> {
 
       // Check if user is verified
       if (resp.user.isVerified == false) {
-        Navigator.push(
+        final verified = await showStaffVerifyOtpDialog(
           context,
-          MaterialPageRoute(
-            builder: (_) =>
-                VerifyOtp(email: _emailController.text.trim()),
-          ),
+          email: email,
         );
+        if (!mounted) return;
+        if (verified == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Account verified! You can log in.')),
+          );
+        }
         return;
       }
       AuthSession.instance.setSession(
@@ -79,13 +82,16 @@ class _LoginState extends State<Login> {
       if (e.message.contains("not verified")) {
         if (!mounted) return;
 
-        Navigator.push(
+        final verified = await showStaffVerifyOtpDialog(
           context,
-          MaterialPageRoute(
-            builder: (_) =>
-                VerifyOtp(email: _emailController.text.trim()),
-          ),
+          email: _emailController.text.trim(),
         );
+        if (!mounted) return;
+        if (verified == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Account verified! You can log in.')),
+          );
+        }
         return;
       }
 

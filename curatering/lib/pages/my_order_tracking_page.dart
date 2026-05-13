@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
+import '../services/customer_orders_cache.dart';
 import '../widgets/customer_pages_top_bar.dart';
 import 'customer_website.dart';
 import 'my_caterings_page.dart';
@@ -22,7 +23,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
   List<dynamic> _activeOrders = [];
   bool _isLoading = true;
   String? _error;
-  static const Duration _requestTimeout = Duration(seconds: 12);
+  static const Duration _requestTimeout = Duration(seconds: 45);
 
   String get _apiBaseUrl {
     return apiBaseUrl;
@@ -34,13 +35,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
     _loadActiveOrders();
   }
 
-  Future<void> _loadActiveOrders() async {
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-        _error = null;
-      });
-    }
+  Future<void> _loadActiveOrders({bool force = false}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
@@ -50,6 +45,32 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
           Navigator.of(context).pop('login_required');
         }
         return;
+      }
+
+      if (!force) {
+        final cached = CustomerOrdersCache.instance.peekRestaurantOrders();
+        if (cached != null) {
+          final activeOrders =
+              cached.where((order) {
+                final status = order['status'] ?? 'pending';
+                return status != 'delivered' && status != 'cancelled';
+              }).toList();
+          if (mounted) {
+            setState(() {
+              _activeOrders = activeOrders;
+              _isLoading = false;
+              _error = null;
+            });
+          }
+          return;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLoading = true;
+          _error = null;
+        });
       }
 
       final response = await http
@@ -77,23 +98,15 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
 
       final data = jsonDecode(response.body);
       final allOrders =
-          (data['orders'] as List<dynamic>? ?? const []).whereType<Map>().map((
-            entry,
-          ) {
-            final order = Map<String, dynamic>.from(entry);
-            final rawItems = order['items'];
-            if (rawItems is String) {
-              try {
-                order['items'] = jsonDecode(rawItems);
-              } catch (_) {
-                order['items'] = <dynamic>[];
-              }
-            }
-            if (order['items'] is! List) {
-              order['items'] = <dynamic>[];
-            }
-            return order;
-          }).toList();
+          (data['orders'] as List<dynamic>? ?? const [])
+              .whereType<Map>()
+              .map(
+                (entry) => CustomerOrdersCache.normalizeRestaurantOrder(
+                  Map<String, dynamic>.from(entry),
+                ),
+              )
+              .toList();
+      CustomerOrdersCache.instance.setRestaurantOrders(allOrders);
 
       // Filter only active orders (not delivered or cancelled)
       final activeOrders =
@@ -262,7 +275,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadActiveOrders,
+            onPressed: () => _loadActiveOrders(force: true),
             tooltip: 'Refresh tracking',
           ),
         ],
@@ -288,7 +301,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton(
-                            onPressed: _loadActiveOrders,
+                            onPressed: () => _loadActiveOrders(force: true),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF1E1E1E),
                               foregroundColor: Colors.white,
@@ -327,7 +340,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton.icon(
-                            onPressed: _loadActiveOrders,
+                            onPressed: () => _loadActiveOrders(force: true),
                             icon: const Icon(Icons.refresh),
                             label: const Text('Refresh'),
                             style: ElevatedButton.styleFrom(
@@ -339,7 +352,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                       ),
                     )
                     : RefreshIndicator(
-                      onRefresh: _loadActiveOrders,
+                      onRefresh: () => _loadActiveOrders(force: true),
                       child: ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                         itemCount: _activeOrders.length,

@@ -922,4 +922,48 @@ export async function setRoleAccountLimits(limits) {
   );
 }
 
+/**
+ * Next ORD-#### that is unique vs both id_counters and existing restaurant_orders
+ * (counters can drift after manual imports / restores).
+ */
+export async function allocateRestaurantOrderNo() {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(902103447)");
+    const maxRow = await client.query(`
+      SELECT COALESCE(MAX(
+        CASE
+          WHEN order_no ~ '^ORD-[0-9]+$'
+          THEN (regexp_match(order_no, '^ORD-([0-9]+)$'))[1]::integer
+          ELSE NULL
+        END
+      ), 0)::int AS mx
+      FROM restaurant_orders
+    `);
+    const tableMax = Number(maxRow.rows[0]?.mx ?? 0) || 0;
+    const ctr = await client.query(
+      `SELECT last_number FROM id_counters WHERE prefix = 'ORD' FOR UPDATE`,
+    );
+    const counterVal =
+      ctr.rows.length > 0 ? Number(ctr.rows[0].last_number) || 0 : 0;
+    const next = Math.max(tableMax, counterVal) + 1;
+    await client.query(
+      `INSERT INTO id_counters (prefix, last_number, updated_at)
+       VALUES ('ORD', $1, now())
+       ON CONFLICT (prefix) DO UPDATE SET
+         last_number = $1,
+         updated_at = now()`,
+      [next],
+    );
+    await client.query("COMMIT");
+    return `ORD-${String(next).padStart(4, "0")}`;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 export { pool, generateUserId, generateSequentialId };

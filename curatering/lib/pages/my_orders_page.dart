@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
+import '../services/customer_orders_cache.dart';
 import '../widgets/customer_pages_top_bar.dart';
 import 'customer_website.dart';
 import 'my_caterings_page.dart';
@@ -23,7 +24,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   bool _isLoading = true;
   String? _error;
   bool _gridView = false;
-  static const Duration _requestTimeout = Duration(seconds: 12);
+  static const Duration _requestTimeout = Duration(seconds: 45);
 
   String get _apiBaseUrl {
     return apiBaseUrl;
@@ -35,13 +36,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
     _loadOrders();
   }
 
-  Future<void> _loadOrders() async {
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-        _error = null;
-      });
-    }
+  Future<void> _loadOrders({bool force = false}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
@@ -51,6 +46,27 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
           Navigator.of(context).pop('login_required');
         }
         return;
+      }
+
+      if (!force) {
+        final cached = CustomerOrdersCache.instance.peekRestaurantOrders();
+        if (cached != null) {
+          if (mounted) {
+            setState(() {
+              _orders = cached;
+              _isLoading = false;
+              _error = null;
+            });
+          }
+          return;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLoading = true;
+          _error = null;
+        });
       }
 
       final response = await http
@@ -95,6 +111,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
             }
             return order;
           }).toList();
+      CustomerOrdersCache.instance.setRestaurantOrders(parsedOrders);
       if (mounted) {
         setState(() {
           _orders = parsedOrders;
@@ -499,7 +516,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadOrders,
+            onPressed: () => _loadOrders(force: true),
             tooltip: 'Refresh orders',
           ),
         ],
@@ -525,7 +542,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton(
-                            onPressed: _loadOrders,
+                            onPressed: () => _loadOrders(force: true),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF1E1E1E),
                               foregroundColor: Colors.white,
@@ -563,7 +580,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton.icon(
-                            onPressed: _loadOrders,
+                            onPressed: () => _loadOrders(force: true),
                             icon: const Icon(Icons.refresh),
                             label: const Text('Refresh'),
                             style: ElevatedButton.styleFrom(

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -5,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import '../models/seating_plan.dart';
+import '../services/customer_orders_cache.dart';
 import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
 import '../widgets/app_snackbar.dart';
@@ -27,6 +29,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
   bool _isLoading = true;
   String? _error;
   bool _gridView = false;
+  static const Duration _requestTimeout = Duration(seconds: 45);
 
   String get _apiBaseUrl {
     return apiBaseUrl;
@@ -38,7 +41,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     _loadCaterings();
   }
 
-  Future<void> _loadCaterings() async {
+  Future<void> _loadCaterings({bool force = false}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
@@ -50,14 +53,37 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
         return;
       }
 
+      if (!force) {
+        final cached = CustomerOrdersCache.instance.peekEventOrders();
+        if (cached != null) {
+          if (mounted) {
+            setState(() {
+              _caterings = cached;
+              _isLoading = false;
+              _error = null;
+            });
+          }
+          return;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLoading = true;
+          _error = null;
+        });
+      }
+
       // Fetch event orders for this customer (auth uses bearer token)
-      final response = await http.get(
-        Uri.parse('$_apiBaseUrl/api/customer/events/orders'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 12));
+      final response = await http
+          .get(
+            Uri.parse('$_apiBaseUrl/api/customer/events/orders'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(_requestTimeout);
 
       if (response.statusCode == 401) {
         await prefs.remove('customer_token');
@@ -71,6 +97,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       if (response.statusCode == 404) {
         // API endpoint not found - might need to use a different approach
         // For now, show empty state
+        CustomerOrdersCache.instance.setEventOrders([]);
         if (mounted) {
           setState(() {
             _caterings = [];
@@ -85,9 +112,20 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       }
 
       final data = jsonDecode(response.body);
+      final list = data['orders'] ?? data['caterings'] ?? [];
+      final asList = list is List ? List<dynamic>.from(list) : <dynamic>[];
+      CustomerOrdersCache.instance.setEventOrders(asList);
       if (mounted) {
         setState(() {
-          _caterings = data['orders'] ?? data['caterings'] ?? [];
+          _caterings = asList;
+          _isLoading = false;
+        });
+      }
+    } on TimeoutException {
+      if (mounted) {
+        setState(() {
+          _error =
+              'Request timed out. Please check your connection and try again.';
           _isLoading = false;
         });
       }
@@ -724,7 +762,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                               );
                               if (!mounted) return;
                               Navigator.of(context).pop();
-                              await _loadCaterings();
+                              await _loadCaterings(force: true);
                               if (!mounted) return;
                               showAppSnackBar(
                                 context,
@@ -1023,7 +1061,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                           catering['id'].toString(),
                           seatingPlan,
                         );
-                        if (mounted) await _loadCaterings();
+                        if (mounted) await _loadCaterings(force: true);
                       },
                       icon: const Icon(Icons.edit_location_alt_outlined, size: 18),
                       label: const Text('Edit seating layout'),
@@ -1053,7 +1091,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                     );
                     if (!mounted) return;
                     Navigator.of(context).pop();
-                    await _loadCaterings();
+                    await _loadCaterings(force: true);
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Inquiry cancelled.')),
@@ -1077,7 +1115,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                     );
                     if (!mounted) return;
                     Navigator.of(context).pop();
-                    await _loadCaterings();
+                    await _loadCaterings(force: true);
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Order confirmed.')),
@@ -1196,7 +1234,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadCaterings,
+            onPressed: () => _loadCaterings(force: true),
             tooltip: 'Refresh caterings',
           ),
         ],
@@ -1222,7 +1260,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton(
-                            onPressed: _loadCaterings,
+                            onPressed: () => _loadCaterings(force: true),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF1E1E1E),
                               foregroundColor: Colors.white,
@@ -1260,7 +1298,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton.icon(
-                            onPressed: _loadCaterings,
+                            onPressed: () => _loadCaterings(force: true),
                             icon: const Icon(Icons.refresh),
                             label: const Text('Refresh'),
                             style: ElevatedButton.styleFrom(

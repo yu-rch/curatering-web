@@ -1,4 +1,5 @@
 import "dotenv/config";
+import dns from "node:dns";
 import express from "express";
 import cors from "cors";
 import jwt from "jsonwebtoken";
@@ -14,10 +15,18 @@ import {
   poolQueryWithRetry,
   generateUserId,
   generateSequentialId,
+  allocateRestaurantOrderNo,
   getRoleAccountLimits,
   setRoleAccountLimits,
 } from "./db.js";
 import CartAPI from './cart_api.js';
+
+// Prefer IPv4 when resolving SMTP hosts (avoids ENETUNREACH on IPv6 in many cloud/container networks).
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch (_) {
+  /* Node < 17 */
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1145,9 +1154,11 @@ function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-//Email Transporter
+// Email transporter — explicit smtp.gmail.com + ipv4first DNS avoids IPv6-only resolution failures on deploy.
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: process.env.SMTP_HOST || "smtp.gmail.com",
+  port: Number(process.env.SMTP_PORT || 465),
+  secure: String(process.env.SMTP_SECURE || "true") !== "false",
   auth: {
     user: process.env.TRANSPORTER_EMAIL,
     pass: process.env.TRANSPORTER_PASSWORD,
@@ -1263,12 +1274,13 @@ app.post("/api/auth/login", async (req, res) => {
         .json({ message: "email and password are required" });
     }
 
+    const emailNorm = String(email).trim().toLowerCase();
     const result = await pool.query(
       `SELECT id, email, full_name, role, archived, password_hash, page_permissions, is_verified
        FROM users
-       WHERE email = $1
+       WHERE lower(trim(email::text)) = $1
        LIMIT 1;`,
-      [email],
+      [emailNorm],
     );
 
     console.log("User query result:", {
@@ -1617,12 +1629,13 @@ app.post("/api/super-admin/users", authRequired, requireSuperAdmin, async (req, 
       const passwordHash = await bcrypt.hash(password, 10);
       const otp = generateOTP();
       const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+      const normalizedEmail = String(email).trim().toLowerCase();
       const existing = await pool.query(
-        `SELECT id FROM users WHERE email = $1`,
-        [email]
+        `SELECT id, archived FROM users WHERE lower(trim(email::text)) = $1`,
+        [normalizedEmail],
       );
 
-      if (existing.rows.length > 0) {
+      if (existing.rows.length > 0 && !existing.rows[0].archived) {
         return res.status(400).json({ message: "Email already exists" });
       }
 
@@ -1642,21 +1655,66 @@ app.post("/api/super-admin/users", authRequired, requireSuperAdmin, async (req, 
         }
       }
 
+      if (existing.rows.length > 0 && existing.rows[0].archived) {
+        const userId = existing.rows[0].id;
+        await pool.query(
+          `UPDATE users SET
+             email = $1,
+             password_hash = $2,
+             full_name = $3,
+             role = $4,
+             birthday = $5,
+             contact_number = $6,
+             employment_type = $7,
+             archived = FALSE,
+             is_verified = FALSE,
+             otp_code = $8,
+             otp_expiry = $9
+           WHERE id = $10`,
+          [
+            normalizedEmail,
+            passwordHash,
+            fullName,
+            role,
+            birthday || null,
+            contactNumber || null,
+            employmentType || null,
+            otp,
+            expiry,
+            userId,
+          ],
+        );
+
+        await sendOtpEmail(normalizedEmail, otp);
+
+        await logAction({
+          userId: req.user.id,
+          feature: "",
+          action: "reactivated archived account (OTP sent)",
+          other: { email: normalizedEmail, role },
+        });
+
+        return res.json({
+          ok: true,
+          message: "Archived account was restored. OTP sent to email.",
+        });
+      }
+
       const userId = generateUserId();
       await pool.query(
         `INSERT INTO users 
         (id, email, password_hash, full_name, role, birthday, contact_number, employment_type, archived, is_verified, otp_code, otp_expiry)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE, FALSE, $9, $10);`,
-        [userId, email, passwordHash, fullName, role, birthday || null, contactNumber || null, employmentType || null, otp, expiry],
+        [userId, normalizedEmail, passwordHash, fullName, role, birthday || null, contactNumber || null, employmentType || null, otp, expiry],
       );
 
-      await sendOtpEmail(email, otp);
+      await sendOtpEmail(normalizedEmail, otp);
 
       await logAction({
         userId: req.user.id,
         feature: "",
         action: "created account (OTP sent)",
-        other: { email, role },
+        other: { email: normalizedEmail, role },
       });
 
       return res.json({
@@ -1675,9 +1733,11 @@ app.post("/api/auth/verify-otp", async (req, res) => {
   try {
     const { email, otp } = req.body;
 
-    const result = await pool.query(`SELECT * FROM users WHERE email = $1`, [
-      email,
-    ]);
+    const emailNorm = String(email ?? "").trim().toLowerCase();
+    const result = await pool.query(
+      `SELECT * FROM users WHERE lower(trim(email::text)) = $1`,
+      [emailNorm],
+    );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: "User not found" });
@@ -4746,31 +4806,76 @@ runInitDbWithRetries()
           return res.status(400).json({ error: 'Email, password, and full name are required' });
         }
 
-        // Check if customer already exists
-        const existingCustomer = await pool.query(
-          'SELECT id FROM customer_accounts WHERE email = $1',
-          [email.toLowerCase()]
-        );
-        
-        console.log('Existing customer check:', { found: existingCustomer.rows.length > 0, count: existingCustomer.rows.length });
-        
-        if (existingCustomer.rows.length > 0) {
-          console.log('Rejecting signup: Email already registered -', email.toLowerCase());
-          return res.status(400).json({ error: 'Email already registered' });
-        }
+        const emailNorm = String(email).trim().toLowerCase();
 
-        // Generate sequential customer ID (CUS-0001, CUS-0002, etc.)
-        const customerId = await generateSequentialId('CUS', 4);
-        
+        const existingCustomer = await pool.query(
+          `SELECT id, is_verified, archived FROM customer_accounts WHERE lower(trim(email::text)) = $1`,
+          [emailNorm],
+        );
+
+        console.log('Existing customer check:', {
+          found: existingCustomer.rows.length > 0,
+          count: existingCustomer.rows.length,
+        });
+
         const passwordHash = await bcrypt.hash(password, 10);
         const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
         const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+        if (existingCustomer.rows.length > 0) {
+          const row = existingCustomer.rows[0];
+          if (!row.archived && row.is_verified) {
+            console.log('Rejecting signup: Email already registered -', emailNorm);
+            return res.status(400).json({ error: 'Email already registered' });
+          }
+
+          await pool.query(
+            `UPDATE customer_accounts
+             SET email = $1,
+                 password_hash = $2,
+                 full_name = $3,
+                 phone = $4,
+                 otp_code = $5,
+                 otp_expiry = $6,
+                 archived = FALSE,
+                 is_verified = FALSE,
+                 updated_at = now()
+             WHERE id = $7`,
+            [emailNorm, passwordHash, fullName, phone || null, otpCode, otpExpiry, row.id],
+          );
+
+          await pool.query(
+            `INSERT INTO customer_profiles (customer_id, loyalty_points)
+             VALUES ($1, $2)
+             ON CONFLICT (customer_id) DO NOTHING`,
+            [row.id, 0],
+          );
+
+          try {
+            await sendOtpEmail(emailNorm, otpCode);
+          } catch (emailError) {
+            console.error('Failed to send OTP email:', emailError);
+          }
+
+          return res.status(201).json({
+            customer: {
+              id: row.id,
+              email: emailNorm,
+              full_name: fullName,
+              is_verified: false,
+            },
+            message: 'Check your email for a new verification code.',
+          });
+        }
+
+        // New customer — sequential id
+        const customerId = await generateSequentialId('CUS', 4);
 
         const result = await pool.query(
           `INSERT INTO customer_accounts (id, email, password_hash, full_name, phone, otp_code, otp_expiry)
            VALUES ($1, $2, $3, $4, $5, $6, $7)
            RETURNING id, email, full_name, is_verified`,
-          [customerId, email.toLowerCase(), passwordHash, fullName, phone || null, otpCode, otpExpiry]
+          [customerId, emailNorm, passwordHash, fullName, phone || null, otpCode, otpExpiry],
         );
 
         // Create customer profile with 0 loyalty points
@@ -4778,20 +4883,20 @@ runInitDbWithRetries()
           `INSERT INTO customer_profiles (customer_id, loyalty_points)
            VALUES ($1, $2)
            ON CONFLICT (customer_id) DO NOTHING`,
-          [customerId, 0]
+          [customerId, 0],
         );
 
         // Send OTP email
         try {
-          await sendOtpEmail(email, otpCode);
+          await sendOtpEmail(emailNorm, otpCode);
         } catch (emailError) {
           console.error('Failed to send OTP email:', emailError);
           // Still return success since account was created, but log the email error
         }
 
-        res.status(201).json({ 
+        res.status(201).json({
           customer: result.rows[0],
-          message: 'Account created. Please verify your email with the OTP sent.'
+          message: 'Account created. Please verify your email with the OTP sent.',
         });
       } catch (error) {
         console.error('Error signing up customer:', error);
@@ -4807,10 +4912,12 @@ runInitDbWithRetries()
           return res.status(400).json({ error: 'Email and OTP code are required' });
         }
 
+        const emailNorm = String(email).trim().toLowerCase();
+
         const result = await pool.query(
           `SELECT id, otp_expiry FROM customer_accounts 
-           WHERE email = $1 AND otp_code = $2 AND is_verified = FALSE`,
-          [email.toLowerCase(), otpCode]
+           WHERE lower(trim(email::text)) = $1 AND otp_code = $2 AND is_verified = FALSE`,
+          [emailNorm, otpCode],
         );
 
         if (result.rows.length === 0) {
@@ -4843,9 +4950,11 @@ runInitDbWithRetries()
           return res.status(400).json({ error: 'Email and password are required' });
         }
 
+        const emailNorm = String(email).trim().toLowerCase();
+
         const result = await pool.query(
-          'SELECT * FROM customer_accounts WHERE email = $1 AND archived = FALSE',
-          [email.toLowerCase()]
+          'SELECT * FROM customer_accounts WHERE lower(trim(email::text)) = $1 AND archived = FALSE',
+          [emailNorm],
         );
 
         if (result.rows.length === 0) {
@@ -4873,7 +4982,7 @@ runInitDbWithRetries()
           
           // Send OTP email
           try {
-            await sendOtpEmail(email, otpCode);
+            await sendOtpEmail(emailNorm, otpCode);
           } catch (emailError) {
             console.error('Failed to send OTP email:', emailError);
           }
@@ -5069,7 +5178,7 @@ runInitDbWithRetries()
         }
 
         // Generate sequential order number (ORD-0001, ORD-0002, etc.)
-        const orderNo = await generateSequentialId('ORD', 4);
+        const orderNo = await allocateRestaurantOrderNo();
 
         // delivery_time: some DBs enforce NOT NULL; client may send null — default to now().
         const result = await pool.query(
