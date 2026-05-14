@@ -15,7 +15,8 @@ RUN pip install --no-cache-dir numpy==1.26.4
 
 # install requirements AFTER numpy is stable
 COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt \
+    && python -c "import runpod; print('runpod import OK')"
 
 # copy handler
 COPY handler_minimal.py handler.py

@@ -160,7 +160,18 @@ class _InquirePageState extends State<InquirePage> {
     setState(() => _submitting = true);
 
     try {
-      final payload = {
+      final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
+      final scheduleSlots = <Map<String, dynamic>>[
+        {
+          'date': _dateController.text.trim(),
+          'startTime': _timeController.text.trim(),
+          'endTime': '',
+        },
+      ];
+
+      // Contract: `POST /api/online-inquiries` (see server/src/index.js)
+      final payload = <String, dynamic>{
+        'orderType': _serviceType == 'catering' ? 'catering' : 'catering_event',
         'eventTitle': _eventTitle.text.trim(),
         'eventType': _eventType,
         'formalityLevel': _formality,
@@ -171,27 +182,11 @@ class _InquirePageState extends State<InquirePage> {
         'address': _address.text.trim(),
         if (_addressLat != null) 'addressLat': _addressLat,
         if (_addressLng != null) 'addressLng': _addressLng,
-        'guestCount': int.tryParse(_guests.text) ?? 0,
-        'eventDate': _dateController.text.trim(),
-        'eventTime': _timeController.text.trim(),
-        'serviceType': _serviceType,
-        'menuChoice': _menuChoice,
-        'selectedDishIds': _selectedDishIds,
-        if (_menuSelections.isNotEmpty) 'menuSelections': _menuSelections,
-        'wantsCustomDesign': _wantsCustomDesign,
-        'eventDesign':
-            _serviceType == 'catering+event'
-                ? {
-                  'eventType': _selectedEventType,
-                  'style': _selectedStyle,
-                  'mood': _selectedMood,
-                  'colorPalette': _selectedColors,
-                  'decorElements': _selectedDecor,
-                  'customInstructions': _designPromptController.text,
-                  'venuePhoto': _venuePhotoBase64,
-                }
-                : null,
-        'createdAt': DateTime.now().toIso8601String(),
+        'guestCount': guestCount,
+        'scheduleSlots': scheduleSlots,
+        'menu': _buildMenuForApi(),
+        'themeDesign': _buildThemeDesignForApi(),
+        'source': 'web',
       };
 
       await PublicEventsApi.instance.submitOnlineInquiry(payload: payload);
@@ -244,11 +239,70 @@ class _InquirePageState extends State<InquirePage> {
       _showError('Please enter an email address');
       return false;
     }
-    if (_guests.text.trim().isEmpty) {
-      _showError('Please enter the number of guests');
+    final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
+    if (guestCount < 1) {
+      _showError('Please enter a valid number of guests (at least 1)');
+      return false;
+    }
+    if (_address.text.trim().isEmpty) {
+      _showError('Please enter the event address');
+      return false;
+    }
+    if (_dateController.text.trim().isEmpty) {
+      _showError('Please select an event date');
       return false;
     }
     return true;
+  }
+
+  /// API `/api/online-inquiries` expects `menu`: list of `{ dishName }`.
+  List<Map<String, dynamic>> _buildMenuForApi() {
+    if (_menuChoice == 'suggest') {
+      return [
+        {'dishName': 'Please suggest a menu for our event'},
+      ];
+    }
+    final out = <Map<String, dynamic>>[];
+    for (final block in _menuSelections) {
+      final names =
+          (block['dishNames'] as List<dynamic>?)
+              ?.map((e) => e.toString().trim())
+              .where((n) => n.isNotEmpty)
+              .toList() ??
+          const [];
+      for (final n in names) {
+        out.add({'dishName': n});
+      }
+    }
+    if (out.isEmpty) {
+      return [
+        {'dishName': 'Customer will confirm menu details with coordinator'},
+      ];
+    }
+    return out;
+  }
+
+  /// Theme / design JSON stored on the order (server requires a non-null object).
+  Map<String, dynamic> _buildThemeDesignForApi() {
+    if (_serviceType == 'catering') {
+      return {
+        'serviceType': 'catering',
+        'menuChoice': _menuChoice,
+      };
+    }
+    return <String, dynamic>{
+      'serviceType': 'catering+event',
+      'menuChoice': _menuChoice,
+      'eventDesignEventType': _selectedEventType,
+      'style': _selectedStyle,
+      'mood': _selectedMood,
+      'colorPalette': List<String>.from(_selectedColors),
+      'decorElements': List<String>.from(_selectedDecor),
+      'customInstructions': _designPromptController.text.trim(),
+      'venuePhotoBase64': _venuePhotoBase64,
+      'generatedImageUrl': _generatedImageUrl,
+      'wantsCustomDesign': _wantsCustomDesign,
+    }..removeWhere((_, v) => v == null);
   }
 
   void _showError(String message) {

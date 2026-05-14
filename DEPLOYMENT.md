@@ -46,10 +46,13 @@ JWT_SECRET=your-super-secret-jwt-key
 PORT=3000
 ```
 
-### Email Service (Gmail)
+### Email (Resend SMTP)
+
+Set in `server/.env` (see [Resend SMTP](https://resend.com/docs/send-with-smtp)):
+
 ```
-TRANSPORTER_EMAIL=your-email@gmail.com
-TRANSPORTER_PASSWORD=your-app-password
+RESEND_API_KEY=re_xxxxxxxx
+RESEND_FROM=Curatering <notifications@yourdomain.com>
 ```
 
 ### AI Service (if using)

@@ -1,4 +1,5 @@
 import runpod
+import threading
 import torch
 import os
 import random
@@ -121,27 +122,32 @@ def format_exception_detail(exc: BaseException) -> dict:
             pass
     return detail
 
-# ---------------------------
-# DEVICE SETUP
-# ---------------------------
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print("Device:", device)
 
 # ---------------------------
-# LOAD MODEL
-print("Model loading disabled - handler ready for testing")
+# STABLE DIFFUSION (lazy singleton — one load per worker process)
+# ---------------------------
+_sd_pipeline = None
+_sd_pipeline_lock = threading.Lock()
 
-# Model loading disabled - uncomment to enable
-# pipe = StableDiffusionPipeline.from_pretrained(
-#     "runwayml/stable-diffusion-v1-5",
-#     torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-# )
-#
-# pipe = pipe.to(device)
-# pipe.enable_attention_slicing()
-# pipe.enable_vae_slicing()
 
-print("Model loaded")
+def get_sd_pipeline():
+    global _sd_pipeline
+    if _sd_pipeline is not None:
+        return _sd_pipeline
+    with _sd_pipeline_lock:
+        if _sd_pipeline is not None:
+            return _sd_pipeline
+        print("Loading model...")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.float16 if device == "cuda" else torch.float32
+        _sd_pipeline = StableDiffusionPipeline.from_pretrained(
+            "runwayml/stable-diffusion-v1-5",
+            torch_dtype=dtype,
+        ).to(device)
+        _sd_pipeline.enable_attention_slicing()
+        print("Model loaded")
+        return _sd_pipeline
+
 
 # ---------------------------
 # PROMPT ENGINE (IMPORTANT)
@@ -167,20 +173,14 @@ def build_prompt(data):
 # IMAGE GENERATION
 # ---------------------------
 def generate(prompt):
-    # Model disabled - return mock response for testing
-    print("Model generation disabled - returning mock image")
-    
-    # Create a simple mock image (1x1 pixel)
-    from PIL import Image
-    import numpy as np
-    
-    # Create a simple test image
-    img_array = np.random.randint(0, 255, (512, 512, 3), dtype=np.uint8)
-    image = Image.fromarray(img_array)
-    
+    print("Generating image for:", prompt)
+
+    pipe = get_sd_pipeline()
+    image = pipe(prompt, num_inference_steps=25).images[0]
+
     buffer = BytesIO()
     image.save(buffer, format="PNG")
-    
+    buffer.seek(0)
     return buffer.getvalue()
 
 # ---------------------------
@@ -188,13 +188,11 @@ def generate(prompt):
 # ---------------------------
 def upload_to_supabase(image_bytes, filename):
     bucket = supabase.storage.from_(BUCKET_ID)
-    file_obj = BytesIO(image_bytes)
-    file_obj.seek(0)
-
-    # supabase-py storage.upload: failures raise; file_options match Storage API (strings per docs)
+    # storage-py only treats bytes / BufferedReader / FileIO as in-memory; BytesIO
+    # falls through to open(path) and raises TypeError.
     bucket.upload(
         path=filename,
-        file=file_obj,
+        file=image_bytes,
         file_options={
             "content-type": "image/png",
             "upsert": "true",
@@ -257,13 +255,12 @@ def handler(event):
             }
 
         step = "insert_db"
+        # Match public.ai_generations columns (PostgREST rejects unknown keys).
+        user_prompt = (data.get("prompt") or "").strip()
         record = {
             "user_id": user_id,
-            "prompt": prompt,
+            "prompt": prompt if not user_prompt else f"{user_prompt}\n\n--- enriched ---\n{prompt}",
             "image_url": url,
-            "event_type": data.get("event_type"),
-            "theme": data.get("theme"),
-            "formality": data.get("formality"),
         }
 
         try:

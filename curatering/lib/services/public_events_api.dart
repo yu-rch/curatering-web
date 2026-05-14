@@ -14,18 +14,20 @@ class PublicEventsApi {
   static const Duration _compositeTimeout = Duration(seconds: 180);
 
   Future<void> submitOnlineInquiry({required Map<String, dynamic> payload}) async {
-    // Public inquiry submit should not include Authorization header from any
-    // active staff/customer session; keep this endpoint anonymous.
     final res = await http.post(
       Uri.parse('$apiBaseUrl/api/online-inquiries'),
       headers: const <String, String>{'Content-Type': 'application/json'},
       body: jsonEncode(payload),
     );
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw ApiError(
-        message: 'Failed to submit online inquiry',
-        statusCode: res.statusCode,
-      );
+      var msg = 'Failed to submit online inquiry (${res.statusCode})';
+      try {
+        final decoded = jsonDecode(res.body);
+        if (decoded is Map && decoded['message'] != null) {
+          msg = decoded['message'].toString();
+        }
+      } catch (_) {}
+      throw ApiError(message: msg, statusCode: res.statusCode);
     }
   }
 

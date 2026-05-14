@@ -1,5 +1,7 @@
 import runpod
 import base64
+import threading
+import torch
 from io import BytesIO
 import os
 import json
@@ -7,6 +9,7 @@ import random
 import traceback
 
 import requests
+from diffusers import StableDiffusionPipeline
 from supabase import create_client
 
 BUCKET_ID = "ai-images"
@@ -132,6 +135,32 @@ def format_exception_detail(exc: BaseException) -> dict:
 
 
 # ---------------------------
+# STABLE DIFFUSION (lazy singleton — one load per worker process)
+# ---------------------------
+_sd_pipeline = None
+_sd_pipeline_lock = threading.Lock()
+
+
+def get_sd_pipeline():
+    global _sd_pipeline
+    if _sd_pipeline is not None:
+        return _sd_pipeline
+    with _sd_pipeline_lock:
+        if _sd_pipeline is not None:
+            return _sd_pipeline
+        print("Loading model...")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.float16 if device == "cuda" else torch.float32
+        _sd_pipeline = StableDiffusionPipeline.from_pretrained(
+            "runwayml/stable-diffusion-v1-5",
+            torch_dtype=dtype,
+        ).to(device)
+        _sd_pipeline.enable_attention_slicing()
+        print("Model loaded")
+        return _sd_pipeline
+
+
+# ---------------------------
 # PROMPT ENGINE
 # ---------------------------
 def build_prompt(data):
@@ -152,25 +181,18 @@ def build_prompt(data):
 
 
 # ---------------------------
-# MOCK IMAGE GENERATION
+# IMAGE GENERATION
 # ---------------------------
 def generate(prompt):
-    print("Generating mock image for:", prompt)
+    print("Generating image for:", prompt)
 
-    try:
-        from PIL import Image
-        import numpy as np
+    pipe = get_sd_pipeline()
+    image = pipe(prompt, num_inference_steps=25).images[0]
 
-        img_array = np.random.randint(0, 255, (512, 512, 3), dtype=np.uint8)
-        image = Image.fromarray(img_array)
-
-        buffer = BytesIO()
-        image.save(buffer, format="PNG")
-
-        return buffer.getvalue()
-    except Exception as e:
-        print("Error generating mock image:", e)
-        return b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00sRGB\x00\xae\xce\x1c\xe9\x00\x00\x00\x00pHYs\x00\x00\x0b\x13\x00\x00\x00\x09p\x08\x00\x00\x00\x09\x1c\x1c\x1c\x9c\x18\x00\x00\x00\x1cIDATx\x9cc\xf8\x0f\x00\x00\x01\x00\x01'
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 # ---------------------------
@@ -178,12 +200,11 @@ def generate(prompt):
 # ---------------------------
 def upload_to_supabase(image_bytes, filename):
     bucket = supabase.storage.from_(BUCKET_ID)
-    file_obj = BytesIO(image_bytes)
-    file_obj.seek(0)
-
+    # storage-py only treats bytes / BufferedReader / FileIO as in-memory; BytesIO
+    # falls through to open(path) and raises TypeError.
     bucket.upload(
         path=filename,
-        file=file_obj,
+        file=image_bytes,
         file_options={
             "content-type": "image/png",
             "upsert": "true",
@@ -253,13 +274,12 @@ def handler(event):
             }
 
         step = "insert_db"
+        # Match public.ai_generations columns (PostgREST rejects unknown keys).
+        user_prompt = (data.get("prompt") or "").strip()
         record = {
             "user_id": user_id,
-            "prompt": prompt,
+            "prompt": prompt if not user_prompt else f"{user_prompt}\n\n--- enriched ---\n{prompt}",
             "image_url": url,
-            "event_type": data.get("event_type"),
-            "theme": data.get("theme"),
-            "formality": data.get("formality"),
         }
 
         try:

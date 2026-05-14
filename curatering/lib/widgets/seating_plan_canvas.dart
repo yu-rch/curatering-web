@@ -17,6 +17,26 @@ Offset seatNormOnEllipse(SeatingTableSpec t, SeatingSeatSpec s) {
   return Offset(cx + rx * math.cos(ang), cy + ry * math.sin(ang));
 }
 
+enum _TableResizeCorner { nw, ne, sw, se }
+
+/// Map a normalized canvas point to ellipse parameter [perimeterT] in [0, 1).
+double perimeterTFromNormPoint(SeatingTableSpec t, double nx, double ny) {
+  final rcx = t.xNorm + t.wNorm / 2;
+  final rcy = t.yNorm + t.hNorm / 2;
+  final rx = t.wNorm / 2 + 0.018;
+  final ry = t.hNorm / 2 + 0.018;
+  if (rx < 1e-6 || ry < 1e-6) return 0;
+  final ang = math.atan2((ny - rcy) / ry, (nx - rcx) / rx);
+  var pt = (ang + math.pi / 2) / (2 * math.pi);
+  while (pt < 0) {
+    pt += 1;
+  }
+  while (pt >= 1) {
+    pt -= 1;
+  }
+  return pt;
+}
+
 class SeatingPlanInteractive extends StatefulWidget {
   final SeatingPlanData plan;
   final bool editable;
@@ -35,11 +55,16 @@ class SeatingPlanInteractive extends StatefulWidget {
 
 class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
   String? _selectedTableId;
+  String? _selectedSeatId;
   final Map<String, TextEditingController> _labelCtrls = {};
+  final Map<String, TextEditingController> _seatLabelCtrls = {};
 
   @override
   void dispose() {
     for (final c in _labelCtrls.values) {
+      c.dispose();
+    }
+    for (final c in _seatLabelCtrls.values) {
       c.dispose();
     }
     super.dispose();
@@ -65,11 +90,38 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
         );
       }
     }
+    final seatIds = widget.plan.seats.map((s) => s.id).toSet();
+    _seatLabelCtrls.removeWhere((id, c) {
+      if (!seatIds.contains(id)) {
+        c.dispose();
+        return true;
+      }
+      return false;
+    });
+    for (final s in widget.plan.seats) {
+      final c = _seatLabelCtrls[s.id];
+      if (c != null && c.text != s.label) {
+        c.value = TextEditingValue(
+          text: s.label,
+          selection: TextSelection.collapsed(offset: s.label.length),
+        );
+      }
+    }
+    if (_selectedSeatId != null && !seatIds.contains(_selectedSeatId)) {
+      _selectedSeatId = null;
+    }
   }
 
   TextEditingController _labelCtrl(String tableId, String initial) {
     return _labelCtrls.putIfAbsent(
       tableId,
+      () => TextEditingController(text: initial),
+    );
+  }
+
+  TextEditingController _seatLabelCtrl(String seatId, String initial) {
+    return _seatLabelCtrls.putIfAbsent(
+      seatId,
       () => TextEditingController(text: initial),
     );
   }
@@ -221,7 +273,10 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
     );
     var next = widget.plan.copyWith(tables: [...widget.plan.tables, t]);
     next = next.withRegeneratedSeatsForTable(id, t);
-    setState(() => _selectedTableId = id);
+    setState(() {
+      _selectedTableId = id;
+      _selectedSeatId = null;
+    });
     _emit(next);
   }
 
@@ -231,8 +286,157 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
     _labelCtrls.remove(id)?.dispose();
     final tables = widget.plan.tables.where((t) => t.id != id).toList();
     final seats = widget.plan.seats.where((s) => s.tableId != id).toList();
-    setState(() => _selectedTableId = null);
+    for (final s in widget.plan.seats.where((s) => s.tableId == id)) {
+      _seatLabelCtrls.remove(s.id)?.dispose();
+    }
+    setState(() {
+      _selectedTableId = null;
+      _selectedSeatId = null;
+    });
     _emit(widget.plan.copyWith(tables: tables, seats: seats));
+  }
+
+  void _duplicateSelectedTable() {
+    final id = _selectedTableId;
+    if (id == null) return;
+    final src = widget.plan.tables.firstWhere((t) => t.id == id);
+    final newId = 'tbl-${DateTime.now().millisecondsSinceEpoch}';
+    final t = src.copyWith(
+      id: newId,
+      xNorm: (src.xNorm + 0.04).clamp(0.0, 1.0 - src.wNorm),
+      yNorm: (src.yNorm + 0.04).clamp(0.0, 1.0 - src.hNorm),
+      label: src.label.contains('copy') ? src.label : '${src.label} copy',
+    );
+    final copiedSeats = widget.plan.seats
+        .where((s) => s.tableId == id)
+        .map(
+          (s) => SeatingSeatSpec(
+            id: '$newId-s-${s.index}',
+            tableId: newId,
+            index: s.index,
+            label: s.label,
+            perimeterT: s.perimeterT,
+          ),
+        )
+        .toList();
+    var next = widget.plan.copyWith(tables: [...widget.plan.tables, t], seats: [...widget.plan.seats, ...copiedSeats]);
+    setState(() {
+      _selectedTableId = newId;
+      _selectedSeatId = null;
+    });
+    _emit(next);
+  }
+
+  void _duplicateSelectedSeat() {
+    final sid = _selectedSeatId;
+    if (sid == null) return;
+    final found = widget.plan.seats.where((e) => e.id == sid).toList();
+    if (found.isEmpty) return;
+    final s = found.first;
+    final tid = s.tableId;
+    final atTable = widget.plan.seats.where((e) => e.tableId == tid).toList()
+      ..sort((a, b) => a.index.compareTo(b.index));
+    final newId = 'seat-${DateTime.now().millisecondsSinceEpoch}';
+    final newPerimeter = (s.perimeterT + 1 / (atTable.length + 2)) % 1.0;
+    final newSeat = SeatingSeatSpec(
+      id: newId,
+      tableId: tid,
+      index: atTable.length,
+      label: s.label.trim().isEmpty ? 'Seat ${atTable.length + 1}' : '${s.label} copy',
+      perimeterT: newPerimeter,
+    );
+    final reindexed = <SeatingSeatSpec>[...atTable, newSeat];
+    for (var i = 0; i < reindexed.length; i++) {
+      reindexed[i] = reindexed[i].copyWith(index: i);
+    }
+    final tables = widget.plan.tables
+        .map((t) => t.id == tid ? t.copyWith(seatCount: reindexed.length) : t)
+        .toList();
+    final allSeats = <SeatingSeatSpec>[
+      ...widget.plan.seats.where((e) => e.tableId != tid),
+      ...reindexed,
+    ];
+    setState(() => _selectedSeatId = newId);
+    _emit(widget.plan.copyWith(tables: tables, seats: allSeats));
+  }
+
+  void _nudgeTable(double dxNorm, double dyNorm) {
+    final id = _selectedTableId;
+    if (id == null) return;
+    final tables = widget.plan.tables.map((t) {
+      if (t.id != id) return t;
+      return t.copyWith(
+        xNorm: (t.xNorm + dxNorm).clamp(0.0, 1.0 - t.wNorm),
+        yNorm: (t.yNorm + dyNorm).clamp(0.0, 1.0 - t.hNorm),
+      );
+    }).toList();
+    _emit(widget.plan.copyWith(tables: tables));
+  }
+
+  void _onResizeTable(String tableId, _TableResizeCorner corner, DragUpdateDetails d, double cw, double ch) {
+    final ax = d.delta.dx / cw;
+    final ay = d.delta.dy / ch;
+    final tables = widget.plan.tables.map((t) {
+      if (t.id != tableId) return t;
+      double x = t.xNorm;
+      double y = t.yNorm;
+      double w = t.wNorm;
+      double h = t.hNorm;
+      switch (corner) {
+        case _TableResizeCorner.se:
+          w += ax;
+          h += ay;
+          break;
+        case _TableResizeCorner.sw:
+          x += ax;
+          w -= ax;
+          h += ay;
+          break;
+        case _TableResizeCorner.ne:
+          y += ay;
+          w += ax;
+          h -= ay;
+          break;
+        case _TableResizeCorner.nw:
+          x += ax;
+          y += ay;
+          w -= ax;
+          h -= ay;
+          break;
+      }
+      w = w.clamp(0.06, 1.0);
+      h = h.clamp(0.06, 1.0);
+      x = x.clamp(0.0, 1.0 - w);
+      y = y.clamp(0.0, 1.0 - h);
+      w = w.clamp(0.06, 1.0 - x);
+      h = h.clamp(0.06, 1.0 - y);
+      if (t.shape == 'round') {
+        final cx = x + w / 2;
+        final cy = y + h / 2;
+        var side = math.max(w, h);
+        side = side.clamp(0.06, 1.0);
+        x = (cx - side / 2).clamp(0.0, 1.0 - side);
+        y = (cy - side / 2).clamp(0.0, 1.0 - side);
+        w = side;
+        h = side;
+      }
+      return t.copyWith(xNorm: x, yNorm: y, wNorm: w, hNorm: h);
+    }).toList();
+    _emit(widget.plan.copyWith(tables: tables));
+  }
+
+  void _onPanSeat(String seatId, DragUpdateDetails d, SeatingTableSpec table, double cw, double ch) {
+    final found = widget.plan.seats.where((e) => e.id == seatId).toList();
+    if (found.isEmpty) return;
+    final s = found.first;
+    final pos = seatNormOnEllipse(table, s);
+    final nx = (pos.dx * cw + d.delta.dx) / cw;
+    final ny = (pos.dy * ch + d.delta.dy) / ch;
+    final pt = perimeterTFromNormPoint(table, nx, ny);
+    final seats = widget.plan.seats
+        .map((e) => e.id == seatId ? e.copyWith(perimeterT: pt) : e)
+        .toList();
+    _emit(widget.plan.copyWith(seats: seats));
   }
 
   void _bumpSeatCount(int delta) {
@@ -246,20 +450,64 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
     final t = tables.firstWhere((e) => e.id == id);
     var next = widget.plan.copyWith(tables: tables);
     next = next.withRegeneratedSeatsForTable(id, t);
+    setState(() {
+      _selectedSeatId = null;
+    });
     _emit(next);
   }
 
-  void _onPanTable(String tableId, DragUpdateDetails d, double cw, double ch) {
-    final dx = d.delta.dx / cw;
-    final dy = d.delta.dy / ch;
-    final tables = widget.plan.tables.map((t) {
-      if (t.id != tableId) return t;
-      return t.copyWith(
-        xNorm: (t.xNorm + dx).clamp(0.0, 1.0 - t.wNorm),
-        yNorm: (t.yNorm + dy).clamp(0.0, 1.0 - t.hNorm),
-      );
-    }).toList();
-    _emit(widget.plan.copyWith(tables: tables));
+  List<Widget> _buildResizeHandles(SeatingPlanData p, double w, double h) {
+    if (!widget.editable || _selectedTableId == null) return <Widget>[];
+    final list = p.tables.where((e) => e.id == _selectedTableId).toList();
+    if (list.isEmpty) return <Widget>[];
+    final t = list.first;
+    return [
+      for (final c in _TableResizeCorner.values) _resizeHandle(t.id, c, t, w, h),
+    ];
+  }
+
+  Widget _resizeHandle(String tableId, _TableResizeCorner corner, SeatingTableSpec t, double cw, double ch) {
+    final left = t.xNorm * cw;
+    final top = t.yNorm * ch;
+    final tw = t.wNorm * cw;
+    final th = t.hNorm * ch;
+    double dl = 0;
+    double dt = 0;
+    switch (corner) {
+      case _TableResizeCorner.nw:
+        dl = -7;
+        dt = -7;
+        break;
+      case _TableResizeCorner.ne:
+        dl = tw - 7;
+        dt = -7;
+        break;
+      case _TableResizeCorner.sw:
+        dl = -7;
+        dt = th - 7;
+        break;
+      case _TableResizeCorner.se:
+        dl = tw - 7;
+        dt = th - 7;
+        break;
+    }
+    return Positioned(
+      left: left + dl,
+      top: top + dt,
+      width: 14,
+      height: 14,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanUpdate: (d) => _onResizeTable(tableId, corner, d, cw, ch),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFFF4511E), width: 2),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -315,53 +563,118 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                   icon: const Icon(Icons.add_circle_outline),
                 ),
                 IconButton(
+                  tooltip: 'Duplicate table',
+                  onPressed: _duplicateSelectedTable,
+                  icon: const Icon(Icons.copy_outlined),
+                ),
+                IconButton(
+                  tooltip: 'Nudge table left',
+                  onPressed: () => _nudgeTable(-0.02, 0),
+                  icon: const Icon(Icons.arrow_back, size: 20),
+                ),
+                IconButton(
+                  tooltip: 'Nudge table right',
+                  onPressed: () => _nudgeTable(0.02, 0),
+                  icon: const Icon(Icons.arrow_forward, size: 20),
+                ),
+                IconButton(
+                  tooltip: 'Nudge table up',
+                  onPressed: () => _nudgeTable(0, -0.02),
+                  icon: const Icon(Icons.arrow_upward, size: 20),
+                ),
+                IconButton(
+                  tooltip: 'Nudge table down',
+                  onPressed: () => _nudgeTable(0, 0.02),
+                  icon: const Icon(Icons.arrow_downward, size: 20),
+                ),
+                IconButton(
                   tooltip: 'Delete table',
                   onPressed: _deleteSelected,
                   icon: const Icon(Icons.delete_outline, color: Colors.red),
                 ),
               ],
+              if (_selectedSeatId != null) ...[
+                IconButton(
+                  tooltip: 'Duplicate seat',
+                  onPressed: _duplicateSelectedSeat,
+                  icon: const Icon(Icons.event_seat_outlined),
+                ),
+              ],
             ],
           ),
-          if (_selectedTableId != null)
+          if (_selectedTableId != null || _selectedSeatId != null)
             Padding(
               padding: const EdgeInsets.only(top: 4, bottom: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: Builder(
+                  if (_selectedTableId != null)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Builder(
+                            builder: (context) {
+                              final tid = _selectedTableId!;
+                              final t = widget.plan.tables.firstWhere((e) => e.id == tid);
+                              final ctrl = _labelCtrl(tid, t.label);
+                              return TextField(
+                                decoration: const InputDecoration(
+                                  labelText: 'Table label',
+                                  hintText: 'e.g. Head table, VIP 1',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                                controller: ctrl,
+                                onChanged: (v) {
+                                  final tables = widget.plan.tables.map((tb) {
+                                    if (tb.id != tid) return tb;
+                                    return tb.copyWith(
+                                      label: v.trim().isEmpty ? 'Table' : v.trim(),
+                                    );
+                                  }).toList();
+                                  _emit(widget.plan.copyWith(tables: tables));
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Drag green seats to position. Resize table with corner handles. '
+                            'Move table with arrow buttons.',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                          ),
+                        ),
+                      ],
+                    ),
+                  if (_selectedSeatId != null) ...[
+                    if (_selectedTableId != null) const SizedBox(height: 10),
+                    Builder(
                       builder: (context) {
-                        final tid = _selectedTableId!;
-                        final t = widget.plan.tables.firstWhere((e) => e.id == tid);
-                        final ctrl = _labelCtrl(tid, t.label);
+                        final sid = _selectedSeatId!;
+                        final s = widget.plan.seats.firstWhere((e) => e.id == sid);
+                        final ctrl = _seatLabelCtrl(sid, s.label);
                         return TextField(
                           decoration: const InputDecoration(
-                            labelText: 'Table label',
-                            hintText: 'e.g. Head table, VIP 1',
+                            labelText: 'Seat label',
+                            hintText: 'e.g. A1, Guest of honor',
                             border: OutlineInputBorder(),
                             isDense: true,
                           ),
                           controller: ctrl,
                           onChanged: (v) {
-                            final tables = widget.plan.tables.map((tb) {
-                              if (tb.id != tid) return tb;
-                              return tb.copyWith(
-                                label: v.trim().isEmpty ? 'Table' : v.trim(),
-                              );
+                            final seats = widget.plan.seats.map((e) {
+                              if (e.id != sid) return e;
+                              return e.copyWith(label: v);
                             }).toList();
-                            _emit(widget.plan.copyWith(tables: tables));
+                            _emit(widget.plan.copyWith(seats: seats));
                           },
                         );
                       },
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Drag the table to move. Use ± to change seat count.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                    ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -375,7 +688,10 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
               final h = c.maxHeight;
               return GestureDetector(
                 onTap: widget.editable
-                    ? () => setState(() => _selectedTableId = null)
+                    ? () => setState(() {
+                          _selectedTableId = null;
+                          _selectedSeatId = null;
+                        })
                     : null,
                 child: Container(
                   decoration: BoxDecoration(
@@ -398,11 +714,11 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                           child: GestureDetector(
                             onTap: () {
                               if (!widget.editable) return;
-                              setState(() => _selectedTableId = t.id);
+                              setState(() {
+                                _selectedTableId = t.id;
+                                _selectedSeatId = null;
+                              });
                             },
-                            onPanUpdate: widget.editable
-                                ? (d) => _onPanTable(t.id, d, w, h)
-                                : null,
                             child: Container(
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
@@ -441,32 +757,57 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                             break;
                           }
                         }
-                        if (table == null) return const SizedBox.shrink();
-                        final pos = seatNormOnEllipse(table, s);
+                        final tbl = table;
+                        if (tbl == null) return const SizedBox.shrink();
+                        final pos = seatNormOnEllipse(tbl, s);
+                        final selSeat = s.id == _selectedSeatId;
+                        var chip = s.label.trim();
+                        if (chip.isEmpty) chip = '${s.index + 1}';
+                        if (chip.length > 5) chip = '${chip.substring(0, 4)}…';
                         return Positioned(
-                          left: pos.dx * w - 10,
-                          top: pos.dy * h - 10,
-                          width: 20,
-                          height: 20,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1DB954),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 1),
-                            ),
-                            child: Center(
-                              child: Text(
-                                '${s.index + 1}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w700,
+                          left: pos.dx * w - 12,
+                          top: pos.dy * h - 12,
+                          width: 24,
+                          height: 24,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (!widget.editable) return;
+                              setState(() {
+                                _selectedSeatId = s.id;
+                                _selectedTableId = s.tableId;
+                              });
+                            },
+                            onPanUpdate: widget.editable
+                                ? (d) => _onPanSeat(s.id, d, tbl, w, h)
+                                : null,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: selSeat ? const Color(0xFF0D7A3A) : const Color(0xFF1DB954),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: selSeat ? const Color(0xFFFFF3D0) : Colors.white,
+                                  width: selSeat ? 2 : 1,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  chip,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.fade,
+                                  softWrap: false,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         );
                       }),
+                      ..._buildResizeHandles(p, w, h),
                     ],
                   ),
                 ),

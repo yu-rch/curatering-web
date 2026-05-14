@@ -1,59 +1,53 @@
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import '../config.dart';
+
+/// Calls the Curatering API RunPod proxy ([`/api/public/runpod/run`], status).
+/// `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` live only on the server (e.g. Railway).
 class RunPodService {
-  /// Avoid [NotInitializedError] when `.env` was not loaded (e.g. web build).
-  static String? _env(String key) {
-    if (!dotenv.isInitialized) return null;
-    final v = dotenv.env[key];
-    if (v == null || v.isEmpty) return null;
-    return v;
+  static String get _proxyBase {
+    final b = apiBaseUrl.trim();
+    if (b.isEmpty) return '';
+    return b.endsWith('/') ? b.substring(0, b.length - 1) : b;
   }
 
-  static String get _endpointId {
-    final endpointId = _env('RUNPOD_ENDPOINT_ID');
-    if (endpointId == null) {
+  static void _ensureBase() {
+    if (_proxyBase.isEmpty) {
       throw Exception(
-        'RUNPOD_ENDPOINT_ID is not set. For web, use --dart-define or ensure .env loads.',
+        'API_BASE_URL is empty; set --dart-define=API_BASE_URL=... so the RunPod proxy can be reached.',
       );
     }
-    return endpointId;
   }
 
-  static String get _apiKey {
-    final apiKey = _env('RUNPOD_API_KEY');
-    if (apiKey == null) {
-      throw Exception(
-        'RUNPOD_API_KEY is not set. For web, use --dart-define or ensure .env loads.',
-      );
-    }
-    return apiKey;
-  }
+  static Uri _runUri() => Uri.parse('$_proxyBase/api/public/runpod/run');
 
-  static const String _baseUrl = 'https://api.runpod.ai/v2';
+  static Uri _statusUri(String jobId) =>
+      Uri.parse('$_proxyBase/api/public/runpod/status/${Uri.encodeComponent(jobId)}');
 
   static Future<String?> generateImage(String prompt) async {
     try {
+      _ensureBase();
       final response = await http.post(
-        Uri.parse('$_baseUrl/$_endpointId/run'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_apiKey',
-        },
+        _runUri(),
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'input': {'prompt': prompt},
         }),
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
 
         if (data['status'] == 'COMPLETED') {
-          return data['output']['image'] as String?; // base64 string
+          final out = data['output'];
+          if (out is Map<String, dynamic>) {
+            return out['image'] as String?;
+          }
+          return null;
         } else if (data['status'] == 'IN_PROGRESS' ||
             data['status'] == 'IN_QUEUE') {
-          // Job is still processing, you might want to implement polling
           return null;
         } else {
           throw Exception(
@@ -61,13 +55,28 @@ class RunPodService {
           );
         }
       } else {
-        throw Exception(
-          'HTTP ${response.statusCode}: ${response.reasonPhrase}',
-        );
+        _throwHttp(response);
       }
     } catch (e) {
       throw Exception('Failed to generate image: $e');
     }
+  }
+
+  static Never _throwHttp(http.Response response) {
+    String msg = response.reasonPhrase ?? 'Request failed';
+    try {
+      final j = jsonDecode(response.body);
+      if (j is Map && j['message'] != null) {
+        msg = '${j['message']}';
+      }
+    } catch (_) {
+      if (response.body.isNotEmpty) {
+        msg = response.body.length > 500
+            ? '${response.body.substring(0, 500)}…'
+            : response.body;
+      }
+    }
+    throw Exception('HTTP ${response.statusCode}: $msg');
   }
 
   static Future<String?> generateImageWithPolling(
@@ -75,42 +84,40 @@ class RunPodService {
     required String user_id,
   }) async {
     try {
+      _ensureBase();
       final response = await http.post(
-        Uri.parse('$_baseUrl/$_endpointId/run'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_apiKey',
-        },
+        _runUri(),
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'input': {'prompt': prompt, 'user_id': user_id},
         }),
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final jobId = data['id'];
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
 
-        if (data["status"] == "COMPLETED") {
-          final out = data["output"];
-          if (out is Map && out["status"] == "error") {
+        if (data['status'] == 'COMPLETED') {
+          final out = data['output'];
+          if (out is Map && out['status'] == 'error') {
             throw Exception(
-              out["message"]?.toString() ?? 'Worker returned status error',
+              out['message']?.toString() ?? 'Worker returned status error',
             );
           }
-          return out is Map ? out["image_url"] as String? : null;
-        } else if (data["status"] == "IN_PROGRESS" ||
-            data["status"] == "IN_QUEUE") {
-          // Poll for completion
+          return out is Map ? out['image_url'] as String? : null;
+        } else if (data['status'] == 'IN_PROGRESS' ||
+            data['status'] == 'IN_QUEUE') {
+          final jobId = data['id']?.toString();
+          if (jobId == null || jobId.isEmpty) {
+            throw Exception('RunPod response missing job id');
+          }
           return await _pollForCompletion(jobId);
         } else {
           throw Exception(
-            'Generation failed: ${data["error"] ?? 'Unknown error'}',
+            'Generation failed: ${data['error'] ?? 'Unknown error'}',
           );
         }
       } else {
-        throw Exception(
-          'HTTP ${response.statusCode}: ${response.reasonPhrase}',
-        );
+        _throwHttp(response);
       }
     } catch (e) {
       throw Exception('Failed to generate image: $e');
@@ -119,31 +126,28 @@ class RunPodService {
 
   static Future<String?> _pollForCompletion(String jobId) async {
     int attempts = 0;
-    const maxAttempts = 30; // Poll for max 60 seconds (2s intervals)
+    const maxAttempts = 30;
 
     while (attempts < maxAttempts) {
       await Future.delayed(const Duration(seconds: 2));
       attempts++;
 
       try {
-        final response = await http.get(
-          Uri.parse('$_baseUrl/$_endpointId/status/$jobId'),
-          headers: {'Authorization': 'Bearer $_apiKey'},
-        );
+        final response = await http.get(_statusUri(jobId));
 
         if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
 
-          if (data["status"] == "COMPLETED") {
-            final out = data["output"];
-            if (out is Map && out["status"] == "error") {
+          if (data['status'] == 'COMPLETED') {
+            final out = data['output'];
+            if (out is Map && out['status'] == 'error') {
               throw Exception(
-                out["message"]?.toString() ?? 'Worker returned status error',
+                out['message']?.toString() ?? 'Worker returned status error',
               );
             }
-            return out is Map ? out["image_url"] as String? : null;
-          } else if (data["status"] == "FAILED") {
-            throw Exception('Job failed: ${data["error"] ?? 'Unknown error'}');
+            return out is Map ? out['image_url'] as String? : null;
+          } else if (data['status'] == 'FAILED') {
+            throw Exception('Job failed: ${data['error'] ?? 'Unknown error'}');
           }
         }
       } catch (e) {
@@ -155,48 +159,29 @@ class RunPodService {
   }
 
   static Future<Map<String, dynamic>> startGenerationJob(String prompt) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/$_endpointId/run'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_apiKey',
-        },
-        body: jsonEncode({
-          'input': {'prompt': prompt},
-        }),
-      );
+    _ensureBase();
+    final response = await http.post(
+      _runUri(),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'input': {'prompt': prompt},
+      }),
+    );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data;
-      } else {
-        throw Exception(
-          'HTTP ${response.statusCode}: ${response.reasonPhrase}',
-        );
-      }
-    } catch (e) {
-      throw Exception('Failed to start generation: $e');
+    if (response.statusCode != 200) {
+      _throwHttp(response);
     }
+    return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
   static Future<Map<String, dynamic>> getJobStatus(String jobId) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/$_endpointId/status/$jobId'),
-        headers: {'Authorization': 'Bearer $_apiKey'},
-      );
+    _ensureBase();
+    final response = await http.get(_statusUri(jobId));
 
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception(
-          'HTTP ${response.statusCode}: ${response.reasonPhrase}',
-        );
-      }
-    } catch (e) {
-      throw Exception('Failed to get job status: $e');
+    if (response.statusCode != 200) {
+      _throwHttp(response);
     }
+    return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
   static Future<String?> pollForResult(
@@ -204,14 +189,18 @@ class RunPodService {
     int maxAttempts = 30,
     int intervalSeconds = 2,
   }) async {
-    for (int i = 0; i < maxAttempts; i++) {
+    for (var i = 0; i < maxAttempts; i++) {
       await Future.delayed(Duration(seconds: intervalSeconds));
 
       try {
         final status = await getJobStatus(jobId);
 
         if (status['status'] == 'COMPLETED') {
-          return status['output']['image'] as String?;
+          final out = status['output'];
+          if (out is Map<String, dynamic>) {
+            return out['image'] as String?;
+          }
+          return null;
         } else if (status['status'] == 'FAILED') {
           throw Exception('Job failed: ${status['error'] ?? 'Unknown error'}');
         }
@@ -228,7 +217,6 @@ class RunPodService {
     throw Exception('Job timed out after $maxAttempts attempts');
   }
 
-  // Complete generation with polling
   static Future<String?> generateImageWithPollingSimple(String prompt) async {
     final jobResult = await startGenerationJob(prompt);
     final jobId = jobResult['id'] as String;

@@ -1,4 +1,4 @@
-runpod
+runpod>=1.7.0
 
 torch==2.1.0
 torchvision==0.16.0
@@ -6,6 +6,10 @@ torchvision==0.16.0
 diffusers==0.25.0
 transformers==4.36.2
 accelerate==0.25.0
+
+# Newer huggingface_hub drops cached_download; diffusers 0.25 / transformers 4.36 still import it.
+huggingface_hub==0.19.4
+safetensors==0.4.1
 
 pillow
 numpy==1.26.4

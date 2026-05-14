@@ -43,8 +43,6 @@ services:
       - PG_POOL_MAX=25
       - DATABASE_URL=${DATABASE_URL}
       - JWT_SECRET=${JWT_SECRET}
-      - TRANSPORTER_EMAIL=${TRANSPORTER_EMAIL}
-      - TRANSPORTER_PASSWORD=${TRANSPORTER_PASSWORD}
     volumes:
       - ./server:/workspace/server
       - node-node_modules:/workspace/server/node_modules

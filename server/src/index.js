@@ -237,6 +237,73 @@ app.get('/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development'
   });
 });
+
+/** Public proxy to RunPod — API key stays in server env (Railway). Body: `{ "input": { ... } }`. */
+app.post("/api/public/runpod/run", async (req, res) => {
+  try {
+    if (!RUNPOD_API_KEY || !RUNPOD_ENDPOINT_ID) {
+      return res.status(503).json({
+        message: "RunPod is not configured on this server",
+        code: "runpod_not_configured",
+      });
+    }
+    const input = req.body?.input;
+    if (input == null || typeof input !== "object" || Array.isArray(input)) {
+      return res.status(400).json({
+        message: "JSON body must include an object field `input`",
+        code: "bad_request",
+      });
+    }
+    const { res: rp, data } = await runpodProxyRequest("/run", {
+      method: "POST",
+      jsonBody: { input },
+    });
+    return res.status(rp.status).json(data);
+  } catch (e) {
+    if (e?.code === "runpod_not_configured") {
+      return res.status(503).json({
+        message: e.message,
+        code: "runpod_not_configured",
+      });
+    }
+    console.error("[runpod proxy] POST /run", e);
+    return res.status(502).json({
+      message: String(e?.message || e),
+      code: "runpod_proxy_error",
+    });
+  }
+});
+
+app.get("/api/public/runpod/status/:jobId", async (req, res) => {
+  try {
+    if (!RUNPOD_API_KEY || !RUNPOD_ENDPOINT_ID) {
+      return res.status(503).json({
+        message: "RunPod is not configured on this server",
+        code: "runpod_not_configured",
+      });
+    }
+    const jobId = String(req.params.jobId || "").trim();
+    if (!jobId || jobId.length > 240 || /[?#]/.test(jobId)) {
+      return res.status(400).json({ message: "invalid job id", code: "bad_request" });
+    }
+    const { res: rp, data } = await runpodProxyRequest(`/status/${encodeURIComponent(jobId)}`, {
+      method: "GET",
+    });
+    return res.status(rp.status).json(data);
+  } catch (e) {
+    if (e?.code === "runpod_not_configured") {
+      return res.status(503).json({
+        message: e.message,
+        code: "runpod_not_configured",
+      });
+    }
+    console.error("[runpod proxy] GET /status", e);
+    return res.status(502).json({
+      message: String(e?.message || e),
+      code: "runpod_proxy_error",
+    });
+  }
+});
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
@@ -261,6 +328,38 @@ const AI_SERVICE_SEGMENT_TIMEOUT_RETRIES = Math.max(
   0,
   Number(process.env.AI_SERVICE_SEGMENT_TIMEOUT_RETRIES || 1),
 );
+
+/** RunPod serverless — proxied so the API key never ships in the Flutter web bundle. */
+const RUNPOD_API_KEY = String(process.env.RUNPOD_API_KEY || "").trim();
+const RUNPOD_ENDPOINT_ID = String(process.env.RUNPOD_ENDPOINT_ID || "").trim();
+const RUNPOD_API_BASE = "https://api.runpod.ai/v2";
+
+async function runpodProxyRequest(pathSuffix, { method = "GET", jsonBody } = {}) {
+  if (!RUNPOD_API_KEY || !RUNPOD_ENDPOINT_ID) {
+    const err = new Error("RUNPOD_API_KEY and RUNPOD_ENDPOINT_ID must be set on the server");
+    err.code = "runpod_not_configured";
+    throw err;
+  }
+  const path = pathSuffix.startsWith("/") ? pathSuffix : `/${pathSuffix}`;
+  const url = `${RUNPOD_API_BASE}/${RUNPOD_ENDPOINT_ID}${path}`;
+  const headers = {
+    Authorization: `Bearer ${RUNPOD_API_KEY}`,
+    ...(jsonBody != null ? { "Content-Type": "application/json" } : {}),
+  };
+  const res = await fetch(url, {
+    method,
+    headers,
+    ...(jsonBody != null ? { body: JSON.stringify(jsonBody) } : {}),
+  });
+  const text = await res.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { message: text || "Invalid JSON from RunPod", raw: true };
+  }
+  return { res, data };
+}
 
 const allowedRoles = new Set(["admin", "manager", "supervisor", "super_admin", "cashier"]);
 const allowedHelpStatuses = new Set(["unresolved", "resolved"]);
@@ -1269,20 +1368,37 @@ function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// Email transporter — explicit smtp.gmail.com + ipv4first DNS avoids IPv6-only resolution failures on deploy.
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "smtp.gmail.com",
-  port: Number(process.env.SMTP_PORT || 465),
-  secure: String(process.env.SMTP_SECURE || "true") !== "false",
-  auth: {
-    user: process.env.TRANSPORTER_EMAIL,
-    pass: process.env.TRANSPORTER_PASSWORD,
-  },
-});
+// Email via Resend SMTP (https://resend.com/docs/send-with-smtp). Set RESEND_API_KEY and RESEND_FROM.
+// Optional overrides: SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER (default username is "resend").
+// dns.setDefaultResultOrder("ipv4first") above avoids IPv6-only SMTP resolution issues on some hosts.
+function createResendMailTransport() {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.RESEND_FROM;
+  if (!apiKey?.trim() || !from?.trim()) return null;
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST || "smtp.resend.com",
+    port: Number(process.env.SMTP_PORT || 465),
+    secure: String(process.env.SMTP_SECURE || "true") !== "false",
+    auth: {
+      user: process.env.SMTP_USER || "resend",
+      pass: apiKey.trim(),
+    },
+  });
+}
+
+const transporter = createResendMailTransport();
+
+function assertResendEmailConfigured() {
+  if (!transporter || !process.env.RESEND_FROM?.trim()) {
+    throw new Error("Email not configured: set RESEND_API_KEY and RESEND_FROM");
+  }
+}
+
 // Send OTP function
 async function sendOtpEmail(email, otp) {
+  assertResendEmailConfigured();
   await transporter.sendMail({
-    from: process.env.TRANSPORTER_EMAIL,
+    from: process.env.RESEND_FROM.trim(),
     to: email,
     subject: "Verify your Curatering account.",
     text: `Welcome to Curatering! \n\n If you did not request this email, please ignore this message. \n\n Your OTP is ${otp}. \n This OTP will expire in 10 minutes`,
@@ -1291,8 +1407,9 @@ async function sendOtpEmail(email, otp) {
 
 // Send Password Reset Email function
 async function sendPasswordResetEmail(email, resetCode, fullName) {
+  assertResendEmailConfigured();
   await transporter.sendMail({
-    from: process.env.TRANSPORTER_EMAIL,
+    from: process.env.RESEND_FROM.trim(),
     to: email,
     subject: "Password Reset - Curatering",
     text: `Hello ${fullName || 'Customer'},\n\nYou requested to reset your password for your Curatering account.\n\nYour password reset code is: ${resetCode}\n\nThis code will expire in 30 minutes.\n\nIf you did not request this password reset, please ignore this email and your password will remain unchanged.\n\nBest regards,\nCuratering Team`,
@@ -1301,8 +1418,9 @@ async function sendPasswordResetEmail(email, resetCode, fullName) {
 
 // Send Password Changed Email function
 async function sendPasswordChangedEmail(email, fullName) {
+  assertResendEmailConfigured();
   await transporter.sendMail({
-    from: process.env.TRANSPORTER_EMAIL,
+    from: process.env.RESEND_FROM.trim(),
     to: email,
     subject: "Your Password Has Been Changed - Curatering",
     text: `Hello ${fullName || 'Customer'},\n\nYour password for your Curatering account has been successfully changed.\n\nIf you did not make this change, please contact us immediately.\n\nBest regards,\nCuratering Team`,
@@ -1311,13 +1429,13 @@ async function sendPasswordChangedEmail(email, fullName) {
 
 async function sendCustomerNotificationEmail({ to, subject, text }) {
   if (!to) return;
-  if (!process.env.TRANSPORTER_EMAIL || !process.env.TRANSPORTER_PASSWORD) {
-    console.warn("Skipping customer email notification: transporter credentials missing");
+  if (!transporter || !process.env.RESEND_FROM?.trim()) {
+    console.warn("Skipping customer email notification: RESEND_API_KEY and RESEND_FROM must be set");
     return;
   }
   try {
     await transporter.sendMail({
-      from: process.env.TRANSPORTER_EMAIL,
+      from: process.env.RESEND_FROM.trim(),
       to,
       subject,
       text,
