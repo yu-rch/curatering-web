@@ -8,6 +8,7 @@ import nodemailer from "nodemailer";
 import postgres from 'postgres'
 import path from 'path'
 import fs from 'fs/promises'
+import { existsSync } from "node:fs";
 import { fileURLToPath } from 'url'
 import {
   initDb,
@@ -25,32 +26,77 @@ import CartAPI from './cart_api.js';
 try {
   dns.setDefaultResultOrder("ipv4first");
 } catch (_) {
-  /* Node < 17 */
 }
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const websiteContentPath = path.join(__dirname, "website-content.json");
 
+/** Resolve directory containing Flutter `web` build `index.html`, or null. */
+function resolveWebBuildPath() {
+  const candidates = [];
+  const envPath = process.env.WEB_BUILD_PATH?.trim();
+  if (envPath) candidates.push(path.resolve(envPath));
+  candidates.push(path.resolve(path.join(__dirname, "../../curatering/build/web")));
+  candidates.push(path.resolve(path.join(__dirname, "../../../curatering/build/web")));
+  candidates.push(path.resolve(path.join(path.dirname(__dirname), "web")));
+  for (const dir of candidates) {
+    if (dir && existsSync(path.join(dir, "index.html"))) return dir;
+  }
+  return null;
+}
+
 /**
- * CORS: browsers send the *frontend* origin (e.g. Firebase / Vercel / custom domain),
- * not the API host. Set CORS_ORIGINS on the server to a comma-separated list of
- * allowed origins, e.g. CORS_ORIGINS=https://myapp.web.app,https://www.example.com
- * Optional: FRONTEND_URL=https://myapp.web.app (origin is derived automatically).
+ * CORS: browsers send the *frontend* origin (e.g. Vercel / Firebase), not the API host.
+ *
+ * Defaults include https://curatering.com and https://www.curatering.com .
+ *
+ * Set on the API host (e.g. Railway) to add more origins:
+ *   CORS_ORIGINS=https://myapp.vercel.app,https://www.example.com
+ *   FRONTEND_URL=https://myapp.vercel.app   (origin added automatically)
+ *
+ * Vercel preview URLs (https://*-git-*-team.vercel.app) change per branch. If any
+ * configured URL is on *.vercel.app, we also allow HTTPS origins whose host ends with
+ * ".vercel.app". If you have not set FRONTEND_URL yet, set either:
+ *   CORS_ALLOW_VERCEL_ORIGINS=1
+ * or
+ *   CORS_ORIGIN_SUFFIXES=.vercel.app,.pages.dev
+ * or set CORS_INFER_VERCEL_SUFFIX=0 to disable inference from configured URLs.
  */
+function normalizeCorsOrigin(origin) {
+  if (origin == null || typeof origin !== "string") return origin;
+  const t = origin.trim();
+  if (!t) return t;
+  try {
+    const u = new URL(t);
+    const port = u.port ? `:${u.port}` : "";
+    return `${u.protocol}//${u.hostname.toLowerCase()}${port}`;
+  } catch {
+    return t;
+  }
+}
+
 function collectAllowedCorsOrigins() {
   const exact = new Set();
+
+  const addExact = (value) => {
+    const n = normalizeCorsOrigin(value);
+    if (n) exact.add(n);
+  };
+
   const fromList = String(process.env.CORS_ORIGINS || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  for (const o of fromList) exact.add(o);
+  for (const o of fromList) {
+    addExact(o);
+  }
 
   for (const key of ["FRONTEND_URL", "WEB_ORIGIN", "PUBLIC_WEB_URL"]) {
     const raw = process.env[key];
     if (!raw) continue;
     try {
-      exact.add(new URL(raw.trim()).origin);
+      addExact(new URL(raw.trim()).origin);
     } catch {
       // ignore invalid URL
     }
@@ -58,38 +104,107 @@ function collectAllowedCorsOrigins() {
 
   // Same host as API (e.g. if static app is ever served from the same Railway service)
   if (process.env.RAILWAY_PUBLIC_DOMAIN) {
-    exact.add(`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
+    addExact(`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
   }
 
   // Default API host (Flutter config.dart); only matters if the web app is served from this origin.
-  exact.add("https://curatering.up.railway.app");
+  addExact("https://curatering.up.railway.app");
+
+  // Production customer site (apex + www)
+  addExact("https://curatering.com");
+  addExact("https://www.curatering.com");
 
   return exact;
 }
 
 const _corsExactOrigins = collectAllowedCorsOrigins();
 
+function corsOriginIsCurateringSite(origin) {
+  if (!origin || typeof origin !== "string") return false;
+  const n = normalizeCorsOrigin(origin);
+  if (!n || !n.startsWith("https://")) return false;
+  try {
+    const h = new URL(n).hostname;
+    return h === "curatering.com" || h.endsWith(".curatering.com");
+  } catch {
+    return false;
+  }
+}
+
+const _corsOriginSuffixes = (() => {
+  const suffixes = new Set();
+  for (const s of String(process.env.CORS_ORIGIN_SUFFIXES || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean)) {
+    suffixes.add(s.startsWith(".") ? s : `.${s}`);
+  }
+  if (String(process.env.CORS_ALLOW_VERCEL_ORIGINS || "") === "1") {
+    suffixes.add(".vercel.app");
+  }
+  if (String(process.env.CORS_INFER_VERCEL_SUFFIX || "1") !== "0") {
+    for (const o of _corsExactOrigins) {
+      try {
+        const h = new URL(o).hostname.toLowerCase();
+        if (h === "vercel.app" || h.endsWith(".vercel.app")) {
+          suffixes.add(".vercel.app");
+          break;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return suffixes;
+})();
+
 const _corsLocalhostPatterns = [
   /^https?:\/\/localhost(?::\d+)?$/i,
   /^http:\/\/127\.0\.0\.1(?::\d+)?$/i,
 ];
+
+function corsOriginMatchesSuffix(origin) {
+  if (!origin || typeof origin !== "string" || !origin.startsWith("https://")) return false;
+  try {
+    const { hostname } = new URL(origin);
+    for (const suf of _corsOriginSuffixes) {
+      const suffix = suf.startsWith(".") ? suf : `.${suf}`;
+      if (hostname.toLowerCase().endsWith(suffix)) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
 
 function corsOrigin(origin, callback) {
   if (!origin) {
     callback(null, true);
     return;
   }
-  if (_corsExactOrigins.has(origin)) {
+  const normalized = normalizeCorsOrigin(origin);
+  if (_corsExactOrigins.has(normalized)) {
+    callback(null, true);
+    return;
+  }
+  if (corsOriginIsCurateringSite(normalized)) {
+    callback(null, true);
+    return;
+  }
+  if (corsOriginMatchesSuffix(normalized)) {
     callback(null, true);
     return;
   }
   for (const re of _corsLocalhostPatterns) {
-    if (re.test(origin)) {
+    if (re.test(normalized)) {
       callback(null, true);
       return;
     }
   }
-  console.warn("[cors] blocked origin (set CORS_ORIGINS or FRONTEND_URL):", origin);
+  console.warn(
+    "[cors] blocked origin (set CORS_ORIGINS / FRONTEND_URL, or deploy latest server for curatering.com):",
+    JSON.stringify(origin),
+  );
   callback(null, false);
 }
 
@@ -6715,11 +6830,20 @@ runInitDbWithRetries()
       }
     });
 
-    // Serve Flutter web build files (production).
-    // Allow overriding via WEB_BUILD_PATH env var to support different deploy layouts.
-    const webBuildPath = process.env.WEB_BUILD_PATH || path.join(__dirname, '../../curatering/build/web');
-    console.log('Serving static web files from:', webBuildPath);
-    app.use(express.static(webBuildPath));
+    // Serve Flutter web build (optional). If missing, host the SPA on Vercel/domain and keep API-only here.
+    const webBuildPath = resolveWebBuildPath();
+    if (webBuildPath) {
+      console.log("Serving static web files from:", webBuildPath);
+      app.use(express.static(webBuildPath));
+      app.get("*", (req, res, next) => {
+        if (req.path.startsWith("/api")) return next();
+        res.sendFile(path.join(webBuildPath, "index.html"));
+      });
+    } else {
+      console.warn(
+        "[static] No Flutter web build found (index.html). Unset WEB_BUILD_PATH on Railway if it points to a non-existent path, or add `curatering/build/web` to the deploy artifact.",
+      );
+    }
 
     // Health check endpoint for Railway
     app.get('/health', (req, res) => {
@@ -6733,18 +6857,11 @@ runInitDbWithRetries()
     });
 
     // Cart API routes
-app.get('/api/cart', CartAPI.getCart);
-app.post('/api/cart/sync', CartAPI.syncCart);
-app.post('/api/cart/clear', CartAPI.clearCart);
+    app.get('/api/cart', CartAPI.getCart);
+    app.post('/api/cart/sync', CartAPI.syncCart);
+    app.post('/api/cart/clear', CartAPI.clearCart);
 
-// SPA fallback - serve index.html for all non-API routes
-app.get('*', (req, res) => {
-  if (!req.path.startsWith('/api')) {
-    res.sendFile(path.join(webBuildPath, 'index.html'));
-  }
-});
-    
-    app.listen(PORT, () => {
+        app.listen(PORT, () => {
       console.log(`Curatering server listening on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`Database URL configured: ${connectionString ? 'Yes' : 'No'}`);

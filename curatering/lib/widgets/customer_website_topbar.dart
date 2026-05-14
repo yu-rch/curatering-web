@@ -352,20 +352,20 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: Row(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              InkWell(
+        children: [
+          InkWell(
                 onTap: () => _goHome(context),
-                child: Image.asset(
-                  'lib/assets/main-2.png',
+            child: Image.asset(
+              'lib/assets/main-2.png',
                   height: 34,
-                  fit: BoxFit.contain,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
+              fit: BoxFit.contain,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
                 child: Wrap(
                   spacing: 2,
                   runSpacing: 4,
@@ -416,20 +416,20 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
               if (widget.showCartAndCustomerAuth) ...[
                 Stack(
                   clipBehavior: Clip.none,
-                  children: [
-                    IconButton(
-                      icon: const Icon(
-                        Icons.shopping_cart,
-                        color: Colors.white,
-                      ),
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.shopping_cart,
+                            color: Colors.white,
+                          ),
                       onPressed: _openCart,
-                      tooltip: 'View cart',
-                    ),
+                          tooltip: 'View cart',
+                        ),
                     if (CartStore.instance.itemCount > 0)
-                      Positioned(
+                          Positioned(
                         right: 6,
                         top: 6,
-                        child: Container(
+                            child: Container(
                           padding: const EdgeInsets.all(2),
                           decoration: BoxDecoration(
                             color: Colors.red,
@@ -438,22 +438,22 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                           constraints: const BoxConstraints(
                             minWidth: 18,
                             minHeight: 18,
-                          ),
-                          child: Text(
+                              ),
+                              child: Text(
                             '${CartStore.instance.itemCount}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
                             ),
                             textAlign: TextAlign.center,
                           ),
-                        ),
-                      ),
-                  ],
+                            ),
+                          ),
+                      ],
                 ),
                 const SizedBox(width: 8),
                 if (_isCustomerLoggedIn)
-                  PopupMenuButton<String>(
+                PopupMenuButton<String>(
                     onSelected: (value) async {
                       switch (value) {
                         case 'my_profile':
@@ -493,9 +493,9 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          Icons.person,
+                            Icons.person,
                           color: Colors.amber.shade400,
-                          size: 20,
+                            size: 20,
                         ),
                         const SizedBox(width: 4),
                         ConstrainedBox(
@@ -503,87 +503,87 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                           child: Text(
                             _customerData?['fullName'] ?? 'Customer',
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
                             ),
                           ),
                         ),
                         const Icon(Icons.arrow_drop_down, color: Colors.white),
                       ],
-                    ),
-                    itemBuilder:
+                  ),
+                  itemBuilder:
                         (context) => const [
                           PopupMenuItem(
-                            value: 'my_profile',
-                            child: Row(
-                              children: [
-                                Icon(Icons.person, size: 18),
-                                SizedBox(width: 8),
-                                Text('My Profile'),
-                              ],
-                            ),
+                          value: 'my_profile',
+                          child: Row(
+                            children: [
+                              Icon(Icons.person, size: 18),
+                              SizedBox(width: 8),
+                              Text('My Profile'),
+                            ],
                           ),
+                        ),
                           PopupMenuItem(
-                            value: 'my_orders',
-                            child: Row(
-                              children: [
-                                Icon(Icons.receipt_long, size: 18),
-                                SizedBox(width: 8),
-                                Text('My Orders'),
-                              ],
-                            ),
+                          value: 'my_orders',
+                          child: Row(
+                            children: [
+                              Icon(Icons.receipt_long, size: 18),
+                              SizedBox(width: 8),
+                              Text('My Orders'),
+                            ],
                           ),
+                        ),
                           PopupMenuItem(
-                            value: 'my_caterings',
-                            child: Row(
-                              children: [
-                                Icon(Icons.event, size: 18),
-                                SizedBox(width: 8),
-                                Text('My Caterings'),
-                              ],
-                            ),
+                          value: 'my_caterings',
+                          child: Row(
+                            children: [
+                              Icon(Icons.event, size: 18),
+                              SizedBox(width: 8),
+                              Text('My Caterings'),
+                            ],
                           ),
+                        ),
                           PopupMenuItem(
-                            value: 'order_tracking',
-                            child: Row(
-                              children: [
-                                Icon(Icons.local_shipping, size: 18),
-                                SizedBox(width: 8),
-                                Text('Order Tracking'),
-                              ],
-                            ),
+                          value: 'order_tracking',
+                          child: Row(
+                            children: [
+                              Icon(Icons.local_shipping, size: 18),
+                              SizedBox(width: 8),
+                              Text('Order Tracking'),
+                            ],
                           ),
+                        ),
                           PopupMenuDivider(),
                           PopupMenuItem(
-                            value: 'logout',
-                            child: Row(
-                              children: [
-                                Icon(Icons.logout, size: 18, color: Colors.red),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Logout',
-                                  style: TextStyle(color: Colors.red),
-                                ),
-                              ],
-                            ),
+                          value: 'logout',
+                          child: Row(
+                            children: [
+                              Icon(Icons.logout, size: 18, color: Colors.red),
+                              SizedBox(width: 8),
+                              Text(
+                                'Logout',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ],
                           ),
-                        ],
-                  )
-                else
-                  TextButton.icon(
+                        ),
+                      ],
+                )
+              else
+                TextButton.icon(
                     onPressed: _handleLogin,
                     icon: const Icon(
                       Icons.login,
                       color: Colors.white,
                       size: 18,
                     ),
-                    label: const Text(
-                      'Login',
-                      style: TextStyle(color: Colors.white),
-                    ),
+                  label: const Text(
+                    'Login',
+                    style: TextStyle(color: Colors.white),
                   ),
-              ],
+                ),
+            ],
             ],
           ),
         ),
