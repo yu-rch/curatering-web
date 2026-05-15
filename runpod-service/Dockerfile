@@ -18,6 +18,9 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt \
     && python -c "import runpod; print('runpod import OK')"
 
+# Model downloads on first worker boot (HF_HOME). Baking weights in the image adds ~30+ min to builds.
+ENV HF_HOME=/app/huggingface
+
 # copy handler
 COPY handler_minimal.py handler.py
 

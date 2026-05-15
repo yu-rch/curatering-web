@@ -238,6 +238,51 @@ app.get('/health', (req, res) => {
   });
 });
 
+/**
+ * Normalize RunPod worker input for txt2img / img2img.
+ * Accepts several client field names for the venue photo; forwards `init_image_base64`.
+ */
+function normalizeRunpodInput(input) {
+  const out = { ...input };
+  const raw =
+    out.init_image_base64 ??
+    out.image_base64 ??
+    out.venue_image_base64 ??
+    out.venuePhotoBase64;
+  if (typeof raw === "string" && raw.trim()) {
+    let s = raw.trim();
+    if (s.startsWith("data:")) {
+      const comma = s.indexOf(",");
+      s = comma >= 0 ? s.slice(comma + 1) : s;
+    }
+    const maxLen = Number(process.env.RUNPOD_MAX_INIT_IMAGE_B64_LEN || 8_000_000);
+    if (s.length > maxLen) {
+      const err = new Error(
+        `init_image_base64 exceeds ${maxLen} characters — use a smaller venue photo`,
+      );
+      err.code = "payload_too_large";
+      throw err;
+    }
+    out.init_image_base64 = s;
+    delete out.image_base64;
+    delete out.venue_image_base64;
+    delete out.venuePhotoBase64;
+  }
+  if (out.strength != null) {
+    const st = Number(out.strength);
+    out.strength = Number.isFinite(st)
+      ? Math.min(0.95, Math.max(0.15, st))
+      : 0.65;
+  }
+  if (out.num_inference_steps != null) {
+    const steps = Number(out.num_inference_steps);
+    out.num_inference_steps = Number.isFinite(steps)
+      ? Math.min(30, Math.max(12, Math.round(steps)))
+      : 20;
+  }
+  return out;
+}
+
 /** Public proxy to RunPod — API key stays in server env (Railway). Body: `{ "input": { ... } }`. */
 app.post("/api/public/runpod/run", async (req, res) => {
   try {
@@ -254,9 +299,31 @@ app.post("/api/public/runpod/run", async (req, res) => {
         code: "bad_request",
       });
     }
+    let normalized;
+    try {
+      normalized = normalizeRunpodInput(input);
+      const initLen =
+        typeof normalized.init_image_base64 === "string"
+          ? normalized.init_image_base64.length
+          : 0;
+      console.log(
+        "[runpod proxy] job input:",
+        initLen > 0 ? `img2img (venue b64 ${initLen} chars)` : "txt2img (no venue image)",
+        "steps=",
+        normalized.num_inference_steps ?? "default",
+      );
+    } catch (normErr) {
+      if (normErr?.code === "payload_too_large") {
+        return res.status(413).json({
+          message: normErr.message,
+          code: "payload_too_large",
+        });
+      }
+      throw normErr;
+    }
     const { res: rp, data } = await runpodProxyRequest("/run", {
       method: "POST",
-      jsonBody: { input },
+      jsonBody: { input: normalized },
     });
     return res.status(rp.status).json(data);
   } catch (e) {

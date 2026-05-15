@@ -10,6 +10,9 @@ import '../pages/my_order_tracking_page.dart';
 import '../pages/my_orders_page.dart';
 import '../pages/my_profile_page.dart';
 import '../services/cart_store.dart';
+import 'antd_message.dart';
+import 'antd_profile_menu.dart';
+import 'antd_tokens.dart';
 
 /// Public site header matching the homepage (`CustomerWebsiteScreen`) styling:
 /// dark bar, centered wrap nav, red cart badge, customer login from SharedPreferences.
@@ -83,9 +86,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
       _isCustomerLoggedIn = false;
       _customerData = null;
     });
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Logged out successfully')));
+    showAntdMessage(context, 'Logged out successfully');
   }
 
   void _openCart() {
@@ -453,123 +454,77 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                 ),
                 const SizedBox(width: 8),
                 if (_isCustomerLoggedIn)
-                PopupMenuButton<String>(
-                    onSelected: (value) async {
-                      switch (value) {
-                        case 'my_profile':
-                          await Navigator.of(context).push(
+                  AntdProfileMenu(
+                    triggerLabel: _customerData?['fullName'] ?? 'Customer',
+                    leading: const Icon(
+                      Icons.person_outline,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                    items: [
+                      AntdProfileMenuItem.header(
+                        _customerData?['fullName'] ?? 'Customer',
+                      ),
+                      AntdProfileMenuItem.action(
+                        id: 'my_profile',
+                        icon: Icons.person_outline,
+                        label: 'My Profile',
+                        onSelected: () {
+                          Navigator.of(context).push(
                             MaterialPageRoute<void>(
                               builder: (_) => const MyProfilePage(),
                             ),
                           );
-                          break;
-                        case 'my_orders':
-                          await Navigator.of(context).push(
+                        },
+                      ),
+                      AntdProfileMenuItem.action(
+                        id: 'my_orders',
+                        icon: Icons.receipt_long,
+                        label: 'My Orders',
+                        onSelected: () {
+                          Navigator.of(context).push(
                             MaterialPageRoute<void>(
                               builder: (_) => const MyOrdersPage(),
                             ),
                           );
-                          break;
-                        case 'my_caterings':
-                          await Navigator.of(context).push(
+                        },
+                      ),
+                      AntdProfileMenuItem.action(
+                        id: 'my_caterings',
+                        icon: Icons.event,
+                        label: 'My Caterings',
+                        onSelected: () {
+                          Navigator.of(context).push(
                             MaterialPageRoute<void>(
                               builder: (_) => const MyCateringsPage(),
                             ),
                           );
-                          break;
-                        case 'order_tracking':
-                          await Navigator.of(context).push(
+                        },
+                      ),
+                      AntdProfileMenuItem.action(
+                        id: 'order_tracking',
+                        icon: Icons.local_shipping_outlined,
+                        label: 'Order Tracking',
+                        onSelected: () {
+                          Navigator.of(context).push(
                             MaterialPageRoute<void>(
                               builder: (_) => const MyOrderTrackingPage(),
                             ),
                           );
-                          break;
-                        case 'logout':
-                          await _handleLogout();
-                          break;
-                      }
-                    },
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                            Icons.person,
-                          color: Colors.amber.shade400,
-                            size: 20,
-                        ),
-                        const SizedBox(width: 4),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 120),
-                          child: Text(
-                            _customerData?['fullName'] ?? 'Customer',
-                            overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            ),
-                          ),
-                        ),
-                        const Icon(Icons.arrow_drop_down, color: Colors.white),
-                      ],
-                  ),
-                  itemBuilder:
-                        (context) => const [
-                          PopupMenuItem(
-                          value: 'my_profile',
-                          child: Row(
-                            children: [
-                              Icon(Icons.person, size: 18),
-                              SizedBox(width: 8),
-                              Text('My Profile'),
-                            ],
-                          ),
-                        ),
-                          PopupMenuItem(
-                          value: 'my_orders',
-                          child: Row(
-                            children: [
-                              Icon(Icons.receipt_long, size: 18),
-                              SizedBox(width: 8),
-                              Text('My Orders'),
-                            ],
-                          ),
-                        ),
-                          PopupMenuItem(
-                          value: 'my_caterings',
-                          child: Row(
-                            children: [
-                              Icon(Icons.event, size: 18),
-                              SizedBox(width: 8),
-                              Text('My Caterings'),
-                            ],
-                          ),
-                        ),
-                          PopupMenuItem(
-                          value: 'order_tracking',
-                          child: Row(
-                            children: [
-                              Icon(Icons.local_shipping, size: 18),
-                              SizedBox(width: 8),
-                              Text('Order Tracking'),
-                            ],
-                          ),
-                        ),
-                          PopupMenuDivider(),
-                          PopupMenuItem(
-                          value: 'logout',
-                          child: Row(
-                            children: [
-                              Icon(Icons.logout, size: 18, color: Colors.red),
-                              SizedBox(width: 8),
-                              Text(
-                                'Logout',
-                                style: TextStyle(color: Colors.red),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                )
+                        },
+                      ),
+                      AntdProfileMenuItem.action(
+                        id: 'logout',
+                        icon: Icons.logout,
+                        label: 'Logout',
+                        destructive: true,
+                        dividerBefore: true,
+                        onSelected: () {
+                          _handleLogout();
+                        },
+                      ),
+                    ],
+                  )
               else
                 TextButton.icon(
                     onPressed: _handleLogin,

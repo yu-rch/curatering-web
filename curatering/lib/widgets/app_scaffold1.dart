@@ -221,13 +221,6 @@ class AppScaffold1 extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        _buildSidebarItem(
-                          context,
-                          Icons.settings,
-                          'Settings',
-                          '/settings',
-                        ),
                       ],
                     ),
                   );

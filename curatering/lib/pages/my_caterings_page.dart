@@ -227,6 +227,207 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     return {};
   }
 
+  bool _hasEventThemeDesign(Map<String, dynamic> themeDesign) {
+    if (themeDesign.isEmpty) return false;
+    if (themeDesign['serviceType'] == 'catering' &&
+        themeDesign['eventDesignSource'] == null) {
+      return false;
+    }
+    final src = (themeDesign['eventDesignSource'] ?? '').toString();
+    if (src == 'macrina' || src == 'customer_ai') return true;
+    if (themeDesign['wantsCustomDesign'] == true) return true;
+    if ((themeDesign['generatedImageUrl'] ?? '').toString().trim().isNotEmpty) {
+      return true;
+    }
+    if ((themeDesign['venuePhotoBase64'] ?? '').toString().trim().isNotEmpty) {
+      return true;
+    }
+    if ((themeDesign['macrinaColorPalette'] ?? '').toString().trim().isNotEmpty) {
+      return true;
+    }
+    if ((themeDesign['macrinaTheme'] ?? '').toString().trim().isNotEmpty) {
+      return true;
+    }
+    if ((themeDesign['style'] ?? '').toString().trim().isNotEmpty) return true;
+    if ((themeDesign['mood'] ?? '').toString().trim().isNotEmpty) return true;
+    final colors = themeDesign['colorPalette'];
+    if (colors is List && colors.isNotEmpty) return true;
+    final decor = themeDesign['decorElements'];
+    if (decor is List && decor.isNotEmpty) return true;
+    if ((themeDesign['customInstructions'] ?? '').toString().trim().isNotEmpty) {
+      return true;
+    }
+    return false;
+  }
+
+  String _eventDesignSourceLabel(Map<String, dynamic> themeDesign) {
+    final src = (themeDesign['eventDesignSource'] ?? '').toString();
+    if (src == 'macrina') return 'Macrina\'s will design your event';
+    if (src == 'customer_ai') return 'Your AI event design';
+    if (themeDesign['wantsCustomDesign'] == true) return 'Custom event design';
+    return 'Event theme design';
+  }
+
+  void _openThemeImageZoom(BuildContext context, Widget image) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        backgroundColor: Colors.black,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 5,
+                child: Center(child: image),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                icon: const Icon(Icons.close, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget? _buildThemeImagePreview(
+    BuildContext context,
+    Map<String, dynamic> themeDesign, {
+    double height = 160,
+  }) {
+    final url = (themeDesign['generatedImageUrl'] ?? '').toString().trim();
+    if (url.isNotEmpty) {
+      final img = Image.network(
+        url,
+        height: height,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(
+          height: height,
+          color: Colors.grey.shade200,
+          child: const Center(child: Icon(Icons.broken_image_outlined)),
+        ),
+      );
+      return InkWell(
+        onTap: () => _openThemeImageZoom(
+          context,
+          Image.network(url, fit: BoxFit.contain),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Stack(
+            children: [
+              img,
+              Positioned(
+                right: 8,
+                bottom: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.zoom_in, color: Colors.white, size: 14),
+                      SizedBox(width: 4),
+                      Text(
+                        'Tap to zoom',
+                        style: TextStyle(color: Colors.white, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final venueB64 = (themeDesign['venuePhotoBase64'] ?? '').toString().trim();
+    if (venueB64.isEmpty) return null;
+    try {
+      final bytes = base64Decode(
+        venueB64.startsWith('data:') ? venueB64.split(',').last : venueB64,
+      );
+      final mem = Image.memory(bytes, height: height, width: double.infinity, fit: BoxFit.cover);
+      return InkWell(
+        onTap: () => _openThemeImageZoom(
+          context,
+          Image.memory(bytes, fit: BoxFit.contain),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: mem,
+        ),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<Widget> _buildEventThemeDesignSection(
+    BuildContext context,
+    Map<String, dynamic> themeDesign,
+  ) {
+    if (!_hasEventThemeDesign(themeDesign)) return const [];
+
+    final lines = <String>[];
+    void add(String label, dynamic value) {
+      if (value == null) return;
+      if (value is List) {
+        if (value.isEmpty) return;
+        lines.add('$label: ${value.join(', ')}');
+        return;
+      }
+      final s = value.toString().trim();
+      if (s.isNotEmpty) lines.add('$label: $s');
+    }
+
+    add('Design type', _eventDesignSourceLabel(themeDesign));
+    add('Event type', themeDesign['eventDesignEventType']);
+    add('Style', themeDesign['style']);
+    add('Mood', themeDesign['mood']);
+    add('Colors', themeDesign['colorPalette']);
+    add('Decor', themeDesign['decorElements']);
+    add('Macrina palette', themeDesign['macrinaColorPalette']);
+    add('Macrina theme', themeDesign['macrinaTheme']);
+    add('Notes', themeDesign['customInstructions']);
+
+    return [
+      const SizedBox(height: 12),
+      const Text(
+        'Event theme design',
+        style: TextStyle(fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(height: 6),
+      if (lines.isNotEmpty) ...lines.map((l) => Text('- $l')),
+      if (_buildThemeImagePreview(context, themeDesign) != null) ...[
+        const SizedBox(height: 10),
+        _buildThemeImagePreview(context, themeDesign)!,
+      ],
+      if ((themeDesign['generatedImageUrl'] ?? '').toString().trim().isEmpty &&
+          (themeDesign['venuePhotoBase64'] ?? '').toString().trim().isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            'Venue reference photo from your inquiry',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        ),
+    ];
+  }
+
   List<dynamic> _parseDynamicList(dynamic raw) {
     if (raw is List) return raw;
     if (raw is String && raw.isNotEmpty) {
@@ -999,6 +1200,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                         '- $dish ${pax.isEmpty ? '' : '($pax)'}  $price',
                       );
                     }),
+                  ..._buildEventThemeDesignSection(context, themeDesign),
                   const SizedBox(height: 12),
                   const Text(
                     'Cost Breakdown',
@@ -1147,6 +1349,14 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     final status = (catering['status'] ?? 'online_inquiries').toString();
     final title =
         catering['event_title'] ?? catering['eventTitle'] ?? 'Catering';
+    final themeDesign = _parseThemeDesign(
+      catering['themeDesign'] ?? catering['theme_design'],
+    );
+    final designPreview = _buildThemeImagePreview(
+      context,
+      themeDesign,
+      height: 100,
+    );
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: () => _showCateringDetailsDialog(catering),
@@ -1161,6 +1371,10 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (designPreview != null) ...[
+                designPreview,
+                const SizedBox(height: 8),
+              ],
               Text(
                 title,
                 maxLines: 2,
@@ -1170,6 +1384,15 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                   fontSize: 14,
                 ),
               ),
+              if (_hasEventThemeDesign(themeDesign)) ...[
+                const SizedBox(height: 4),
+                Text(
+                  _eventDesignSourceLabel(themeDesign),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
+              ],
               const Spacer(),
               Text(
                 _formatStatus(status),
@@ -1482,6 +1705,66 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                                           style: TextStyle(
                                             color: Colors.grey.shade700,
                                             fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                  if (_hasEventThemeDesign(themeDesign)) ...[
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        if (_buildThemeImagePreview(
+                                              context,
+                                              themeDesign,
+                                              height: 72,
+                                            ) !=
+                                            null) ...[
+                                          SizedBox(
+                                            width: 96,
+                                            child: _buildThemeImagePreview(
+                                              context,
+                                              themeDesign,
+                                              height: 72,
+                                            )!,
+                                          ),
+                                          const SizedBox(width: 12),
+                                        ],
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Event theme design',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.grey.shade800,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                _eventDesignSourceLabel(
+                                                  themeDesign,
+                                                ),
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                              if ((themeDesign['style'] ?? '')
+                                                  .toString()
+                                                  .isNotEmpty)
+                                                Text(
+                                                  'Style: ${themeDesign['style']}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey.shade600,
+                                                  ),
+                                                ),
+                                            ],
                                           ),
                                         ),
                                       ],

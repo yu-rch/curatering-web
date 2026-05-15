@@ -67,6 +67,38 @@ class MyApp extends StatelessWidget {
             useMaterial3: true,
             brightness: dark ? Brightness.dark : Brightness.light,
             textTheme: GoogleFonts.interTextTheme(),
+            pageTransitionsTheme: const PageTransitionsTheme(
+              builders: {
+                TargetPlatform.android: _NoTransitionsBuilder(),
+                TargetPlatform.iOS: _NoTransitionsBuilder(),
+                TargetPlatform.linux: _NoTransitionsBuilder(),
+                TargetPlatform.macOS: _NoTransitionsBuilder(),
+                TargetPlatform.windows: _NoTransitionsBuilder(),
+                TargetPlatform.fuchsia: _NoTransitionsBuilder(),
+              },
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFC024),
+                foregroundColor: const Color(0xFF1E1E1E),
+              ),
+            ),
+            filledButtonTheme: FilledButtonThemeData(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFFFC024),
+                foregroundColor: const Color(0xFF1E1E1E),
+              ),
+            ),
+            radioTheme: RadioThemeData(
+              fillColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return const Color(0xFFFFC024);
+                }
+                return dark
+                    ? const Color(0xFF5C5C5C)
+                    : const Color(0xFFBFBFBF);
+              }),
+            ),
           ),
           initialRoute: '/',
           routes: {
@@ -241,5 +273,21 @@ class MyApp extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+/// Disables route transition animations for snappier staff navigation.
+class _NoTransitionsBuilder extends PageTransitionsBuilder {
+  const _NoTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return child;
   }
 }

@@ -14,7 +14,6 @@ class MenuDish {
   final List<String> setMenus; // Array of set names this dish belongs to
   /// Short description for the dish on the public catering menu (tap for details).
   final String publicDescription;
-  /// Free-text allergen notice (e.g. "Contains dairy, nuts").
   final String allergens;
 
   const MenuDish({

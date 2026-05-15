@@ -13,11 +13,17 @@ import '../models/event_order.dart';
 import '../models/menu_dish.dart';
 import '../services/events_api.dart';
 import '../services/menu_store.dart';
+import '../services/set_menu_store.dart';
+import '../widgets/antd_buttons.dart';
+import '../widgets/antd_descriptions.dart';
+import '../widgets/antd_dialog.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/map_picker.dart';
 import '../widgets/processing_seating_section.dart';
 import '../utils/order_calculations.dart';
 import '../utils/web_html.dart' as html;
+
+part 'catering_manage_events_part.dart';
 // import 'package:segment_anything/segment_anything.dart';
 
 /// Reuse Manage Events order lists briefly so leaving and returning the page
@@ -207,8 +213,9 @@ class ChecklistItem {
 enum EventStatus {
   newEvent,
   onlineInquiries,
-  forProcessing,
-  forPostAnalysis,
+  forDownpayment,
+  ongoing,
+  forFullPayment,
   completed,
 }
 
@@ -350,11 +357,13 @@ class _ThemeTemplate {
   });
 }
 
-class _ManageEventsState extends State<ManageEvents> {
+class _ManageEventsState extends State<ManageEvents>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _eventSearchController = TextEditingController();
   final TextEditingController _inquirySearchController =
       TextEditingController();
   final TextEditingController _foodSearchController = TextEditingController();
+  TabController? _foodTabController;
   final TextEditingController _eventTitleController = TextEditingController();
   final TextEditingController _customerController = TextEditingController();
   final TextEditingController _contactPersonController =
@@ -385,6 +394,8 @@ class _ManageEventsState extends State<ManageEvents> {
     super.initState();
     _allDishes = MenuStore.instance.activeDishes;
     MenuStore.instance.addListener(_onMenuStoreChanged);
+    SetMenuStore.instance.loadSetMenus();
+    _foodTabController = TabController(length: 2, vsync: this);
     _loadThemeTemplates();
     AuthSession.instance.currentUser.addListener(_handleAuthSessionChange);
     final role = AuthSession.instance.currentRole;
@@ -424,8 +435,11 @@ class _ManageEventsState extends State<ManageEvents> {
     _emailController.dispose();
     _eventAddressController.dispose();
     _guestCountController.dispose();
+    _foodTabController?.dispose();
     super.dispose();
   }
+
+  void _mutateTableState(VoidCallback fn) => setState(fn);
 
   void _handleAuthSessionChange() {
     if (!mounted || _ordersLoading) return;
@@ -559,6 +573,7 @@ class _ManageEventsState extends State<ManageEvents> {
   }
 
   void _addToMenu(MenuDish dish) {
+    if ((_foodTabController?.index ?? 0) != 0) return;
     final selectedPax = _selectedPaxPerDish[dish.name] ?? dish.paxOptions.first;
     final existingIndex = _menuItems.indexWhere(
       (item) => item.dish.name == dish.name && item.paxOption == selectedPax,
@@ -569,9 +584,30 @@ class _ManageEventsState extends State<ManageEvents> {
       );
       return;
     }
+    if (_menuItems.length >= 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Maximum 8 dishes per menu.')),
+      );
+      return;
+    }
 
     setState(() {
       _menuItems.add(MenuItem(dish: dish, paxOption: selectedPax));
+    });
+  }
+
+  void _applySetMenuToNewEvent(SetMenu set) {
+    final dishById = {for (final d in _allDishes) d.id: d};
+    setState(() {
+      _menuItems.clear();
+      for (final id in set.dishIds) {
+        final dish = dishById[id];
+        if (dish == null) continue;
+        final pax =
+            _selectedPaxPerDish[dish.name] ??
+            (dish.paxOptions.isNotEmpty ? dish.paxOptions.first : '1');
+        _menuItems.add(MenuItem(dish: dish, paxOption: pax));
+      }
     });
   }
 
@@ -3288,7 +3324,7 @@ class _ManageEventsState extends State<ManageEvents> {
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 8),
-                if (dto.status == EventStatus.forProcessing)
+                if (dto.status == 'for_processing')
                   ElevatedButton(
                     onPressed: () => _acceptOrder(dto),
                     style: ElevatedButton.styleFrom(
@@ -4869,7 +4905,7 @@ class _ManageEventsState extends State<ManageEvents> {
       setState(() {
         _selectedProcessingOrderDto = null;
       });
-      setState(() => _selectedStatus = EventStatus.forPostAnalysis);
+      setState(() => _selectedStatus = EventStatus.forFullPayment);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -6909,10 +6945,12 @@ class _ManageEventsState extends State<ManageEvents> {
     switch (status) {
       case EventStatus.onlineInquiries:
         return _buildOnlineInquiriesView(isNarrow);
-      case EventStatus.forProcessing:
-        return _buildForProcessingView(isNarrow);
-      case EventStatus.forPostAnalysis:
-        return _buildPostAnalysisView(isNarrow);
+      case EventStatus.forDownpayment:
+        return _buildForDownpaymentTableView(isNarrow);
+      case EventStatus.ongoing:
+        return _buildOngoingTableView(isNarrow);
+      case EventStatus.forFullPayment:
+        return _buildForFullPaymentTableView(isNarrow);
       case EventStatus.completed:
         return _buildCompletedEventsView(isNarrow);
       case EventStatus.newEvent:
@@ -7112,7 +7150,7 @@ class _ManageEventsState extends State<ManageEvents> {
 
                           // switch tab
                           setState(
-                            () => _selectedStatus = EventStatus.forProcessing,
+                            () => _selectedStatus = EventStatus.forDownpayment,
                           );
                         } catch (e) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -7825,11 +7863,13 @@ class _ManageEventsState extends State<ManageEvents> {
                         const SizedBox(width: 2),
                         _buildEventTabButton('Online Inquiries', 1),
                         const SizedBox(width: 2),
-                        _buildEventTabButton('For Processing', 2),
+                        _buildEventTabButton('For Downpayment', 2),
                         const SizedBox(width: 2),
-                        _buildEventTabButton('Post-Analysis', 3),
+                        _buildEventTabButton('Ongoing', 3),
                         const SizedBox(width: 2),
-                        _buildEventTabButton('Completed', 4),
+                        _buildEventTabButton('For Full Payment', 4),
+                        const SizedBox(width: 2),
+                        _buildEventTabButton('Completed', 5),
                       ],
                     ),
                   ),
@@ -7846,12 +7886,14 @@ class _ManageEventsState extends State<ManageEvents> {
                           )
                           : _selectedStatus.index == 2
                           ? _buildBodyContent(
-                            EventStatus.forProcessing,
+                            EventStatus.forDownpayment,
                             isNarrow,
                           )
                           : _selectedStatus.index == 3
+                          ? _buildBodyContent(EventStatus.ongoing, isNarrow)
+                          : _selectedStatus.index == 4
                           ? _buildBodyContent(
-                            EventStatus.forPostAnalysis,
+                            EventStatus.forFullPayment,
                             isNarrow,
                           )
                           : _buildBodyContent(EventStatus.completed, isNarrow),
@@ -7865,6 +7907,24 @@ class _ManageEventsState extends State<ManageEvents> {
   }
 
   Widget _buildFoodBrowser() {
+    final cateringDishes =
+        _allDishes
+            .where(
+              (d) =>
+                  d.category.toLowerCase().trim() == 'catering' &&
+                  !d.archived &&
+                  d.available,
+            )
+            .toList();
+    final sets = SetMenuStore.instance.activeSetMenus;
+    final filtered =
+        cateringDishes.where((d) {
+          if (_foodSearchController.text.trim().isEmpty) return true;
+          return d.name.toLowerCase().contains(
+            _foodSearchController.text.trim().toLowerCase(),
+          );
+        }).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -7876,6 +7936,11 @@ class _ManageEventsState extends State<ManageEvents> {
             color: Colors.grey.shade800,
           ),
         ),
+        const SizedBox(height: 8),
+        Text(
+          'Choose 5–8 dishes (all dishes) or pick one premade set menu.',
+          style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+        ),
         const SizedBox(height: 12),
         Card(
           shape: RoundedRectangleBorder(
@@ -7886,46 +7951,110 @@ class _ManageEventsState extends State<ManageEvents> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextField(
-                  controller: _foodSearchController,
-                  decoration: InputDecoration(
-                    hintText: 'Search dish',
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey.shade100,
-                  ),
-                  onChanged: (_) => setState(() {}),
+                TabBar(
+                  controller: _foodTabController,
+                  labelColor: const Color(0xFF1E1E1E),
+                  indicatorColor: const Color(0xFFFFC024),
+                  tabs: const [
+                    Tab(text: 'All dishes'),
+                    Tab(text: 'Set menu dishes'),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                if (_filteredDishes.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 40),
-                    child: Center(
-                      child: Text(
-                        'No dishes match your search.',
-                        style: TextStyle(color: Colors.grey.shade600),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 340,
+                  child: TabBarView(
+                    controller: _foodTabController,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextField(
+                            controller: _foodSearchController,
+                            decoration: InputDecoration(
+                              hintText: 'Search dish',
+                              prefixIcon: const Icon(Icons.search),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: BorderSide.none,
+                              ),
+                              filled: true,
+                              fillColor: Colors.grey.shade100,
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '${_menuItems.length}/8 dishes selected (min 5)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Expanded(
+                            child:
+                                filtered.isEmpty
+                                    ? Center(
+                                      child: Text(
+                                        'No dishes match your search.',
+                                        style: TextStyle(
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    )
+                                    : ListView(
+                                      children:
+                                          filtered
+                                              .map(
+                                                (dish) => Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        bottom: 12,
+                                                      ),
+                                                  child: _buildDishCard(dish),
+                                                ),
+                                              )
+                                              .toList(),
+                                    ),
+                          ),
+                        ],
                       ),
-                    ),
-                  )
-                else
-                  SizedBox(
-                    height: 300,
-                    child: ListView(
-                      children:
-                          _filteredDishes
-                              .map(
-                                (dish) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 16),
-                                  child: _buildDishCard(dish),
-                                ),
-                              )
-                              .toList(),
-                    ),
+                      ListView.builder(
+                        itemCount: sets.length,
+                        itemBuilder: (context, i) {
+                          final s = sets[i];
+                          final names = s.dishIds
+                              .map((id) {
+                                for (final d in cateringDishes) {
+                                  if (d.id == id) return d.name;
+                                }
+                                return id;
+                              })
+                              .join(', ');
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              title: Text(s.name),
+                              subtitle: Text(
+                                s.dishIds.isEmpty ? 'No dishes' : names,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: AntdPrimaryButton(
+                                label: 'Use set',
+                                onPressed:
+                                    s.dishIds.isEmpty
+                                        ? null
+                                        : () => _applySetMenuToNewEvent(s),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                   ),
+                ),
               ],
             ),
           ),

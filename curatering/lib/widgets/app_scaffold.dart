@@ -3,6 +3,12 @@ import 'package:flutter/material.dart';
 import '../auth/auth_session.dart';
 import '../auth/page_permissions.dart';
 import '../auth/roles.dart';
+import 'antd_profile_menu.dart';
+
+void _staffSignOut(BuildContext context) {
+  AuthSession.instance.clear();
+  Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+}
 
 class AppScaffold extends StatelessWidget {
   final Widget child;
@@ -75,11 +81,6 @@ class AppScaffold extends StatelessWidget {
       route: '/customer-management',
     ),
     _SidebarItemData(
-      icon: Icons.help_outline,
-      label: 'Help Requests',
-      route: '/help-requests',
-    ),
-    _SidebarItemData(
       icon: Icons.history,
       label: 'Action Logs',
       route: '/action-logs',
@@ -149,6 +150,36 @@ class AppScaffold extends StatelessWidget {
       ),
     ];
 
+    final profileItems = <AntdProfileMenuItem>[
+      AntdProfileMenuItem.header(userName),
+      if (pageRouteAllowed(PagePermissionRoutes.settings, perms))
+        AntdProfileMenuItem.action(
+          id: 'settings',
+          icon: Icons.settings_outlined,
+          label: 'Settings',
+          onSelected: () {
+            Navigator.of(context).pushReplacementNamed('/settings');
+          },
+        ),
+      if (role == Role.superAdmin)
+        AntdProfileMenuItem.action(
+          id: 'help_requests',
+          icon: Icons.help_outline,
+          label: 'Help requests',
+          onSelected: () {
+            Navigator.of(context).pushReplacementNamed('/help-requests');
+          },
+        ),
+      AntdProfileMenuItem.action(
+        id: 'logout',
+        icon: Icons.logout,
+        label: 'Logout',
+        destructive: true,
+        dividerBefore: true,
+        onSelected: () => _staffSignOut(context),
+      ),
+    ];
+
     return Scaffold(
       backgroundColor: const Color(0xFFF3F3F3),
       body: Column(
@@ -175,25 +206,14 @@ class AppScaffold extends StatelessWidget {
                   fit: BoxFit.contain,
                 ),
                 const Spacer(),
-                // User name with right logo
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      userName,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Image.asset(
-                      'lib/assets/main-2.png',
-                      height: 24,
-                      fit: BoxFit.contain,
-                    ),
-                  ],
+                AntdProfileMenu(
+                  triggerLabel: userName,
+                  leading: Image.asset(
+                    'lib/assets/main-2.png',
+                    height: 22,
+                    fit: BoxFit.contain,
+                  ),
+                  items: profileItems,
                 ),
               ],
             ),
@@ -242,17 +262,6 @@ class AppScaffold extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (role == Role.superAdmin ||
-                            pageRouteAllowed(
-                              PagePermissionRoutes.settings,
-                              perms,
-                            ))
-                          _buildSidebarItem(
-                            context,
-                            Icons.settings,
-                            'Settings',
-                            '/settings',
-                          ),
                       ],
                     ),
                   );

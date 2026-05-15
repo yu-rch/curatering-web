@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/help_request.dart';
 import '../services/super_admin_api.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/antd_message.dart';
 
 class HelpRequestsPage extends StatefulWidget {
   const HelpRequestsPage({super.key});
@@ -83,14 +84,17 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
       await SuperAdminApi.instance.resolveHelpRequest(requestId: req.id);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Help request resolved; notification sent.')),
+      showAntdMessage(
+        context,
+        'Help request resolved; notification sent.',
       );
       await _fetch();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to resolve request.')),
+      showAntdMessage(
+        context,
+        'Failed to resolve request.',
+        type: AntdMessageType.error,
       );
     }
   }

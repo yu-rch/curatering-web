@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/antd_message.dart';
 import '../services/user_api.dart';
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
@@ -26,11 +27,6 @@ class _SettingsState extends State<Settings> {
     super.initState();
   }
 
-  void _onLogout() {
-    AuthSession.instance.clear();
-    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-  }
-
   @override
   Widget build(BuildContext context) {
     final role = AuthSession.instance.currentUser.value?.role;
@@ -47,7 +43,7 @@ class _SettingsState extends State<Settings> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Session controls and support actions.',
+              'Support and account tools. Sign out from the profile menu (top right).',
               style: TextStyle(color: Colors.grey.shade700),
             ),
             const SizedBox(height: 16),
@@ -55,30 +51,6 @@ class _SettingsState extends State<Settings> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Card(
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(
-                        color: Colors.black.withValues(alpha: 0.08),
-                      ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _onLogout,
-                          icon: const Icon(Icons.logout),
-                          label: const Text('Log out'),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
                   if (role == Role.superAdmin)
                     Card(
                       elevation: 0,
@@ -136,29 +108,22 @@ class _SettingsState extends State<Settings> {
                                       _selectedIssue == 'Select problem'
                                           ? null
                                           : () async {
-                                            final messenger =
-                                                ScaffoldMessenger.of(context);
                                             try {
                                               await UserApi.instance
                                                   .requestHelp(
                                                     issue: _selectedIssue,
                                                   );
                                               if (!mounted) return;
-                                              messenger.showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                    'Help request sent.',
-                                                  ),
-                                                ),
+                                              showAntdMessage(
+                                                context,
+                                                'Help request sent.',
                                               );
                                             } catch (e) {
                                               if (!mounted) return;
-                                              messenger.showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                    'Failed to send request.',
-                                                  ),
-                                                ),
+                                              showAntdMessage(
+                                                context,
+                                                'Failed to send request.',
+                                                type: AntdMessageType.error,
                                               );
                                             }
                                           },
