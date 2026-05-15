@@ -135,6 +135,80 @@ async function generateSequentialId(prefix, padding = 4) {
   }
 }
 
+/** Minimal tables for login/signup — runs in seconds so the API can accept auth before full initDb. */
+export async function ensureAuthSchemaQuick() {
+  await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      role TEXT NOT NULL,
+      archived BOOLEAN NOT NULL DEFAULT FALSE,
+      is_verified BOOLEAN DEFAULT FALSE,
+      page_permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS id_counters (
+      prefix TEXT PRIMARY KEY,
+      last_number INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    INSERT INTO id_counters (prefix, last_number) VALUES ('CUS', 0)
+    ON CONFLICT (prefix) DO NOTHING;
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS customer_accounts (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      phone TEXT,
+      is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+      otp_code VARCHAR(6),
+      otp_expiry TIMESTAMPTZ,
+      reset_code VARCHAR(6),
+      reset_code_expires TIMESTAMPTZ,
+      archived BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS customer_profiles (
+      id SERIAL PRIMARY KEY,
+      customer_id TEXT NOT NULL REFERENCES customer_accounts(id) ON DELETE CASCADE,
+      loyalty_points INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(customer_id)
+    );
+  `);
+
+  try {
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_customer_accounts_email_lower
+       ON customer_accounts (lower(trim(email::text)))`,
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_users_email_lower
+       ON users (lower(trim(email::text)))`,
+    );
+  } catch (err) {
+    console.warn("Auth schema index create:", err.message);
+  }
+}
+
 export async function initDb() {
   await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
 

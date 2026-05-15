@@ -5,11 +5,7 @@ import '../auth/auth_session.dart';
 import '../config.dart';
 import '../widgets/app_scaffold.dart';
 
-// Runtime fallback for dev mode (String.fromEnvironment defaultValue doesn't work in JIT mode)
-String get _apiBaseUrl =>
-    apiBaseUrl.isEmpty
-        ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/'
-        : apiBaseUrl;
+String get _apiBaseUrl => apiBaseUrl;
 
 class CustomerManagementPage extends StatefulWidget {
   const CustomerManagementPage({super.key});

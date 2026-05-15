@@ -5,11 +5,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import '../utils/responsive_layout.dart';
 
-// Runtime fallback for dev mode (String.fromEnvironment defaultValue doesn't work in JIT mode)
-String get _apiBaseUrl =>
-    apiBaseUrl.isEmpty
-        ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/'
-        : apiBaseUrl;
+Uri _apiUri(String path) {
+  final base = apiBaseUrl.endsWith('/')
+      ? apiBaseUrl.substring(0, apiBaseUrl.length - 1)
+      : apiBaseUrl;
+  return Uri.parse('$base$path');
+}
+
+const _requestTimeout = Duration(seconds: 30);
 
 class CustomerLoginPage extends StatefulWidget {
   final bool? redirectToCheckout;
@@ -61,11 +64,13 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
     setState(() => _isLoading = true);
 
     try {
-      final response = await http.post(
-        Uri.parse('/api/customer/forgot-password'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': _emailController.text.trim()}),
-      );
+      final response = await http
+          .post(
+            _apiUri('/api/customer/forgot-password'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'email': _emailController.text.trim()}),
+          )
+          .timeout(_requestTimeout);
 
       final data = jsonDecode(response.body);
 
@@ -103,15 +108,17 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
     setState(() => _isLoading = true);
 
     try {
-      final response = await http.post(
-        Uri.parse('/api/customer/reset-password'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': _resetEmail,
-          'resetCode': _resetCodeController.text.trim(),
-          'newPassword': _newPasswordController.text,
-        }),
-      );
+      final response = await http
+          .post(
+            _apiUri('/api/customer/reset-password'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'email': _resetEmail,
+              'resetCode': _resetCodeController.text.trim(),
+              'newPassword': _newPasswordController.text,
+            }),
+          )
+          .timeout(_requestTimeout);
 
       final data = jsonDecode(response.body);
 
@@ -142,14 +149,16 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
     setState(() => _isLoading = true);
 
     try {
-      final response = await http.post(
-        Uri.parse('$_apiBaseUrl/api/customer/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': _emailController.text.trim(),
-          'password': _passwordController.text,
-        }),
-      );
+      final response = await http
+          .post(
+            _apiUri('/api/customer/login'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'email': _emailController.text.trim(),
+              'password': _passwordController.text,
+            }),
+          )
+          .timeout(_requestTimeout);
 
       final data = jsonDecode(response.body);
 
@@ -190,16 +199,18 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
     setState(() => _isLoading = true);
 
     try {
-      final response = await http.post(
-        Uri.parse('$_apiBaseUrl/api/customer/signup'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': _emailController.text.trim(),
-          'password': _passwordController.text,
-          'fullName': _fullNameController.text.trim(),
-          'phone': _phoneController.text.trim(),
-        }),
-      );
+      final response = await http
+          .post(
+            _apiUri('/api/customer/signup'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'email': _emailController.text.trim(),
+              'password': _passwordController.text,
+              'fullName': _fullNameController.text.trim(),
+              'phone': _phoneController.text.trim(),
+            }),
+          )
+          .timeout(_requestTimeout);
 
       final data = jsonDecode(response.body);
 
@@ -231,14 +242,16 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
     setState(() => _isLoading = true);
 
     try {
-      final response = await http.post(
-        Uri.parse('$_apiBaseUrl/api/customer/verify-otp'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': _pendingEmail,
-          'otpCode': _otpController.text.trim(),
-        }),
-      );
+      final response = await http
+          .post(
+            _apiUri('/api/customer/verify-otp'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'email': _pendingEmail,
+              'otpCode': _otpController.text.trim(),
+            }),
+          )
+          .timeout(_requestTimeout);
 
       final data = jsonDecode(response.body);
 

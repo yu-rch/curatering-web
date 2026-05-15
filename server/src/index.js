@@ -4,7 +4,11 @@ import express from "express";
 import cors from "cors";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import nodemailer from "nodemailer";
+import {
+  sendEmail,
+  isEmailConfigured,
+  logEmailStartupStatus,
+} from "./email.js";
 import postgres from 'postgres'
 import path from 'path'
 import fs from 'fs/promises'
@@ -12,6 +16,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from 'url'
 import {
   initDb,
+  ensureAuthSchemaQuick,
   pool,
   poolQueryWithRetry,
   generateUserId,
@@ -1435,81 +1440,385 @@ function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// Email via Resend SMTP (https://resend.com/docs/send-with-smtp). Set RESEND_API_KEY and RESEND_FROM.
-// Optional overrides: SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER (default username is "resend").
-// dns.setDefaultResultOrder("ipv4first") above avoids IPv6-only SMTP resolution issues on some hosts.
-function createResendMailTransport() {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM;
-  if (!apiKey?.trim() || !from?.trim()) return null;
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.resend.com",
-    port: Number(process.env.SMTP_PORT || 465),
-    secure: String(process.env.SMTP_SECURE || "true") !== "false",
-    auth: {
-      user: process.env.SMTP_USER || "resend",
-      pass: apiKey.trim(),
-    },
-  });
-}
-
-const transporter = createResendMailTransport();
-
 function assertResendEmailConfigured() {
-  if (!transporter || !process.env.RESEND_FROM?.trim()) {
+  if (!isEmailConfigured()) {
     throw new Error("Email not configured: set RESEND_API_KEY and RESEND_FROM");
   }
 }
 
-// Send OTP function
 async function sendOtpEmail(email, otp) {
   assertResendEmailConfigured();
-  await transporter.sendMail({
-    from: process.env.RESEND_FROM.trim(),
+  await sendEmail({
     to: email,
     subject: "Verify your Curatering account.",
-    text: `Welcome to Curatering! \n\n If you did not request this email, please ignore this message. \n\n Your OTP is ${otp}. \n This OTP will expire in 10 minutes`,
+    text:
+      `Welcome to Curatering!\n\n` +
+      `If you did not request this email, please ignore this message.\n\n` +
+      `Your OTP is ${otp}.\n` +
+      `This OTP will expire in 10 minutes.`,
   });
 }
 
-// Send Password Reset Email function
 async function sendPasswordResetEmail(email, resetCode, fullName) {
   assertResendEmailConfigured();
-  await transporter.sendMail({
-    from: process.env.RESEND_FROM.trim(),
+  await sendEmail({
     to: email,
     subject: "Password Reset - Curatering",
-    text: `Hello ${fullName || 'Customer'},\n\nYou requested to reset your password for your Curatering account.\n\nYour password reset code is: ${resetCode}\n\nThis code will expire in 30 minutes.\n\nIf you did not request this password reset, please ignore this email and your password will remain unchanged.\n\nBest regards,\nCuratering Team`,
+    text:
+      `Hello ${fullName || "Customer"},\n\n` +
+      `You requested to reset your password for your Curatering account.\n\n` +
+      `Your password reset code is: ${resetCode}\n\n` +
+      `This code will expire in 30 minutes.\n\n` +
+      `If you did not request this password reset, please ignore this email.\n\n` +
+      `Best regards,\nCuratering Team`,
   });
 }
 
-// Send Password Changed Email function
 async function sendPasswordChangedEmail(email, fullName) {
   assertResendEmailConfigured();
-  await transporter.sendMail({
-    from: process.env.RESEND_FROM.trim(),
+  await sendEmail({
     to: email,
     subject: "Your Password Has Been Changed - Curatering",
-    text: `Hello ${fullName || 'Customer'},\n\nYour password for your Curatering account has been successfully changed.\n\nIf you did not make this change, please contact us immediately.\n\nBest regards,\nCuratering Team`,
+    text:
+      `Hello ${fullName || "Customer"},\n\n` +
+      `Your password for your Curatering account has been successfully changed.\n\n` +
+      `If you did not make this change, please contact us immediately.\n\n` +
+      `Best regards,\nCuratering Team`,
   });
 }
 
 async function sendCustomerNotificationEmail({ to, subject, text }) {
   if (!to) return;
-  if (!transporter || !process.env.RESEND_FROM?.trim()) {
-    console.warn("Skipping customer email notification: RESEND_API_KEY and RESEND_FROM must be set");
+  if (!isEmailConfigured()) {
+    console.warn(
+      "[email] Skipping notification — set RESEND_API_KEY and RESEND_FROM on this host",
+    );
     return;
   }
   try {
-    await transporter.sendMail({
-      from: process.env.RESEND_FROM.trim(),
-      to,
-      subject,
-      text,
-    });
+    await sendEmail({ to, subject, text });
   } catch (error) {
-    console.error("Failed to send customer notification email:", error?.message || error);
+    console.error(
+      "Failed to send customer notification email:",
+      error?.message || error,
+    );
   }
+}
+
+/** Fire-and-forget — never block API responses on SMTP. */
+function sendCustomerNotificationEmailAsync(payload) {
+  void sendCustomerNotificationEmail(payload);
+}
+
+function sendOtpEmailAsync(email, otp) {
+  void sendOtpEmail(email, otp).catch((err) => {
+    console.error("Failed to send OTP email:", err?.message || err);
+  });
+}
+
+/**
+ * Customer auth routes registered before full initDb so login works as soon as the process listens.
+ * @param {import("express").Express} app
+ * @param {import("express").RequestHandler} [dbGate]
+ */
+function registerCustomerAuthRoutes(app, dbGate) {
+  const gate = dbGate || ((_req, _res, next) => next());
+
+  app.post("/api/customer/signup", gate, async (req, res) => {
+    try {
+      const { email, password, fullName, phone } = req.body || {};
+
+      if (!email || !password || !fullName) {
+        return res.status(400).json({ error: "Email, password, and full name are required" });
+      }
+
+      const emailNorm = String(email).trim().toLowerCase();
+
+      const existingCustomer = await pool.query(
+        `SELECT id, is_verified, archived FROM customer_accounts WHERE lower(trim(email::text)) = $1`,
+        [emailNorm],
+      );
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+      if (existingCustomer.rows.length > 0) {
+        const row = existingCustomer.rows[0];
+        if (!row.archived && row.is_verified) {
+          return res.status(400).json({ error: "Email already registered" });
+        }
+
+        await pool.query(
+          `UPDATE customer_accounts
+           SET email = $1,
+               password_hash = $2,
+               full_name = $3,
+               phone = $4,
+               otp_code = $5,
+               otp_expiry = $6,
+               archived = FALSE,
+               is_verified = FALSE,
+               updated_at = now()
+           WHERE id = $7`,
+          [emailNorm, passwordHash, fullName, phone || null, otpCode, otpExpiry, row.id],
+        );
+
+        await pool.query(
+          `INSERT INTO customer_profiles (customer_id, loyalty_points)
+           VALUES ($1, $2)
+           ON CONFLICT (customer_id) DO NOTHING`,
+          [row.id, 0],
+        );
+
+        sendOtpEmailAsync(emailNorm, otpCode);
+
+        return res.status(201).json({
+          customer: {
+            id: row.id,
+            email: emailNorm,
+            full_name: fullName,
+            is_verified: false,
+          },
+          message: "Check your email for a new verification code.",
+        });
+      }
+
+      const customerId = await generateSequentialId("CUS", 4);
+
+      const result = await pool.query(
+        `INSERT INTO customer_accounts (id, email, password_hash, full_name, phone, otp_code, otp_expiry)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, email, full_name, is_verified`,
+        [customerId, emailNorm, passwordHash, fullName, phone || null, otpCode, otpExpiry],
+      );
+
+      await pool.query(
+        `INSERT INTO customer_profiles (customer_id, loyalty_points)
+         VALUES ($1, $2)
+         ON CONFLICT (customer_id) DO NOTHING`,
+        [customerId, 0],
+      );
+
+      sendOtpEmailAsync(emailNorm, otpCode);
+
+      res.status(201).json({
+        customer: result.rows[0],
+        message: "Account created. Please verify your email with the OTP sent.",
+      });
+    } catch (error) {
+      console.error("Error signing up customer:", error);
+      res.status(500).json({ error: "Failed to create account" });
+    }
+  });
+
+  app.post("/api/customer/verify-otp", gate, async (req, res) => {
+    try {
+      const { email, otpCode } = req.body || {};
+
+      if (!email || !otpCode) {
+        return res.status(400).json({ error: "Email and OTP code are required" });
+      }
+
+      const emailNorm = String(email).trim().toLowerCase();
+
+      const result = await pool.query(
+        `SELECT id, otp_expiry FROM customer_accounts
+         WHERE lower(trim(email::text)) = $1 AND otp_code = $2 AND is_verified = FALSE`,
+        [emailNorm, otpCode],
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(400).json({ error: "Invalid OTP or email" });
+      }
+
+      if (new Date() > result.rows[0].otp_expiry) {
+        return res.status(400).json({ error: "OTP has expired" });
+      }
+
+      await pool.query(
+        `UPDATE customer_accounts
+         SET is_verified = TRUE, otp_code = NULL, otp_expiry = NULL
+         WHERE id = $1`,
+        [result.rows[0].id],
+      );
+
+      res.json({ message: "Email verified successfully" });
+    } catch (error) {
+      console.error("Error verifying OTP:", error);
+      res.status(500).json({ error: "Failed to verify OTP" });
+    }
+  });
+
+  app.post("/api/customer/login", gate, async (req, res) => {
+    try {
+      const { email, password } = req.body || {};
+
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required" });
+      }
+
+      const emailNorm = String(email).trim().toLowerCase();
+
+      const result = await pool.query(
+        `SELECT id, email, password_hash, full_name, phone, is_verified
+         FROM customer_accounts
+         WHERE lower(trim(email::text)) = $1 AND archived = FALSE
+         LIMIT 1`,
+        [emailNorm],
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+
+      const customer = result.rows[0];
+      const isValidPassword = await bcrypt.compare(password, customer.password_hash);
+
+      if (!isValidPassword) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+
+      if (!customer.is_verified) {
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+        await pool.query(
+          `UPDATE customer_accounts SET otp_code = $1, otp_expiry = $2 WHERE id = $3`,
+          [otpCode, otpExpiry, customer.id],
+        );
+
+        sendOtpEmailAsync(emailNorm, otpCode);
+
+        return res.status(403).json({
+          error: "Email not verified",
+          requiresVerification: true,
+          message: "Please verify your email with the OTP sent.",
+        });
+      }
+
+      const token = jwt.sign(
+        { customerId: customer.id, role: "customer" },
+        JWT_SECRET,
+        { expiresIn: "7d" },
+      );
+
+      if (process.env.SEND_LOGIN_NOTIFICATION_EMAIL !== "0") {
+        sendCustomerNotificationEmailAsync({
+          to: customer.email,
+          subject: "Curatering: Login detected",
+          text:
+            `Hello ${customer.full_name || "Customer"},\n\n` +
+            `Your account was just used to log in.\n` +
+            `If this wasn't you, please reset your password immediately.\n\n` +
+            `- Curatering Team`,
+        });
+      }
+
+      res.json({
+        token,
+        customer: {
+          id: customer.id,
+          email: customer.email,
+          fullName: customer.full_name,
+          phone: customer.phone,
+        },
+      });
+    } catch (error) {
+      console.error("Error logging in customer:", error);
+      res.status(500).json({ error: "Failed to login" });
+    }
+  });
+
+  app.post("/api/customer/forgot-password", gate, async (req, res) => {
+    try {
+      const { email } = req.body || {};
+
+      if (!email) {
+        return res.status(400).json({ error: "Email is required" });
+      }
+
+      const emailNorm = String(email).trim().toLowerCase();
+      const customerResult = await pool.query(
+        `SELECT id, email, full_name FROM customer_accounts
+         WHERE lower(trim(email::text)) = $1`,
+        [emailNorm],
+      );
+
+      if (customerResult.rows.length === 0) {
+        return res.json({ message: "If an account exists, a reset code will be sent" });
+      }
+
+      const customer = customerResult.rows[0];
+      const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+      await pool.query(
+        `UPDATE customer_accounts
+         SET reset_code = $1, reset_code_expires = NOW() + INTERVAL '30 minutes'
+         WHERE id = $2`,
+        [resetCode, customer.id],
+      );
+
+      void sendPasswordResetEmail(customer.email, resetCode, customer.full_name).catch(
+        (emailError) => {
+          console.error("Failed to send password reset email:", emailError);
+        },
+      );
+
+      res.json({ message: "Reset code sent to your email" });
+    } catch (error) {
+      console.error("Error in forgot password:", error);
+      res.status(500).json({ error: "Failed to process request" });
+    }
+  });
+
+  app.post("/api/customer/reset-password", gate, async (req, res) => {
+    try {
+      const { email, resetCode, newPassword } = req.body || {};
+
+      if (!email || !resetCode || !newPassword) {
+        return res.status(400).json({ error: "Email, reset code, and new password are required" });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters" });
+      }
+
+      const emailNorm = String(email).trim().toLowerCase();
+      const customerResult = await pool.query(
+        `SELECT id, email, full_name FROM customer_accounts
+         WHERE lower(trim(email::text)) = $1
+           AND reset_code = $2
+           AND reset_code_expires > NOW()`,
+        [emailNorm, resetCode],
+      );
+
+      if (customerResult.rows.length === 0) {
+        return res.status(400).json({ error: "Invalid or expired reset code" });
+      }
+
+      const customer = customerResult.rows[0];
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+      await pool.query(
+        `UPDATE customer_accounts
+         SET password_hash = $1, reset_code = NULL, reset_code_expires = NULL
+         WHERE id = $2`,
+        [hashedPassword, customer.id],
+      );
+
+      void sendPasswordChangedEmail(customer.email, customer.full_name).catch(
+        (emailError) => {
+          console.error("Failed to send password changed email:", emailError);
+        },
+      );
+
+      res.json({ message: "Password reset successful" });
+    } catch (error) {
+      console.error("Error resetting password:", error);
+      res.status(500).json({ error: "Failed to reset password" });
+    }
+  });
 }
 
 function authRequired(req, res, next) {
@@ -1565,10 +1874,8 @@ async function logAction({
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body || {};
-    console.log("Login attempt:", { email, passwordLength: password?.length });
-    
+
     if (!email || !password) {
-      console.log("Missing email or password");
       return res
         .status(400)
         .json({ message: "email and password are required" });
@@ -1583,42 +1890,24 @@ app.post("/api/auth/login", async (req, res) => {
       [emailNorm],
     );
 
-    console.log("User query result:", {
-      rowCount: result.rowCount,
-      userFound: result.rowCount > 0,
-      email: email
-    });
-
     if (result.rowCount === 0) {
-      console.log("User not found for email:", email);
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
     const user = result.rows[0];
-    console.log("User data:", {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      archived: user.archived,
-      is_verified: user.is_verified
-    });
-    
+
     if (user.archived) {
-      console.log("Account is archived");
       return res.status(401).json({ message: "Account archived" });
     }
 
     const ok = await bcrypt.compare(password, user.password_hash);
-    console.log("Password comparison result:", ok);
-    
+
     if (!ok) {
-      console.log("Password mismatch for email:", email);
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
     const token = signToken({ userId: user.id, role: user.role });
-    console.log("Login successful for:", email);
-    
+
     return res.json({
       token,
       user: {
@@ -4380,7 +4669,76 @@ async function runInitDbWithRetries() {
   throw lastErr;
 }
 
-runInitDbWithRetries()
+let dbReady = false;
+
+const authSchemaPromise = ensureAuthSchemaQuick()
+  .then(() => {
+    dbReady = true;
+    console.log("[startup] Auth schema ready — customer login enabled");
+  })
+  .catch((err) => {
+    console.error("[startup] Auth schema failed:", err?.message || err);
+  });
+
+function requireDbReady(req, res, next) {
+  if (dbReady) return next();
+  authSchemaPromise
+    .then(() => next())
+    .catch((err) => {
+      console.error("[db] auth schema failed:", err?.message || err);
+      res.status(503).json({
+        message: "Server is starting up. Please try again in a moment.",
+      });
+    });
+}
+
+registerCustomerAuthRoutes(app, requireDbReady);
+
+app.listen(PORT, () => {
+  console.log(`Curatering server listening on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
+  console.log(
+    `Database URL configured: ${process.env.DATABASE_URL ? "Yes" : "No"}`,
+  );
+  logEmailStartupStatus();
+});
+
+// Optional: send a test email (set EMAIL_TEST_SECRET on the server)
+app.post("/api/health/email-test", async (req, res) => {
+  try {
+    const secret = process.env.EMAIL_TEST_SECRET?.trim();
+    const { to, testSecret } = req.body || {};
+    if (!secret || testSecret !== secret) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    if (!to || typeof to !== "string") {
+      return res.status(400).json({ message: "to (email) is required" });
+    }
+    if (!isEmailConfigured()) {
+      return res.status(503).json({
+        message: "Email not configured",
+        hint: "Set RESEND_API_KEY and RESEND_FROM on this host",
+      });
+    }
+    const data = await sendEmail({
+      to: to.trim(),
+      subject: "Curatering email test",
+      text: "If you received this, Resend is working.",
+    });
+    return res.json({ ok: true, id: data?.id });
+  } catch (e) {
+    console.error("[email-test]", e?.message || e);
+    return res.status(500).json({
+      message: e?.message || "Send failed",
+      hint:
+        "If FROM uses @curatering.com, verify the domain at https://resend.com/domains. " +
+        "For testing use RESEND_FROM=Curatering <onboarding@resend.dev>",
+    });
+  }
+});
+
+const dbInitPromise = authSchemaPromise
+  .then(() => runInitDbWithRetries())
   .then(() => seedSuperAdminIfNeeded())
   .then(async () => {
     // Checklist CRUD operations
@@ -5097,335 +5455,7 @@ runInitDbWithRetries()
       }
     });
 
-    // Customer Authentication endpoints
-    app.post('/api/customer/signup', async (req, res) => {
-      try {
-        const { email, password, fullName, phone } = req.body || {};
-        
-        if (!email || !password || !fullName) {
-          return res.status(400).json({ error: 'Email, password, and full name are required' });
-        }
-
-        const emailNorm = String(email).trim().toLowerCase();
-
-        const existingCustomer = await pool.query(
-          `SELECT id, is_verified, archived FROM customer_accounts WHERE lower(trim(email::text)) = $1`,
-          [emailNorm],
-        );
-
-        console.log('Existing customer check:', {
-          found: existingCustomer.rows.length > 0,
-          count: existingCustomer.rows.length,
-        });
-
-        const passwordHash = await bcrypt.hash(password, 10);
-        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-        if (existingCustomer.rows.length > 0) {
-          const row = existingCustomer.rows[0];
-          if (!row.archived && row.is_verified) {
-            console.log('Rejecting signup: Email already registered -', emailNorm);
-            return res.status(400).json({ error: 'Email already registered' });
-          }
-
-          await pool.query(
-            `UPDATE customer_accounts
-             SET email = $1,
-                 password_hash = $2,
-                 full_name = $3,
-                 phone = $4,
-                 otp_code = $5,
-                 otp_expiry = $6,
-                 archived = FALSE,
-                 is_verified = FALSE,
-                 updated_at = now()
-             WHERE id = $7`,
-            [emailNorm, passwordHash, fullName, phone || null, otpCode, otpExpiry, row.id],
-          );
-
-          await pool.query(
-            `INSERT INTO customer_profiles (customer_id, loyalty_points)
-             VALUES ($1, $2)
-             ON CONFLICT (customer_id) DO NOTHING`,
-            [row.id, 0],
-          );
-
-          try {
-            await sendOtpEmail(emailNorm, otpCode);
-          } catch (emailError) {
-            console.error('Failed to send OTP email:', emailError);
-          }
-
-          return res.status(201).json({
-            customer: {
-              id: row.id,
-              email: emailNorm,
-              full_name: fullName,
-              is_verified: false,
-            },
-            message: 'Check your email for a new verification code.',
-          });
-        }
-
-        // New customer — sequential id
-        const customerId = await generateSequentialId('CUS', 4);
-
-        const result = await pool.query(
-          `INSERT INTO customer_accounts (id, email, password_hash, full_name, phone, otp_code, otp_expiry)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING id, email, full_name, is_verified`,
-          [customerId, emailNorm, passwordHash, fullName, phone || null, otpCode, otpExpiry],
-        );
-
-        // Create customer profile with 0 loyalty points
-        await pool.query(
-          `INSERT INTO customer_profiles (customer_id, loyalty_points)
-           VALUES ($1, $2)
-           ON CONFLICT (customer_id) DO NOTHING`,
-          [customerId, 0],
-        );
-
-        // Send OTP email
-        try {
-          await sendOtpEmail(emailNorm, otpCode);
-        } catch (emailError) {
-          console.error('Failed to send OTP email:', emailError);
-          // Still return success since account was created, but log the email error
-        }
-
-        res.status(201).json({
-          customer: result.rows[0],
-          message: 'Account created. Please verify your email with the OTP sent.',
-        });
-      } catch (error) {
-        console.error('Error signing up customer:', error);
-        res.status(500).json({ error: 'Failed to create account' });
-      }
-    });
-
-    app.post('/api/customer/verify-otp', async (req, res) => {
-      try {
-        const { email, otpCode } = req.body || {};
-        
-        if (!email || !otpCode) {
-          return res.status(400).json({ error: 'Email and OTP code are required' });
-        }
-
-        const emailNorm = String(email).trim().toLowerCase();
-
-        const result = await pool.query(
-          `SELECT id, otp_expiry FROM customer_accounts 
-           WHERE lower(trim(email::text)) = $1 AND otp_code = $2 AND is_verified = FALSE`,
-          [emailNorm, otpCode],
-        );
-
-        if (result.rows.length === 0) {
-          return res.status(400).json({ error: 'Invalid OTP or email' });
-        }
-
-        if (new Date() > result.rows[0].otp_expiry) {
-          return res.status(400).json({ error: 'OTP has expired' });
-        }
-
-        await pool.query(
-          `UPDATE customer_accounts 
-           SET is_verified = TRUE, otp_code = NULL, otp_expiry = NULL 
-           WHERE id = $1`,
-          [result.rows[0].id]
-        );
-
-        res.json({ message: 'Email verified successfully' });
-      } catch (error) {
-        console.error('Error verifying OTP:', error);
-        res.status(500).json({ error: 'Failed to verify OTP' });
-      }
-    });
-
-    app.post('/api/customer/login', async (req, res) => {
-      try {
-        const { email, password } = req.body || {};
-        
-        if (!email || !password) {
-          return res.status(400).json({ error: 'Email and password are required' });
-        }
-
-        const emailNorm = String(email).trim().toLowerCase();
-
-        const result = await pool.query(
-          'SELECT * FROM customer_accounts WHERE lower(trim(email::text)) = $1 AND archived = FALSE',
-          [emailNorm],
-        );
-
-        if (result.rows.length === 0) {
-          return res.status(401).json({ error: 'Invalid email or password' });
-        }
-
-        const customer = result.rows[0];
-        const isValidPassword = await bcrypt.compare(password, customer.password_hash);
-
-        if (!isValidPassword) {
-          return res.status(401).json({ error: 'Invalid email or password' });
-        }
-
-        if (!customer.is_verified) {
-          // Resend OTP
-          const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-          const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
-          
-          await pool.query(
-            `UPDATE customer_accounts 
-             SET otp_code = $1, otp_expiry = $2 
-             WHERE id = $3`,
-            [otpCode, otpExpiry, customer.id]
-          );
-          
-          // Send OTP email
-          try {
-            await sendOtpEmail(emailNorm, otpCode);
-          } catch (emailError) {
-            console.error('Failed to send OTP email:', emailError);
-          }
-          
-          return res.status(403).json({ 
-            error: 'Email not verified',
-            requiresVerification: true,
-            message: 'Please verify your email with the OTP sent.'
-          });
-        }
-
-        const token = jwt.sign(
-          { customerId: customer.id, role: 'customer' },
-          JWT_SECRET,
-          { expiresIn: '7d' }
-        );
-
-        await sendCustomerNotificationEmail({
-          to: customer.email,
-          subject: "Curatering: Login detected",
-          text:
-            `Hello ${customer.full_name || "Customer"},\n\n` +
-            `Your account was just used to log in.\n` +
-            `If this wasn't you, please reset your password immediately.\n\n` +
-            `- Curatering Team`,
-        });
-
-        res.json({ 
-          token,
-          customer: {
-            id: customer.id,
-            email: customer.email,
-            fullName: customer.full_name,
-            phone: customer.phone
-          }
-        });
-      } catch (error) {
-        console.error('Error logging in customer:', error);
-        res.status(500).json({ error: 'Failed to login' });
-      }
-    });
-
-    // Forgot Password endpoint
-    app.post('/api/customer/forgot-password', async (req, res) => {
-      try {
-        const { email } = req.body || {};
-        
-        if (!email) {
-          return res.status(400).json({ error: 'Email is required' });
-        }
-
-        // Check if customer exists
-        const customerResult = await pool.query(
-          'SELECT id, email, full_name FROM customer_accounts WHERE email = $1',
-          [email.toLowerCase()]
-        );
-
-        if (customerResult.rows.length === 0) {
-          // Don't reveal if email exists or not for security
-          return res.json({ message: 'If an account exists, a reset code will be sent' });
-        }
-
-        const customer = customerResult.rows[0];
-        
-        // Generate 6-digit reset code
-        const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-        
-        // Store reset code with expiration (30 minutes)
-        await pool.query(
-          `UPDATE customer_accounts 
-           SET reset_code = $1, reset_code_expires = NOW() + INTERVAL '30 minutes'
-           WHERE id = $2`,
-          [resetCode, customer.id]
-        );
-
-        // Send reset code via email
-        try {
-          await sendPasswordResetEmail(customer.email, resetCode, customer.full_name);
-          console.log(`Password reset code sent to ${customer.email}: ${resetCode}`);
-        } catch (emailError) {
-          console.error('Failed to send password reset email:', emailError);
-          // Still return success to avoid revealing email issues
-        }
-
-        res.json({ message: 'Reset code sent to your email' });
-      } catch (error) {
-        console.error('Error in forgot password:', error);
-        res.status(500).json({ error: 'Failed to process request' });
-      }
-    });
-
-    // Reset Password endpoint
-    app.post('/api/customer/reset-password', async (req, res) => {
-      try {
-        const { email, resetCode, newPassword } = req.body || {};
-        
-        if (!email || !resetCode || !newPassword) {
-          return res.status(400).json({ error: 'Email, reset code, and new password are required' });
-        }
-
-        if (newPassword.length < 6) {
-          return res.status(400).json({ error: 'Password must be at least 6 characters' });
-        }
-
-        // Find customer with valid reset code
-        const customerResult = await pool.query(
-          `SELECT id, email, full_name FROM customer_accounts 
-           WHERE email = $1 
-           AND reset_code = $2 
-           AND reset_code_expires > NOW()`,
-          [email.toLowerCase(), resetCode]
-        );
-
-        if (customerResult.rows.length === 0) {
-          return res.status(400).json({ error: 'Invalid or expired reset code' });
-        }
-
-        const customer = customerResult.rows[0];
-        
-        // Hash new password
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
-        
-        // Update password and clear reset code
-        await pool.query(
-          `UPDATE customer_accounts 
-           SET password_hash = $1, reset_code = NULL, reset_code_expires = NULL
-           WHERE id = $2`,
-          [hashedPassword, customer.id]
-        );
-
-        // Send password changed notification email
-        try {
-          await sendPasswordChangedEmail(customer.email, customer.full_name);
-        } catch (emailError) {
-          console.error('Failed to send password changed email:', emailError);
-        }
-
-        res.json({ message: 'Password reset successful' });
-      } catch (error) {
-        console.error('Error resetting password:', error);
-        res.status(500).json({ error: 'Failed to reset password' });
-      }
-    });
+    // Customer auth: registered early via registerCustomerAuthRoutes()
 
     // Restaurant Order endpoints
     const customerAuthRequired = (req, res, next) => {
@@ -7030,31 +7060,15 @@ runInitDbWithRetries()
       );
     }
 
-    // Health check endpoint for Railway
-    app.get('/health', (req, res) => {
-      res.status(200).json({
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        port: PORT,
-        environment: process.env.NODE_ENV || 'development'
-      });
-    });
-
     // Cart API routes
     app.get('/api/cart', CartAPI.getCart);
     app.post('/api/cart/sync', CartAPI.syncCart);
     app.post('/api/cart/clear', CartAPI.clearCart);
 
-        app.listen(PORT, () => {
-      console.log(`Curatering server listening on port ${PORT}`);
-      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`Database URL configured: ${connectionString ? 'Yes' : 'No'}`);
-      console.log(`Health check available at: https://curatering.up.railway.app/health`);
-    });
+    console.log("[startup] All API routes registered after DB init");
   })
   .catch((err) => {
-    console.error("Failed to init DB/server:", err);
+    console.error("Failed to init DB / register routes:", err);
     process.exit(1);
   });
 

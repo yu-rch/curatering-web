@@ -21,7 +21,7 @@ class ApiClient {
 
   static final ApiClient instance = ApiClient._();
 
-  // API base URL from centralized config
+  static const Duration _requestTimeout = Duration(seconds: 30);
 
   String _resolveUrl(String path) {
     if (path.startsWith('http://') || path.startsWith('https://')) {
@@ -46,11 +46,13 @@ class ApiClient {
     Map<String, dynamic>? body,
   }) async {
     final uri = Uri.parse(_resolveUrl(path));
-    final res = await http.post(
-      uri,
-      headers: _defaultHeaders(),
-      body: body == null ? null : jsonEncode(body),
-    );
+    final res = await http
+        .post(
+          uri,
+          headers: _defaultHeaders(),
+          body: body == null ? null : jsonEncode(body),
+        )
+        .timeout(_requestTimeout);
 
     return _handleResponse(res, uri);
   }
@@ -72,7 +74,9 @@ class ApiClient {
             headers: _defaultHeaders(),
             expiry: cacheExpiry ?? const Duration(minutes: 2),
           )
-        : await http.get(uri, headers: _defaultHeaders());
+        : await http
+            .get(uri, headers: _defaultHeaders())
+            .timeout(_requestTimeout);
 
     return _handleResponse(res, uri);
   }
@@ -86,10 +90,9 @@ class ApiClient {
     if (queryParameters != null && queryParameters.isNotEmpty) {
       uri = uri.replace(queryParameters: queryParameters);
     }
-    final res = await http.get(
-      uri,
-      headers: _defaultHeaders(),
-    );
+    final res = await http
+        .get(uri, headers: _defaultHeaders())
+        .timeout(_requestTimeout);
 
     final decoded = _parseResponse(res, uri);
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -113,11 +116,13 @@ class ApiClient {
     Map<String, dynamic>? body,
   }) async {
     final uri = Uri.parse(_resolveUrl(path));
-    final res = await http.put(
-      uri,
-      headers: _defaultHeaders(),
-      body: body == null ? null : jsonEncode(body),
-    );
+    final res = await http
+        .put(
+          uri,
+          headers: _defaultHeaders(),
+          body: body == null ? null : jsonEncode(body),
+        )
+        .timeout(_requestTimeout);
 
     return _handleResponse(res, uri);
   }
@@ -127,11 +132,13 @@ class ApiClient {
     Map<String, dynamic>? body,
   }) async {
     final uri = Uri.parse(_resolveUrl(path));
-    final res = await http.delete(
-      uri,
-      headers: _defaultHeaders(),
-      body: body == null ? null : jsonEncode(body),
-    );
+    final res = await http
+        .delete(
+          uri,
+          headers: _defaultHeaders(),
+          body: body == null ? null : jsonEncode(body),
+        )
+        .timeout(_requestTimeout);
 
     return _handleResponse(res, uri);
   }

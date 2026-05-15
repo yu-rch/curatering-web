@@ -7,11 +7,7 @@ import '../utils/responsive_layout.dart';
 import '../auth/auth_session.dart';
 import '../config.dart';
 
-// Runtime fallback for dev mode
-String get _apiBaseUrl =>
-    apiBaseUrl.isEmpty
-        ? 'https://ffgifzwwqdjeyyedaciu.supabase.co/rest/v1/'
-        : apiBaseUrl;
+String get _apiBaseUrl => apiBaseUrl;
 
 // Customer with loyalty points separated by order type
 class LoyaltyCustomer {
