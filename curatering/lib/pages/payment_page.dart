@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../config.dart';
 import 'order_tracking_page.dart';
+import '../utils/order_display_utils.dart';
 import '../utils/responsive_layout.dart';
 
 class PaymentPage extends StatefulWidget {
@@ -47,46 +48,100 @@ class _PaymentPageState extends State<PaymentPage> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
 
+      final orderKey =
+          widget.orderData['id']?.toString() ??
+          widget.orderData['order_no']?.toString() ??
+          '';
+      if (orderKey.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Order reference missing. Please place the order again.')),
+          );
+        }
+        return;
+      }
+
+      final body = <String, dynamic>{
+        'paymentReference': _referenceController.text.trim(),
+      };
+      final guestEmail =
+          widget.orderData['guest_contact_email']?.toString().trim() ??
+          widget.orderData['guestContactEmail']?.toString().trim();
+      if (guestEmail != null && guestEmail.isNotEmpty) {
+        body['guestContactEmail'] = guestEmail;
+      }
+
+      final headers = <String, String>{'Content-Type': 'application/json'};
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+
       final response = await http.post(
-        Uri.parse('${apiBaseUrl}/api/restaurant/orders/${widget.orderData['id']}/payment'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
-          'paymentReference': _referenceController.text.trim(),
-        }),
+        Uri.parse('${apiBaseUrl}/api/restaurant/orders/$orderKey/payment'),
+        headers: headers,
+        body: jsonEncode(body),
       );
 
-      final data = jsonDecode(response.body);
+      Map<String, dynamic> data = {};
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          data = decoded;
+        }
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Server error (${response.statusCode}). Please try again.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
 
-      if (response.statusCode == 200) {
+      final ok = response.statusCode == 200 || response.statusCode == 201;
+      if (ok) {
+        final rawOrder = data['order'];
+        final orderMap = rawOrder is Map
+            ? Map<String, dynamic>.from(rawOrder)
+            : Map<String, dynamic>.from(widget.orderData)
+              ..['payment_reference'] = _referenceController.text.trim()
+              ..['status'] = 'pending_cashier'
+              ..['payment_status'] = 'pending';
+
         if (mounted) {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
-              builder: (context) => OrderTrackingPage(orderData: data['order']),
+              builder: (context) => OrderTrackingPage(orderData: orderMap),
             ),
           );
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? 'Failed to confirm payment')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(data['error'] ?? 'Failed to confirm payment')),
+          );
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final totalAmount = widget.orderData['total_amount'] ?? '0.00';
-    final orderId = widget.orderData['id']?.toString() ?? '';
-    final shortOrderId = orderId.length >= 6 ? orderId.substring(orderId.length - 6) : orderId;
+    final displayOrderNo = formatRestaurantOrderNo(widget.orderData);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -123,7 +178,7 @@ class _PaymentPageState extends State<PaymentPage> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    'ORDER NO. ${shortOrderId.padLeft(6, '0')}',
+                    'ORDER NO. $displayOrderNo',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,

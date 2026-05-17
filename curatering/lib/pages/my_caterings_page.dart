@@ -11,6 +11,7 @@ import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
 import '../widgets/app_snackbar.dart';
 import '../widgets/customer_pages_top_bar.dart';
+import '../utils/order_type_utils.dart';
 import '../widgets/seating_plan_canvas.dart';
 import 'customer_website.dart';
 import 'my_order_tracking_page.dart';
@@ -1114,12 +1115,22 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     final slots = _parseDynamicList(
       catering['scheduleSlots'] ?? catering['schedule_slots'],
     );
-    final orderType = (catering['order_type'] ?? '').toString();
-    final isEventOrder = orderType == 'event';
+    final orderType =
+        (catering['order_type'] ?? catering['orderType'] ?? '').toString();
+    final eventTitle =
+        (catering['event_title'] ?? catering['eventTitle'] ?? '').toString();
+    final isEventOrder = isCateringPlusEventOrderType(
+      orderType,
+      eventTitle: eventTitle,
+    );
     final seatingPlan = SeatingPlanData.fromJson(
       catering['seatingPlan'] ?? catering['seating_plan'],
     );
-    final showSeatingBlock = status == 'for_processing' && isEventOrder;
+    final showSeatingBlock =
+        isEventOrder &&
+        (status == 'for_processing' ||
+            status == 'for_post_analysis' ||
+            status == 'ongoing');
 
     await showDialog<void>(
       context: context,
@@ -1383,6 +1394,15 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                orderTypeDisplayLabel(
+                  (catering['order_type'] ?? catering['orderType'] ?? '')
+                      .toString(),
+                  eventTitle: title.toString(),
+                ),
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
               ),
               if (_hasEventThemeDesign(themeDesign)) ...[
                 const SizedBox(height: 4),

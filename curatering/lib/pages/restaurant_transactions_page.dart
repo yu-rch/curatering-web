@@ -4,6 +4,7 @@ import 'dart:convert';
 import '../config.dart';
 import '../auth/auth_session.dart';
 import '../utils/responsive_layout.dart';
+import '../utils/order_display_utils.dart';
 
 class RestaurantTransactionsPage extends StatefulWidget {
   const RestaurantTransactionsPage({super.key});
@@ -74,7 +75,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
       // Load smaller batches for faster initial display
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/api/manager/restaurant/orders?limit=50'),
+        Uri.parse('$apiBaseUrl/api/manager/restaurant/orders?limit=200'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -93,11 +94,13 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
         // Use forEach instead of for loop for better performance
         allOrders.forEach((order) {
-          final status = order['status'] as String? ?? '';
+          final status = (order['status'] as String? ?? '').toLowerCase();
           switch (status) {
+            case 'pending_cashier':
             case 'pending':
               confirmationOrders.add(order);
               break;
+            case 'in_preparation':
             case 'confirmed':
             case 'preparing':
             case 'out_for_delivery':
@@ -106,6 +109,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             case 'delivered':
             case 'cancelled':
               completedOrders.add(order);
+              break;
+            default:
+              processingOrders.add(order);
               break;
           }
         });
@@ -320,11 +326,15 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
           updatedOrder['delivery_tracking_url'] = deliveryUrl;
         }
 
-        if (newStatus == 'pending') {
+        final s = newStatus.toLowerCase();
+        if (s == 'pending_cashier' || s == 'pending') {
           _confirmationOrders.add(updatedOrder);
-        } else if (newStatus == 'processing' || newStatus == 'for_delivery') {
+        } else if (s == 'in_preparation' ||
+            s == 'confirmed' ||
+            s == 'preparing' ||
+            s == 'out_for_delivery') {
           _processingOrders.add(updatedOrder);
-        } else if (newStatus == 'completed' || newStatus == 'cancelled') {
+        } else if (s == 'delivered' || s == 'cancelled') {
           _completedOrders.add(updatedOrder);
         }
       }
@@ -335,12 +345,15 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     setState(() {
       _removeOrderFromAllLists(orderId);
 
-      final status = originalOrder['status'] as String? ?? '';
-      if (status == 'pending') {
+      final status = (originalOrder['status'] as String? ?? '').toLowerCase();
+      if (status == 'pending_cashier' || status == 'pending') {
         _confirmationOrders.add(originalOrder);
-      } else if (status == 'processing' || status == 'for_delivery') {
+      } else if (status == 'in_preparation' ||
+          status == 'confirmed' ||
+          status == 'preparing' ||
+          status == 'out_for_delivery') {
         _processingOrders.add(originalOrder);
-      } else if (status == 'completed' || status == 'cancelled') {
+      } else if (status == 'delivered' || status == 'cancelled') {
         _completedOrders.add(originalOrder);
       }
     });
@@ -386,7 +399,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                     children: [
                       const Icon(Icons.pending_actions, size: 20),
                       const SizedBox(width: 8),
-                      Text('Confirmation (${_confirmationOrders.length})'),
+                      Text('Pending (${_confirmationOrders.length})'),
                     ],
                   ),
                 ),
@@ -431,6 +444,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                     ? const Center(child: CircularProgressIndicator())
                     : TabBarView(
                       controller: _tabController,
+                      physics: const NeverScrollableScrollPhysics(),
                       children: [
                         _buildConfirmationTab(),
                         _buildProcessingTab(),
@@ -452,7 +466,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             Icon(Icons.inbox, size: 64, color: Colors.grey.shade400),
             const SizedBox(height: 16),
             Text(
-              'No orders awaiting confirmation',
+              'No orders awaiting payment confirmation',
               style: TextStyle(
                 color: Colors.grey.shade600,
                 fontSize: 16,
@@ -827,14 +841,17 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   Color _getStatusColor(String status) {
-    switch (status) {
+    switch (status.toLowerCase()) {
+      case 'pending_cashier':
       case 'pending':
         return Colors.orange;
-      case 'processing':
+      case 'in_preparation':
+      case 'confirmed':
+      case 'preparing':
         return Colors.blue;
-      case 'for_delivery':
+      case 'out_for_delivery':
         return Colors.purple;
-      case 'completed':
+      case 'delivered':
         return Colors.green;
       case 'cancelled':
         return Colors.red;
@@ -909,11 +926,10 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   String _shortOrderId(dynamic rawId, dynamic orderNo) {
-    // Prefer order_no if available, otherwise fall back to id
-    final value = (orderNo ?? rawId ?? '').toString();
-    if (value.isEmpty) return 'N/A';
-    final shortened = value.length <= 8 ? value : value.substring(0, 8);
-    return '#${shortened.toUpperCase()}';
+    return formatRestaurantOrderNo({
+      'order_no': orderNo,
+      'id': rawId,
+    });
   }
 
   Widget _buildOrderTableRow(Map<String, dynamic> order, int index) {
@@ -1062,7 +1078,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
-                      onTap: () => _confirmOrder(order['id']),
+                      onTap: () => _showConfirmPaymentDialog(order),
                       child: MouseRegion(
                         cursor: SystemMouseCursors.click,
                         child: Container(
@@ -1080,7 +1096,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                               Icon(Icons.check, color: Colors.white, size: 16),
                               SizedBox(width: 4),
                               Text(
-                                'Confirm',
+                                'Confirm payment',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 12,
@@ -1308,7 +1324,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                       },
                     ),
                     const SizedBox(width: 8),
-                    if (status == 'confirmed' || status == 'preparing') ...[
+                    if (status == 'in_preparation') ...[
                       GestureDetector(
                         onTap: () => _showDeliveryUrlDialog(order['id']),
                         child: MouseRegion(
@@ -1524,102 +1540,232 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     );
   }
 
-  Future<void> _confirmOrder(String orderId) async {
-    final confirmed = await showDialog<bool>(
+  String? _paymentProofImageUrl(dynamic proof) {
+    if (proof == null) return null;
+    final s = proof.toString().trim();
+    if (s.isEmpty) return null;
+    if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('data:')) {
+      return s;
+    }
+    if (s.startsWith('/')) return '$apiBaseUrl$s';
+    return '$apiBaseUrl/$s';
+  }
+
+  Future<void> _showConfirmPaymentDialog(Map<String, dynamic> order) async {
+    final orderId = order['id']?.toString() ?? '';
+    final total = _parseAmount(order['total_amount']);
+    final paymentRef = order['payment_reference']?.toString() ?? '';
+    final proofUrl = _paymentProofImageUrl(order['payment_proof']);
+    final amountController = TextEditingController(
+      text: total > 0 ? total.toStringAsFixed(2) : '',
+    );
+    String? errorText;
+    bool submitting = false;
+
+    await showDialog<void>(
       context: context,
-      builder:
-          (context) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final paid = double.tryParse(amountController.text.trim()) ?? 0;
+          final change = paid - total;
+
+          return Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             child: Container(
-              constraints: const BoxConstraints(maxWidth: 420),
+              constraints: const BoxConstraints(maxWidth: 480),
               padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Close button
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: IconButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      icon: const Icon(Icons.close, color: Colors.black),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Title
-                  const Text(
-                    'CONFIRM ORDER',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Are you sure you want to confirm this order?',
-                    style: TextStyle(fontSize: 13),
-                  ),
-                  const SizedBox(height: 24),
-                  // Buttons
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.of(context).pop(true),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFC024),
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text(
-                            'CONFIRM',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'CONFIRM PAYMENT',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.of(context).pop(false),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey.shade300,
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text(
-                            'CANCEL',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
+                        IconButton(
+                          onPressed: submitting
+                              ? null
+                              : () => Navigator.of(dialogContext).pop(),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Order ${formatRestaurantOrderNo(order)}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Text('Order total: $_currencySymbol${total.toStringAsFixed(2)}'),
+                    if (paymentRef.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text('Reference: $paymentRef'),
+                    ],
+                    if (proofUrl != null) ...[
+                      const SizedBox(height: 12),
+                      const Text('Payment proof', style: TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          proofUrl,
+                          height: 180,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Text('Unable to load image'),
                         ),
                       ),
                     ],
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: amountController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Amount paid by customer',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      onChanged: (_) => setDialogState(() => errorText = null),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Change: $_currencySymbol${change >= 0 ? change.toStringAsFixed(2) : '0.00'}',
+                      style: TextStyle(
+                        color: change >= 0 ? Colors.green.shade700 : Colors.red.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (errorText != null) ...[
+                      const SizedBox(height: 8),
+                      Text(errorText!, style: TextStyle(color: Colors.red.shade700, fontSize: 12)),
+                    ],
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: submitting
+                                ? null
+                                : () async {
+                                    if (paid < total) {
+                                      setDialogState(() {
+                                        errorText =
+                                            'Payment is insufficient. Notify the customer or collect the correct amount.';
+                                      });
+                                      return;
+                                    }
+                                    setDialogState(() => submitting = true);
+                                    try {
+                                      final token = await _getAuthToken();
+                                      final response = await http.post(
+                                        Uri.parse(
+                                          '$apiBaseUrl/api/manager/restaurant/orders/$orderId/confirm-payment',
+                                        ),
+                                        headers: {
+                                          'Authorization': 'Bearer $token',
+                                          'Content-Type': 'application/json',
+                                        },
+                                        body: jsonEncode({'amountPaid': paid}),
+                                      );
+                                      if (response.statusCode == 200) {
+                                        if (dialogContext.mounted) {
+                                          Navigator.of(dialogContext).pop();
+                                        }
+                                        await _loadOrders(forceRefresh: true);
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text('Payment confirmed — order in preparation'),
+                                            ),
+                                          );
+                                        }
+                                      } else if (response.statusCode == 400) {
+                                        setDialogState(() {
+                                          errorText = 'Insufficient payment amount';
+                                          submitting = false;
+                                        });
+                                      } else {
+                                        throw Exception(response.body);
+                                      }
+                                    } catch (e) {
+                                      setDialogState(() {
+                                        errorText = e.toString();
+                                        submitting = false;
+                                      });
+                                    }
+                                  },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFC024),
+                              foregroundColor: Colors.black,
+                            ),
+                            child: submitting
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Text('CONFIRM & START PREP'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (paid < total && paid > 0) ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: submitting
+                              ? null
+                              : () async {
+                                  try {
+                                    final token = await _getAuthToken();
+                                    await http.post(
+                                      Uri.parse(
+                                        '$apiBaseUrl/api/manager/restaurant/orders/$orderId/notify-insufficient-payment',
+                                      ),
+                                      headers: {
+                                        'Authorization': 'Bearer $token',
+                                        'Content-Type': 'application/json',
+                                      },
+                                      body: jsonEncode({'amountPaid': paid}),
+                                    );
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Customer notified about insufficient payment'),
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Failed to notify: $e')),
+                                      );
+                                    }
+                                  }
+                                },
+                          child: const Text('EMAIL CUSTOMER (INSUFFICIENT PAYMENT)'),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
-          ),
+          );
+        },
+      ),
     );
 
-    if (confirmed == true) {
-      await _updateOrderStatus(orderId, 'confirmed');
-    }
+    amountController.dispose();
   }
 
   Future<void> _cancelOrder(String orderId) async {
@@ -1716,7 +1862,32 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     );
 
     if (confirmed == true) {
-      await _updateOrderStatus(orderId, 'cancelled');
+      try {
+        final token = await _getAuthToken();
+        final response = await http.post(
+          Uri.parse('$apiBaseUrl/api/manager/restaurant/orders/$orderId/cancel'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+        );
+        if (response.statusCode == 200) {
+          await _loadOrders(forceRefresh: true);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Order cancelled')),
+            );
+          }
+        } else {
+          throw Exception(response.body);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Cancel failed: $e')),
+          );
+        }
+      }
     }
   }
 

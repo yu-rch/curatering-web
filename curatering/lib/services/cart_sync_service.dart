@@ -23,25 +23,41 @@ class CartSyncService {
       if (token != null && token.isNotEmpty) {
         final response = await ApiClient.instance.getJson('/api/cart');
 
+        List<dynamic> cartItems = [];
         if (response['success'] == true && response['cart'] != null) {
-          final List<dynamic> cartItems = response['cart'];
+          cartItems = response['cart'] as List<dynamic>;
+        }
+
+        // Tray draft (customer_tray_drafts) — shared with mobile
+        try {
+          final trayResponse = await ApiClient.instance.getJson('/api/tray-draft');
+          if (trayResponse['success'] == true && trayResponse['items'] is List) {
+            final trayItems = trayResponse['items'] as List<dynamic>;
+            if (trayItems.isNotEmpty) {
+              cartItems = trayItems;
+            }
+          }
+        } catch (_) {
+          /* cart endpoint may still have data */
+        }
+
+        if (cartItems.isNotEmpty || response['success'] == true) {
           final cartJson = jsonEncode(cartItems);
           await prefs.setString(_cartKey, cartJson);
           await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());
 
           final localCount = CartStore.instance.items.length;
           if (cartItems.isEmpty && localCount > 0) {
-            // Server has no cart but this device still has items (e.g. after logout/login).
-            // Push local cart up instead of wiping it.
             await syncToServer();
             return;
           }
 
           CartStore.instance.clearCart();
           for (final item in cartItems) {
+            final parsed = CartItem.fromJson(item as Map<String, dynamic>);
             CartStore.instance.addItem(
-              CartItem.fromJson(item).dish,
-              selectedSauce: CartItem.fromJson(item).selectedSauce,
+              parsed.dish,
+              selectedSauce: parsed.selectedSauce,
             );
           }
         }
@@ -69,6 +85,10 @@ class CartSyncService {
               'deviceId': await _getDeviceId(),
               'timestamp': DateTime.now().toIso8601String(),
             },
+          );
+          await ApiClient.instance.putJson(
+            '/api/tray-draft',
+            body: {'items': cartData},
           );
 
           await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());
@@ -148,6 +168,11 @@ class CartSyncService {
       final token = prefs.getString('customer_token');
       if (token != null && token.isNotEmpty) {
         await ApiClient.instance.postJson('/api/cart/clear');
+        try {
+          await ApiClient.instance.delete('/api/tray-draft');
+        } catch (_) {
+          /* tray may already be empty */
+        }
       }
 
       CartStore.instance.clearCart();

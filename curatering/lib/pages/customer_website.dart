@@ -195,10 +195,13 @@ class CustomerWebsiteScreen extends StatefulWidget {
     super.key,
     this.contentEditable = false,
     this.showStaffChrome = true,
+    this.staffThemeStudioMode = false,
   });
 
   final bool contentEditable;
   final bool showStaffChrome;
+  /// When true, opens the customer Event Theme Design Studio for staff (Manage Events).
+  final bool staffThemeStudioMode;
 
   @override
   State<CustomerWebsiteScreen> createState() => _CustomerWebsiteScreenState();
@@ -287,6 +290,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   String _gallerySearchQuery = '';
   Map<String, dynamic>? _customerData;
   bool _isCustomerLoggedIn = false;
+  int _restaurantLoyaltyPoints = 0;
+  int _cateringLoyaltyPoints = 0;
   String _selectedRestaurantType = 'RICE MEALS'; // Default selected category
   List<Map<String, dynamic>> _reorderDishes = [];
   bool _loadingReorder = false;
@@ -328,6 +333,34 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     }
     if (mounted && _isCustomerLoggedIn) {
       unawaited(_loadPopularOrdersForHome());
+      unawaited(_refreshLoyaltyPointsFromProfile());
+    }
+  }
+
+  Future<void> _refreshLoyaltyPointsFromProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('customer_token');
+    if (token == null || token.isEmpty) return;
+    try {
+      final res = await http
+          .get(
+            Uri.parse('$apiBaseUrl/api/customer/profile'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 12));
+      if (res.statusCode != 200 || !mounted) return;
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      setState(() {
+        _restaurantLoyaltyPoints =
+            (data['restaurantLoyaltyPoints'] as num?)?.toInt() ?? 0;
+        _cateringLoyaltyPoints =
+            (data['cateringLoyaltyPoints'] as num?)?.toInt() ?? 0;
+      });
+    } catch (_) {
+      /* keep last known points */
     }
   }
 
@@ -3339,6 +3372,23 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.staffThemeStudioMode) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF7F8FA),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black87,
+          elevation: 0,
+          title: const Text('Event Theme Design Studio'),
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ),
+        body: const _InquireForm(staffThemeStudioMode: true),
+      );
+    }
+
     final w = WebsiteContentStore.instance;
 
     Widget body;
@@ -3353,7 +3403,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             1 => _buildGallery(w),
             2 => _buildCateringMenu(),
             3 => _buildRestaurantMenu(),
-            4 => const _InquireForm(),
+            4 => const _InquireForm(staffThemeStudioMode: false),
             5 => _ContactSection(
               store: w,
               contentEditable: widget.contentEditable,
@@ -3786,8 +3836,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     final int pointsEarned = LoyaltyRewardsStore.instance.pointsEarned(
       orderType: 'restaurant',
     );
-    final int currentPoints =
-        0; // User's current points balance - in production from API
+    final int currentPoints = _restaurantLoyaltyPoints;
     final availableRewards = LoyaltyRewardsStore.instance.rewardsConditions;
     // Ensure store is loaded
     LoyaltyRewardsStore.instance.ensureLoaded();
@@ -3830,7 +3879,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Earn $pointsEarned points on orders ≥ ₱${minimumOrderForPoints.toStringAsFixed(2)}',
+                      'Restaurant: $currentPoints pts'
+                      '${_cateringLoyaltyPoints > 0 ? ' · Catering: $_cateringLoyaltyPoints pts' : ''}'
+                      ' · Earn $pointsEarned pts on orders ≥ ₱${minimumOrderForPoints.toStringAsFixed(2)}',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.9),
                         fontSize: 13,
@@ -4421,7 +4472,9 @@ class _ContactSectionState extends State<_ContactSection> {
 }
 
 class _InquireForm extends StatefulWidget {
-  const _InquireForm();
+  const _InquireForm({this.staffThemeStudioMode = false});
+
+  final bool staffThemeStudioMode;
 
   @override
   State<_InquireForm> createState() => _InquireFormState();
@@ -4521,6 +4574,11 @@ class _InquireFormState extends State<_InquireForm> {
     super.initState();
     SetMenuStore.instance.addListener(_onSetMenusChanged);
     MenuStore.instance.addListener(_onMenuChanged);
+    if (widget.staffThemeStudioMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showDesignMyEventEditorPage();
+      });
+    }
     // Ensure set menus are loaded
     if (SetMenuStore.instance.activeSetMenus.isEmpty) {
       SetMenuStore.instance.loadSetMenus();

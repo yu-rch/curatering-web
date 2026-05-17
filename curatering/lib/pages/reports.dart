@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
 import '../models/event_order.dart';
 import '../services/events_api.dart';
-import '../widgets/app_scaffold.dart';
+import '../services/reports_pdf_service.dart';
 import '../utils/order_calculations.dart';
+import '../widgets/antd_buttons.dart';
+import '../widgets/antd_message.dart';
+import '../widgets/antd_tokens.dart';
+import '../widgets/app_scaffold.dart';
 
 class Reports extends StatefulWidget {
   const Reports({super.key});
@@ -26,6 +31,7 @@ class _ReportsState extends State<Reports> {
   List<DateTime> _availableMonths = const <DateTime>[];
 
   bool _isLoading = false;
+  bool _exportingPdf = false;
   String? _errorMessage;
 
   @override
@@ -65,7 +71,6 @@ class _ReportsState extends State<Reports> {
 
       final sortedMonths = months.toList()..sort((a, b) => b.compareTo(a));
 
-      // If there are no orders yet, show a reasonable default range.
       final fallback = List<DateTime>.generate(6, (i) {
         final m = DateTime(DateTime.now().year, DateTime.now().month - i, 1);
         return DateTime(m.year, m.month, 1);
@@ -88,22 +93,101 @@ class _ReportsState extends State<Reports> {
     }
   }
 
+  List<EventOrderDto> _ordersForSelectedMonth() {
+    return _completedOrders.where((o) {
+      if (o.scheduleSlots.isEmpty) return false;
+      final d = DateTime.tryParse(o.scheduleSlots.first.date);
+      if (d == null) return false;
+      return d.year == _selectedMonth.year && d.month == _selectedMonth.month;
+    }).toList();
+  }
+
+  List<EventOrderDto> _filteredOrders(List<EventOrderDto> monthOrders) {
+    if (_searchQuery.isEmpty) return monthOrders;
+    return monthOrders.where((o) {
+      final haystack =
+          '${o.eventTitle} ${o.customerName} ${o.eventType} ${o.orderType}'
+              .toLowerCase();
+      return haystack.contains(_searchQuery);
+    }).toList();
+  }
+
+  MonthlyReportSnapshot _snapshotFor(List<EventOrderDto> orders) {
+    return buildMonthlyReportSnapshot(month: _selectedMonth, orders: orders);
+  }
+
+  Future<void> _downloadPdf() async {
+    final orders = _filteredOrders(_ordersForSelectedMonth());
+    if (orders.isEmpty) {
+      showAntdMessage(
+        context,
+        'No completed orders for this month to export.',
+        type: AntdMessageType.warning,
+      );
+      return;
+    }
+
+    setState(() => _exportingPdf = true);
+    try {
+      await downloadMonthlyReportPdf(_snapshotFor(orders));
+      if (!mounted) return;
+      showAntdMessage(
+        context,
+        'PDF download started.',
+        type: AntdMessageType.success,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      showAntdMessage(
+        context,
+        'Could not generate PDF: $e',
+        type: AntdMessageType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _exportingPdf = false);
+    }
+  }
+
+  Future<void> _previewPdf() async {
+    final orders = _filteredOrders(_ordersForSelectedMonth());
+    if (orders.isEmpty) {
+      showAntdMessage(
+        context,
+        'No completed orders for this month to preview.',
+        type: AntdMessageType.warning,
+      );
+      return;
+    }
+
+    setState(() => _exportingPdf = true);
+    try {
+      await previewMonthlyReportPdf(_snapshotFor(orders));
+    } catch (e) {
+      if (!mounted) return;
+      showAntdMessage(
+        context,
+        'Could not open PDF preview: $e',
+        type: AntdMessageType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _exportingPdf = false);
+    }
+  }
+
   Widget _monthTile(DateTime month) {
     final isSelected =
         month.year == _selectedMonth.year &&
         month.month == _selectedMonth.month;
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedMonth = month;
-        });
-      },
+      onTap: () => setState(() => _selectedMonth = month),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.orange.shade400 : Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.grey.shade300),
+          color: isSelected ? AntdTokens.brandPrimary : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? AntdTokens.brandPrimary : AntdTokens.borderSubtle,
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -111,15 +195,18 @@ class _ReportsState extends State<Reports> {
             Text(
               '${month.month.toString().padLeft(2, '0')} / ${month.year}',
               style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isSelected ? Colors.white : Colors.black87,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? AntdTokens.brandOnPrimary : AntdTokens.valueDark,
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Text(
-              'Monthly reports',
+              'Completed events',
               style: TextStyle(
-                color: isSelected ? Colors.white70 : Colors.grey.shade600,
+                fontSize: 12,
+                color: isSelected
+                    ? AntdTokens.brandOnPrimary.withValues(alpha: 0.75)
+                    : AntdTokens.labelMuted,
               ),
             ),
           ],
@@ -130,17 +217,25 @@ class _ReportsState extends State<Reports> {
 
   Widget _buildStatCard(String title, String value) {
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: AntdTokens.borderSubtle),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: TextStyle(color: Colors.grey.shade700)),
-            const SizedBox(height: 12),
+            Text(title, style: const TextStyle(color: AntdTokens.labelMuted)),
+            const SizedBox(height: 8),
             Text(
               value,
-              style: const TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: AntdTokens.valueDark,
+              ),
             ),
           ],
         ),
@@ -148,128 +243,72 @@ class _ReportsState extends State<Reports> {
     );
   }
 
-  Widget _buildPlaceholderChart(String title, String valueText) {
+  Widget _buildOrdersTable(List<EventOrderDto> orders) {
+    if (orders.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Center(
+          child: Text(
+            'No completed orders match this month or search.',
+            style: TextStyle(color: Colors.grey.shade600),
+          ),
+        ),
+      );
+    }
+
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.grey.shade800,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: AntdTokens.borderSubtle),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+          columns: const [
+            DataColumn(label: Text('Date')),
+            DataColumn(label: Text('Customer')),
+            DataColumn(label: Text('Event')),
+            DataColumn(label: Text('Type')),
+            DataColumn(label: Text('Guests')),
+            DataColumn(label: Text('Sales')),
+          ],
+          rows: [
+            for (final o in orders)
+              DataRow(
+                cells: [
+                  DataCell(Text(_formatOrderDate(o))),
+                  DataCell(Text(o.customerName)),
+                  DataCell(
+                    Text(
+                      o.eventTitle.isEmpty ? '—' : o.eventTitle,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  DataCell(Text(o.eventType.isEmpty ? o.orderType : o.eventType)),
+                  DataCell(Text('${o.guestCount}')),
+                  DataCell(Text(formatPesos(orderRevenue(o)))),
+                ],
               ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Center(
-                  child: Text(' ', style: TextStyle(color: Colors.grey)),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              valueText,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildInfoCard(String title, String value, String dateLabel) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.grey.shade800,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              value,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              dateLabel,
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-            ),
-          ],
-        ),
-      ),
-    );
+  String _formatOrderDate(EventOrderDto order) {
+    if (order.scheduleSlots.isEmpty) return '—';
+    final d = DateTime.tryParse(order.scheduleSlots.first.date);
+    if (d == null) return order.scheduleSlots.first.date;
+    return '${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}/${d.year}';
   }
 
   @override
   Widget build(BuildContext context) {
-    final monthOrders =
-        _completedOrders.where((o) {
-          if (o.scheduleSlots.isEmpty) return false;
-          final d = DateTime.tryParse(o.scheduleSlots.first.date);
-          if (d == null) return false;
-          return d.year == _selectedMonth.year &&
-              d.month == _selectedMonth.month;
-        }).toList();
-
-    final filteredOrders =
-        _searchQuery.isEmpty
-            ? monthOrders
-            : monthOrders.where((o) {
-              final haystack =
-                  '${o.eventTitle} ${o.customerName} ${o.eventType}'
-                      .toLowerCase();
-              return haystack.contains(_searchQuery);
-            }).toList();
-
-    final totalSales = filteredOrders.fold<double>(
-      0.0,
-      (sum, o) => sum + computeOrderTotalCost(o),
-    );
-
-    final dishCounts = <String, int>{};
-    final eventTypeCounts = <String, int>{};
-    for (final o in filteredOrders) {
-      eventTypeCounts[o.eventType] = (eventTypeCounts[o.eventType] ?? 0) + 1;
-      for (final item in o.menu) {
-        dishCounts[item.dishName] = (dishCounts[item.dishName] ?? 0) + 1;
-      }
-    }
-    final popularDish =
-        dishCounts.entries.isEmpty
-            ? 'N/A'
-            : dishCounts.entries
-                .reduce((a, b) => a.value >= b.value ? a : b)
-                .key;
-    final mostFrequentEventType =
-        eventTypeCounts.entries.isEmpty
-            ? 'N/A'
-            : eventTypeCounts.entries
-                .reduce((a, b) => a.value >= b.value ? a : b)
-                .key;
-
-    final topDishes =
-        dishCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-    final top5RequestedDish =
-        topDishes.isEmpty
-            ? 'N/A'
-            : topDishes.take(5).map((e) => e.key).join(', ');
+    final monthOrders = _ordersForSelectedMonth();
+    final filteredOrders = _filteredOrders(monthOrders);
+    final snapshot = _snapshotFor(filteredOrders);
 
     return AppScaffold(
       showSearch: true,
@@ -281,26 +320,42 @@ class _ReportsState extends State<Reports> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Reports',
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
             Row(
               children: [
-                Text(
-                  'Monthly sales and event performance insights.',
-                  style: TextStyle(color: Colors.grey.shade700),
-                ),
-                const Spacer(),
-                ElevatedButton.icon(
-                  onPressed: _loadCompletedOrders,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Refresh'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E1E1E),
-                    foregroundColor: Colors.white,
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Reports',
+                        style: TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'Monthly sales and completed catering / event orders.',
+                        style: TextStyle(color: AntdTokens.labelMuted),
+                      ),
+                    ],
                   ),
+                ),
+                AntdCancelButton(
+                  label: 'Preview PDF',
+                  onPressed: _exportingPdf ? null : _previewPdf,
+                ),
+                const SizedBox(width: 8),
+                AntdPrimaryButton(
+                  label: 'Download PDF',
+                  loading: _exportingPdf,
+                  onPressed: _exportingPdf ? null : _downloadPdf,
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: _isLoading ? null : _loadCompletedOrders,
+                  icon: const Icon(Icons.refresh),
                 ),
               ],
             ),
@@ -310,9 +365,19 @@ class _ReportsState extends State<Reports> {
             else if (_errorMessage != null)
               Expanded(
                 child: Center(
-                  child: Text(
-                    _errorMessage!,
-                    style: TextStyle(color: Colors.grey.shade600),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _errorMessage!,
+                        style: TextStyle(color: Colors.grey.shade600),
+                      ),
+                      const SizedBox(height: 12),
+                      AntdPrimaryButton(
+                        label: 'Retry',
+                        onPressed: _loadCompletedOrders,
+                      ),
+                    ],
                   ),
                 ),
               )
@@ -321,13 +386,13 @@ class _ReportsState extends State<Reports> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      flex: 2,
-                      child: Column(
+                    SizedBox(
+                      width: 160,
+                      child: ListView(
                         children: [
-                          for (final m in _availableMonths.take(4))
+                          for (final m in _availableMonths)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.only(bottom: 8),
                               child: _monthTile(m),
                             ),
                         ],
@@ -335,68 +400,51 @@ class _ReportsState extends State<Reports> {
                     ),
                     const SizedBox(width: 20),
                     Expanded(
-                      flex: 6,
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Row(
                             children: [
                               Expanded(
                                 child: _buildStatCard(
-                                  'Total Catering and Events',
+                                  'Completed orders',
                                   '${filteredOrders.length}',
                                 ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: _buildStatCard(
-                                  'Total Sales',
-                                  formatPesos(totalSales),
+                                  'Total sales',
+                                  formatPesos(snapshot.totalSales),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _buildStatCard(
+                                  'Popular dish',
+                                  snapshot.popularDish,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _buildStatCard(
+                                  'Top event type',
+                                  snapshot.mostFrequentEventType,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 20),
-                          Expanded(
-                            child: _buildPlaceholderChart(
-                              'Most Popular Dish',
-                              popularDish,
+                          const SizedBox(height: 16),
+                          Text(
+                            'Orders — ${filteredOrders.length} record(s)',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
                             ),
                           ),
-                          const SizedBox(height: 20),
-                          Expanded(
-                            child: _buildPlaceholderChart(
-                              'Most Frequent Event Type',
-                              mostFrequentEventType,
-                            ),
-                          ),
+                          const SizedBox(height: 8),
+                          Expanded(child: _buildOrdersTable(filteredOrders)),
                         ],
-                      ),
-                    ),
-                    const SizedBox(width: 20),
-                    Expanded(
-                      flex: 2,
-                      child: SingleChildScrollView(
-                        child: Column(
-                          children: [
-                            _buildInfoCard(
-                              'Top Requested Dish',
-                              top5RequestedDish,
-                              '${_selectedMonth.month.toString().padLeft(2, '0')} ${_selectedMonth.year}',
-                            ),
-                            const SizedBox(height: 12),
-                            _buildInfoCard(
-                              'Most Popular Dish',
-                              popularDish,
-                              '${_selectedMonth.month.toString().padLeft(2, '0')} ${_selectedMonth.year}',
-                            ),
-                            const SizedBox(height: 12),
-                            _buildInfoCard(
-                              'Most Frequent Event Type',
-                              mostFrequentEventType,
-                              '${_selectedMonth.month.toString().padLeft(2, '0')} ${_selectedMonth.year}',
-                            ),
-                          ],
-                        ),
                       ),
                     ),
                   ],

@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
+import '../utils/order_display_utils.dart';
 import '../services/customer_orders_cache.dart';
 import '../widgets/customer_pages_top_bar.dart';
 import 'customer_website.dart';
@@ -239,10 +240,10 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
   }
 
   String _shortOrderId(dynamic rawId, dynamic orderNo) {
-    // Prefer order_no if available, otherwise fall back to id
-    final value = (orderNo ?? rawId ?? '').toString();
-    if (value.isEmpty) return 'N/A';
-    return value.length <= 8 ? value : value.substring(0, 8);
+    return formatRestaurantOrderNo({
+      'order_no': orderNo,
+      'id': rawId,
+    });
   }
 
   void _navigateFromTopBar(CustomerPageTab tab) {

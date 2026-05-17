@@ -1321,6 +1321,15 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
   void _themeEditorApplyAndReturn(BuildContext dialogContext) {
     final edited = _confirmedCompositeBase64?.trim() ?? '';
     if (edited.isEmpty) return;
+    if (widget.staffThemeStudioMode) {
+      Navigator.pop(dialogContext);
+      Navigator.of(context).pop<Map<String, dynamic>>({
+        'picksBase64': [edited, ..._designPhotoUrls],
+        'confirmedCompositeBase64': edited,
+        'tintEnabled': false,
+      });
+      return;
+    }
     setState(() {
       _wantsCustomDesign = false;
       _designPhotoUrls
@@ -1361,5 +1370,8 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
 
   void _themeEditorClose(BuildContext dialogContext) {
     Navigator.of(dialogContext).pop();
+    if (widget.staffThemeStudioMode) {
+      Navigator.of(context).pop();
+    }
   }
 }

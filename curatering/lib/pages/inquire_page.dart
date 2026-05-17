@@ -753,7 +753,10 @@ class _InquirePageState extends State<InquirePage> {
           controller: _guests,
           hintText: 'Guest count',
           keyboardType: TextInputType.number,
-          onChanged: (_) => onFieldChanged('guests'),
+          onChanged: (_) => setState(() {
+            _fieldErrors.remove('guests');
+            _fieldErrors.remove('cateringService');
+          }),
         ),
       ),
       const SizedBox(height: 12),
@@ -872,6 +875,37 @@ class _InquirePageState extends State<InquirePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    border: Border.all(color: Colors.orange.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.warning_amber,
+                        color: Colors.orange.shade700,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'For catering orders with less than 50 guests, additional charges may apply.',
+                          style: TextStyle(
+                            color: Colors.orange.shade800,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
                 _inquirySectionTitle('Include catering service'),
                 const SizedBox(height: 8),
                 Row(

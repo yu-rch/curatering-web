@@ -852,6 +852,22 @@ export async function initDb() {
     console.log('Migration check for restaurant_orders order_no:', err.message);
   }
 
+  // Migration: ensure id column exists (legacy deployments created without it)
+  try {
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS id uuid DEFAULT gen_random_uuid()`,
+    );
+    await pool.query(
+      `UPDATE restaurant_orders SET id = gen_random_uuid() WHERE id IS NULL`,
+    );
+    await pool.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS restaurant_orders_id_key ON restaurant_orders (id)`,
+    );
+    console.log('Migration: ensured id column on restaurant_orders');
+  } catch (err) {
+    console.log('Migration check for restaurant_orders id:', err.message);
+  }
+
   // Migration: Add points_earned column to restaurant_orders
   try {
     await pool.query(`ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS points_earned INTEGER DEFAULT 0`);
@@ -910,6 +926,69 @@ export async function initDb() {
     }
   } catch (err) {
     console.log('Migration check for invalid status values:', err.message);
+  }
+
+  // Restaurant order workflow columns + guest checkout
+  try {
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS guest_contact_email TEXT`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_proof TEXT`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS amount_paid DECIMAL(10,2)`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS change_given DECIMAL(10,2)`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS pending_cashier_at TIMESTAMPTZ`,
+    );
+    await pool.query(`
+      ALTER TABLE restaurant_orders DROP CONSTRAINT IF EXISTS restaurant_orders_status_check
+    `);
+    await pool.query(`
+      UPDATE restaurant_orders SET status = 'pending_cashier' WHERE status = 'pending'
+    `);
+    await pool.query(`
+      UPDATE restaurant_orders SET status = 'in_preparation'
+      WHERE status IN ('confirmed', 'preparing')
+    `);
+    await pool.query(`
+      ALTER TABLE restaurant_orders ADD CONSTRAINT restaurant_orders_status_check
+      CHECK (status IN (
+        'pending_cashier', 'in_preparation', 'out_for_delivery', 'delivered', 'cancelled'
+      ))
+    `);
+    await pool.query(`
+      UPDATE restaurant_orders SET pending_cashier_at = created_at
+      WHERE status = 'pending_cashier' AND pending_cashier_at IS NULL
+    `);
+    console.log('Migration: restaurant_orders workflow columns and statuses');
+  } catch (err) {
+    console.log('Migration restaurant_orders workflow:', err.message);
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS customer_tray_drafts (
+      customer_id TEXT PRIMARY KEY REFERENCES customer_accounts(id) ON DELETE CASCADE,
+      items JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+
+  try {
+    await pool.query(`
+      INSERT INTO id_counters (prefix, last_number) VALUES ('USR', 0)
+      ON CONFLICT (prefix) DO NOTHING
+    `);
+    await pool.query(`
+      INSERT INTO id_counters (prefix, last_number) VALUES ('ORD', 0)
+      ON CONFLICT (prefix) DO NOTHING
+    `);
+  } catch (err) {
+    console.log('Migration id_counters USR/ORD:', err.message);
   }
 
   // Migration: Add non-perishable catering business fields to inventory table
@@ -1038,6 +1117,46 @@ export async function allocateRestaurantOrderNo() {
   } finally {
     client.release();
   }
+}
+
+const LOYALTY_PROGRAM_CONFIG_KEY = 'loyalty_program_config';
+
+/** @returns {{ pointsConditions: unknown[], rewardsConditions: unknown[] }} */
+export async function getLoyaltyProgramConfig() {
+  try {
+    const r = await pool.query(
+      `SELECT value FROM system_settings WHERE key = $1`,
+      [LOYALTY_PROGRAM_CONFIG_KEY],
+    );
+    if (r.rows.length === 0) {
+      return { pointsConditions: [], rewardsConditions: [] };
+    }
+    const v = r.rows[0].value;
+    if (!v || typeof v !== 'object') {
+      return { pointsConditions: [], rewardsConditions: [] };
+    }
+    return {
+      pointsConditions: Array.isArray(v.pointsConditions) ? v.pointsConditions : [],
+      rewardsConditions: Array.isArray(v.rewardsConditions) ? v.rewardsConditions : [],
+    };
+  } catch (e) {
+    console.log('getLoyaltyProgramConfig:', e.message);
+    return { pointsConditions: [], rewardsConditions: [] };
+  }
+}
+
+export async function setLoyaltyProgramConfig(config) {
+  await pool.query(
+    `INSERT INTO system_settings (key, value, updated_at)
+     VALUES ($1, $2::jsonb, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    [LOYALTY_PROGRAM_CONFIG_KEY, JSON.stringify(config ?? {})],
+  );
+}
+
+/** Serial staff account id: USR-0001, USR-0002, … */
+export async function allocateStaffUserId() {
+  return generateSequentialId('USR', 4);
 }
 
 export { pool, generateUserId, generateSequentialId };

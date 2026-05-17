@@ -459,6 +459,7 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
           ),
           Expanded(
             child: TabBarView(
+              physics: const NeverScrollableScrollPhysics(),
               controller: _tabController,
               children: [
                 _buildCustomDishesPanel(),
@@ -479,14 +480,25 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
             ],
           ),
         ] else
-          IndexedStack(
-            index: widget.tabIndex.clamp(0, 1),
-            children: [
-              _buildCustomDishesPanel(),
-              _buildSetMenusPanel(),
-            ],
-          ),
+          _buildEmbeddedMenuPanel(),
       ],
+    );
+  }
+
+  /// Inline inquiry form: fixed max height + scroll (avoids IndexedStack empty gap).
+  Widget _buildEmbeddedMenuPanel() {
+    const maxHeight = 280.0;
+    final panel =
+        _activeTab == 0 ? _buildCustomDishesPanel() : _buildSetMenusPanel();
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: maxHeight),
+      child: Scrollbar(
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.only(right: 4),
+          child: panel,
+        ),
+      ),
     );
   }
 

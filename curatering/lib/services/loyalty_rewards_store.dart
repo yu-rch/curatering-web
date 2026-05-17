@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../auth/auth_session.dart';
+import '../config.dart';
 
 /// Points earning condition (minimum cost to earn points)
 class PointsCondition {
@@ -77,12 +80,13 @@ class RewardsCondition {
   String get description => size;
 }
 
-/// Store for managing loyalty points conditions and reward redemption conditions
+/// Store for managing loyalty points conditions and reward redemption conditions.
+/// Source of truth is the database (`system_settings.loyalty_program_config`).
 class LoyaltyRewardsStore extends ChangeNotifier {
   LoyaltyRewardsStore._();
   static final LoyaltyRewardsStore instance = LoyaltyRewardsStore._();
 
-  static const _prefsKey = 'loyalty_rewards_v1';
+  static const _prefsKey = 'loyalty_rewards_cache_v2';
 
   List<PointsCondition> _pointsConditions = [];
   List<RewardsCondition> _rewardsConditions = [];
@@ -101,95 +105,100 @@ class LoyaltyRewardsStore extends ChangeNotifier {
   Future<void> ensureLoaded() async {
     if (_loaded) return;
     _loaded = true;
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_prefsKey);
-    if (raw == null || raw.isEmpty) {
-      // Initialize with default values
-      _initializeDefaults();
-      return;
-    }
-    try {
-      final map = jsonDecode(raw) as Map<String, dynamic>;
-      final pointsList = map['pointsConditions'] as List<dynamic>?;
-      final rewardsList = map['rewardsConditions'] as List<dynamic>?;
-
-      if (pointsList != null) {
-        _pointsConditions =
-            pointsList
-                .map((p) => PointsCondition.fromJson(p as Map<String, dynamic>))
-                .toList();
-      }
-      if (rewardsList != null) {
-        _rewardsConditions =
-            rewardsList
-                .map(
-                  (r) => RewardsCondition.fromJson(r as Map<String, dynamic>),
-                )
-                .toList();
-      }
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Error loading loyalty rewards: $e');
-      _initializeDefaults();
-    }
+    await _loadFromApi();
   }
 
-  void _initializeDefaults() {
-    // Default points conditions with 2% reward rate (0.02 points per 1 PHP)
-    _pointsConditions = [
-      // Restaurant: 100 min order to earn 2 points (2% rate)
-      PointsCondition(
-        id: '${DateTime.now().millisecondsSinceEpoch}_restaurant',
-        minimumCost: 100.0,
-        pointsApplication: 2,
-        orderType: 'restaurant',
-      ),
-      // Catering: 500 min order to earn 8 points (2% rate)
-      PointsCondition(
-        id: '${DateTime.now().millisecondsSinceEpoch}_catering',
-        minimumCost: 500.0,
-        pointsApplication: 8,
-        orderType: 'catering',
-      ),
-    ];
-    // Default rewards with 0.02 PHP per point redemption value
-    _rewardsConditions = [
-      RewardsCondition(
-        id: '${DateTime.now().millisecondsSinceEpoch}_1',
-        minimumPoints: 100,
-        maximumPoints: 100,
-        reward: '₱2 Discount',
-        size: '100 points = ₱2.00',
-      ),
-      RewardsCondition(
-        id: '${DateTime.now().millisecondsSinceEpoch}_2',
-        minimumPoints: 500,
-        maximumPoints: 500,
-        reward: '₱8 Discount',
-        size: '500 points = ₱8.00',
-      ),
-      RewardsCondition(
-        id: '${DateTime.now().millisecondsSinceEpoch}_3',
-        minimumPoints: 1000,
-        maximumPoints: 1000,
-        reward: '₱16 Discount',
-        size: '1000 points = ₱16.00',
-      ),
-    ];
-    _save();
+  Future<void> reloadFromApi() async {
+    await _loadFromApi();
     notifyListeners();
   }
 
-  Future<void> _save() async {
+  Future<void> _loadFromApi() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/api/loyalty/program-config'),
+      );
+      if (response.statusCode == 200) {
+        final map = jsonDecode(response.body) as Map<String, dynamic>;
+        _applyConfig(map);
+        await _cacheLocally();
+        notifyListeners();
+        return;
+      }
+    } catch (e) {
+      debugPrint('Error loading loyalty program from API: $e');
+    }
+
+    await _loadFromCache();
+    notifyListeners();
+  }
+
+  void _applyConfig(Map<String, dynamic> map) {
+    final pointsList = map['pointsConditions'] as List<dynamic>?;
+    final rewardsList = map['rewardsConditions'] as List<dynamic>?;
+
+    _pointsConditions =
+        pointsList
+            ?.map((p) => PointsCondition.fromJson(p as Map<String, dynamic>))
+            .toList() ??
+        [];
+    _rewardsConditions =
+        rewardsList
+            ?.map((r) => RewardsCondition.fromJson(r as Map<String, dynamic>))
+            .toList() ??
+        [];
+  }
+
+  Future<void> _loadFromCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final map = {
-        'pointsConditions': _pointsConditions.map((p) => p.toJson()).toList(),
-        'rewardsConditions': _rewardsConditions.map((r) => r.toJson()).toList(),
-      };
-      await prefs.setString(_prefsKey, jsonEncode(map));
+      final raw = prefs.getString(_prefsKey);
+      if (raw == null || raw.isEmpty) return;
+      _applyConfig(jsonDecode(raw) as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('Error saving loyalty rewards: $e');
+      debugPrint('Error loading loyalty cache: $e');
+    }
+  }
+
+  Future<void> _cacheLocally() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _prefsKey,
+        jsonEncode({
+          'pointsConditions': _pointsConditions.map((p) => p.toJson()).toList(),
+          'rewardsConditions':
+              _rewardsConditions.map((r) => r.toJson()).toList(),
+        }),
+      );
+    } catch (e) {
+      debugPrint('Error caching loyalty program: $e');
+    }
+  }
+
+  Future<void> _persist() async {
+    await _cacheLocally();
+    final token = AuthSession.instance.token;
+    if (token == null || token.isEmpty) return;
+
+    try {
+      final response = await http.put(
+        Uri.parse('$apiBaseUrl/api/manager/loyalty/program-config'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'pointsConditions': _pointsConditions.map((p) => p.toJson()).toList(),
+          'rewardsConditions':
+              _rewardsConditions.map((r) => r.toJson()).toList(),
+        }),
+      );
+      if (response.statusCode >= 400) {
+        debugPrint('Failed to save loyalty program: ${response.body}');
+      }
+    } catch (e) {
+      debugPrint('Error saving loyalty program: $e');
     }
   }
 
@@ -208,7 +217,7 @@ class LoyaltyRewardsStore extends ChangeNotifier {
         orderType: orderType,
       ),
     );
-    _save();
+    _persist();
     notifyListeners();
   }
 
@@ -216,7 +225,7 @@ class LoyaltyRewardsStore extends ChangeNotifier {
     final index = _pointsConditions.indexWhere((p) => p.id == condition.id);
     if (index >= 0) {
       _pointsConditions[index] = condition;
-      _save();
+      _persist();
       notifyListeners();
     }
   }
@@ -225,14 +234,14 @@ class LoyaltyRewardsStore extends ChangeNotifier {
     final index = _pointsConditions.indexWhere((p) => p.id == id);
     if (index >= 0) {
       _pointsConditions[index].isActive = false;
-      _save();
+      _persist();
       notifyListeners();
     }
   }
 
   void deletePointsCondition(String id) {
     _pointsConditions.removeWhere((p) => p.id == id);
-    _save();
+    _persist();
     notifyListeners();
   }
 
@@ -253,7 +262,7 @@ class LoyaltyRewardsStore extends ChangeNotifier {
         size: size,
       ),
     );
-    _save();
+    _persist();
     notifyListeners();
   }
 
@@ -261,7 +270,7 @@ class LoyaltyRewardsStore extends ChangeNotifier {
     final index = _rewardsConditions.indexWhere((r) => r.id == condition.id);
     if (index >= 0) {
       _rewardsConditions[index] = condition;
-      _save();
+      _persist();
       notifyListeners();
     }
   }
@@ -270,14 +279,14 @@ class LoyaltyRewardsStore extends ChangeNotifier {
     final index = _rewardsConditions.indexWhere((r) => r.id == id);
     if (index >= 0) {
       _rewardsConditions[index].isActive = false;
-      _save();
+      _persist();
       notifyListeners();
     }
   }
 
   void deleteRewardsCondition(String id) {
     _rewardsConditions.removeWhere((r) => r.id == id);
-    _save();
+    _persist();
     notifyListeners();
   }
 
@@ -287,7 +296,6 @@ class LoyaltyRewardsStore extends ChangeNotifier {
       (p) => p.isActive && p.orderType == orderType,
     )) {
       if (orderCost >= condition.minimumCost) {
-        // Calculate points with rounding rule: .2-.6 down, .7-.9 up
         final rawPoints = (orderCost * condition.pointsApplication) / 100;
         final decimal = rawPoints % 1;
         int points = rawPoints.floor();
@@ -302,7 +310,6 @@ class LoyaltyRewardsStore extends ChangeNotifier {
     return 0;
   }
 
-  /// Get minimum order amount to earn points for a specific order type
   double minimumOrderForPoints({String orderType = 'restaurant'}) {
     final filtered =
         _pointsConditions
@@ -312,7 +319,6 @@ class LoyaltyRewardsStore extends ChangeNotifier {
     return filtered.map((p) => p.minimumCost).reduce((a, b) => a < b ? a : b);
   }
 
-  /// Get points earned per qualifying order for a specific order type
   int pointsEarned({String orderType = 'restaurant'}) {
     final filtered =
         _pointsConditions

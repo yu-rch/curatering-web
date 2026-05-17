@@ -9,8 +9,8 @@ import '../services/cart_store.dart';
 import '../services/customer_orders_cache.dart';
 import '../services/loyalty_rewards_store.dart';
 import '../config.dart';
+import '../utils/order_display_utils.dart';
 import '../widgets/map_picker.dart';
-import 'customer_login.dart';
 import 'payment_page.dart';
 import '../utils/responsive_layout.dart';
 
@@ -24,6 +24,7 @@ class CheckoutPage extends StatefulWidget {
 class _CheckoutPageState extends State<CheckoutPage> {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _guestEmailController = TextEditingController();
   final _addressController = TextEditingController();
   final _notesController = TextEditingController();
 
@@ -50,6 +51,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
+    _guestEmailController.dispose();
     _addressController.dispose();
     _notesController.dispose();
     super.dispose();
@@ -174,24 +176,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
       return;
     }
 
-    // Check if user is logged in first
-    if (_customerData == null) {
-      final result = await Navigator.of(context, rootNavigator: true).push(
-        MaterialPageRoute(
-          builder:
-              (context) => const CustomerLoginPage(redirectToCheckout: true),
-        ),
-      );
-      if (result != null) {
-        await _loadCustomerData();
-        // Re-check after login data is loaded
-        if (_customerData == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Please log in to continue')),
-          );
-          return;
-        }
-      } else {
+    final isGuest = _customerData == null;
+
+    if (isGuest) {
+      final guestEmail = _guestEmailController.text.trim();
+      if (guestEmail.isEmpty || !guestEmail.contains('@')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a valid email address')),
+        );
         return;
       }
     }
@@ -230,13 +222,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
 
-      if (token == null || token.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please log in to place an order')),
-        );
-        return;
-      }
-
       final items =
           CartStore.instance.items
               .map(
@@ -249,7 +234,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
               )
               .toList();
 
-      final orderData = {
+      final orderData = <String, dynamic>{
         'items': items,
         'fullName': _nameController.text,
         'phone': phoneDigits,
@@ -257,17 +242,21 @@ class _CheckoutPageState extends State<CheckoutPage> {
         'deliveryLat': _deliveryLat,
         'deliveryLng': _deliveryLng,
         'deliveryNotes': _notesController.text.trim(),
-        // Only send when user chose "LATER"
         'deliveryTime': _resolveDeliveryTime()?.toIso8601String(),
         'totalAmount': CartStore.instance.totalAmount,
       };
+      if (isGuest) {
+        orderData['guestContactEmail'] = _guestEmailController.text.trim();
+      }
+
+      final headers = <String, String>{'Content-Type': 'application/json'};
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
 
       final response = await http.post(
         Uri.parse('${apiBaseUrl}/api/restaurant/orders'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
+        headers: headers,
         body: jsonEncode(orderData),
       );
 
@@ -303,11 +292,17 @@ class _CheckoutPageState extends State<CheckoutPage> {
           return;
         }
         final orderMap = Map<String, dynamic>.from(rawOrder);
+        final orderNo = formatRestaurantOrderNo(orderMap);
         CartStore.instance.clearCart();
         CustomerOrdersCache.instance.invalidateRestaurant();
         // Save address to profile if checkbox is checked
         await _saveAddressToProfile();
         if (mounted) {
+          if (orderNo != 'N/A') {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Order $orderNo created. Complete payment to confirm.')),
+            );
+          }
           Navigator.of(context, rootNavigator: true).pushReplacement(
             MaterialPageRoute(
               builder: (context) => PaymentPage(orderData: orderMap),
@@ -634,6 +629,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     maxLength: 20,
                                     digitsOnly: true,
                                   ),
+                                  if (_customerData == null) ...[
+                                    const SizedBox(height: 16),
+                                    _buildLabelAndField(
+                                      'EMAIL ADDRESS',
+                                      'Required for order updates',
+                                      controller: _guestEmailController,
+                                      keyboardType: TextInputType.emailAddress,
+                                    ),
+                                  ],
                                   const SizedBox(height: 16),
                                   // Delivery Address with Map Picker
                                   _buildAddressFieldWithMap(),
@@ -872,6 +876,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final lat = _deliveryLat!;
     final lng = _deliveryLng!;
     final pos = LatLng(lat, lng);
+    final addressPreview = _addressController.text.trim();
     return Material(
       elevation: 1,
       borderRadius: BorderRadius.circular(8),
@@ -882,17 +887,24 @@ class _CheckoutPageState extends State<CheckoutPage> {
           height: 180,
           width: double.infinity,
           child: Stack(
-            alignment: Alignment.bottomRight,
             children: [
               GoogleMap(
+                key: ValueKey('checkout_map_${lat}_$lng'),
                 initialCameraPosition: CameraPosition(
                   target: pos,
-                  zoom: 16,
+                  zoom: 17,
                 ),
                 markers: {
                   Marker(
                     markerId: const MarkerId('checkout_delivery'),
                     position: pos,
+                    infoWindow: InfoWindow(
+                      title: 'Delivery pin',
+                      snippet:
+                          addressPreview.isNotEmpty
+                              ? addressPreview
+                              : 'Selected location',
+                    ),
                   ),
                 },
                 zoomControlsEnabled: false,
@@ -900,8 +912,36 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 liteModeEnabled: false,
                 onTap: (_) => _showMapPicker(),
               ),
-              Padding(
-                padding: const EdgeInsets.all(8),
+              if (addressPreview.isNotEmpty)
+                Positioned(
+                  left: 8,
+                  right: 8,
+                  top: 8,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      child: Text(
+                        addressPreview,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              Positioned(
+                right: 8,
+                bottom: 8,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.9),

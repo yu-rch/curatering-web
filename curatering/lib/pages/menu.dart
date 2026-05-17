@@ -286,10 +286,7 @@ class _MenuState extends State<Menu> {
     _typeController.clear();
     _nameController.clear();
     _priceController.clear();
-    _editingPaxOptions =
-        category == 'catering'
-            ? ['10-20 pax', '25-40 pax', '50-70 pax', '80-100 pax', '100+ pax']
-            : ['1 pax'];
+    _editingPaxOptions = category == 'catering' ? const [] : ['1 pax'];
     if (category == 'restaurant') {
       _editingType = 'others';
       _typeController.text = 'others';
@@ -557,9 +554,14 @@ class _MenuState extends State<Menu> {
                   onPressed: () async {
                     final name = _nameController.text.trim();
                     final price = _priceController.text.trim();
+                    final needsPax = category == 'restaurant';
+                    final paxToSave =
+                        category == 'catering'
+                            ? const <String>[]
+                            : _editingPaxOptions;
                     if (name.isEmpty ||
                         price.isEmpty ||
-                        _editingPaxOptions.isEmpty) {
+                        (needsPax && paxToSave.isEmpty)) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -578,7 +580,7 @@ class _MenuState extends State<Menu> {
                         await MenuStore.instance.addDish(
                           name: name,
                           price: price,
-                          paxOptions: _editingPaxOptions,
+                          paxOptions: paxToSave,
                           imageBase64: _editingImageBase64,
                           category: category,
                           sauces:
@@ -601,7 +603,7 @@ class _MenuState extends State<Menu> {
                           id: dish.id,
                           name: name,
                           price: price,
-                          paxOptions: _editingPaxOptions,
+                          paxOptions: paxToSave,
                           imageBase64: _editingImageBase64,
                           category: category,
                           sauces:
@@ -1190,28 +1192,30 @@ class _MenuState extends State<Menu> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children:
-                  dish.paxOptions.map((option) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(6),
-                        color:
-                            option == '1 pax'
-                                ? Color(0xFFFFC107)
-                                : Colors.grey.shade100,
-                      ),
-                      child: Text(option, style: const TextStyle(fontSize: 11)),
-                    );
-                  }).toList(),
-            ),
+            if (dish.category != 'catering' && dish.paxOptions.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children:
+                    dish.paxOptions.map((option) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(6),
+                          color:
+                              option == '1 pax'
+                                  ? Color(0xFFFFC107)
+                                  : Colors.grey.shade100,
+                        ),
+                        child: Text(option, style: const TextStyle(fontSize: 11)),
+                      );
+                    }).toList(),
+              ),
+            ],
             if (dish.sauces.isNotEmpty) ...[
               const SizedBox(height: 8),
               const Text(
@@ -1389,17 +1393,20 @@ class _MenuState extends State<Menu> {
       );
     }
 
+    final isCatering =
+        dishes.isNotEmpty && dishes.every((d) => d.category == 'catering');
+
     return Card(
       margin: const EdgeInsets.all(16),
       child: SingleChildScrollView(
         child: DataTable(
-          columns: const [
-            DataColumn(label: Text('Name')),
-            DataColumn(label: Text('Price')),
-            DataColumn(label: Text('Pax Options')),
-            DataColumn(label: Text('Sauces')),
-            DataColumn(label: Text('Status')),
-            DataColumn(label: Text('Actions')),
+          columns: [
+            const DataColumn(label: Text('Name')),
+            const DataColumn(label: Text('Price')),
+            if (!isCatering) const DataColumn(label: Text('Pax Options')),
+            if (!isCatering) const DataColumn(label: Text('Sauces')),
+            const DataColumn(label: Text('Status')),
+            const DataColumn(label: Text('Actions')),
           ],
           rows:
               dishes.map((dish) {
@@ -1444,58 +1451,60 @@ class _MenuState extends State<Menu> {
                       ),
                     ),
                     DataCell(Text('PHP${dish.price}')),
-                    DataCell(
-                      Wrap(
-                        spacing: 4,
-                        children:
-                            dish.paxOptions.map((pax) {
-                              return Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color:
-                                      pax == '1 pax'
-                                          ? const Color(0xFFFFC107)
-                                          : Colors.grey.shade200,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  pax,
-                                  style: const TextStyle(fontSize: 10),
-                                ),
-                              );
-                            }).toList(),
+                    if (!isCatering)
+                      DataCell(
+                        Wrap(
+                          spacing: 4,
+                          children:
+                              dish.paxOptions.map((pax) {
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        pax == '1 pax'
+                                            ? const Color(0xFFFFC107)
+                                            : Colors.grey.shade200,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    pax,
+                                    style: const TextStyle(fontSize: 10),
+                                  ),
+                                );
+                              }).toList(),
+                        ),
                       ),
-                    ),
-                    DataCell(
-                      dish.sauces.isEmpty
-                          ? const Text(
-                            'None',
-                            style: TextStyle(color: Colors.grey),
-                          )
-                          : Wrap(
-                            spacing: 4,
-                            children:
-                                dish.sauces.take(2).map((sauce) {
-                                  return Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFFC107),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      sauce,
-                                      style: const TextStyle(fontSize: 10),
-                                    ),
-                                  );
-                                }).toList(),
-                          ),
-                    ),
+                    if (!isCatering)
+                      DataCell(
+                        dish.sauces.isEmpty
+                            ? const Text(
+                              'None',
+                              style: TextStyle(color: Colors.grey),
+                            )
+                            : Wrap(
+                              spacing: 4,
+                              children:
+                                  dish.sauces.take(2).map((sauce) {
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFC107),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        sauce,
+                                        style: const TextStyle(fontSize: 10),
+                                      ),
+                                    );
+                                  }).toList(),
+                            ),
+                      ),
                     DataCell(
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -1528,6 +1537,17 @@ class _MenuState extends State<Menu> {
                         children: [
                           IconButton(
                             onPressed:
+                                () => _showIngredientsDialog(dish),
+                            icon: const Icon(Icons.list_alt, size: 16),
+                            tooltip: 'Ingredients',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                          ),
+                          IconButton(
+                            onPressed:
                                 () => _openDishDialog(
                                   dish: dish,
                                   category: dish.category,
@@ -1552,6 +1572,16 @@ class _MenuState extends State<Menu> {
                                 dish.available
                                     ? 'Make unavailable'
                                     : 'Make available',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => _confirmArchiveDish(dish),
+                            icon: const Icon(Icons.archive_outlined, size: 16),
+                            tooltip: 'Archive',
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(
                               minWidth: 32,
@@ -2402,32 +2432,6 @@ class _MenuState extends State<Menu> {
                     ),
                   ),
               ],
-            ),
-            // Pax options
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children:
-                  dish.paxOptions.map((pax) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        pax,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                    );
-                  }).toList(),
             ),
           ],
         ),

@@ -22,10 +22,18 @@ import {
   generateUserId,
   generateSequentialId,
   allocateRestaurantOrderNo,
+  allocateStaffUserId,
   getRoleAccountLimits,
   setRoleAccountLimits,
+  getLoyaltyProgramConfig,
+  setLoyaltyProgramConfig,
 } from "./db.js";
 import CartAPI from './cart_api.js';
+import {
+  getTrayDraft,
+  saveTrayDraft,
+  clearTrayDraft,
+} from './tray_drafts_api.js';
 
 // Prefer IPv4 when resolving SMTP hosts (avoids ENETUNREACH on IPv6 in many cloud/container networks).
 try {
@@ -2289,7 +2297,7 @@ app.post("/api/super-admin/users", authRequired, requireSuperAdmin, async (req, 
         });
       }
 
-      const userId = generateUserId();
+      const userId = await allocateStaffUserId();
       await pool.query(
         `INSERT INTO users 
         (id, email, password_hash, full_name, role, birthday, contact_number, employment_type, archived, is_verified, otp_code, otp_expiry)
@@ -2657,16 +2665,21 @@ async function readWebsiteContent() {
   }
 }
 
+const WEBSITE_CONTENT_ROW_ID = "00000000-0000-0000-0000-000000000001";
+
 async function writeWebsiteContent(content) {
   try {
-    await pool.query(`
-      INSERT INTO website_content (content, created_at, updated_at)
-      VALUES ($1, NOW(), NOW())
-      ON CONFLICT (id) 
-      DO UPDATE SET 
-        content = $1,
+    await pool.query(
+      `
+      INSERT INTO website_content (id, content, created_at, updated_at)
+      VALUES ($1::uuid, $2::jsonb, NOW(), NOW())
+      ON CONFLICT (id)
+      DO UPDATE SET
+        content = EXCLUDED.content,
         updated_at = NOW()
-    `, [content]);
+    `,
+      [WEBSITE_CONTENT_ROW_ID, content],
+    );
   } catch (error) {
     console.error('Error writing website content to database:', error);
     throw error;
@@ -4608,7 +4621,7 @@ async function seedSuperAdminIfNeeded() {
     
     if (existing.rowCount === 0) {
       const passwordHash = await bcrypt.hash(testPassword, 10);
-      const userId = generateUserId();
+      const userId = await allocateStaffUserId();
       await pool.query(
         `INSERT INTO users (id, email, password_hash, full_name, role, archived, is_verified)
          VALUES ($1, $2, $3, $4, 'super_admin', FALSE, TRUE);`,
@@ -4625,12 +4638,30 @@ async function seedSuperAdminIfNeeded() {
   if (existing.rowCount > 0) return;
 
   const passwordHash = await bcrypt.hash(password, 10);
-  const userId = generateUserId();
+  const userId = await allocateStaffUserId();
   await pool.query(
     `INSERT INTO users (id, email, password_hash, full_name, role, archived)
      VALUES ($1, $2, $3, $4, 'super_admin', FALSE);`,
     [userId, email, passwordHash, fullName],
   );
+}
+
+function parseRestaurantCoord(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function resolveRestaurantOrderEmail(order) {
+  if (order.guest_contact_email) {
+    return String(order.guest_contact_email).trim();
+  }
+  if (!order.customer_id) return null;
+  const r = await pool.query(
+    'SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1',
+    [order.customer_id],
+  );
+  return r.rowCount > 0 ? r.rows[0].email : null;
 }
 
 /** Transient DNS/network errors to Supabase are common in Docker (EAI_AGAIN). */
@@ -4694,6 +4725,38 @@ function requireDbReady(req, res, next) {
 
 registerCustomerAuthRoutes(app, requireDbReady);
 
+async function autoCancelStalePendingCashierOrders() {
+  try {
+    const result = await pool.query(
+      `UPDATE restaurant_orders
+       SET status = 'cancelled', updated_at = now()
+       WHERE status = 'pending_cashier'
+         AND pending_cashier_at IS NOT NULL
+         AND pending_cashier_at < now() - interval '1 hour'
+       RETURNING *`,
+    );
+    for (const order of result.rows) {
+      const email = await resolveRestaurantOrderEmail(order);
+      if (email) {
+        await sendCustomerNotificationEmail({
+          to: email,
+          subject: 'Curatering: Order cancelled (payment timeout)',
+          text:
+            `Your order ${order.order_no} was cancelled because payment was not confirmed within 1 hour.\n\n` +
+            `- Curatering Team`,
+        });
+      }
+    }
+    if (result.rowCount > 0) {
+      console.log(
+        `[auto-cancel] Cancelled ${result.rowCount} stale pending_cashier order(s)`,
+      );
+    }
+  } catch (error) {
+    console.error('[auto-cancel] pending_cashier:', error);
+  }
+}
+
 app.listen(PORT, () => {
   console.log(`Curatering server listening on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
@@ -4701,6 +4764,8 @@ app.listen(PORT, () => {
     `Database URL configured: ${process.env.DATABASE_URL ? "Yes" : "No"}`,
   );
   logEmailStartupStatus();
+  setInterval(autoCancelStalePendingCashierOrders, 5 * 60 * 1000);
+  setTimeout(autoCancelStalePendingCashierOrders, 30 * 1000);
 });
 
 // Optional: send a test email (set EMAIL_TEST_SECRET on the server)
@@ -4866,7 +4931,7 @@ const dbInitPromise = authSchemaPromise
     app.put('/api/events/orders/:orderId/payment-status', authRequired, async (req, res) => {
       try {
         const { orderId } = req.params;
-        const { paymentType, status, referenceNumber } = req.body || {};
+        const { paymentType, status, referenceNumber, amount } = req.body || {};
 
         if (!paymentType || !status) {
           return res.status(400).json({ error: 'paymentType and status are required' });
@@ -4903,8 +4968,14 @@ const dbInitPromise = authSchemaPromise
 
         if (referenceNumber && referenceNumber.trim()) {
           const refColumn = paymentType === 'down_payment' ? 'down_payment_reference' : 'full_payment_reference';
-          updateQuery += `, ${refColumn} = $2`;
+          updateQuery += `, ${refColumn} = $${queryParams.length + 1}`;
           queryParams.push(referenceNumber.trim());
+        }
+
+        const amountNum = Number(amount);
+        if (Number.isFinite(amountNum) && amountNum > 0) {
+          updateQuery += `, ${amountColumn} = $${queryParams.length + 1}`;
+          queryParams.push(amountNum);
         }
 
         updateQuery += ` WHERE id = $${queryParams.length + 1} RETURNING *`;
@@ -4961,6 +5032,48 @@ const dbInitPromise = authSchemaPromise
     );
 
 // Loyalty Rewards API endpoints
+    app.get('/api/loyalty/program-config', async (_req, res) => {
+      try {
+        const config = await getLoyaltyProgramConfig();
+        res.json(config);
+      } catch (error) {
+        console.error('Error fetching loyalty program config:', error);
+        res.status(500).json({ error: 'Failed to fetch loyalty program config' });
+      }
+    });
+
+    app.get(
+      '/api/manager/loyalty/program-config',
+      managerAuthRequired,
+      async (_req, res) => {
+        try {
+          const config = await getLoyaltyProgramConfig();
+          res.json(config);
+        } catch (error) {
+          res.status(500).json({ error: 'Failed to fetch loyalty program config' });
+        }
+      },
+    );
+
+    app.put(
+      '/api/manager/loyalty/program-config',
+      managerAuthRequired,
+      async (req, res) => {
+        try {
+          const { pointsConditions, rewardsConditions } = req.body || {};
+          if (!Array.isArray(pointsConditions) || !Array.isArray(rewardsConditions)) {
+            return res.status(400).json({
+              error: 'pointsConditions and rewardsConditions arrays are required',
+            });
+          }
+          await setLoyaltyProgramConfig({ pointsConditions, rewardsConditions });
+          res.json({ ok: true });
+        } catch (error) {
+          res.status(500).json({ error: 'Failed to save loyalty program config' });
+        }
+      },
+    );
+
     app.get('/api/loyalty/user-points', authRequired, async (req, res) => {
       try {
         const userId = req.user.id;
@@ -5458,6 +5571,19 @@ const dbInitPromise = authSchemaPromise
     // Customer auth: registered early via registerCustomerAuthRoutes()
 
     // Restaurant Order endpoints
+    function restaurantOrderWhereClause(orderId, paramIndex) {
+      const raw = String(orderId ?? "").trim();
+      if (!raw) return null;
+      const isUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          raw,
+        );
+      if (isUuid) {
+        return { sql: `id = $${paramIndex}::uuid`, value: raw };
+      }
+      return { sql: `order_no = $${paramIndex}`, value: raw };
+    }
+
     const customerAuthRequired = (req, res, next) => {
       const token = req.headers.authorization?.replace('Bearer ', '');
       
@@ -5483,21 +5609,87 @@ const dbInitPromise = authSchemaPromise
       }
     };
 
+    const optionalCustomerAuth = (req, res, next) => {
+      const token = req.headers.authorization?.replace('Bearer ', '');
+      if (token) {
+        try {
+          const decoded = jwt.verify(token, JWT_SECRET);
+          if (decoded.role === 'customer') {
+            const cid = decoded.customerId ?? decoded.id ?? decoded.sub;
+            if (cid != null && String(cid).trim() !== '') {
+              req.customer = { id: String(cid) };
+            }
+          }
+        } catch (_) {
+          /* guest checkout */
+        }
+      }
+      next();
+    };
+
+    function parseRestaurantOrderItems(items) {
+      if (items == null) return [];
+      if (typeof items === 'string') {
+        try {
+          return JSON.parse(items);
+        } catch {
+          return [];
+        }
+      }
+      return items;
+    }
+
     function serializeRestaurantOrderRow(order, parsedItems) {
-      const o = { ...order, items: parsedItems };
+      const o = { ...order, items: parsedItems ?? [] };
       if (o.id != null) o.id = String(o.id);
+      if (o.order_no != null) o.order_no = String(o.order_no);
       for (const k of Object.keys(o)) {
         const v = o[k];
-        if (v instanceof Date) o[k] = v.toISOString();
-        if (typeof v === 'bigint') o[k] = Number(v);
+        if (v instanceof Date) {
+          o[k] = v.toISOString();
+        } else if (typeof v === 'bigint') {
+          o[k] = Number(v);
+        } else if (
+          v != null &&
+          typeof v === 'object' &&
+          typeof v.toString === 'function' &&
+          !(v instanceof Array) &&
+          !(Array.isArray(v))
+        ) {
+          const asNum = Number(v);
+          if (Number.isFinite(asNum) && String(v).match(/^-?\d/)) {
+            o[k] = asNum;
+          }
+        }
       }
       return o;
     }
 
-    app.post('/api/restaurant/orders', customerAuthRequired, async (req, res) => {
+    app.post('/api/restaurant/orders', optionalCustomerAuth, async (req, res) => {
       try {
-        const { items, fullName, phone, deliveryAddress, deliveryLat, deliveryLng, deliveryTime, deliveryNotes, totalAmount } = req.body || {};
-        const customerId = req.customer.id;
+        const {
+          items,
+          fullName,
+          phone,
+          deliveryAddress,
+          deliveryLat,
+          deliveryLng,
+          deliveryTime,
+          deliveryNotes,
+          totalAmount,
+          guestContactEmail,
+        } = req.body || {};
+
+        const customerId = req.customer?.id ?? null;
+        const guestEmail = guestContactEmail
+          ? String(guestContactEmail).trim().toLowerCase()
+          : null;
+
+        if (!customerId && !guestEmail) {
+          return res.status(400).json({
+            error: 'Log in or provide guestContactEmail for guest checkout',
+          });
+        }
 
         if (!items || !Array.isArray(items) || items.length === 0) {
           return res.status(400).json({ error: 'Items are required' });
@@ -5507,79 +5699,151 @@ const dbInitPromise = authSchemaPromise
           return res.status(400).json({ error: 'Delivery address is required' });
         }
 
-        // Generate sequential order number (ORD-0001, ORD-0002, etc.)
+        const lat = parseRestaurantCoord(deliveryLat);
+        const lng = parseRestaurantCoord(deliveryLng);
         const orderNo = await allocateRestaurantOrderNo();
 
-        // delivery_time: some DBs enforce NOT NULL; client may send null — default to now().
         const result = await pool.query(
-          `INSERT INTO restaurant_orders (order_no, customer_id, full_name, phone, items, total_amount, delivery_address, delivery_lat, delivery_lng, delivery_time, delivery_notes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::timestamptz, now()), $11)
+          `INSERT INTO restaurant_orders (
+             order_no, customer_id, guest_contact_email, full_name, phone, items,
+             total_amount, delivery_address, delivery_lat, delivery_lng,
+             delivery_time, delivery_notes, status
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11::timestamptz, now()), $12, 'pending_cashier')
            RETURNING *`,
           [
             orderNo,
             customerId,
+            guestEmail,
             fullName || null,
             phone || null,
             JSON.stringify(items),
             totalAmount || 0,
             deliveryAddress,
-            deliveryLat,
-            deliveryLng,
+            lat,
+            lng,
             deliveryTime || null,
             deliveryNotes || null,
-          ]
+          ],
         );
 
-        const customerResult = await pool.query(
-          "SELECT email, full_name FROM customer_accounts WHERE id = $1 LIMIT 1",
-          [customerId],
-        );
-        if (customerResult.rowCount > 0) {
+        const notifyEmail = customerId
+          ? (
+              await pool.query(
+                'SELECT email, full_name FROM customer_accounts WHERE id = $1 LIMIT 1',
+                [customerId],
+              )
+            ).rows[0]?.email
+          : guestEmail;
+
+        if (notifyEmail) {
           await sendCustomerNotificationEmail({
-            to: customerResult.rows[0].email,
-            subject: "Curatering: Checkout received",
+            to: notifyEmail,
+            subject: 'Curatering: Order received',
             text:
-              `Hello ${customerResult.rows[0].full_name || "Customer"},\n\n` +
-              `Your checkout has been received successfully.\n` +
+              `Hello ${fullName || 'Customer'},\n\n` +
+              `Your order has been placed.\n` +
               `Order No: ${result.rows[0].order_no}\n` +
               `Total: PHP ${Number(totalAmount || 0).toFixed(2)}\n\n` +
+              `Complete payment to submit for cashier review.\n\n` +
               `- Curatering Team`,
           });
         }
 
-        res.status(201).json({ order: result.rows[0] });
+        res.status(201).json({ order: serializeRestaurantOrderRow(result.rows[0], items) });
       } catch (error) {
         console.error('Error creating restaurant order:', error);
-        console.error('Request body:', req.body);
-        console.error('Customer ID:', req.customer?.id);
         res.status(500).json({ error: 'Failed to create order', details: error.message });
       }
     });
 
-    app.post('/api/restaurant/orders/:orderId/payment', customerAuthRequired, async (req, res) => {
+    app.post('/api/restaurant/orders/:orderId/payment', optionalCustomerAuth, async (req, res) => {
       try {
         const { orderId } = req.params;
-        const { paymentReference } = req.body || {};
-        
-        if (!paymentReference) {
-          return res.status(400).json({ error: 'Payment reference is required' });
+        const { paymentReference, paymentProof, guestContactEmail } = req.body || {};
+
+        if (!paymentReference && !paymentProof) {
+          return res.status(400).json({
+            error: 'Payment reference or payment proof is required',
+          });
+        }
+
+        const lookup = restaurantOrderWhereClause(orderId, 1);
+        if (!lookup) {
+          return res.status(400).json({ error: 'Invalid order id' });
+        }
+
+        const existing = await pool.query(
+          `SELECT * FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
+          [lookup.value],
+        );
+        if (existing.rowCount === 0) {
+          return res.status(404).json({ error: 'Order not found' });
+        }
+        const order = existing.rows[0];
+
+        if (req.customer?.id) {
+          if (order.customer_id && String(order.customer_id) !== String(req.customer.id)) {
+            return res.status(403).json({ error: 'Order not found' });
+          }
+        } else {
+          const guestEmail = guestContactEmail
+            ? String(guestContactEmail).trim().toLowerCase()
+            : null;
+          if (
+            !guestEmail ||
+            !order.guest_contact_email ||
+            String(order.guest_contact_email).toLowerCase() !== guestEmail
+          ) {
+            return res.status(403).json({ error: 'Guest email does not match order' });
+          }
+        }
+
+        const payLookup = restaurantOrderWhereClause(orderId, 3);
+        if (!payLookup) {
+          return res.status(400).json({ error: 'Invalid order id' });
         }
 
         const result = await pool.query(
           `UPDATE restaurant_orders
-           SET payment_reference = $1, payment_status = 'paid', status = 'confirmed', updated_at = now()
-           WHERE id = $2::uuid AND customer_id::text = $3
+           SET payment_reference = COALESCE($1, payment_reference),
+               payment_proof = COALESCE($2, payment_proof),
+               payment_status = 'pending',
+               status = 'pending_cashier',
+               pending_cashier_at = now(),
+               updated_at = now()
+           WHERE ${payLookup.sql}
            RETURNING *`,
-          [paymentReference, orderId, req.customer.id]
+          [paymentReference || null, paymentProof || null, payLookup.value],
         );
 
-        if (result.rows.length === 0) {
+        if (result.rowCount === 0) {
           return res.status(404).json({ error: 'Order not found' });
         }
 
-        res.json({ order: result.rows[0] });
+        const updated = result.rows[0];
+        const parsedItems = parseRestaurantOrderItems(updated.items);
+
+        try {
+          const email = await resolveRestaurantOrderEmail(updated);
+          if (email) {
+            sendCustomerNotificationEmailAsync({
+              to: email,
+              subject: 'Curatering: Payment submitted',
+              text:
+                `Your payment for order ${updated.order_no} is awaiting cashier verification.\n\n` +
+                `- Curatering Team`,
+            });
+          }
+        } catch (emailErr) {
+          console.error('Payment notification email skipped:', emailErr?.message || emailErr);
+        }
+
+        res.json({
+          order: serializeRestaurantOrderRow(updated, parsedItems),
+        });
       } catch (error) {
-        console.error('Error updating payment:', error);
+        console.error('Error updating payment:', error?.message || error);
         res.status(500).json({ error: 'Failed to update payment' });
       }
     });
@@ -5588,9 +5852,14 @@ const dbInitPromise = authSchemaPromise
       try {
         const { orderId } = req.params;
         
+        const lookup = restaurantOrderWhereClause(orderId, 1);
+        if (!lookup) {
+          return res.status(400).json({ error: 'Invalid order id' });
+        }
+
         const result = await pool.query(
-          'SELECT * FROM restaurant_orders WHERE id = $1::uuid AND customer_id::text = $2',
-          [orderId, req.customer.id],
+          `SELECT * FROM restaurant_orders WHERE ${lookup.sql} AND customer_id::text = $2`,
+          [lookup.value, req.customer.id],
         );
 
         if (result.rows.length === 0) {
@@ -5684,9 +5953,11 @@ const dbInitPromise = authSchemaPromise
         
         // Use a simpler, faster query with only essential fields
         let query = `
-          SELECT id, full_name, phone, items, total_amount, 
-                 delivery_address, delivery_time, status, payment_status, 
-                 created_at, updated_at
+          SELECT id, order_no, customer_id, guest_contact_email, full_name, phone, items,
+                 total_amount, delivery_address, delivery_lat, delivery_lng, delivery_time,
+                 status, payment_status, payment_reference, payment_proof,
+                 amount_paid, change_given, delivery_tracking_url,
+                 created_at, updated_at, pending_cashier_at
           FROM restaurant_orders 
           ORDER BY created_at DESC 
           LIMIT $1
@@ -5697,9 +5968,11 @@ const dbInitPromise = authSchemaPromise
           const statusValues = status.split(',');
           if (statusValues.length === 1) {
             query = `
-              SELECT id, full_name, phone, items, total_amount, 
-                     delivery_address, delivery_time, status, payment_status, 
-                     created_at, updated_at
+              SELECT id, order_no, customer_id, guest_contact_email, full_name, phone, items,
+                     total_amount, delivery_address, delivery_lat, delivery_lng, delivery_time,
+                     status, payment_status, payment_reference, payment_proof,
+                     amount_paid, change_given, delivery_tracking_url,
+                     created_at, updated_at, pending_cashier_at
               FROM restaurant_orders 
               WHERE status = $1 
               ORDER BY created_at DESC 
@@ -5708,9 +5981,11 @@ const dbInitPromise = authSchemaPromise
             params = [statusValues[0], limit];
           } else {
             query = `
-              SELECT id, full_name, phone, items, total_amount, 
-                     delivery_address, delivery_time, status, payment_status, 
-                     created_at, updated_at
+              SELECT id, order_no, customer_id, guest_contact_email, full_name, phone, items,
+                     total_amount, delivery_address, delivery_lat, delivery_lng, delivery_time,
+                     status, payment_status, payment_reference, payment_proof,
+                     amount_paid, change_given, delivery_tracking_url,
+                     created_at, updated_at, pending_cashier_at
               FROM restaurant_orders 
               WHERE status IN (${statusValues.map((_, i) => `$${i + 1}`).join(', ')}) 
               ORDER BY created_at DESC 
@@ -5778,18 +6053,27 @@ const dbInitPromise = authSchemaPromise
         let paramIndex = 1;
 
         if (status) {
-          // Validate status against allowed values
-          const allowedStatuses = ['pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'];
+          const allowedStatuses = [
+            'pending_cashier',
+            'in_preparation',
+            'out_for_delivery',
+            'delivered',
+            'cancelled',
+          ];
           if (!allowedStatuses.includes(status)) {
-            return res.status(400).json({ error: `Invalid status: ${status}. Allowed statuses: ${allowedStatuses.join(', ')}` });
+            return res.status(400).json({
+              error: `Invalid status: ${status}. Allowed: ${allowedStatuses.join(', ')}`,
+            });
           }
           updateFields.push(`status = $${paramIndex++}`);
           updateValues.push(status);
         }
-        
+
         if (delivery_tracking_url) {
           updateFields.push(`delivery_tracking_url = $${paramIndex++}`);
           updateValues.push(delivery_tracking_url);
+          updateFields.push(`status = $${paramIndex++}`);
+          updateValues.push('out_for_delivery');
         }
         
         if (payment_status) {
@@ -5798,12 +6082,17 @@ const dbInitPromise = authSchemaPromise
         }
         
         updateFields.push(`updated_at = now()`);
-        updateValues.push(orderId);
+
+        const lookup = restaurantOrderWhereClause(orderId, paramIndex);
+        if (!lookup) {
+          return res.status(400).json({ error: 'Invalid order id' });
+        }
+        updateValues.push(lookup.value);
 
         const query = `
           UPDATE restaurant_orders 
           SET ${updateFields.join(', ')}
-          WHERE id = $${paramIndex}
+          WHERE ${lookup.sql}
           RETURNING *
         `;
 
@@ -5813,8 +6102,12 @@ const dbInitPromise = authSchemaPromise
           return res.status(404).json({ error: 'Order not found' });
         }
 
+        const effectiveStatus = delivery_tracking_url
+          ? 'out_for_delivery'
+          : status;
+
         // Auto-calculate loyalty points when order is delivered
-        if (status === 'delivered') {
+        if (effectiveStatus === 'delivered') {
           const order = result.rows[0];
           const customerId = order.customer_id;
           const totalAmount = parseFloat(order.total_amount || 0);
@@ -5834,10 +6127,13 @@ const dbInitPromise = authSchemaPromise
             }
             
             // Update order with calculated points
-            await pool.query(
-              `UPDATE restaurant_orders SET points_earned = $1 WHERE id = $2`,
-              [points, orderId]
-            );
+            const pointsLookup = restaurantOrderWhereClause(orderId, 2);
+            if (pointsLookup) {
+              await pool.query(
+                `UPDATE restaurant_orders SET points_earned = $1 WHERE ${pointsLookup.sql}`,
+                [points, pointsLookup.value],
+              );
+            }
             
             // Update customer's total loyalty points
             await pool.query(
@@ -5873,6 +6169,149 @@ const dbInitPromise = authSchemaPromise
         res.status(500).json({ error: 'Failed to update order' });
       }
     });
+
+    app.post(
+      '/api/manager/restaurant/orders/:orderId/confirm-payment',
+      managerAuthRequired,
+      async (req, res) => {
+        try {
+          const { orderId } = req.params;
+          const { amountPaid } = req.body || {};
+          const paid = Number(amountPaid);
+          if (!Number.isFinite(paid) || paid <= 0) {
+            return res.status(400).json({ error: 'amountPaid is required' });
+          }
+
+          const lookup = restaurantOrderWhereClause(orderId, 1);
+          const existing = await pool.query(
+            `SELECT * FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
+            [lookup.value],
+          );
+          if (existing.rowCount === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+          }
+          const order = existing.rows[0];
+          const total = Number(order.total_amount || 0);
+          if (paid < total) {
+            return res.status(400).json({
+              error: 'insufficient_payment',
+              total,
+              amountPaid: paid,
+              shortfall: Number((total - paid).toFixed(2)),
+            });
+          }
+
+          const changeGiven = Number((paid - total).toFixed(2));
+          const confirmLookup = restaurantOrderWhereClause(orderId, 3);
+          const result = await pool.query(
+            `UPDATE restaurant_orders
+             SET amount_paid = $1,
+                 change_given = $2,
+                 payment_status = 'paid',
+                 status = 'in_preparation',
+                 updated_at = now()
+             WHERE ${confirmLookup.sql}
+             RETURNING *`,
+            [paid, changeGiven, confirmLookup.value],
+          );
+
+          const updated = result.rows[0];
+          const email = await resolveRestaurantOrderEmail(updated);
+          if (email) {
+            await sendCustomerNotificationEmail({
+              to: email,
+              subject: 'Curatering: Payment confirmed',
+              text:
+                `Your payment for order ${updated.order_no} was confirmed.\n` +
+                `Your order is now being prepared.\n\n` +
+                `- Curatering Team`,
+            });
+          }
+
+          res.json({ order: updated, changeGiven });
+        } catch (error) {
+          console.error('confirm-payment:', error);
+          res.status(500).json({ error: 'Failed to confirm payment' });
+        }
+      },
+    );
+
+    app.post(
+      '/api/manager/restaurant/orders/:orderId/notify-insufficient-payment',
+      managerAuthRequired,
+      async (req, res) => {
+        try {
+          const { orderId } = req.params;
+          const { amountPaid, message } = req.body || {};
+          const lookup = restaurantOrderWhereClause(orderId, 1);
+          const existing = await pool.query(
+            `SELECT * FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
+            [lookup.value],
+          );
+          if (existing.rowCount === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+          }
+          const order = existing.rows[0];
+          const email = await resolveRestaurantOrderEmail(order);
+          if (!email) {
+            return res.status(400).json({ error: 'No email on file for this order' });
+          }
+          const total = Number(order.total_amount || 0);
+          const paid = Number(amountPaid ?? 0);
+          await sendCustomerNotificationEmail({
+            to: email,
+            subject: 'Curatering: Payment issue on your order',
+            text:
+              (message ||
+                `We could not confirm payment for order ${order.order_no}.\n` +
+                  `Order total: PHP ${total.toFixed(2)}\n` +
+                  `Amount received: PHP ${paid.toFixed(2)}\n` +
+                  `Please submit the correct payment or contact us.\n`) +
+              `\n\n- Curatering Team`,
+          });
+          res.json({ ok: true });
+        } catch (error) {
+          console.error('notify-insufficient-payment:', error);
+          res.status(500).json({ error: 'Failed to send notification' });
+        }
+      },
+    );
+
+    app.post(
+      '/api/manager/restaurant/orders/:orderId/cancel',
+      managerAuthRequired,
+      async (req, res) => {
+        try {
+          const { orderId } = req.params;
+          const lookup = restaurantOrderWhereClause(orderId, 1);
+          const result = await pool.query(
+            `UPDATE restaurant_orders
+             SET status = 'cancelled', updated_at = now()
+             WHERE ${lookup.sql}
+             RETURNING *`,
+            [lookup.value],
+          );
+          if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+          }
+          const order = result.rows[0];
+          const email = await resolveRestaurantOrderEmail(order);
+          if (email) {
+            await sendCustomerNotificationEmail({
+              to: email,
+              subject: 'Curatering: Order cancelled',
+              text:
+                `Your order ${order.order_no} has been cancelled.\n\n` +
+                `- Curatering Team`,
+            });
+          }
+          res.json({ order: result.rows[0] });
+        } catch (error) {
+          console.error('cancel restaurant order:', error);
+          res.status(500).json({ error: 'Failed to cancel order' });
+        }
+      },
+    );
 
     const inventoryRowToJson = (row) => {
       const qty = Number(row.quantity ?? 0);
@@ -7064,6 +7503,10 @@ const dbInitPromise = authSchemaPromise
     app.get('/api/cart', CartAPI.getCart);
     app.post('/api/cart/sync', CartAPI.syncCart);
     app.post('/api/cart/clear', CartAPI.clearCart);
+
+    app.get('/api/tray-draft', customerAuthRequired, getTrayDraft);
+    app.put('/api/tray-draft', customerAuthRequired, saveTrayDraft);
+    app.delete('/api/tray-draft', customerAuthRequired, clearTrayDraft);
 
     console.log("[startup] All API routes registered after DB init");
   })

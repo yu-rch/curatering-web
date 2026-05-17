@@ -179,10 +179,17 @@ class EventsApi {
     required String paymentType, // 'down_payment' or 'full_payment'
     required String status, // 'paid' or 'pending'
     String? referenceNumber,
+    double? amount,
   }) async {
-    final body = {'paymentType': paymentType, 'status': status};
+    final body = <String, dynamic>{
+      'paymentType': paymentType,
+      'status': status,
+    };
     if (referenceNumber != null && referenceNumber.isNotEmpty) {
       body['referenceNumber'] = referenceNumber;
+    }
+    if (amount != null && amount > 0) {
+      body['amount'] = amount;
     }
     await ApiClient.instance.putJson(
       '/api/events/orders/$orderId/payment-status',

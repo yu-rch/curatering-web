@@ -28,6 +28,7 @@ import 'widgets/page_permission_guard.dart';
 import 'pages/help_requests.dart';
 import 'pages/action_logs.dart';
 import 'pages/customer_management.dart';
+import 'pages/website_admin_page.dart';
 import 'pages/restaurant_transactions_page.dart';
 import 'pages/inventory.dart';
 import 'widgets/app_scaffold.dart';
@@ -237,28 +238,17 @@ class MyApp extends StatelessWidget {
                   ),
                 ),
             '/website':
-                (context) => RoleGuard(
-                  requiredRole: Role.manager,
-                  allowedRoles: {
-                    Role.manager,
-                    Role.supervisor,
-                    Role.superAdmin,
-                  },
-                  child: PagePermissionGuard(
-                    route: PagePermissionRoutes.website,
-                    child: Builder(
-                      builder: (context) {
-                        final role =
-                            AuthSession.instance.currentUser.value?.role;
-                        final canEdit =
-                            role == Role.manager || role == Role.superAdmin;
-                        return CustomerWebsiteScreen(
-                          contentEditable: canEdit,
-                          showStaffChrome: true,
-                        );
-                      },
-                    ),
+                (context) => const RoleGuard(
+                  requiredRole: Role.superAdmin,
+                  child: CustomerWebsiteScreen(
+                    contentEditable: false,
+                    showStaffChrome: true,
                   ),
+                ),
+            '/website-admin':
+                (context) => const RoleGuard(
+                  requiredRole: Role.superAdmin,
+                  child: WebsiteAdminPage(),
                 ),
             '/settings':
                 (context) => RoleGuard(

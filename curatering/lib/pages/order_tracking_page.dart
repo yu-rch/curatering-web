@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../utils/order_display_utils.dart';
 import '../utils/responsive_layout.dart';
 
 class OrderTrackingPage extends StatefulWidget {
@@ -16,8 +17,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
     final status = widget.orderData['status'] ?? 'pending';
     final items = widget.orderData['items'] as List<dynamic>? ?? [];
     final totalAmount = widget.orderData['total_amount'] ?? '0.00';
-    final orderId = widget.orderData['id']?.toString() ?? '000000';
-    final shortOrderId = orderId.length > 6 ? orderId.substring(orderId.length - 6) : orderId;
+    final displayOrderNo = formatRestaurantOrderNo(widget.orderData);
     final fullName = widget.orderData['full_name'] ?? '';
     final phone = widget.orderData['phone'] ?? '';
     final deliveryAddress = widget.orderData['delivery_address'] ?? 'N/A';
@@ -56,7 +56,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    'ORDER NO. $shortOrderId',
+                    'ORDER NO. $displayOrderNo',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -436,16 +436,36 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
     );
   }
 
+  String _normalizeStatus(String status) {
+    final s = status.toLowerCase();
+    switch (s) {
+      case 'pending':
+      case 'pending_cashier':
+        return 'pending_cashier';
+      case 'confirmed':
+      case 'preparing':
+      case 'in_preparation':
+        return 'in_preparation';
+      case 'out_for_delivery':
+        return 'out_for_delivery';
+      case 'delivered':
+        return 'delivered';
+      case 'cancelled':
+        return 'cancelled';
+      default:
+        return s;
+    }
+  }
+
   Widget _buildOrderStatusColumn(String status) {
     final statuses = [
-      {'label': 'WAITING FOR ORDER CONFIRMATION', 'value': 'pending'},
-      {'label': 'ORDER CONFIRMED', 'value': 'confirmed'},
-      {'label': 'PREPARING YOUR FOOD', 'value': 'preparing'},
-      {'label': 'LOOKING FOR A RIDER', 'value': 'out_for_delivery'},
-      {'label': 'RIDER IS ON THE WAY', 'value': 'delivered'},
+      {'label': 'PAYMENT UNDER REVIEW', 'value': 'pending_cashier'},
+      {'label': 'PREPARING YOUR FOOD', 'value': 'in_preparation'},
+      {'label': 'OUT FOR DELIVERY', 'value': 'out_for_delivery'},
+      {'label': 'DELIVERED', 'value': 'delivered'},
     ];
 
-    final currentStatus = status.toLowerCase();
+    final currentStatus = _normalizeStatus(status);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -500,25 +520,45 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
           }).toList(),
 
           const SizedBox(height: 8),
-
-          // Tracking Link Placeholder
-          Text(
-            '(INSERT TRACKING LINK HERE)',
-            style: TextStyle(
-              fontSize: 8,
-              color: Colors.grey.shade400,
-              fontStyle: FontStyle.italic,
+          if ((widget.orderData['delivery_tracking_url'] as String?)
+                  ?.trim()
+                  .isNotEmpty ==
+              true)
+            SelectableText(
+              widget.orderData['delivery_tracking_url'].toString(),
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.blue.shade700,
+                decoration: TextDecoration.underline,
+              ),
+              textAlign: TextAlign.center,
+            )
+          else
+            Text(
+              'Tracking link will appear when your order is out for delivery.',
+              style: TextStyle(
+                fontSize: 8,
+                color: Colors.grey.shade400,
+                fontStyle: FontStyle.italic,
+              ),
+              textAlign: TextAlign.center,
             ),
-          ),
         ],
       ),
     );
   }
 
   bool _isStatusCompleted(String currentStatus, String checkStatus) {
-    final statusOrder = ['pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered'];
-    final currentIndex = statusOrder.indexOf(currentStatus);
+    final statusOrder = [
+      'pending_cashier',
+      'in_preparation',
+      'out_for_delivery',
+      'delivered',
+    ];
+    final current = _normalizeStatus(currentStatus);
+    final currentIndex = statusOrder.indexOf(current);
     final checkIndex = statusOrder.indexOf(checkStatus);
+    if (currentIndex < 0 || checkIndex < 0) return false;
     return checkIndex < currentIndex;
   }
 

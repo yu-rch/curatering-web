@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+
+import '../services/google_geocoding_service.dart';
 
 /// Read-only map centered on [address] with a single marker.
 class ContactAddressMap extends StatefulWidget {
@@ -50,10 +51,9 @@ class _ContactAddressMapState extends State<ContactAddressMap> {
       _error = null;
     });
     try {
-      final locations = await locationFromAddress(q);
-      if (locations.isEmpty) throw Exception('No coordinates');
-      final loc = locations.first;
-      final latLng = LatLng(loc.latitude, loc.longitude);
+      final coords = await GoogleGeocodingService.instance.forwardGeocode(q);
+      if (coords == null) throw Exception('No coordinates');
+      final latLng = LatLng(coords.latitude, coords.longitude);
       if (!mounted) return;
       setState(() {
         _center = latLng;
@@ -98,9 +98,10 @@ class _ContactAddressMapState extends State<ContactAddressMap> {
         child: Stack(
           children: [
             GoogleMap(
+              key: ValueKey('contact_${_center.latitude}_${_center.longitude}'),
               initialCameraPosition: CameraPosition(
                 target: _center,
-                zoom: 15,
+                zoom: 16,
               ),
               markers: _markers,
               zoomControlsEnabled: false,

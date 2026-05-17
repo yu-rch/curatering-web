@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:google_fonts/google_fonts.dart';
+
+import '../services/google_geocoding_service.dart';
 
 class MapPickerResult {
   final double latitude;
@@ -40,7 +41,6 @@ class _MapPickerState extends State<MapPicker> {
   bool _isLoading = false;
   bool _isGettingLocation = false;
 
-  // Default location (Manila, Philippines)
   static const LatLng _defaultLocation = LatLng(14.5995, 120.9842);
 
   @override
@@ -51,35 +51,45 @@ class _MapPickerState extends State<MapPicker> {
 
   void _initializeLocation() {
     if (widget.initialLatitude != null && widget.initialLongitude != null) {
-      _selectedLocation = LatLng(widget.initialLatitude!, widget.initialLongitude!);
-      _selectedMarker = Marker(
-        markerId: const MarkerId('selected_location'),
-        position: _selectedLocation!,
-        infoWindow: const InfoWindow(title: 'Selected Location'),
+      _selectedLocation = LatLng(
+        widget.initialLatitude!,
+        widget.initialLongitude!,
       );
-      _address = widget.initialAddress ?? '';
+      _address = widget.initialAddress?.trim() ?? '';
+      _updateMarker();
+      _getAddressFromLatLng(_selectedLocation!);
     } else {
       _selectedLocation = _defaultLocation;
-      _selectedMarker = Marker(
-        markerId: const MarkerId('selected_location'),
-        position: _selectedLocation!,
-        infoWindow: const InfoWindow(title: 'Selected Location'),
-      );
+      _updateMarker();
     }
+  }
+
+  void _updateMarker() {
+    if (_selectedLocation == null) return;
+    final snippet =
+        _address.isNotEmpty
+            ? (_address.length > 90 ? '${_address.substring(0, 87)}…' : _address)
+            : 'Resolving address…';
+    _selectedMarker = Marker(
+      markerId: const MarkerId('selected_location'),
+      position: _selectedLocation!,
+      infoWindow: InfoWindow(
+        title: 'Selected location',
+        snippet: snippet,
+      ),
+    );
   }
 
   Future<void> _getCurrentLocation() async {
     setState(() => _isGettingLocation = true);
-    
+
     try {
-      // Check if location services are enabled
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         throw Exception('Location services are disabled.');
       }
 
-      // Check location permissions
-      LocationPermission permission = await Geolocator.checkPermission();
+      var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
@@ -91,97 +101,87 @@ class _MapPickerState extends State<MapPicker> {
         throw Exception('Location permissions are permanently denied');
       }
 
-      // Get current position
-      final Position position = await Geolocator.getCurrentPosition(
+      final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
 
-      final LatLng currentLocation = LatLng(position.latitude, position.longitude);
-      
+      final currentLocation = LatLng(position.latitude, position.longitude);
+
       setState(() {
         _selectedLocation = currentLocation;
-        _selectedMarker = Marker(
-          markerId: const MarkerId('selected_location'),
-          position: currentLocation,
-          infoWindow: const InfoWindow(title: 'Your Location'),
-        );
+        _updateMarker();
       });
 
-      // Move camera to current location
-      _mapController?.animateCamera(
+      await _mapController?.animateCamera(
         CameraUpdate.newCameraPosition(
-          CameraPosition(target: currentLocation, zoom: 15),
+          CameraPosition(target: currentLocation, zoom: 17),
         ),
       );
 
-      // Get address for current location
       await _getAddressFromLatLng(currentLocation);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error getting location: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error getting location: $e')),
+        );
+      }
     } finally {
-      setState(() => _isGettingLocation = false);
+      if (mounted) setState(() => _isGettingLocation = false);
     }
   }
 
   Future<void> _getAddressFromLatLng(LatLng location) async {
     setState(() => _isLoading = true);
-    
+
     try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(
+      final resolved = await GoogleGeocodingService.instance.reverseGeocode(
         location.latitude,
         location.longitude,
       );
 
-      if (placemarks.isNotEmpty) {
-        Placemark place = placemarks[0];
-        String address = '';
-        
-        if (place.street?.isNotEmpty == true) address += '${place.street}, ';
-        if (place.subLocality?.isNotEmpty == true) address += '${place.subLocality}, ';
-        if (place.locality?.isNotEmpty == true) address += '${place.locality}, ';
-        if (place.administrativeArea?.isNotEmpty == true) address += '${place.administrativeArea}, ';
-        if (place.postalCode?.isNotEmpty == true) address += '${place.postalCode}, ';
-        if (place.country?.isNotEmpty == true) address += place.country!;
-
-        setState(() {
-          _address = address.isNotEmpty ? address : 'Address not found';
-        });
-      }
-    } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _address = 'Unable to get address';
+        _address =
+            (resolved != null && resolved.trim().isNotEmpty)
+                ? resolved.trim()
+                : 'Address not found for this pin';
+        _updateMarker();
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _address = 'Unable to resolve address for this pin';
+        _updateMarker();
       });
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _onMapTap(LatLng location) {
     setState(() {
       _selectedLocation = location;
-      _selectedMarker = Marker(
-        markerId: const MarkerId('selected_location'),
-        position: location,
-        infoWindow: const InfoWindow(title: 'Selected Location'),
-      );
+      _updateMarker();
     });
-    
     _getAddressFromLatLng(location);
   }
 
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
-    
-    // Move to initial location
     if (_selectedLocation != null) {
       controller.animateCamera(
         CameraUpdate.newCameraPosition(
-          CameraPosition(target: _selectedLocation!, zoom: 15),
+          CameraPosition(target: _selectedLocation!, zoom: 17),
         ),
       );
     }
+  }
+
+  bool get _canConfirm {
+    if (_selectedLocation == null || _isLoading) return false;
+    return _address.isNotEmpty &&
+        _address != 'Unable to resolve address for this pin' &&
+        _address != 'Address not found for this pin';
   }
 
   @override
@@ -211,7 +211,6 @@ class _MapPickerState extends State<MapPicker> {
       ),
       body: Column(
         children: [
-          // Address display
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -220,7 +219,7 @@ class _MapPickerState extends State<MapPicker> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Selected Address:',
+                  'Address at pin:',
                   style: GoogleFonts.poppins(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -235,22 +234,34 @@ class _MapPickerState extends State<MapPicker> {
                   )
                 else
                   Text(
-                    _address.isNotEmpty ? _address : 'Tap on the map to select location',
+                    _address.isNotEmpty
+                        ? _address
+                        : 'Tap the map to place the delivery pin',
                     style: GoogleFonts.poppins(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
+                if (_selectedLocation != null && !_isLoading) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Pin: ${_selectedLocation!.latitude.toStringAsFixed(6)}, '
+                    '${_selectedLocation!.longitude.toStringAsFixed(6)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
-          // Map
           Expanded(
             child: GoogleMap(
               onMapCreated: _onMapCreated,
               initialCameraPosition: CameraPosition(
                 target: _selectedLocation ?? _defaultLocation,
-                zoom: 15,
+                zoom: 17,
               ),
               onTap: _onMapTap,
               markers: _selectedMarker != null ? {_selectedMarker!} : {},
@@ -260,14 +271,12 @@ class _MapPickerState extends State<MapPicker> {
               mapType: MapType.normal,
             ),
           ),
-          // Bottom controls
           Container(
             padding: const EdgeInsets.all(16),
             color: Colors.white,
             child: SafeArea(
               child: Row(
                 children: [
-                  // Current location button
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: _isGettingLocation ? null : _getCurrentLocation,
@@ -284,20 +293,20 @@ class _MapPickerState extends State<MapPicker> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // Confirm button
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: _selectedLocation != null && _address.isNotEmpty
-                          ? () {
-                              Navigator.of(context).pop(
-                                MapPickerResult(
-                                  latitude: _selectedLocation!.latitude,
-                                  longitude: _selectedLocation!.longitude,
-                                  address: _address,
-                                ),
-                              );
-                            }
-                          : null,
+                      onPressed:
+                          _canConfirm
+                              ? () {
+                                Navigator.of(context).pop(
+                                  MapPickerResult(
+                                    latitude: _selectedLocation!.latitude,
+                                    longitude: _selectedLocation!.longitude,
+                                    address: _address,
+                                  ),
+                                );
+                              }
+                              : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFFFC024),
                         foregroundColor: Colors.black,
@@ -319,20 +328,20 @@ class _MapPickerState extends State<MapPicker> {
   }
 }
 
-// Helper function to show map picker
 Future<MapPickerResult?> showMapPicker({
   required BuildContext context,
   double? initialLatitude,
   double? initialLongitude,
   String? initialAddress,
 }) async {
-  return await Navigator.of(context).push<MapPickerResult>(
+  return Navigator.of(context).push<MapPickerResult>(
     MaterialPageRoute(
-      builder: (context) => MapPicker(
-        initialLatitude: initialLatitude,
-        initialLongitude: initialLongitude,
-        initialAddress: initialAddress,
-      ),
+      builder:
+          (context) => MapPicker(
+            initialLatitude: initialLatitude,
+            initialLongitude: initialLongitude,
+            initialAddress: initialAddress,
+          ),
     ),
   );
 }

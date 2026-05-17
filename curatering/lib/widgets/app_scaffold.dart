@@ -66,10 +66,14 @@ class AppScaffold extends StatelessWidget {
       route: '/order-history',
     ),
     _SidebarItemData(icon: Icons.archive, label: 'Archive', route: '/archive'),
-    _SidebarItemData(icon: Icons.public, label: 'Website', route: '/website'),
   ];
 
   static const _superAdminSidebarItems = <_SidebarItemData>[
+    _SidebarItemData(
+      icon: Icons.web_asset,
+      label: 'Website CMS',
+      route: '/website-admin',
+    ),
     _SidebarItemData(
       icon: Icons.people_alt,
       label: 'Manage Accounts',
