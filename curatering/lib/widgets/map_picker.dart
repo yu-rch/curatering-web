@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:latlong2/latlong.dart';
 
-import '../services/google_geocoding_service.dart';
+import '../services/nominatim_service.dart';
+import '../utils/geo_utils.dart';
 
 class MapPickerResult {
   final double latitude;
@@ -21,12 +23,14 @@ class MapPicker extends StatefulWidget {
   final double? initialLatitude;
   final double? initialLongitude;
   final String? initialAddress;
+  final bool enforceDeliveryRadius;
 
   const MapPicker({
     super.key,
     this.initialLatitude,
     this.initialLongitude,
     this.initialAddress,
+    this.enforceDeliveryRadius = false,
   });
 
   @override
@@ -34,158 +38,157 @@ class MapPicker extends StatefulWidget {
 }
 
 class _MapPickerState extends State<MapPicker> {
-  GoogleMapController? _mapController;
+  final MapController _mapController = MapController();
+  final TextEditingController _searchController = TextEditingController();
   LatLng? _selectedLocation;
-  Marker? _selectedMarker;
   String _address = '';
   bool _isLoading = false;
   bool _isGettingLocation = false;
-
-  static const LatLng _defaultLocation = LatLng(14.5995, 120.9842);
+  String? _error;
+  List<String> _suggestions = const [];
 
   @override
   void initState() {
     super.initState();
+    _searchController.text = widget.initialAddress?.trim() ?? '';
+    _searchController.addListener(_onSearchChanged);
     _initializeLocation();
   }
 
-  void _initializeLocation() {
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    final q = _searchController.text.trim();
+    if (q.length < 3) {
+      if (_suggestions.isNotEmpty) setState(() => _suggestions = const []);
+      return;
+    }
+    Future.delayed(const Duration(milliseconds: 300), () async {
+      if (_searchController.text.trim() != q) return;
+      final list = await NominatimService.instance.searchAddresses(q);
+      if (mounted && _searchController.text.trim() == q) {
+        setState(() => _suggestions = list);
+      }
+    });
+  }
+
+  Future<void> _initializeLocation() async {
     if (widget.initialLatitude != null && widget.initialLongitude != null) {
-      _selectedLocation = LatLng(
-        widget.initialLatitude!,
-        widget.initialLongitude!,
-      );
+      _selectedLocation = LatLng(widget.initialLatitude!, widget.initialLongitude!);
       _address = widget.initialAddress?.trim() ?? '';
-      _updateMarker();
-      _getAddressFromLatLng(_selectedLocation!);
+      if (_address.isEmpty) await _resolveAddress();
+      setState(() {});
+      return;
+    }
+    final query = widget.initialAddress?.trim() ?? '';
+    if (query.isNotEmpty) {
+      setState(() => _isLoading = true);
+      final pin = await NominatimService.instance.geocodeAddress(query);
+      if (pin != null && mounted) {
+        _selectedLocation = LatLng(pin.lat, pin.lng);
+        await _resolveAddress();
+      } else {
+        _selectedLocation = const LatLng(defaultMapLat, defaultMapLng);
+      }
+      if (mounted) setState(() => _isLoading = false);
     } else {
-      _selectedLocation = _defaultLocation;
-      _updateMarker();
+      _selectedLocation = const LatLng(defaultMapLat, defaultMapLng);
     }
+    setState(() {});
   }
 
-  void _updateMarker() {
-    if (_selectedLocation == null) return;
-    final snippet =
-        _address.isNotEmpty
-            ? (_address.length > 90 ? '${_address.substring(0, 87)}…' : _address)
-            : 'Resolving address…';
-    _selectedMarker = Marker(
-      markerId: const MarkerId('selected_location'),
-      position: _selectedLocation!,
-      infoWindow: InfoWindow(
-        title: 'Selected location',
-        snippet: snippet,
-      ),
-    );
-  }
-
-  Future<void> _getCurrentLocation() async {
-    setState(() => _isGettingLocation = true);
-
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        throw Exception('Location services are disabled.');
-      }
-
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          throw Exception('Location permissions are denied');
-        }
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        throw Exception('Location permissions are permanently denied');
-      }
-
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-
-      final currentLocation = LatLng(position.latitude, position.longitude);
-
-      setState(() {
-        _selectedLocation = currentLocation;
-        _updateMarker();
-      });
-
-      await _mapController?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: currentLocation, zoom: 17),
-        ),
-      );
-
-      await _getAddressFromLatLng(currentLocation);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error getting location: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isGettingLocation = false);
-    }
-  }
-
-  Future<void> _getAddressFromLatLng(LatLng location) async {
+  Future<void> _resolveAddress() async {
+    final loc = _selectedLocation;
+    if (loc == null) return;
     setState(() => _isLoading = true);
-
     try {
-      final resolved = await GoogleGeocodingService.instance.reverseGeocode(
-        location.latitude,
-        location.longitude,
+      final resolved = await NominatimService.instance.reverseGeocode(
+        GeoPin(lat: loc.latitude, lng: loc.longitude),
       );
-
-      if (!mounted) return;
-      setState(() {
-        _address =
-            (resolved != null && resolved.trim().isNotEmpty)
-                ? resolved.trim()
-                : 'Address not found for this pin';
-        _updateMarker();
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _address = 'Unable to resolve address for this pin';
-        _updateMarker();
-      });
+      if (mounted) setState(() => _address = resolved);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _onMapTap(LatLng location) {
+  Future<void> _onPick(LatLng location) async {
     setState(() {
       _selectedLocation = location;
-      _updateMarker();
+      _error = null;
     });
-    _getAddressFromLatLng(location);
+    _mapController.move(location, _mapController.camera.zoom);
+    await _resolveAddress();
   }
 
-  void _onMapCreated(GoogleMapController controller) {
-    _mapController = controller;
-    if (_selectedLocation != null) {
-      controller.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: _selectedLocation!, zoom: 17),
-        ),
+  Future<void> _applySearch(String query) async {
+    final pin = await NominatimService.instance.geocodeAddress(query);
+    if (pin == null) {
+      setState(() => _error = 'Address not found');
+      return;
+    }
+    await _onPick(LatLng(pin.lat, pin.lng));
+  }
+
+  Future<void> _getCurrentLocation() async {
+    setState(() => _isGettingLocation = true);
+    try {
+      final enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) throw Exception('Location services are disabled.');
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        throw Exception('Location permission denied');
+      }
+
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
       );
+      await _onPick(LatLng(pos.latitude, pos.longitude));
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _isGettingLocation = false);
     }
   }
 
   bool get _canConfirm {
     if (_selectedLocation == null || _isLoading) return false;
-    return _address.isNotEmpty &&
-        _address != 'Unable to resolve address for this pin' &&
-        _address != 'Address not found for this pin';
+    return _address.trim().isNotEmpty;
+  }
+
+  void _confirm() {
+    final loc = _selectedLocation;
+    if (loc == null) return;
+    if (widget.enforceDeliveryRadius &&
+        !isWithinDeliveryRadius(GeoPin(lat: loc.latitude, lng: loc.longitude))) {
+      setState(() {
+        _error =
+            'Delivery must be within ${deliveryMaxDistanceKm.toStringAsFixed(0)} km of our restaurant.';
+      });
+      return;
+    }
+    Navigator.of(context).pop(
+      MapPickerResult(
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        address: _address.trim(),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final center = _selectedLocation ?? const LatLng(defaultMapLat, defaultMapLng);
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E1E1E),
@@ -194,81 +197,112 @@ class _MapPickerState extends State<MapPicker> {
           'Select Location',
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
         ),
-        actions: [
-          if (_isGettingLocation)
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
-            ),
-        ],
       ),
       body: Column(
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            color: Colors.white,
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    labelText: 'Search place or address',
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.search),
+                      onPressed: () => _applySearch(_searchController.text),
+                    ),
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onSubmitted: _applySearch,
+                ),
+                if (_suggestions.isNotEmpty)
+                  Material(
+                    elevation: 2,
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: _suggestions
+                          .map(
+                            (s) => ListTile(
+                              dense: true,
+                              title: Text(s, style: const TextStyle(fontSize: 13)),
+                              onTap: () {
+                                _searchController.text = s;
+                                _applySearch(s);
+                              },
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Address at pin:',
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.grey.shade600,
-                  ),
+                  'Tap the map to set the pin. Address updates via OpenStreetMap.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 if (_isLoading)
-                  const SizedBox(
-                    height: 20,
-                    child: LinearProgressIndicator(),
-                  )
+                  const LinearProgressIndicator()
                 else
                   Text(
-                    _address.isNotEmpty
-                        ? _address
-                        : 'Tap the map to place the delivery pin',
+                    _address.isNotEmpty ? _address : 'Tap the map to place the pin',
                     style: GoogleFonts.poppins(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                if (_selectedLocation != null && !_isLoading) ...[
-                  const SizedBox(height: 6),
+                if (_selectedLocation != null) ...[
+                  const SizedBox(height: 4),
                   Text(
-                    'Pin: ${_selectedLocation!.latitude.toStringAsFixed(6)}, '
-                    '${_selectedLocation!.longitude.toStringAsFixed(6)}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey.shade600,
-                    ),
+                    '${center.latitude.toStringAsFixed(6)}, ${center.longitude.toStringAsFixed(6)}',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                   ),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: 6),
+                  Text(_error!, style: const TextStyle(color: Colors.red)),
                 ],
               ],
             ),
           ),
           Expanded(
-            child: GoogleMap(
-              onMapCreated: _onMapCreated,
-              initialCameraPosition: CameraPosition(
-                target: _selectedLocation ?? _defaultLocation,
-                zoom: 17,
+            child: FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: center,
+                initialZoom: 16,
+                onTap: (_, point) => _onPick(point),
               ),
-              onTap: _onMapTap,
-              markers: _selectedMarker != null ? {_selectedMarker!} : {},
-              myLocationEnabled: true,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: true,
-              mapType: MapType.normal,
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.curatering.web',
+                ),
+                if (_selectedLocation != null)
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: _selectedLocation!,
+                        width: 40,
+                        height: 40,
+                        child: const Icon(
+                          Icons.location_pin,
+                          color: Colors.red,
+                          size: 40,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
             ),
           ),
           Container(
@@ -278,44 +312,21 @@ class _MapPickerState extends State<MapPicker> {
               child: Row(
                 children: [
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: OutlinedButton.icon(
                       onPressed: _isGettingLocation ? null : _getCurrentLocation,
                       icon: const Icon(Icons.my_location, size: 18),
-                      label: const Text('Use Current Location'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.grey.shade200,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
+                      label: const Text('Use my location'),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed:
-                          _canConfirm
-                              ? () {
-                                Navigator.of(context).pop(
-                                  MapPickerResult(
-                                    latitude: _selectedLocation!.latitude,
-                                    longitude: _selectedLocation!.longitude,
-                                    address: _address,
-                                  ),
-                                );
-                              }
-                              : null,
+                      onPressed: _canConfirm ? _confirm : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFFFC024),
                         foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
                       ),
-                      child: const Text('Confirm Location'),
+                      child: const Text('Use this location'),
                     ),
                   ),
                 ],
@@ -333,15 +344,16 @@ Future<MapPickerResult?> showMapPicker({
   double? initialLatitude,
   double? initialLongitude,
   String? initialAddress,
-}) async {
+  bool enforceDeliveryRadius = false,
+}) {
   return Navigator.of(context).push<MapPickerResult>(
     MaterialPageRoute(
-      builder:
-          (context) => MapPicker(
-            initialLatitude: initialLatitude,
-            initialLongitude: initialLongitude,
-            initialAddress: initialAddress,
-          ),
+      builder: (context) => MapPicker(
+        initialLatitude: initialLatitude,
+        initialLongitude: initialLongitude,
+        initialAddress: initialAddress,
+        enforceDeliveryRadius: enforceDeliveryRadius,
+      ),
     ),
   );
 }

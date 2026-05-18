@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
-import '../services/google_geocoding_service.dart';
+import '../services/nominatim_service.dart';
+import '../utils/geo_utils.dart';
 
-/// Read-only map centered on [address] with a single marker.
+/// Read-only map centered on [address] with a single marker (OpenStreetMap).
 class ContactAddressMap extends StatefulWidget {
   const ContactAddressMap({super.key, required this.address});
 
@@ -14,10 +16,7 @@ class ContactAddressMap extends StatefulWidget {
 }
 
 class _ContactAddressMapState extends State<ContactAddressMap> {
-  static const LatLng _fallback = LatLng(14.5995, 120.9842);
-
-  LatLng _center = _fallback;
-  Set<Marker> _markers = {};
+  LatLng _center = const LatLng(defaultMapLat, defaultMapLng);
   bool _loading = true;
   String? _error;
 
@@ -30,9 +29,7 @@ class _ContactAddressMapState extends State<ContactAddressMap> {
   @override
   void didUpdateWidget(covariant ContactAddressMap oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.address != widget.address) {
-      _resolve();
-    }
+    if (oldWidget.address != widget.address) _resolve();
   }
 
   Future<void> _resolve() async {
@@ -41,8 +38,6 @@ class _ContactAddressMapState extends State<ContactAddressMap> {
       setState(() {
         _loading = false;
         _error = 'No address';
-        _center = _fallback;
-        _markers = {};
       });
       return;
     }
@@ -50,37 +45,19 @@ class _ContactAddressMapState extends State<ContactAddressMap> {
       _loading = true;
       _error = null;
     });
-    try {
-      final coords = await GoogleGeocodingService.instance.forwardGeocode(q);
-      if (coords == null) throw Exception('No coordinates');
-      final latLng = LatLng(coords.latitude, coords.longitude);
-      if (!mounted) return;
-      setState(() {
-        _center = latLng;
-        _markers = {
-          Marker(
-            markerId: const MarkerId('business'),
-            position: latLng,
-            infoWindow: InfoWindow(title: 'Location', snippet: q),
-          ),
-        };
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
+    final pin = await NominatimService.instance.geocodeAddress(q);
+    if (!mounted) return;
+    if (pin == null) {
       setState(() {
         _loading = false;
         _error = 'Map preview unavailable';
-        _center = _fallback;
-        _markers = {
-          Marker(
-            markerId: const MarkerId('approx'),
-            position: _fallback,
-            infoWindow: InfoWindow(title: q),
-          ),
-        };
       });
+      return;
     }
+    setState(() {
+      _center = LatLng(pin.lat, pin.lng);
+      _loading = false;
+    });
   }
 
   @override
@@ -97,17 +74,28 @@ class _ContactAddressMapState extends State<ContactAddressMap> {
         height: 220,
         child: Stack(
           children: [
-            GoogleMap(
-              key: ValueKey('contact_${_center.latitude}_${_center.longitude}'),
-              initialCameraPosition: CameraPosition(
-                target: _center,
-                zoom: 16,
-              ),
-              markers: _markers,
-              zoomControlsEnabled: false,
-              myLocationButtonEnabled: false,
-              liteModeEnabled: false,
-              mapToolbarEnabled: false,
+            FlutterMap(
+              options: MapOptions(initialCenter: _center, initialZoom: 16),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.curatering.web',
+                ),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: _center,
+                      width: 40,
+                      height: 40,
+                      child: const Icon(
+                        Icons.location_pin,
+                        color: Colors.red,
+                        size: 40,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
             if (_error != null)
               Positioned(

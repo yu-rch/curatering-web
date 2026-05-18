@@ -4,12 +4,15 @@ import 'package:flutter/services.dart';
 import '../theme/website_header_font.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/cart_store.dart';
+import '../utils/geo_utils.dart';
 import '../services/customer_orders_cache.dart';
 import '../services/loyalty_rewards_store.dart';
 import '../config.dart';
 import '../utils/order_display_utils.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+
 import '../widgets/map_picker.dart';
 import 'payment_page.dart';
 import '../utils/responsive_layout.dart';
@@ -154,6 +157,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       initialLongitude: _deliveryLng,
       initialAddress:
           _addressController.text.isNotEmpty ? _addressController.text : null,
+      enforceDeliveryRadius: true,
     );
 
     if (result != null) {
@@ -212,6 +216,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
     if (_addressController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a delivery address')),
+      );
+      return;
+    }
+
+    if (_deliveryLat == null ||
+        _deliveryLng == null ||
+        !isWithinDeliveryRadius(
+          GeoPin(lat: _deliveryLat!, lng: _deliveryLng!),
+        )) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Please pin your delivery location within '
+            '${deliveryMaxDistanceKm.toStringAsFixed(0)} km of our restaurant.',
+          ),
+        ),
       );
       return;
     }
@@ -888,29 +908,34 @@ class _CheckoutPageState extends State<CheckoutPage> {
           width: double.infinity,
           child: Stack(
             children: [
-              GoogleMap(
+              FlutterMap(
                 key: ValueKey('checkout_map_${lat}_$lng'),
-                initialCameraPosition: CameraPosition(
-                  target: pos,
-                  zoom: 17,
+                options: MapOptions(
+                  initialCenter: pos,
+                  initialZoom: 17,
+                  onTap: (_, __) => _showMapPicker(),
                 ),
-                markers: {
-                  Marker(
-                    markerId: const MarkerId('checkout_delivery'),
-                    position: pos,
-                    infoWindow: InfoWindow(
-                      title: 'Delivery pin',
-                      snippet:
-                          addressPreview.isNotEmpty
-                              ? addressPreview
-                              : 'Selected location',
-                    ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.curatering.web',
                   ),
-                },
-                zoomControlsEnabled: false,
-                myLocationButtonEnabled: false,
-                liteModeEnabled: false,
-                onTap: (_) => _showMapPicker(),
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: pos,
+                        width: 36,
+                        height: 36,
+                        child: const Icon(
+                          Icons.location_pin,
+                          color: Colors.red,
+                          size: 36,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
               if (addressPreview.isNotEmpty)
                 Positioned(

@@ -26,6 +26,8 @@ import '../widgets/customer_website_topbar.dart';
 import '../widgets/allergen_selector_field.dart';
 import '../widgets/inquiry_menu_selection_dialog.dart';
 import '../widgets/map_picker.dart';
+import '../widgets/venue_autocomplete_field.dart';
+import '../utils/geo_utils.dart';
 import '../widgets/async_dialogs.dart';
 import '../widgets/antd_dialog.dart';
 import '../utils/image_download.dart';
@@ -393,7 +395,11 @@ class _InquirePageState extends State<InquirePage> {
     }
     final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
     if (guestCount < 1) err('guests', 'Enter a valid guest count (at least 1)');
-    if (_address.text.trim().isEmpty) err('address', 'Please enter the event address');
+    if (_address.text.trim().isEmpty) {
+      err('address', 'Please enter the event address');
+    } else if (!isAllowedCateringAddress(_address.text)) {
+      err('address', cateringCoverageError);
+    }
     if (_dateController.text.trim().isEmpty) err('date', 'Please select an event date');
     if (_timeController.text.trim().isEmpty) {
       err('time', 'Please select an event time');
@@ -862,11 +868,10 @@ class _InquirePageState extends State<InquirePage> {
         label: 'Event Address',
         required: true,
         errorText: _fieldErrors['address'],
-        child: AntdOutlineInput(
+        child: VenueAutocompleteField(
           controller: _address,
-          hintText: 'Venue name, street, city',
-          maxLines: 2,
-          onChanged: (_) => onFieldChanged('address'),
+          label: 'Venue name, street, city',
+          onSelected: (_) => onFieldChanged('address'),
         ),
       ),
       const SizedBox(height: 8),

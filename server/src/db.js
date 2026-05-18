@@ -1015,6 +1015,8 @@ export async function initDb() {
     console.log('Migration check for restaurant_orders points_earned:', err.message);
   }
 
+  await ensureRestaurantOrderWorkflowColumns();
+
   // Migration: line items JSON (older restaurant_orders tables may lack this column)
   try {
     await pool.query(
@@ -1059,6 +1061,51 @@ export async function initDb() {
     console.log('Migration: Added points_earned column to event_orders');
   } catch (err) {
     console.log('Migration check for event_orders points_earned:', err.message);
+  }
+
+  try {
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS order_source TEXT NOT NULL DEFAULT 'ONLINE'`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS fulfillment_stage TEXT`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS pos_customer_label TEXT`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_method TEXT`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS cashier_amount_received DECIMAL(10,2)`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS cashier_secondary_amount_received DECIMAL(10,2)`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS supplemental_payment_proof TEXT`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS balance_proof_pending_review BOOLEAN NOT NULL DEFAULT FALSE`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS pos_claimed_at TIMESTAMPTZ`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_proof_initial TEXT`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_reference_initial TEXT`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_reference_balance TEXT`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS guest_contact_email TEXT`,
+    );
+    console.log('Migration: Added POS columns to restaurant_orders');
+  } catch (err) {
+    console.log('Migration check for restaurant_orders POS columns:', err.message);
   }
 
   try {
@@ -1331,6 +1378,49 @@ export async function setLoyaltyProgramConfig(config) {
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
     [LOYALTY_PROGRAM_CONFIG_KEY, JSON.stringify(config ?? {})],
   );
+}
+
+let restaurantOrderWorkflowColumnsPromise = null;
+
+/** Critical restaurant_orders columns used before full initDb (auto-cancel, payment). */
+export async function ensureRestaurantOrderWorkflowColumns() {
+  if (!restaurantOrderWorkflowColumnsPromise) {
+    restaurantOrderWorkflowColumnsPromise =
+      ensureRestaurantOrderWorkflowColumnsOnce().catch((err) => {
+        restaurantOrderWorkflowColumnsPromise = null;
+        throw err;
+      });
+  }
+  return restaurantOrderWorkflowColumnsPromise;
+}
+
+async function ensureRestaurantOrderWorkflowColumnsOnce() {
+  const tableCols = await getTableColumnNames('restaurant_orders');
+  if (tableCols.size === 0) return;
+
+  const alters = [
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS guest_contact_email TEXT`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_proof TEXT`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS amount_paid DECIMAL(10,2)`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS change_given DECIMAL(10,2)`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS pending_cashier_at TIMESTAMPTZ`,
+  ];
+  for (const sql of alters) {
+    await pool.query(sql);
+  }
+
+  if (tableCols.has('created_at') && tableCols.has('order_status')) {
+    try {
+      await pool.query(`
+        UPDATE restaurant_orders
+        SET pending_cashier_at = created_at
+        WHERE order_status = 'pending_cashier'
+          AND pending_cashier_at IS NULL
+      `);
+    } catch (err) {
+      console.warn('[db] backfill pending_cashier_at:', err.message);
+    }
+  }
 }
 
 let orderInquiryIdColumnsPromise = null;

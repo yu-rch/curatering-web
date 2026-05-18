@@ -33,7 +33,7 @@ import 'pages/help_requests.dart';
 import 'pages/action_logs.dart';
 import 'pages/customer_management.dart';
 import 'pages/website_admin_page.dart';
-import 'pages/restaurant_transactions_page.dart';
+import 'pages/restaurant_orders_route.dart';
 import 'pages/inventory.dart';
 import 'widgets/app_scaffold.dart';
 import 'data_store.dart';
@@ -220,7 +220,7 @@ Route<dynamic>? _buildRouteForPath(String path) {
             allowedRoles: {Role.manager, Role.supervisor, Role.cashier},
             child: PagePermissionGuard(
               route: PagePermissionRoutes.restaurantOrders,
-              child: const AppScaffold(child: RestaurantTransactionsPage()),
+              child: const RestaurantOrdersRoute(),
             ),
           ),
           '/restaurant-orders',
@@ -587,9 +587,7 @@ class MyApp extends StatelessWidget {
             allowedRoles: {Role.manager, Role.supervisor, Role.cashier},
             child: PagePermissionGuard(
               route: PagePermissionRoutes.restaurantOrders,
-              child: const AppScaffold(
-                child: RestaurantTransactionsPage(),
-              ),
+              child: const RestaurantOrdersRoute(),
             ),
           ),
           '/restaurant-orders',

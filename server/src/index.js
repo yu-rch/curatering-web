@@ -19,6 +19,7 @@ import {
   initDb,
   ensureAuthSchemaQuick,
   ensureOrderInquiryIdColumns,
+  ensureRestaurantOrderWorkflowColumns,
   pool,
   poolQueryWithRetry,
   generateUserId,
@@ -43,6 +44,10 @@ import {
   clearTrayDraft,
 } from "./tray_drafts_api.js";
 import { createPublicRateLimiter } from "./public_rate_limit.js";
+import {
+  ensureRestaurantPosColumns,
+  registerPosRoutes,
+} from "./posApi.js";
 
 // Prefer IPv4 when resolving SMTP hosts (avoids ENETUNREACH on IPv6 in many cloud/container networks).
 try {
@@ -4862,6 +4867,9 @@ function scheduleBootstrapRetry() {
 function runDatabaseBootstrap() {
   dbInitState = 'pending';
   authSchemaPromise = ensureAuthSchemaQuick()
+    .then(() => ensureRestaurantOrderWorkflowColumns().catch((err) => {
+      console.warn('[startup] restaurant_orders workflow columns:', err?.message || err);
+    }))
     .then(() => {
       dbReady = true;
       console.log('[startup] Auth schema ready — customer login enabled');
@@ -4895,8 +4903,18 @@ function requireDbReady(req, res, next) {
 
 registerCustomerAuthRoutes(app, requireDbReady);
 
+let autoCancelJobScheduled = false;
+
+function scheduleAutoCancelJob() {
+  if (autoCancelJobScheduled) return;
+  autoCancelJobScheduled = true;
+  setInterval(autoCancelStalePendingCashierOrders, 5 * 60 * 1000);
+  setTimeout(autoCancelStalePendingCashierOrders, 30 * 1000);
+}
+
 async function autoCancelStalePendingCashierOrders() {
   try {
+    await ensureRestaurantOrderWorkflowColumns();
     const result = await pool.query(
       `UPDATE restaurant_orders
        SET order_status = 'cancelled', updated_at = now()
@@ -4934,8 +4952,6 @@ app.listen(PORT, () => {
     `Database URL configured: ${process.env.DATABASE_URL ? "Yes" : "No"}`,
   );
   logEmailStartupStatus();
-  setInterval(autoCancelStalePendingCashierOrders, 5 * 60 * 1000);
-  setTimeout(autoCancelStalePendingCashierOrders, 30 * 1000);
 });
 
 // Optional: send a test email (set EMAIL_TEST_SECRET on the server)
@@ -8192,6 +8208,18 @@ async function registerRoutesAfterDbInit() {
     app.get('/api/tray-draft', customerAuthRequired, getTrayDraft);
     app.put('/api/tray-draft', customerAuthRequired, saveTrayDraft);
     app.delete('/api/tray-draft', customerAuthRequired, clearTrayDraft);
+
+    await ensureRestaurantOrderWorkflowColumns();
+    await ensureRestaurantPosColumns(pool);
+    scheduleAutoCancelJob();
+    registerPosRoutes(app, {
+      pool,
+      authRequired,
+      restaurantOrderWhereClause,
+      allocateRestaurantOrderNo,
+      sendCustomerNotificationEmail,
+      resolveRestaurantOrderEmail,
+    });
 
     routesRegistered = true;
     console.log('[startup] All API routes registered after DB init');

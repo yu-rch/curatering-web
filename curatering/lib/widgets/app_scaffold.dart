@@ -170,8 +170,8 @@ class AppScaffold extends StatelessWidget {
     if (role == Role.cashier) {
       return const [
         _SidebarItemData(
-          icon: Icons.receipt_long,
-          label: 'Restaurant Orders',
+          icon: Icons.point_of_sale,
+          label: 'Cashier POS',
           route: '/restaurant-orders',
         ),
       ];
