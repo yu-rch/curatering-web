@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:async';
@@ -1187,8 +1187,8 @@ class _ManageEventsState extends State<ManageEvents>
                           ),
                           const SizedBox(width: 16),
 
-                          // Event Design (only if catering+event)
-                          if (serviceType == 'catering+event')
+                          // Event design from customer inquiry (AI image / Macrina brief)
+                          if (_orderHasEventDesign(order))
                             Expanded(
                               child: _buildOnlineInquiryEventDesign(order),
                             ),
@@ -1425,7 +1425,7 @@ class _ManageEventsState extends State<ManageEvents>
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
-                                        'Order moved to For Processing.',
+                                        'Order accepted and moved to For downpayment.',
                                       ),
                                     ),
                                   );
@@ -1450,7 +1450,7 @@ class _ManageEventsState extends State<ManageEvents>
                                 ),
                               ),
                               child: const Text(
-                                'CONFIRM INQUIRY',
+                                'ACCEPT ORDER',
                                 style: TextStyle(fontWeight: FontWeight.w700),
                               ),
                             ),
@@ -1519,7 +1519,7 @@ class _ManageEventsState extends State<ManageEvents>
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                               ),
-                              child: const Text('CANCEL EVENT'),
+                              child: const Text('CANCEL ORDER'),
                             ),
                           ),
                         ],
@@ -2038,6 +2038,12 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Widget _buildOnlineInquiryEventDesign(EventOrderDto order) {
+    final generatedUrl = order.themeDesign.generatedImageUrl?.trim() ?? '';
+    final designPrompt = (order.themeDesign.customInstructions ??
+            order.themeDesign.colorPrompt ??
+            order.themeDesign.customerThemeRequest ??
+            '')
+        .trim();
     final previewSources =
         order.themeDesign.picksBase64
             .where((s) => s.trim().isNotEmpty)
@@ -2059,8 +2065,6 @@ class _ManageEventsState extends State<ManageEvents>
       }
     }
 
-    final customerNote = (order.themeDesign.customerThemeRequest ?? '').trim();
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -2075,31 +2079,60 @@ class _ManageEventsState extends State<ManageEvents>
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
           ),
           const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF3D0),
-              borderRadius: BorderRadius.circular(999),
+          if (designPrompt.isNotEmpty) ...[
+            const Text(
+              'Customer design prompt',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
             ),
-            child: Text(
-              '${previewSources.length} custom design photo(s)',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-                color: Color(0xFF7A4E00),
+            const SizedBox(height: 6),
+            Text(
+              designPrompt,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (generatedUrl.isNotEmpty) ...[
+            const Text(
+              'AI-generated design image',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                height: 160,
+                width: double.infinity,
+                child: previewWidget(generatedUrl, fit: BoxFit.contain),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          if (previewSources.isEmpty)
+            const SizedBox(height: 12),
+          ],
+          if (previewSources.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3D0),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '${previewSources.length} reference photo(s)',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: Color(0xFF7A4E00),
+                ),
+              ),
+            ),
+          if (previewSources.isEmpty && generatedUrl.isEmpty)
             Text(
               order.themeDesign.wantsCustomDesign
                   ? 'Customer asked Macrinas to create the event design.'
-                  : 'No custom design photos submitted.',
+                  : 'No event design image submitted.',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
             ),
+          if (previewSources.isNotEmpty) const SizedBox(height: 12),
           if (previewSources.isNotEmpty)
             SizedBox(
               height: 110,
@@ -2162,15 +2195,6 @@ class _ManageEventsState extends State<ManageEvents>
                 },
               ),
             ),
-          if (customerNote.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Text(
-              'Customer design request',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
-            ),
-            const SizedBox(height: 6),
-            Text(customerNote, style: const TextStyle(fontSize: 12)),
-          ],
         ],
       ),
     );

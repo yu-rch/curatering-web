@@ -411,6 +411,38 @@ class EventsApi {
     final costBreakdown = _toMap(
       themeRaw['costBreakdown'] ?? themeRaw['cost_breakdown'],
     );
+    final customInstructions = (themeRaw['customInstructions'] ??
+            themeRaw['custom_instructions'] ??
+            themeRaw['colorPrompt'] ??
+            themeRaw['color_prompt'])
+        ?.toString();
+    final macrinaPalette = (themeRaw['macrinaColorPalette'] ??
+            themeRaw['macrina_color_palette'])
+        ?.toString();
+    final macrinaTheme = (themeRaw['macrinaTheme'] ?? themeRaw['macrina_theme'])
+        ?.toString();
+    final generatedImageUrl = (themeRaw['generatedImageUrl'] ??
+            themeRaw['generated_image_url'])
+        ?.toString();
+    final eventDesignSource =
+        (themeRaw['eventDesignSource'] ?? themeRaw['event_design_source'])
+            ?.toString();
+
+    String? customerThemeRequest = (themeRaw['customerThemeRequest'] ??
+            themeRaw['customer_theme_request'])
+        ?.toString();
+    if ((customerThemeRequest == null || customerThemeRequest.trim().isEmpty) &&
+        eventDesignSource == 'macrina') {
+      final parts = <String>[];
+      if (macrinaPalette != null && macrinaPalette.trim().isNotEmpty) {
+        parts.add('Palette: $macrinaPalette');
+      }
+      if (macrinaTheme != null && macrinaTheme.trim().isNotEmpty) {
+        parts.add('Theme: $macrinaTheme');
+      }
+      if (parts.isNotEmpty) customerThemeRequest = parts.join('\n');
+    }
+
     final themeDesign = EventThemeDesignDto(
       picksBase64:
           _toList(themeRaw['picksBase64']).map((e) => e.toString()).toList(),
@@ -420,18 +452,26 @@ class EventsApi {
       wantsCustomDesign: _toBool(
         themeRaw['wantsCustomDesign'] ?? themeRaw['wants_custom_design'],
       ),
-      customerThemeRequest:
-          (themeRaw['customerThemeRequest'] ??
-                  themeRaw['customer_theme_request'])
-              ?.toString(),
+      customerThemeRequest: customerThemeRequest,
+      generatedImageUrl: generatedImageUrl,
+      customInstructions: customInstructions,
+      eventDesignSource: eventDesignSource,
+      macrinaColorPalette: macrinaPalette,
+      macrinaTheme: macrinaTheme,
       dishCost: _toNullableDouble(
         costBreakdown['dishCost'] ?? costBreakdown['dish_cost'],
       ),
       laborCost: _toNullableDouble(
-        costBreakdown['laborCost'] ?? costBreakdown['labor_cost'],
+        costBreakdown['laborCost'] ??
+            costBreakdown['labor_cost'] ??
+            themeRaw['laborCost'] ??
+            themeRaw['labor_cost'],
       ),
       travelCost: _toNullableDouble(
-        costBreakdown['travelCost'] ?? costBreakdown['travel_cost'],
+        costBreakdown['travelCost'] ??
+            costBreakdown['travel_cost'] ??
+            themeRaw['travelCost'] ??
+            themeRaw['travel_cost'],
       ),
     );
 

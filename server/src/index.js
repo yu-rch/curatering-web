@@ -4199,6 +4199,10 @@ app.post(
 
       if (existingOrderResult.rowCount === 0) {
         sourceTable = 'catering_orders';
+        const catCols = await getTableColumnNames('catering_orders');
+        const catThemeSel = catCols.has('theme_design')
+          ? 'theme_design AS "themeDesign"'
+          : "'{}'::jsonb AS \"themeDesign\"";
         existingOrderResult = await pool.query(
           `SELECT
              null AS "eventTitle",
@@ -4212,7 +4216,8 @@ app.post(
              address,
              guest_count AS "guestCount",
              menu,
-             total_cost AS "totalCost"
+             total_cost AS "totalCost",
+             ${catThemeSel}
            FROM catering_orders
            WHERE id = $1
              AND source = 'online_inquiry'
@@ -4246,20 +4251,59 @@ app.post(
       addChanged('address', existing.address, address);
       addChanged('guestCount', existing.guestCount, Number(guestCount));
       addChanged('menu', existing.menu, menu || []);
-      if (sourceTable === 'event_orders') {
-        addChanged('themeDesign', existing.themeDesign, themeDesign || {});
-      }
+      addChanged('themeDesign', existing.themeDesign, themeDesign || {});
       addChanged('totalCost', Number(existing.totalCost || 0), Number(totalCost || 0));
 
+      const costBreakdown =
+        themeDesign?.costBreakdown && typeof themeDesign.costBreakdown === "object"
+          ? themeDesign.costBreakdown
+          : {};
+      const laborCost = Number(
+        req.body.laborCost ?? costBreakdown.laborCost ?? costBreakdown.labor_cost ?? 0,
+      );
+      const travelCost = Number(
+        req.body.travelCost ?? costBreakdown.travelCost ?? costBreakdown.travel_cost ?? 0,
+      );
+      const dishCost = Number(
+        costBreakdown.dishCost ?? costBreakdown.dish_cost ?? 0,
+      );
+      const totalNum = totalCost != null ? Number(totalCost) : 0;
+      const estimateMessage =
+        `Macrina posted an updated cost estimate: PHP ${totalNum.toFixed(2)} ` +
+        `(labor PHP ${laborCost.toFixed(2)}, travel PHP ${travelCost.toFixed(2)}).`;
+
+      const priorTheme =
+        existing.themeDesign && typeof existing.themeDesign === 'object'
+          ? existing.themeDesign
+          : {};
+
       const mergedThemeDesign = {
+        ...priorTheme,
         ...(themeDesign || {}),
+        costBreakdown: {
+          dishCost,
+          laborCost,
+          travelCost,
+        },
+        laborCost,
+        travelCost,
         managerUpdateNotice: {
           action: normalizedAction,
-          preferencesChanged: changedFields.length > 0,
+          preferencesChanged: isPostChanges || changedFields.length > 0,
+          estimateUpdated: isPostChanges,
+          message: isPostChanges
+            ? estimateMessage
+            : changedFields.length > 0
+              ? 'Macrina updated your inquiry details. Please review in My Caterings.'
+              : undefined,
           changedFields,
           postedAt: new Date().toISOString(),
         },
       };
+
+      const tableCols = await getTableColumnNames(sourceTable);
+      const laborSql = tableCols.has("labor_cost") ? ", labor_cost = $17" : "";
+      const travelSql = tableCols.has("travel_cost") ? ", travel_cost = $18" : "";
 
       const result = sourceTable === 'event_orders'
         ? await pool.query(
@@ -4280,7 +4324,7 @@ app.post(
                status = $13,
                total_cost = $14,
                updated_by = $15,
-               updated_at = now()
+               updated_at = now()${laborSql}${travelSql}
              WHERE id = $16
                AND source = 'online_inquiry'
                AND status = 'online_inquiries'
@@ -4302,28 +4346,22 @@ app.post(
               totalCost != null ? Number(totalCost) : 0,
               req.user.id,
               orderId,
+              ...(tableCols.has("labor_cost") ? [laborCost] : []),
+              ...(tableCols.has("travel_cost") ? [travelCost] : []),
             ],
           )
-        : await pool.query(
-            `UPDATE catering_orders
-             SET
-               customer_name = $1,
-               contact_person = $2,
-               contact_number = $3,
-               email_address = $4,
-               schedule_slots = $5,
-               address = $6,
-               guest_count = $7,
-               menu = $8,
-               status = $9,
-               total_cost = $10,
-               updated_by = $11,
-               updated_at = now()
-             WHERE id = $12
-               AND source = 'online_inquiry'
-               AND status = 'online_inquiries'
-             RETURNING id;`,
-            [
+        : await (async () => {
+            const catSets = [
+              'customer_name = $1',
+              'contact_person = $2',
+              'contact_number = $3',
+              'email_address = $4',
+              'schedule_slots = $5',
+              'address = $6',
+              'guest_count = $7',
+              'menu = $8',
+            ];
+            const catParams = [
               customerName,
               contactPerson,
               contactNumber,
@@ -4332,12 +4370,44 @@ app.post(
               address,
               Number(guestCount),
               JSON.stringify(menu || []),
-              nextStatus,
-              totalCost != null ? Number(totalCost) : 0,
-              req.user.id,
-              orderId,
-            ],
-          );
+            ];
+            let p = 9;
+            if (tableCols.has('theme_design')) {
+              catSets.push(`theme_design = $${p}`);
+              catParams.push(JSON.stringify(mergedThemeDesign));
+              p += 1;
+            }
+            catSets.push(`status = $${p}`);
+            catParams.push(nextStatus);
+            p += 1;
+            catSets.push(`total_cost = $${p}`);
+            catParams.push(totalCost != null ? Number(totalCost) : 0);
+            p += 1;
+            catSets.push(`updated_by = $${p}`);
+            catParams.push(req.user.id);
+            p += 1;
+            catSets.push('updated_at = now()');
+            if (tableCols.has('labor_cost')) {
+              catSets.push(`labor_cost = $${p}`);
+              catParams.push(laborCost);
+              p += 1;
+            }
+            if (tableCols.has('travel_cost')) {
+              catSets.push(`travel_cost = $${p}`);
+              catParams.push(travelCost);
+              p += 1;
+            }
+            catParams.push(orderId);
+            return pool.query(
+              `UPDATE catering_orders
+               SET ${catSets.join(', ')}
+               WHERE id = $${p}
+                 AND source = 'online_inquiry'
+                 AND status = 'online_inquiries'
+               RETURNING id;`,
+              catParams,
+            );
+          })();
 
       if (result.rowCount === 0) {
         return res
@@ -4364,7 +4434,8 @@ app.post(
             text:
               `Hello ${customerDisplayName},\n\n` +
               `Your catering inquiry (${orderId}) has been updated with a revised cost estimation.\n` +
-              `Estimated total: PHP ${Number(totalCost || 0).toFixed(2)}.\n\n` +
+              `Estimated total: PHP ${Number(totalCost || 0).toFixed(2)}.\n` +
+              `Labor: PHP ${laborCost.toFixed(2)} · Travel: PHP ${travelCost.toFixed(2)}.\n\n` +
               `Please review your inquiry details in Curatering.\n\n` +
               `- Curatering Team`,
           });
@@ -4378,7 +4449,7 @@ app.post(
             subject: "Curatering: Your inquiry is now for processing",
             text:
               `Hello ${customerDisplayName},\n\n` +
-              `Your inquiry (${orderId}) has been confirmed and is now being processed.\n` +
+              `Your inquiry (${orderId}) has been accepted and moved to for downpayment.\n` +
               `When your booking includes an event, you can open the Curatering app, go to My Caterings, tap your booking, and review the Seating layout section (and adjust table layout while the event is in processing, if enabled).\n\n` +
               `- Curatering Team`,
           });

@@ -56,12 +56,131 @@ extension _ManageEventsTableExt on _ManageEventsState {
   String _themeExtrasLine(EventOrderDto dto) {
     final td = dto.themeDesign;
     final parts = <String>[];
+    if (td.eventDesignSource == 'customer_ai') {
+      parts.add('Customer AI event design');
+    } else if (td.eventDesignSource == 'macrina') {
+      parts.add('Macrina will design the event');
+    }
     if (td.wantsCustomDesign) parts.add('Custom design requested');
+    final prompt = (td.customInstructions ?? td.colorPrompt ?? '').trim();
+    if (prompt.isNotEmpty) parts.add('Design prompt: $prompt');
     if (td.customerThemeRequest != null &&
         td.customerThemeRequest!.trim().isNotEmpty) {
-      parts.add('Theme: ${td.customerThemeRequest}');
+      parts.add(td.customerThemeRequest!.trim());
+    }
+    if (td.macrinaColorPalette != null &&
+        td.macrinaColorPalette!.trim().isNotEmpty) {
+      parts.add('Palette: ${td.macrinaColorPalette}');
+    }
+    if (td.macrinaTheme != null && td.macrinaTheme!.trim().isNotEmpty) {
+      parts.add('Macrina theme: ${td.macrinaTheme}');
+    }
+    if (td.generatedImageUrl != null &&
+        td.generatedImageUrl!.trim().isNotEmpty) {
+      parts.add('AI design image submitted');
+    }
+    if (td.picksBase64.isNotEmpty) {
+      parts.add('${td.picksBase64.length} reference photo(s)');
     }
     return parts.isEmpty ? '—' : parts.join('\n');
+  }
+
+  bool _orderHasEventDesign(EventOrderDto dto) {
+    final td = dto.themeDesign;
+    return td.picksBase64.isNotEmpty ||
+        (td.generatedImageUrl?.trim().isNotEmpty ?? false) ||
+        (td.customInstructions?.trim().isNotEmpty ?? false) ||
+        (td.colorPrompt?.trim().isNotEmpty ?? false) ||
+        (td.customerThemeRequest?.trim().isNotEmpty ?? false) ||
+        td.wantsCustomDesign;
+  }
+
+  Widget _buildEventDesignDetailSection(EventOrderDto dto) {
+    final td = dto.themeDesign;
+    final imageUrl = td.generatedImageUrl?.trim() ?? '';
+    final picks =
+        td.picksBase64.where((s) => s.trim().isNotEmpty).map((s) => s.trim()).toList();
+
+    Widget imageFromSource(String source, {BoxFit fit = BoxFit.cover}) {
+      if (source.startsWith('http://') || source.startsWith('https://')) {
+        return Image.network(
+          source,
+          fit: fit,
+          errorBuilder: (_, __, ___) =>
+              const Center(child: Icon(Icons.broken_image)),
+        );
+      }
+      try {
+        return Image.memory(base64Decode(source), fit: fit);
+      } catch (_) {
+        return const Center(child: Icon(Icons.broken_image));
+      }
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'EVENT DESIGN (CUSTOMER)',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _themeExtrasLine(dto),
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+          ),
+          if (imageUrl.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'AI-generated design',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                height: 220,
+                width: double.infinity,
+                child: imageFromSource(imageUrl, fit: BoxFit.contain),
+              ),
+            ),
+          ],
+          if (picks.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Reference photos (${picks.length})',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 100,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: picks.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: SizedBox(
+                      width: 100,
+                      child: imageFromSource(picks[index]),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   List<AntdDescriptionItem> _orderDetailDescriptionItems(
@@ -148,7 +267,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
 
   Future<EventOrderDto> _loadOrderForDetail(EventOrderDto dto) async {
     try {
-      return await _resolveOrderForSelection(dto);
+      if (dto.source == 'online_inquiry' ||
+          dto.themeAssetsDeferred ||
+          _orderHasEventDesign(dto)) {
+        return await _resolveOrderForSelection(dto);
+      }
+      return dto;
     } catch (_) {
       return dto;
     }
@@ -175,11 +299,18 @@ extension _ManageEventsTableExt on _ManageEventsState {
             );
           }
           return SingleChildScrollView(
-            child: AntdDescriptions(
-              column: w < 700 ? 1 : 3,
-              labelColor: Colors.grey.shade600,
-              valueColor: Colors.black87,
-              items: _orderDetailDescriptionItems(full, screenWidth: w),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AntdDescriptions(
+                  column: w < 700 ? 1 : 3,
+                  labelColor: Colors.grey.shade600,
+                  valueColor: Colors.black87,
+                  items: _orderDetailDescriptionItems(full, screenWidth: w),
+                ),
+                if (_orderHasEventDesign(full))
+                  _buildEventDesignDetailSection(full),
+              ],
             ),
           );
         },

@@ -500,17 +500,20 @@ export function buildCustomerCateringOrdersSql(eventCols, cateringCols) {
       ${cateringSelectField(eventCols, 'eventTitle', ['event_title'], 'NULL::text')},
       ${cateringSelectField(eventCols, 'eventType', ['event_type'], 'NULL::text')},
       status,
-      ${cateringSelectField(eventCols, 'guestCount', ['guest_count'], '0')} AS "guestCount",
-      ${cateringSelectField(eventCols, 'scheduleSlots', ['schedule_slots'], "'[]'::jsonb")} AS "scheduleSlots",
-      ${cateringSelectField(eventCols, 'menu', ['menu'], "'[]'::jsonb")} AS menu,
-      ${cateringSelectField(eventCols, 'totalCost', ['total_cost'], '0')} AS "totalCost",
+      ${cateringSelectField(eventCols, 'guestCount', ['guest_count'], '0')},
+      ${cateringSelectField(eventCols, 'scheduleSlots', ['schedule_slots'], "'[]'::jsonb")},
+      ${cateringSelectField(eventCols, 'menu', ['menu'], "'[]'::jsonb")},
+      ${cateringSelectField(eventCols, 'totalCost', ['total_cost'], '0')},
       ${eventTheme} AS "themeDesign",
       ${eventSeating} AS "seatingPlan",
-      ${cateringSelectField(eventCols, 'createdAt', ['created_at'], 'now()')} AS "createdAt",
+      ${cateringSelectField(eventCols, 'createdAt', ['created_at'], 'now()')},
       'event' AS order_type
     FROM event_orders
     WHERE lower(email_address) = lower($1)`;
 
+  const cateringTheme = cateringCols.has('theme_design')
+    ? 'theme_design'
+    : '\'{}\'::jsonb';
   const cateringPart = `
     SELECT
       id::text AS id,
@@ -518,13 +521,13 @@ export function buildCustomerCateringOrdersSql(eventCols, cateringCols) {
       NULL::text AS "eventTitle",
       'catering'::text AS "eventType",
       status,
-      ${cateringSelectField(cateringCols, 'guestCount', ['guest_count'], '0')} AS "guestCount",
-      ${cateringSelectField(cateringCols, 'scheduleSlots', ['schedule_slots'], "'[]'::jsonb")} AS "scheduleSlots",
-      ${cateringSelectField(cateringCols, 'menu', ['menu'], "'[]'::jsonb")} AS menu,
-      ${cateringSelectField(cateringCols, 'totalCost', ['total_cost'], '0')} AS "totalCost",
-      '{}'::jsonb AS "themeDesign",
+      ${cateringSelectField(cateringCols, 'guestCount', ['guest_count'], '0')},
+      ${cateringSelectField(cateringCols, 'scheduleSlots', ['schedule_slots'], "'[]'::jsonb")},
+      ${cateringSelectField(cateringCols, 'menu', ['menu'], "'[]'::jsonb")},
+      ${cateringSelectField(cateringCols, 'totalCost', ['total_cost'], '0')},
+      ${cateringTheme} AS "themeDesign",
       '{}'::jsonb AS "seatingPlan",
-      ${cateringSelectField(cateringCols, 'createdAt', ['created_at'], 'now()')} AS "createdAt",
+      ${cateringSelectField(cateringCols, 'createdAt', ['created_at'], 'now()')},
       'catering' AS order_type
     FROM catering_orders
     WHERE lower(email_address) = lower($1)`;
@@ -536,6 +539,30 @@ export function normalizeCustomerCateringOrderRow(row) {
   const o = { ...row };
   o.status = normalizeCateringOrderStatus(o.status);
   if (o.createdAt instanceof Date) o.createdAt = o.createdAt.toISOString();
+
+  if (typeof o.themeDesign === 'string' && o.themeDesign.trim()) {
+    try {
+      o.themeDesign = JSON.parse(o.themeDesign);
+    } catch {
+      o.themeDesign = {};
+    }
+  }
+  if (o.themeDesign != null && typeof o.themeDesign !== 'object') {
+    o.themeDesign = {};
+  }
+
+  const theme = o.themeDesign && typeof o.themeDesign === 'object' ? o.themeDesign : {};
+  const breakdown =
+    theme.costBreakdown && typeof theme.costBreakdown === 'object'
+      ? theme.costBreakdown
+      : {};
+  if (o.laborCost == null && breakdown.laborCost != null) {
+    o.laborCost = breakdown.laborCost;
+  }
+  if (o.travelCost == null && breakdown.travelCost != null) {
+    o.travelCost = breakdown.travelCost;
+  }
+
   return o;
 }
 

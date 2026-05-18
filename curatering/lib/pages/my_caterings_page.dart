@@ -233,13 +233,82 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
 
   Map<String, dynamic> _parseThemeDesign(dynamic rawThemeDesign) {
     if (rawThemeDesign is Map<String, dynamic>) return rawThemeDesign;
+    if (rawThemeDesign is Map) return Map<String, dynamic>.from(rawThemeDesign);
     if (rawThemeDesign is String && rawThemeDesign.isNotEmpty) {
       try {
         final parsed = jsonDecode(rawThemeDesign);
         if (parsed is Map<String, dynamic>) return parsed;
+        if (parsed is Map) return Map<String, dynamic>.from(parsed);
       } catch (_) {}
     }
     return {};
+  }
+
+  bool _hasManagerEstimateUpdate(Map<String, dynamic> themeDesign) {
+    final notice = themeDesign['managerUpdateNotice'];
+    if (notice is! Map) return false;
+    final m = Map<String, dynamic>.from(notice);
+    if (m['estimateUpdated'] == true) return true;
+    if ((m['action'] ?? '').toString() == 'post_changes') return true;
+    return false;
+  }
+
+  String? _managerUpdateMessage(Map<String, dynamic> themeDesign) {
+    final notice = themeDesign['managerUpdateNotice'];
+    if (notice is! Map) return null;
+    final msg = (notice['message'] ?? '').toString().trim();
+    if (msg.isNotEmpty) return msg;
+    if (_hasManagerEstimateUpdate(themeDesign)) {
+      return 'Macrina posted an updated cost estimate. Open this inquiry to review labor, travel, and total.';
+    }
+    return null;
+  }
+
+  Widget? _buildEstimateUpdateBanner(Map<String, dynamic> themeDesign) {
+    if (!_hasManagerEstimateUpdate(themeDesign)) return null;
+    final message =
+        _managerUpdateMessage(themeDesign) ??
+        'Macrina posted an updated cost estimate. Review the breakdown below.';
+    final breakdown = themeDesign['costBreakdown'];
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8F5E9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF81C784)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.price_change_outlined, color: Colors.green.shade800, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Updated cost estimate',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green.shade900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(message, style: TextStyle(fontSize: 12, color: Colors.green.shade900)),
+          if (breakdown is Map) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Labor: ${_formatPeso(breakdown['laborCost'])} · Travel: ${_formatPeso(breakdown['travelCost'])}',
+              style: TextStyle(fontSize: 12, color: Colors.green.shade800),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   bool _hasEventThemeDesign(Map<String, dynamic> themeDesign) {
@@ -1336,7 +1405,10 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                       );
                     },
                   ),
-                  if (themeDesign['managerUpdateNotice'] is Map) ...[
+                  if (_buildEstimateUpdateBanner(themeDesign) != null)
+                    _buildEstimateUpdateBanner(themeDesign)!,
+                  if (themeDesign['managerUpdateNotice'] is Map &&
+                      !_hasManagerEstimateUpdate(themeDesign)) ...[
                     const SizedBox(height: 12),
                     const Text(
                       'Manager Notes',
@@ -1696,7 +1768,10 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                             themeDesign['managerUpdateNotice'];
                         final hasPreferenceChangeNotice =
                             managerNotice is Map &&
-                            managerNotice['preferencesChanged'] == true;
+                            (managerNotice['preferencesChanged'] == true ||
+                                managerNotice['estimateUpdated'] == true ||
+                                (managerNotice['action'] ?? '').toString() ==
+                                    'post_changes');
 
                         return InkWell(
                           borderRadius: BorderRadius.circular(14),
@@ -1757,7 +1832,8 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                                         const SizedBox(width: 8),
                                         Tooltip(
                                           message:
-                                              'Macrina\'s posted updates to your preferences. Please review your latest estimate.',
+                                              _managerUpdateMessage(themeDesign) ??
+                                              'Macrina posted updates. Please review your latest estimate in My Caterings.',
                                           child: const Icon(
                                             Icons.info_outline,
                                             color: Color(0xFF1976D2),
@@ -1920,7 +1996,10 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                                         ),
                                     ],
                                   ),
-                                  if (status == 'online_inquiries') ...[
+                                  if (_buildEstimateUpdateBanner(themeDesign) != null)
+                                    _buildEstimateUpdateBanner(themeDesign)!,
+                                  if (status == 'online_inquiries' &&
+                                      !_hasManagerEstimateUpdate(themeDesign)) ...[
                                     const SizedBox(height: 12),
                                     Container(
                                       width: double.infinity,
@@ -1932,11 +2011,11 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                                           color: const Color(0xFF90CAF9),
                                         ),
                                       ),
-                                      child: Text(
-                                        'Review your latest cost estimate above. Once you approve, your inquiry can be confirmed for processing.',
+                                      child: const Text(
+                                        'Your inquiry is being reviewed. You will see labor, travel, and total estimates here when Macrina posts them.',
                                         style: TextStyle(
                                           fontSize: 12,
-                                          color: Colors.blue.shade900,
+                                          color: Color(0xFF0D47A1),
                                         ),
                                       ),
                                     ),

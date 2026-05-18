@@ -31,6 +31,11 @@ class EventThemeDesignDto {
   final String? colorPrompt;
   final bool wantsCustomDesign;
   final String? customerThemeRequest;
+  final String? generatedImageUrl;
+  final String? customInstructions;
+  final String? eventDesignSource;
+  final String? macrinaColorPalette;
+  final String? macrinaTheme;
   final double? dishCost;
   final double? laborCost;
   final double? travelCost;
@@ -42,6 +47,11 @@ class EventThemeDesignDto {
     this.colorPrompt,
     this.wantsCustomDesign = false,
     this.customerThemeRequest,
+    this.generatedImageUrl,
+    this.customInstructions,
+    this.eventDesignSource,
+    this.macrinaColorPalette,
+    this.macrinaTheme,
     this.dishCost,
     this.laborCost,
     this.travelCost,
