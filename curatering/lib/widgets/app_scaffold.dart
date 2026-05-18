@@ -176,7 +176,7 @@ class AppScaffold extends StatelessWidget {
       return const [
         _SidebarItemData(
           icon: Icons.point_of_sale,
-          label: 'Cashier POS',
+          label: 'POS',
           route: '/restaurant-orders',
         ),
       ];

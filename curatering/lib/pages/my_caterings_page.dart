@@ -168,19 +168,28 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     return status.replaceAll('_', ' ').toUpperCase();
   }
 
-  bool _isEditableInquiryStatus(String? status) => status == 'online_inquiries';
+  bool _isEditableInquiryStatus(String? status) =>
+      status == 'online_inquiries' || status == 'new_event';
 
   bool _canEditVenueAndGuests(String? status) =>
       status == 'online_inquiries' ||
+      status == 'new_event' ||
+      status == 'for_down_payment' ||
+      status == 'on_going' ||
       status == 'for_processing' ||
       status == 'for_post_analysis';
 
   Color _getStatusColor(String? status) {
     switch (status) {
       case 'online_inquiries':
+      case 'new_event':
         return Colors.blue;
+      case 'for_down_payment':
+        return Colors.amber;
+      case 'on_going':
       case 'for_processing':
         return Colors.orange;
+      case 'for_full_payment':
       case 'for_post_analysis':
         return Colors.purple;
       case 'completed':

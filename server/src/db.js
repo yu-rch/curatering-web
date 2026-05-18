@@ -216,6 +216,12 @@ export async function ensureAuthSchemaQuick() {
   `);
 
   try {
+    await ensureCustomerAccountsUuidCompat();
+  } catch (err) {
+    console.warn('Auth schema customer_accounts UUID compat:', err.message);
+  }
+
+  try {
     const caCols = await getTableColumnNames('customer_accounts');
     if (!caCols.has('contact_number')) {
       if (caCols.has('phone')) {
@@ -342,7 +348,7 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS event_orders (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       source TEXT NOT NULL CHECK (source IN ('new_event','online_inquiry')),
-      status TEXT NOT NULL CHECK (status IN ('new_event','online_inquiries','for_processing','for_post_analysis','completed')),
+      status TEXT NOT NULL CHECK (status IN ('online_inquiries','for_down_payment','on_going','for_full_payment','completed','cancelled')),
 
       event_title TEXT NOT NULL,
       order_type TEXT NOT NULL CHECK (order_type IN ('catering','catering_event')),
@@ -478,7 +484,7 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS catering_orders (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       source TEXT NOT NULL CHECK (source IN ('new_event','online_inquiry')),
-      status TEXT NOT NULL CHECK (status IN ('new_event','online_inquiries','for_processing','for_post_analysis','completed','cancelled')),
+      status TEXT NOT NULL CHECK (status IN ('online_inquiries','for_down_payment','on_going','for_full_payment','completed','cancelled')),
 
       order_type TEXT NOT NULL CHECK (order_type IN ('catering')),
       
@@ -550,34 +556,18 @@ export async function initDb() {
     ADD COLUMN IF NOT EXISTS checklist JSONB NOT NULL DEFAULT '[]'::jsonb;
   `);
 
-  // Update catering_orders status constraint to include 'cancelled'
-  try {
-    await pool.query(`
-      ALTER TABLE catering_orders
-      DROP CONSTRAINT IF EXISTS catering_orders_status_check;
-    `);
-
-    await pool.query(`
-      ALTER TABLE catering_orders
-      ADD CONSTRAINT catering_orders_status_check CHECK (status IN ('new_event','online_inquiries','for_processing','for_post_analysis','completed','cancelled'));
-    `);
-  } catch (err) {
-    // Constraint might already exist with different definition, log but don't fail
-    console.warn('Warning: Could not update catering_orders_status_check constraint:', err.message);
-  }
-
-  // event_orders: allow status 'cancelled' (matches cancel routes in index.js)
-  try {
-    await pool.query(`
-      ALTER TABLE event_orders
-      DROP CONSTRAINT IF EXISTS event_orders_status_check;
-    `);
-    await pool.query(`
-      ALTER TABLE event_orders
-      ADD CONSTRAINT event_orders_status_check CHECK (status IN ('new_event','online_inquiries','for_processing','for_post_analysis','completed','cancelled'));
-    `);
-  } catch (err) {
-    console.warn('Warning: Could not update event_orders_status_check constraint:', err.message);
+  // Catering / event status: migrate legacy rows, then apply CHECK constraint
+  for (const table of ['catering_orders', 'event_orders']) {
+    try {
+      await migrateCateringOrderStatuses(table);
+      await pool.query(`ALTER TABLE ${table} DROP CONSTRAINT IF EXISTS ${table}_status_check`);
+      const statusList = CATERING_STATUS_VALUES.map((s) => `'${s}'`).join(', ');
+      await pool.query(
+        `ALTER TABLE ${table} ADD CONSTRAINT ${table}_status_check CHECK (status IN (${statusList}))`,
+      );
+    } catch (err) {
+      console.warn(`Warning: Could not update ${table}_status_check:`, err.message);
+    }
   }
 
   // Public contact form: user_id optional (no fake 'guest' FK)
@@ -942,7 +932,7 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS restaurant_orders (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       order_no TEXT UNIQUE,
-      customer_id TEXT REFERENCES customer_accounts(id) ON DELETE SET NULL,
+      customer_id TEXT,
       full_name TEXT,
       phone TEXT,
       items JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -961,6 +951,12 @@ export async function initDb() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  try {
+    await ensureCustomerAccountsUuidCompat();
+  } catch (err) {
+    console.log('Migration restaurant_orders customer_id FK drop:', err.message);
+  }
 
   // Migration: Add delivery_time column if it doesn't exist
   try {
@@ -1213,7 +1209,11 @@ export async function initDb() {
     console.log('Migration restaurant_orders workflow:', err.message);
   }
 
-  await ensureCustomerTrayDraftsSchema();
+  try {
+    await ensureCustomerTrayDraftsSchema();
+  } catch (err) {
+    console.warn('[initDb] customer_tray_drafts schema skipped:', err.message);
+  }
 
   try {
     await pool.query(`
@@ -1437,21 +1437,106 @@ export async function ensureCustomerTrayDraftsSchema() {
   return customerTrayDraftsSchemaPromise;
 }
 
+/**
+ * Child tables (tray_drafts, restaurant_orders.customer_id) use TEXT.
+ * Production customer_accounts.id is often UUID — FK TEXT → UUID is invalid in Postgres.
+ */
+export async function resolveCustomerIdChildColumn() {
+  const parentType = await getColumnSqlType('customer_accounts', 'id');
+  const parentIsUuid = parentType === 'UUID';
+  return {
+    sqlType: 'TEXT',
+    withFk: !parentIsUuid && parentType === 'TEXT',
+    parentIsUuid,
+  };
+}
+
+/** JOIN when customer_accounts.id may be UUID and child.customer_id is TEXT. */
+export function customerAccountIdJoinSql(caAlias, childAlias) {
+  return `${caAlias}.id::text = ${childAlias}.customer_id::text`;
+}
+
+/** When customer_accounts.id is UUID, child tables use TEXT customer_id (uuid string); optional customer_code for CUS- ids. */
+export async function ensureCustomerAccountsUuidCompat() {
+  const parentType = await getColumnSqlType('customer_accounts', 'id');
+  if (parentType !== 'UUID') return { parentIsUuid: false };
+
+  await pool.query(
+    `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS customer_code TEXT`,
+  );
+  try {
+    await pool.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS customer_accounts_customer_code_key
+       ON customer_accounts (customer_code) WHERE customer_code IS NOT NULL`,
+    );
+  } catch (err) {
+    console.warn('[db] customer_code unique index:', err.message);
+  }
+
+  for (const table of ['restaurant_orders', 'customer_tray_drafts']) {
+    try {
+      await pool.query(
+        `ALTER TABLE ${table} DROP CONSTRAINT IF EXISTS ${table}_customer_id_fkey`,
+      );
+    } catch (_) {}
+  }
+
+  return { parentIsUuid: true };
+}
+
+async function createCustomerTrayDraftsTable(withFk) {
+  const fkClause = withFk
+    ? ' REFERENCES customer_accounts(id) ON DELETE CASCADE'
+    : '';
+  await pool.query(`
+    CREATE TABLE customer_tray_drafts (
+      customer_id TEXT PRIMARY KEY${fkClause},
+      items JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+}
+
+async function resolveTrayDraftsCustomerIdType() {
+  return resolveCustomerIdChildColumn();
+}
+
 async function ensureCustomerTrayDraftsSchemaOnce() {
+  const { withFk: wantFk, parentIsUuid } = await resolveTrayDraftsCustomerIdType();
   const cols = await getTableColumnNames('customer_tray_drafts');
+
   if (cols.size === 0) {
-    await pool.query(`
-      CREATE TABLE customer_tray_drafts (
-        customer_id TEXT PRIMARY KEY REFERENCES customer_accounts(id) ON DELETE CASCADE,
-        items JSONB NOT NULL DEFAULT '[]'::jsonb,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      )
-    `);
-    console.log('[db] created customer_tray_drafts');
+    try {
+      await createCustomerTrayDraftsTable(wantFk);
+      console.log('[db] created customer_tray_drafts (customer_id TEXT)');
+    } catch (err) {
+      console.warn('[db] customer_tray_drafts with FK failed, retrying without FK:', err.message);
+      await createCustomerTrayDraftsTable(false);
+      console.log('[db] created customer_tray_drafts (customer_id TEXT, no FK)');
+    }
     return;
   }
 
   if (cols.has('customer_id')) {
+    const childType = await getColumnSqlType('customer_tray_drafts', 'customer_id');
+    if (childType === 'UUID' || (childType && childType !== 'TEXT')) {
+      try {
+        await pool.query(
+          `ALTER TABLE customer_tray_drafts
+           ALTER COLUMN customer_id TYPE TEXT USING customer_id::text`,
+        );
+        console.log('[db] customer_tray_drafts.customer_id → TEXT');
+      } catch (err) {
+        console.warn('[db] could not cast customer_tray_drafts.customer_id to TEXT:', err.message);
+      }
+    }
+    if (parentIsUuid) {
+      try {
+        await pool.query(
+          `ALTER TABLE customer_tray_drafts DROP CONSTRAINT IF EXISTS customer_tray_drafts_customer_id_fkey`,
+        );
+      } catch (_) {}
+    }
     await pool.query(
       `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb`,
     );
@@ -1461,11 +1546,7 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
     return;
   }
 
-  for (const legacyCol of [
-    'account_id',
-    'user_id',
-    'customer_account_id',
-  ]) {
+  for (const legacyCol of ['account_id', 'user_id', 'customer_account_id']) {
     if (cols.has(legacyCol)) {
       await pool.query(
         `ALTER TABLE customer_tray_drafts RENAME COLUMN ${legacyCol} TO customer_id`,
@@ -1482,16 +1563,17 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
   }
 
   console.warn(
-    '[db] customer_tray_drafts missing customer_id — recreating table (orphan draft rows dropped)',
+    '[db] customer_tray_drafts missing customer_id — recreating table (draft rows dropped)',
   );
   await pool.query(`DROP TABLE IF EXISTS customer_tray_drafts CASCADE`);
-  await pool.query(`
-    CREATE TABLE customer_tray_drafts (
-      customer_id TEXT PRIMARY KEY REFERENCES customer_accounts(id) ON DELETE CASCADE,
-      items JSONB NOT NULL DEFAULT '[]'::jsonb,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `);
+  try {
+    await createCustomerTrayDraftsTable(wantFk);
+    console.log('[db] recreated customer_tray_drafts (customer_id TEXT)');
+  } catch (err) {
+    console.warn('[db] recreate with FK failed, without FK:', err.message);
+    await createCustomerTrayDraftsTable(false);
+    console.log('[db] recreated customer_tray_drafts (customer_id TEXT, no FK)');
+  }
 }
 
 let orderInquiryIdColumnsPromise = null;
@@ -1526,7 +1608,7 @@ async function ensureOrderInquiryIdColumnsOnce() {
 }
 
 /** @returns {Promise<Set<string>>} */
-async function getTableColumnNames(tableName) {
+export async function getTableColumnNames(tableName) {
   const r = await pool.query(
     `SELECT column_name
      FROM information_schema.columns
@@ -1534,6 +1616,54 @@ async function getTableColumnNames(tableName) {
     [tableName],
   );
   return new Set(r.rows.map((row) => row.column_name));
+}
+
+/** @returns {Promise<string|null>} SQL type for DDL (TEXT, UUID, INTEGER, …) */
+export async function getColumnSqlType(tableName, columnName) {
+  const r = await pool.query(
+    `SELECT data_type, udt_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
+    [tableName, columnName],
+  );
+  if (!r.rows.length) return null;
+  const { data_type: dt, udt_name: udt } = r.rows[0];
+  if (dt === 'uuid' || udt === 'uuid') return 'UUID';
+  if (dt === 'integer' || dt === 'bigint' || dt === 'smallint') return 'INTEGER';
+  if (dt === 'text' || dt === 'character varying') return 'TEXT';
+  return 'TEXT';
+}
+
+export const CATERING_STATUS_VALUES = [
+  'online_inquiries',
+  'for_down_payment',
+  'on_going',
+  'for_full_payment',
+  'completed',
+  'cancelled',
+];
+
+/** Map legacy catering/event status values before CHECK constraints are applied. */
+export async function migrateCateringOrderStatuses(tableName) {
+  const cols = await getTableColumnNames(tableName);
+  if (cols.size === 0 || !cols.has('status')) return;
+
+  await pool.query(
+    `UPDATE ${tableName} SET status = 'online_inquiries'
+     WHERE status IN ('new_event', 'online_inquiry')`,
+  );
+  await pool.query(
+    `UPDATE ${tableName} SET status = 'on_going'
+     WHERE status IN ('for_processing', 'for_post_analysis')`,
+  );
+  await pool.query(
+    `UPDATE ${tableName} SET status = 'online_inquiries'
+     WHERE status IS NULL OR trim(status::text) = ''`,
+  );
+  await pool.query(
+    `UPDATE ${tableName} SET status = 'online_inquiries'
+     WHERE status IS NOT NULL AND status NOT IN (${CATERING_STATUS_VALUES.map((s) => `'${s}'`).join(', ')})`,
+  );
 }
 
 /**

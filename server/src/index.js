@@ -21,6 +21,10 @@ import {
   ensureOrderInquiryIdColumns,
   ensureCustomerTrayDraftsSchema,
   ensureRestaurantOrderWorkflowColumns,
+  getTableColumnNames,
+  getColumnSqlType,
+  ensureCustomerAccountsUuidCompat,
+  customerAccountIdJoinSql,
   pool,
   poolQueryWithRetry,
   generateUserId,
@@ -38,6 +42,14 @@ import {
   getMenuMealTypeCatalog,
   upsertMenuMealType,
 } from "./db.js";
+import {
+  ensureRestaurantOrdersCanonicalColumns,
+  ensureCateringEventOrdersCanonicalColumns,
+  buildRestaurantOrderSelectSql,
+  buildCustomerCateringOrdersSql,
+  normalizeRestaurantOrderRow,
+  normalizeCustomerCateringOrderRow,
+} from "./order_schema.js";
 import CartAPI from "./cart_api.js";
 import {
   getTrayDraft,
@@ -1674,14 +1686,66 @@ function registerCustomerAuthRoutes(app, dbGate) {
         });
       }
 
-      const customerId = await generateSequentialId("CUS", 4);
+      await ensureCustomerAccountsUuidCompat();
+      const idType = await getColumnSqlType('customer_accounts', 'id');
+      const caCols = await getTableColumnNames('customer_accounts');
+      const useUuidPk = idType === 'UUID';
+      const customerCode = useUuidPk
+        ? await generateSequentialId('CUS', 4)
+        : null;
+      const customerId = useUuidPk ? crypto.randomUUID() : customerCode;
 
-      const result = await pool.query(
-        `INSERT INTO customer_accounts (id, email, password_hash, full_name, contact_number, otp_code, otp_expiry, registration_platform)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING id, email, full_name, is_verified`,
-        [customerId, emailNorm, passwordHash, fullName, phone || null, otpCode, otpExpiry, registrationPlatform],
-      );
+      let result;
+      if (useUuidPk && caCols.has('customer_code')) {
+        result = await pool.query(
+          `INSERT INTO customer_accounts (id, customer_code, email, password_hash, full_name, contact_number, otp_code, otp_expiry, registration_platform)
+           VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
+           RETURNING id, email, full_name, is_verified`,
+          [
+            customerId,
+            customerCode,
+            emailNorm,
+            passwordHash,
+            fullName,
+            phone || null,
+            otpCode,
+            otpExpiry,
+            registrationPlatform,
+          ],
+        );
+      } else if (useUuidPk) {
+        result = await pool.query(
+          `INSERT INTO customer_accounts (id, email, password_hash, full_name, contact_number, otp_code, otp_expiry, registration_platform)
+           VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING id, email, full_name, is_verified`,
+          [
+            customerId,
+            emailNorm,
+            passwordHash,
+            fullName,
+            phone || null,
+            otpCode,
+            otpExpiry,
+            registrationPlatform,
+          ],
+        );
+      } else {
+        result = await pool.query(
+          `INSERT INTO customer_accounts (id, email, password_hash, full_name, contact_number, otp_code, otp_expiry, registration_platform)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING id, email, full_name, is_verified`,
+          [
+            customerId,
+            emailNorm,
+            passwordHash,
+            fullName,
+            phone || null,
+            otpCode,
+            otpExpiry,
+            registrationPlatform,
+          ],
+        );
+      }
 
       sendOtpEmailAsync(emailNorm, otpCode);
 
@@ -2103,7 +2167,7 @@ app.post(
            updated_by = $1,
            updated_at = now()
          WHERE id = $2
-           AND status IN ('for_processing', 'for_post_analysis')
+           AND status IN ('on_going', 'for_full_payment', 'for_processing', 'for_post_analysis')
          RETURNING *;`,
         [req.user.id, orderId],
       );
@@ -2932,7 +2996,7 @@ app.get(
           COALESCE(ro.feedback_remarks, '') AS remarks,
           ro.feedback_submitted_at AS "submittedAt"
         FROM restaurant_orders ro
-        LEFT JOIN customer_accounts ca ON ca.id = ro.customer_id
+        LEFT JOIN customer_accounts ca ON ${customerAccountIdJoinSql('ca', 'ro')}
         ${whereSql}
         ORDER BY ro.feedback_submitted_at DESC NULLS LAST, ro.updated_at DESC
         LIMIT 1000`,
@@ -2984,7 +3048,7 @@ app.post(
           COALESCE(ro.feedback_remarks, '') AS remarks,
           ro.feedback_submitted_at AS "submittedAt"
         FROM restaurant_orders ro
-        LEFT JOIN customer_accounts ca ON ca.id = ro.customer_id
+        LEFT JOIN customer_accounts ca ON ${customerAccountIdJoinSql('ca', 'ro')}
         ${whereSql}
         ORDER BY ro.feedback_submitted_at DESC NULLS LAST
         LIMIT 200`,
@@ -4156,7 +4220,7 @@ app.post(
       const normalizedAction = String(action || '').toLowerCase();
       const isPostChanges = normalizedAction === 'post_changes';
       const isCancelEvent = normalizedAction === 'cancel_event';
-      const nextStatus = isPostChanges ? 'online_inquiries' : 'for_processing';
+      const nextStatus = isPostChanges ? 'online_inquiries' : 'for_down_payment';
 
       if (!['post_changes', 'confirm_inquiry', 'cancel_event'].includes(normalizedAction)) {
         return res.status(400).json({ message: "Invalid finalize action" });
@@ -4564,7 +4628,7 @@ app.post(
            updated_by = $2,
            updated_at = now()
          WHERE id = $3
-           AND status = 'for_post_analysis'
+           AND status IN ('for_full_payment', 'for_post_analysis')
          RETURNING id;`,
         [JSON.stringify(postAnalysis), req.user.id, orderId],
       );
@@ -4635,7 +4699,7 @@ app.post(
            updated_by = $13,
            updated_at = now()
          WHERE id = $14
-           AND status = 'for_processing'
+           AND status IN ('on_going', 'for_processing', 'for_down_payment')
          RETURNING id;`,
         [
           eventTitle,
@@ -4885,11 +4949,11 @@ app.post(
       const result = await pool.query(
         `UPDATE event_orders
          SET
-           status = 'for_post_analysis',
+           status = 'for_full_payment',
            updated_by = $1,
            updated_at = now()
          WHERE id = $2
-           AND status = 'for_processing'
+           AND status IN ('on_going', 'for_processing')
          RETURNING id;`,
         [req.user.id, orderId],
       );
@@ -5131,6 +5195,15 @@ function runDatabaseBootstrap() {
   authSchemaPromise = ensureAuthSchemaQuick()
     .then(() => ensureRestaurantOrderWorkflowColumns().catch((err) => {
       console.warn('[startup] restaurant_orders workflow columns:', err?.message || err);
+    }))
+    .then(() => ensureRestaurantOrdersCanonicalColumns().catch((err) => {
+      console.warn('[startup] restaurant_orders canonical columns:', err?.message || err);
+    }))
+    .then(() => ensureCateringEventOrdersCanonicalColumns().catch((err) => {
+      console.warn('[startup] catering/event_orders canonical columns:', err?.message || err);
+    }))
+    .then(() => ensureCustomerAccountsUuidCompat().catch((err) => {
+      console.warn('[startup] customer_accounts UUID compat:', err?.message || err);
     }))
     .then(() => ensureCustomerTrayDraftsSchema().catch((err) => {
       console.warn('[startup] customer_tray_drafts schema:', err?.message || err);
@@ -6288,32 +6361,7 @@ async function registerRoutesAfterDbInit() {
     }
 
     function serializeRestaurantOrderRow(order, parsedItems) {
-      const o = { ...order, items: parsedItems ?? [] };
-      if (o.order_status != null && o.status == null) {
-        o.status = o.order_status;
-      }
-      if (o.id != null) o.id = String(o.id);
-      if (o.order_no != null) o.order_no = String(o.order_no);
-      for (const k of Object.keys(o)) {
-        const v = o[k];
-        if (v instanceof Date) {
-          o[k] = v.toISOString();
-        } else if (typeof v === 'bigint') {
-          o[k] = Number(v);
-        } else if (
-          v != null &&
-          typeof v === 'object' &&
-          typeof v.toString === 'function' &&
-          !(v instanceof Array) &&
-          !(Array.isArray(v))
-        ) {
-          const asNum = Number(v);
-          if (Number.isFinite(asNum) && String(v).match(/^-?\d/)) {
-            o[k] = asNum;
-          }
-        }
-      }
-      return o;
+      return normalizeRestaurantOrderRow(order, parsedItems);
     }
 
     app.post('/api/restaurant/orders', optionalCustomerAuth, async (req, res) => {
@@ -6610,20 +6658,48 @@ async function registerRoutesAfterDbInit() {
 
     app.get('/api/restaurant/orders', customerAuthRequired, async (req, res) => {
       try {
-        const result = await pool.query(
-          'SELECT * FROM restaurant_orders WHERE customer_id::text = $1 ORDER BY created_at DESC',
+        const roCols = await ensureRestaurantOrdersCanonicalColumns();
+        const selectSql = buildRestaurantOrderSelectSql(roCols);
+
+        const acct = await pool.query(
+          'SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1',
           [req.customer.id],
         );
+        const customerEmail =
+          acct.rows[0]?.email != null
+            ? String(acct.rows[0].email).trim().toLowerCase()
+            : null;
+
+        const emailMatchParts = [];
+        if (roCols.has('user_email')) {
+          emailMatchParts.push(`lower(COALESCE(user_email::text, '')) = $2`);
+        }
+        if (roCols.has('guest_contact_email')) {
+          emailMatchParts.push(`lower(COALESCE(guest_contact_email::text, '')) = $2`);
+        }
+        const emailClause =
+          customerEmail && emailMatchParts.length > 0
+            ? `OR ($2::text IS NOT NULL AND (${emailMatchParts.join(' OR ')}))`
+            : '';
+
+        const result = await pool.query(
+          `SELECT ${selectSql}
+           FROM restaurant_orders
+           WHERE customer_id::text = $1 ${emailClause}
+           ORDER BY created_at DESC NULLS LAST`,
+          customerEmail && emailMatchParts.length > 0
+            ? [req.customer.id, customerEmail]
+            : [req.customer.id],
+        );
+
         const orders = result.rows.map((order) => {
-          // `items` is expected to be JSON, but legacy/invalid rows can exist.
-          // Avoid crashing the whole endpoint (which leads to 500 in the client).
-          let parsedItems = order.items;
-          if (typeof order.items === 'string') {
-            const trimmed = order.items.trim();
+          let parsedItems = order.items ?? order.tray_items;
+          if (typeof parsedItems === 'string') {
+            const trimmed = parsedItems.trim();
             if (trimmed.length > 0) {
               try {
                 parsedItems = JSON.parse(trimmed);
-              } catch (e) {
+              } catch {
                 parsedItems = [];
               }
             } else {
@@ -6675,17 +6751,18 @@ async function registerRoutesAfterDbInit() {
                WHERE status = 'online_inquiries'
                  AND created_at >= $1 AND created_at < $2
              )::int AS inquiries_this_month,
-             COUNT(*) FILTER (WHERE status = 'for_processing')::int AS accepted_transactions,
+             COUNT(*) FILTER (WHERE status IN ('for_down_payment', 'on_going', 'for_full_payment', 'for_processing', 'for_post_analysis'))::int AS accepted_transactions,
              COUNT(*) FILTER (
-               WHERE status = 'for_processing' AND COALESCE(down_payment_status, 'pending') != 'paid'
+               WHERE status IN ('for_down_payment', 'for_processing')
+                 AND COALESCE(down_payment_status, 'pending') != 'paid'
              )::int AS for_down_payment,
              COUNT(*) FILTER (
-               WHERE status = 'for_processing'
+               WHERE status IN ('on_going', 'for_processing')
                  AND COALESCE(down_payment_status, 'pending') = 'paid'
                  AND COALESCE(full_payment_status, 'pending') != 'paid'
              )::int AS ongoing,
              COUNT(*) FILTER (
-               WHERE status IN ('for_processing', 'for_post_analysis')
+               WHERE status IN ('for_full_payment', 'for_post_analysis')
                  AND COALESCE(down_payment_status, 'pending') = 'paid'
                  AND COALESCE(full_payment_status, 'pending') != 'paid'
              )::int AS for_full_payment,
@@ -6755,6 +6832,27 @@ async function registerRoutesAfterDbInit() {
         const rangeStart = annual ? new Date(year, 0, 1) : periodStart;
         const rangeEnd = annual ? new Date(year + 1, 0, 1) : periodEnd;
 
+        const roCols = await getTableColumnNames('restaurant_orders');
+        const roTotalCol = roCols.has('total_amount')
+          ? 'total_amount'
+          : roCols.has('total_cost')
+            ? 'total_cost'
+            : '0';
+        const roStatusCol = roCols.has('order_status')
+          ? 'order_status'
+          : roCols.has('status')
+            ? 'status'
+            : null;
+        const roItemsCol = roCols.has('items')
+          ? 'items'
+          : roCols.has('tray_items')
+            ? 'tray_items'
+            : null;
+        const roStatusFilter = roStatusCol
+          ? `AND COALESCE(${roStatusCol}::text, '') NOT IN ('cancelled')`
+          : '';
+        const roItemsSelect = roItemsCol ? `${roItemsCol} AS items` : "'[]'::jsonb AS items";
+
         const eventOrders = await pool.query(
           `SELECT event_type, guest_count, menu, total_cost, schedule_slots, status, customer_name, event_title, created_at
            FROM (
@@ -6798,10 +6896,11 @@ async function registerRoutesAfterDbInit() {
         }
 
         const restaurantOrders = await pool.query(
-          `SELECT items, total_amount, created_at, order_status AS status
+          `SELECT ${roItemsSelect}, ${roTotalCol} AS total_amount, created_at
+                  ${roStatusCol ? `, ${roStatusCol} AS status` : ''}
            FROM restaurant_orders
-           WHERE order_status NOT IN ('cancelled')
-             AND created_at >= $1 AND created_at < $2`,
+           WHERE created_at >= $1 AND created_at < $2
+             ${roStatusFilter}`,
           [rangeStart, rangeEnd],
         );
 
@@ -6831,35 +6930,42 @@ async function registerRoutesAfterDbInit() {
         );
         const avgOrdersPerDay = restaurantOrders.rowCount / daySpan;
 
-        const traffic = await pool.query(
-          `SELECT platform, COUNT(*)::int AS views
-           FROM site_page_views
-           WHERE created_at >= $1 AND created_at < $2
-           GROUP BY platform`,
-          [rangeStart, rangeEnd],
-        );
         let webViews = 0;
         let mobileViews = 0;
-        for (const t of traffic.rows) {
-          if (t.platform === 'mobile') mobileViews = Number(t.views) || 0;
-          else webViews += Number(t.views) || 0;
+        const trafficCols = await getTableColumnNames('site_page_views');
+        if (trafficCols.size > 0 && trafficCols.has('platform')) {
+          const traffic = await pool.query(
+            `SELECT platform, COUNT(*)::int AS views
+             FROM site_page_views
+             WHERE created_at >= $1 AND created_at < $2
+             GROUP BY platform`,
+            [rangeStart, rangeEnd],
+          );
+          for (const t of traffic.rows) {
+            if (t.platform === 'mobile') mobileViews = Number(t.views) || 0;
+            else webViews += Number(t.views) || 0;
+          }
         }
 
-        const accounts = await pool.query(
-          `SELECT registration_platform, COUNT(*)::int AS n
-           FROM customer_accounts
-           WHERE is_verified = TRUE AND archived = FALSE
-             AND created_at >= $1 AND created_at < $2
-           GROUP BY registration_platform`,
-          [rangeStart, rangeEnd],
-        );
         let accountsWeb = 0;
         let accountsMobile = 0;
-        for (const a of accounts.rows) {
-          if (a.registration_platform === 'mobile') {
-            accountsMobile = Number(a.n) || 0;
-          } else {
-            accountsWeb += Number(a.n) || 0;
+        const caCols = await getTableColumnNames('customer_accounts');
+        if (caCols.has('registration_platform')) {
+          const archivedFilter = caCols.has('archived') ? 'AND archived = FALSE' : '';
+          const accounts = await pool.query(
+            `SELECT registration_platform, COUNT(*)::int AS n
+             FROM customer_accounts
+             WHERE is_verified = TRUE ${archivedFilter}
+               AND created_at >= $1 AND created_at < $2
+             GROUP BY registration_platform`,
+            [rangeStart, rangeEnd],
+          );
+          for (const a of accounts.rows) {
+            if (a.registration_platform === 'mobile') {
+              accountsMobile = Number(a.n) || 0;
+            } else {
+              accountsWeb += Number(a.n) || 0;
+            }
           }
         }
 
@@ -7409,6 +7515,7 @@ async function registerRoutesAfterDbInit() {
     app.get('/api/customer/events/orders', customerAuthRequired, async (req, res) => {
       try {
         await ensureOrderInquiryIdColumns();
+        await ensureCateringEventOrdersCanonicalColumns();
         const customerId = req.customer.id;
         const customerResult = await pool.query(
           `SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1;`,
@@ -7419,46 +7526,14 @@ async function registerRoutesAfterDbInit() {
         }
         const customerEmail = customerResult.rows[0].email;
 
-        // Query both event_orders and catering_orders by customer email.
-        const result = await pool.query(
-          `SELECT 
-            id, 
-            inquiry_id as "inquiryId",
-            event_title as "eventTitle", 
-            event_type as "eventType", 
-            status, 
-            guest_count as "guestCount",
-            schedule_slots as "scheduleSlots",
-            menu,
-            total_cost as "totalCost",
-            theme_design as "themeDesign",
-            COALESCE(seating_plan, '{}'::jsonb) as "seatingPlan",
-            created_at as "createdAt",
-            'event' as order_type
-          FROM event_orders 
-          WHERE lower(email_address) = lower($1)
-          UNION ALL
-          SELECT 
-            id,
-            inquiry_id as "inquiryId",
-            NULL as "eventTitle",
-            'catering' as "eventType",
-            status,
-            guest_count as "guestCount",
-            schedule_slots as "scheduleSlots",
-            menu,
-            total_cost as "totalCost",
-            '{}'::jsonb as "themeDesign",
-            '{}'::jsonb as "seatingPlan",
-            created_at as "createdAt",
-            'catering' as order_type
-          FROM catering_orders
-          WHERE lower(email_address) = lower($1)
-          ORDER BY "createdAt" DESC`,
-          [customerEmail]
-        );
+        const eventCols = await getTableColumnNames('event_orders');
+        const cateringCols = await getTableColumnNames('catering_orders');
+        const unionSql = buildCustomerCateringOrdersSql(eventCols, cateringCols);
 
-        res.json({ orders: result.rows });
+        const result = await pool.query(unionSql, [customerEmail]);
+
+        const orders = result.rows.map((row) => normalizeCustomerCateringOrderRow(row));
+        res.json({ orders });
       } catch (error) {
         console.error('Error fetching customer event orders:', error);
         res.status(500).json({ error: 'Failed to fetch event orders' });
@@ -7480,8 +7555,12 @@ async function registerRoutesAfterDbInit() {
             return res.status(404).json({ error: 'Customer not found' });
           }
           const email = cr.rows[0].email;
+          const eventCols = await getTableColumnNames('event_orders');
+          const seatingExpr = eventCols.has('seating_plan')
+            ? "COALESCE(seating_plan, '{}'::jsonb)"
+            : "'{}'::jsonb";
           const ev = await pool.query(
-            `SELECT COALESCE(seating_plan, '{}'::jsonb) AS "seatingPlan"
+            `SELECT ${seatingExpr} AS "seatingPlan"
              FROM event_orders
              WHERE id::text = $1 AND lower(email_address) = lower($2)
              LIMIT 1`,
@@ -7527,7 +7606,7 @@ async function registerRoutesAfterDbInit() {
              SET seating_plan = $1::jsonb, updated_at = now()
              WHERE id::text = $2
                AND lower(email_address) = lower($3)
-               AND status IN ('for_processing', 'for_post_analysis')
+               AND status IN ('on_going', 'for_full_payment', 'for_processing', 'for_post_analysis')
              RETURNING id`,
           [JSON.stringify(n.plan), orderId, email],
         );
@@ -7579,7 +7658,7 @@ async function registerRoutesAfterDbInit() {
 
         const customerEmail = customerResult.rows[0].email;
         const customerName = customerResult.rows[0].full_name || "Customer";
-        const nextStatus = normalizedAction === 'confirm_inquiry' ? 'for_processing' : 'cancelled';
+        const nextStatus = normalizedAction === 'confirm_inquiry' ? 'for_down_payment' : 'cancelled';
 
         const tryUpdateByTable = async (tableName) => {
           const result = await pool.query(
@@ -7667,7 +7746,7 @@ async function registerRoutesAfterDbInit() {
                SET guest_count = $1, address = $2, updated_at = now()
                WHERE id::text = $3
                  AND lower(email_address) = lower($4)
-                 AND status IN ('for_processing', 'for_post_analysis')
+                 AND status IN ('on_going', 'for_full_payment', 'for_processing', 'for_post_analysis')
                RETURNING
                  id,
                  inquiry_id as "inquiryId",
@@ -7740,7 +7819,7 @@ async function registerRoutesAfterDbInit() {
                updated_at = now()
              WHERE id::text = $5
                AND lower(email_address) = lower($6)
-               AND status IN ('online_inquiries', 'for_processing', 'for_post_analysis')
+               AND status IN ('online_inquiries', 'for_down_payment', 'on_going', 'for_full_payment', 'for_processing', 'for_post_analysis')
              RETURNING
                id,
                inquiry_id as "inquiryId",
@@ -8021,12 +8100,16 @@ async function registerRoutesAfterDbInit() {
           const customerId = customer.id;
 
           const restaurantPoints = await pool.query(
-            `SELECT COALESCE(SUM(points_earned), 0) as total FROM restaurant_orders WHERE customer_id::text = $1 AND order_status = 'delivered'`,
+            `SELECT COALESCE(SUM(COALESCE(loyalty_points_restaurant_obtained, points_earned, 0)), 0) as total
+             FROM restaurant_orders
+             WHERE customer_id::text = $1 AND order_status = 'delivered'`,
             [customerId]
           );
 
           const cateringPoints = await pool.query(
-            `SELECT COALESCE(SUM(points_earned), 0) as total FROM catering_orders WHERE customer_id = $1 AND status = 'completed'`,
+            `SELECT COALESCE(SUM(COALESCE(loyalty_points_catering_obtained, points_earned, 0)), 0) as total
+             FROM catering_orders
+             WHERE customer_id = $1 AND status = 'completed'`,
             [customerId]
           );
 

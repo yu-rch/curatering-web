@@ -1,44 +1,24 @@
 import bcrypt from "bcryptjs";
+import {
+  ensureRestaurantOrdersCanonicalColumns,
+  buildRestaurantOrderSelectSql,
+} from "./order_schema.js";
+import { getTableColumnNames } from "./db.js";
 
 /**
  * Mobile-compatible POS API (/api/mobile/pos/*) and staff JWT aliases (/api/cashier/pos/*).
  * Maps restaurant_orders rows to the mobile PosOrder shape.
  */
 
-const RESTAURANT_ORDER_SELECT = `
-  id,
-  order_no,
-  customer_id,
-  guest_contact_email,
-  full_name,
-  phone,
-  items,
-  total_amount,
-  delivery_address,
-  delivery_lat,
-  delivery_lng,
-  delivery_time,
-  delivery_notes,
-  order_status,
-  payment_status,
-  payment_reference,
-  payment_proof,
-  amount_paid,
-  change_given,
-  delivery_tracking_url,
-  points_earned,
-  order_source,
-  fulfillment_stage,
-  pos_customer_label,
-  payment_method,
-  cashier_amount_received,
-  cashier_secondary_amount_received,
-  supplemental_payment_proof,
-  balance_proof_pending_review,
-  pos_claimed_at,
-  created_at,
-  updated_at
-`;
+let cachedRestaurantOrderSelect = null;
+
+async function restaurantOrderSelectSql() {
+  if (!cachedRestaurantOrderSelect) {
+    const cols = await ensureRestaurantOrdersCanonicalColumns();
+    cachedRestaurantOrderSelect = buildRestaurantOrderSelectSql(cols);
+  }
+  return cachedRestaurantOrderSelect;
+}
 
 export async function ensureRestaurantPosColumns(pool) {
   const cols = [
@@ -150,8 +130,8 @@ function normalizeLineItems(items) {
 }
 
 export function mapRestaurantOrderRowForPosApi(row, customerName = null) {
-  const items = normalizeLineItems(row.items);
-  const total = Number(row.total_amount || 0);
+  const items = normalizeLineItems(row.items ?? row.tray_items);
+  const total = Number(row.total_amount ?? row.total_cost ?? 0);
   const proof = row.payment_proof ?? row.payment_proof_initial ?? null;
   return {
     id: row.id,
@@ -264,8 +244,9 @@ const CASHIER_ONLINE_ORDER_WHERE = `
 `;
 
 async function listOnlineOrders(pool) {
+  const selectSql = await restaurantOrderSelectSql();
   const r = await pool.query(
-    `SELECT ${RESTAURANT_ORDER_SELECT}
+    `SELECT ${selectSql}
      FROM restaurant_orders
      WHERE ${CASHIER_ONLINE_ORDER_WHERE}
      ORDER BY created_at DESC
@@ -277,8 +258,13 @@ async function listOnlineOrders(pool) {
 async function getOrderById(pool, orderId) {
   const id = String(orderId || "").trim();
   if (!id) return null;
+  const selectSql = await restaurantOrderSelectSql();
+  const roCols = await getTableColumnNames('restaurant_orders');
+  const idMatch = roCols.has('order_id')
+    ? 'id::text = $1 OR order_no = $1 OR order_id = $1'
+    : 'id::text = $1 OR order_no = $1';
   const r = await pool.query(
-    `SELECT ${RESTAURANT_ORDER_SELECT} FROM restaurant_orders WHERE id::text = $1 OR order_no = $1 LIMIT 1`,
+    `SELECT ${selectSql} FROM restaurant_orders WHERE ${idMatch} LIMIT 1`,
     [id],
   );
   return r.rows[0] || null;
@@ -542,8 +528,9 @@ export function registerPosRoutes(app, {
         where += ` AND order_status = 'cancelled'`;
       }
 
+      const selectSql = await restaurantOrderSelectSql();
       const r = await pool.query(
-        `SELECT ${RESTAURANT_ORDER_SELECT}
+        `SELECT ${selectSql}
          FROM restaurant_orders
          WHERE ${where}
          ORDER BY created_at DESC
@@ -595,8 +582,9 @@ export function registerPosRoutes(app, {
 
   register("post", "/api/mobile/pos/order-history", async (_req, res) => {
     try {
+      const selectSql = await restaurantOrderSelectSql();
       const r = await pool.query(
-        `SELECT ${RESTAURANT_ORDER_SELECT}
+        `SELECT ${selectSql}
          FROM restaurant_orders
          WHERE order_status = 'delivered'
             OR (COALESCE(order_source, '') = 'POS' AND pos_claimed_at IS NOT NULL)
