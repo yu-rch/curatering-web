@@ -240,10 +240,13 @@ class _LoginState extends State<Login> {
                         ),
                       ),
                       TextButton(
-                        onPressed: () =>
-                            Navigator.of(context).pushNamed(
-                              customerRoute('/'),
-                            ),
+                        onPressed: () {
+                          if (isCustomerSiteHost) {
+                            Navigator.of(context).pushNamed('/');
+                          } else {
+                            redirectToSiteOrigin(customerSiteOrigin, '/');
+                          }
+                        },
                         child: const Text(
                           'View customer website',
                           style: TextStyle(

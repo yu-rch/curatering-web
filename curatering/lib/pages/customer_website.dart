@@ -306,7 +306,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   void _recordPageView() {
-  final path = ModalRoute.of(context)?.settings.name ?? kCustomerSitePrefix;
+  final path =
+      ModalRoute.of(context)?.settings.name ?? customerRoute('/');
     unawaited(
       http.post(
         Uri.parse('$apiBaseUrl/api/public/analytics/page-view'),

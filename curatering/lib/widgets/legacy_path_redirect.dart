@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+
 import '../config/site_routes.dart';
 
-/// Sends `/` and legacy flat customer paths to the prefixed customer URL.
-class CustomerRouteRedirect extends StatelessWidget {
-  const CustomerRouteRedirect({super.key, required this.target});
+/// Rewrites old `/macrinas-kitchen-and-catering/...` bookmarks to root paths.
+class LegacyPathRedirect extends StatelessWidget {
+  const LegacyPathRedirect({super.key, required this.target});
 
   final String target;
 

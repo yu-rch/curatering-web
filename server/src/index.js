@@ -69,7 +69,7 @@ function resolveWebBuildPath() {
 /**
  * CORS: browsers send the *frontend* origin (e.g. Vercel / Firebase), not the API host.
  *
- * Defaults include https://curatering.com and https://www.curatering.com .
+ * Defaults include macrinas-kitchen.curatering.com and staff.curatering.com .
  *
  * Set on the API host (e.g. Railway) to add more origins:
  *   CORS_ORIGINS=https://myapp.vercel.app,https://www.example.com
@@ -130,9 +130,9 @@ function collectAllowedCorsOrigins() {
   // Default API host (Flutter config.dart); only matters if the web app is served from this origin.
   addExact("https://curatering.up.railway.app");
 
-  // Production customer site (apex + www)
-  addExact("https://curatering.com");
-  addExact("https://www.curatering.com");
+  // Production web apps (subdomains only)
+  addExact("https://macrinas-kitchen.curatering.com");
+  addExact("https://staff.curatering.com");
 
   return exact;
 }
@@ -222,7 +222,7 @@ function corsOrigin(origin, callback) {
     }
   }
   console.warn(
-    "[cors] blocked origin (set CORS_ORIGINS / FRONTEND_URL, or deploy latest server for curatering.com):",
+    "[cors] blocked origin (set CORS_ORIGINS / FRONTEND_URL for your web subdomains):",
     JSON.stringify(origin),
   );
   callback(null, false);

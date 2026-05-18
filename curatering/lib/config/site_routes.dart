@@ -1,35 +1,114 @@
-/// Customer-facing site lives under this path prefix (staff app uses root paths).
-const String kCustomerSitePrefix = '/macrinas-kitchen-and-catering';
+import 'package:flutter/foundation.dart';
 
-/// Web cold-start route from the browser URL (PathUrlStrategy).
-/// Without this, a hardcoded [initialRoute] ignores `/login` and similar deep links.
+import 'site_redirect_stub.dart'
+    if (dart.library.html) 'site_redirect_web.dart';
+
+/// Old bookmark path from when the customer site lived on curatering.com.
+const String kLegacyCustomerPathPrefix = '/macrinas-kitchen-and-catering';
+
+/// Production customer storefront host.
+const String kCustomerWebHost = String.fromEnvironment(
+  'CUSTOMER_WEB_HOST',
+  defaultValue: 'macrinas-kitchen.curatering.com',
+);
+
+/// Production staff / back-office host.
+const String kStaffWebHost = String.fromEnvironment(
+  'STAFF_WEB_HOST',
+  defaultValue: 'staff.curatering.com',
+);
+
+String get _host => Uri.base.host.toLowerCase();
+
+bool get isCustomerSiteHost {
+  if (kIsWeb) return _host == kCustomerWebHost.toLowerCase();
+  return false;
+}
+
+bool get isStaffSiteHost {
+  if (kIsWeb) return _host == kStaffWebHost.toLowerCase();
+  return false;
+}
+
+/// Deprecated apex domain — redirect to a subdomain.
+bool get isApexCurateringHost {
+  if (!kIsWeb) return false;
+  return _host == 'curatering.com' || _host == 'www.curatering.com';
+}
+
+String get customerSiteOrigin => 'https://$kCustomerWebHost';
+
+String get staffSiteOrigin => 'https://$kStaffWebHost';
+
+void redirectToSiteOrigin(String origin, String path) {
+  if (!kIsWeb) return;
+  var p = path.trim();
+  if (p.isEmpty) p = '/';
+  if (!p.startsWith('/')) p = '/$p';
+  redirectBrowserTo(Uri.parse(origin).replace(path: p));
+}
+
+/// Send curatering.com / www traffic to the correct subdomain.
+void redirectApexHostToSubdomain(String path) {
+  if (!isApexCurateringHost) return;
+  final stripped = stripLegacyCustomerPrefix(path.isEmpty ? '/' : path);
+  if (isStaffRoute(stripped)) {
+    final staffPath = stripped == '/' ? '/login' : stripped;
+    redirectToSiteOrigin(staffSiteOrigin, staffPath);
+    return;
+  }
+  redirectToSiteOrigin(customerSiteOrigin, stripped);
+}
+
 String resolveAppInitialRoute() {
   var path = Uri.base.path;
   if (path.length > 1 && path.endsWith('/')) {
     path = path.substring(0, path.length - 1);
   }
-  if (path.isEmpty) {
-    return '/';
+  path = stripLegacyCustomerPrefix(path);
+  if (path.isEmpty) path = '/';
+
+  if (isStaffSiteHost) {
+    if (path == '/') return '/login';
+    return path;
+  }
+
+  if (path == '/') return '/';
+  return path;
+}
+
+String stripLegacyCustomerPrefix(String path) {
+  if (path == kLegacyCustomerPathPrefix) return '/';
+  if (path.startsWith('$kLegacyCustomerPathPrefix/')) {
+    final rest = path.substring(kLegacyCustomerPathPrefix.length);
+    return rest.isEmpty ? '/' : rest;
   }
   return path;
 }
 
-/// Build a customer website route (e.g. `/macrinas-kitchen-and-catering/gallery`).
+/// Customer paths always use the site root (no path prefix).
 String customerRoute(String path) {
-  if (path.isEmpty || path == '/') {
-    return kCustomerSitePrefix;
-  }
-  final segment = path.startsWith('/') ? path : '/$path';
-  if (segment == kCustomerSitePrefix || segment.startsWith('$kCustomerSitePrefix/')) {
-    return segment;
-  }
-  return '$kCustomerSitePrefix$segment';
+  final normalized = stripLegacyCustomerPrefix(
+    path.isEmpty || path == '/'
+        ? '/'
+        : (path.startsWith('/') ? path : '/$path'),
+  );
+  return normalized == '/' ? '/' : normalized;
 }
 
-/// True when [routeName] is a staff/back-office route (not customer prefix).
 bool isStaffRoute(String? routeName) {
   if (routeName == null || routeName.isEmpty) return false;
-  if (routeName.startsWith(kCustomerSitePrefix)) return false;
+  final name = stripLegacyCustomerPrefix(routeName);
+  const customerRootPaths = {
+    '/',
+    '/gallery',
+    '/contact-us',
+    '/inquire',
+    '/restaurant',
+    '/catering-menu',
+  };
+  if (customerRootPaths.contains(name)) return false;
+
   const staffPrefixes = [
     '/login',
     '/dashboard',
@@ -49,7 +128,27 @@ bool isStaffRoute(String? routeName) {
     '/customer-management',
   ];
   for (final p in staffPrefixes) {
-    if (routeName == p || routeName.startsWith('$p/')) return true;
+    if (name == p || name.startsWith('$p/')) return true;
   }
   return false;
+}
+
+bool isCustomerContentRoute(String? routeName) {
+  if (routeName == null || routeName.isEmpty) return false;
+  final name = stripLegacyCustomerPrefix(routeName);
+  if (name == '/') return true;
+  const customerPaths = [
+    '/gallery',
+    '/contact-us',
+    '/inquire',
+    '/restaurant',
+    '/catering-menu',
+  ];
+  return customerPaths.contains(name);
+}
+
+bool isLegacyBookmarkPath(String? path) {
+  if (path == null) return false;
+  return path == kLegacyCustomerPathPrefix ||
+      path.startsWith('$kLegacyCustomerPathPrefix/');
 }

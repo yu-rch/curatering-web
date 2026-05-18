@@ -1,0 +1,1 @@
+void redirectBrowserTo(Uri uri) {}

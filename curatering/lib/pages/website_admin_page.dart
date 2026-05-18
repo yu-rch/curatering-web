@@ -103,8 +103,13 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage>
                   ),
                 ),
                 OutlinedButton.icon(
-                  onPressed: () =>
-                      Navigator.of(context).pushNamed(customerRoute('/')),
+                  onPressed: () {
+                    if (isStaffSiteHost) {
+                      redirectToSiteOrigin(customerSiteOrigin, '/');
+                    } else {
+                      Navigator.of(context).pushNamed(customerRoute('/'));
+                    }
+                  },
                   icon: const Icon(Icons.open_in_new, size: 18),
                   label: const Text('Preview site'),
                 ),

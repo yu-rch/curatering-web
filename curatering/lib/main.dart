@@ -5,7 +5,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'config.dart';
 import 'config/site_routes.dart';
-import 'widgets/customer_route_redirect.dart';
+import 'widgets/app_root_route.dart';
+import 'widgets/external_host_redirect.dart';
+import 'widgets/legacy_path_redirect.dart';
 import 'pages/login.dart';
 import 'pages/dashboard.dart';
 import 'pages/manage_accounts.dart';
@@ -22,7 +24,6 @@ import 'pages/contact_us_page.dart';
 import 'pages/inquire_page.dart';
 import 'pages/restaurant_order_page.dart';
 import 'pages/catering_menu_page.dart';
-import 'auth/auth_session.dart';
 import 'auth/page_permissions.dart';
 import 'auth/role_guard.dart';
 import 'auth/roles.dart';
@@ -40,24 +41,39 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   setUrlStrategy(PathUrlStrategy());
 
-  // For web deployment, environment variables are set through build config
-  // or platform-specific methods, not through .env file loading
   try {
     await dotenv.load(fileName: ".env");
   } catch (e) {
     // Ignore .env loading error for web deployment
-    // Environment variables will be loaded from platform or build config
   }
 
   await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
 
+  if (isApexCurateringHost) {
+    redirectApexHostToSubdomain(Uri.base.path);
+    return;
+  }
+
   runApp(const MyApp());
+}
+
+Widget _customerPage(Widget child, String path) {
+  return HostRouteGuard(
+    routePath: path,
+    child: child,
+  );
+}
+
+Widget _staffPage(Widget child, String path) {
+  return HostRouteGuard(
+    routePath: path,
+    child: child,
+  );
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
@@ -105,189 +121,285 @@ class MyApp extends StatelessWidget {
           ),
           initialRoute: resolveAppInitialRoute(),
           onUnknownRoute: (settings) {
-            final name = settings.name ?? resolveAppInitialRoute();
+            final name = stripLegacyCustomerPrefix(
+              settings.name ?? resolveAppInitialRoute(),
+            );
+            if (isStaffSiteHost) {
+              if (isStaffRoute(name)) {
+                return MaterialPageRoute<void>(
+                  settings: settings,
+                  builder: (_) => _staffPage(const Login(), '/login'),
+                );
+              }
+              return MaterialPageRoute<void>(
+                settings: settings,
+                builder:
+                    (_) => ExternalHostRedirect(
+                      origin: customerSiteOrigin,
+                      path: customerRoute(name),
+                    ),
+              );
+            }
+            if (isCustomerSiteHost) {
+              if (isStaffRoute(name)) {
+                return MaterialPageRoute<void>(
+                  settings: settings,
+                  builder:
+                      (_) => ExternalHostRedirect(
+                        origin: staffSiteOrigin,
+                        path: name,
+                      ),
+                );
+              }
+            }
             if (isStaffRoute(name)) {
               return MaterialPageRoute<void>(
                 settings: settings,
-                builder: (_) => const Login(),
+                builder: (_) => _staffPage(const Login(), '/login'),
+              );
+            }
+            final rawName = settings.name ?? name;
+            if (isLegacyBookmarkPath(rawName)) {
+              return MaterialPageRoute<void>(
+                settings: settings,
+                builder:
+                    (_) => LegacyPathRedirect(
+                      target: stripLegacyCustomerPrefix(rawName),
+                    ),
               );
             }
             return MaterialPageRoute<void>(
               settings: settings,
-              builder:
-                  (_) => CustomerRouteRedirect(
-                    target: name.startsWith('/') ? name : '/$name',
-                  ),
+              builder: (_) => const AppRootRoute(),
             );
           },
           routes: {
-            '/login': (context) => const Login(),
-            '/': (context) => const CustomerRouteRedirect(target: '/'),
-            kCustomerSitePrefix:
-                (context) => const CustomerWebsiteScreen(
-                  contentEditable: false,
-                  showStaffChrome: false,
-                ),
-            '$kCustomerSitePrefix/gallery':
-                (context) => const GalleryPage(
-                  contentEditable: false,
-                  showStaffChrome: false,
-                ),
-            '$kCustomerSitePrefix/contact-us':
-                (context) => const ContactUsPage(
-                  contentEditable: false,
-                  showStaffChrome: false,
-                ),
-            '$kCustomerSitePrefix/inquire':
-                (context) => const InquirePage(
-                  contentEditable: false,
-                  showStaffChrome: false,
-                ),
-            '$kCustomerSitePrefix/restaurant':
-                (context) => const RestaurantOrderPage(
-                  contentEditable: false,
-                  showStaffChrome: false,
-                ),
-            '$kCustomerSitePrefix/catering-menu':
-                (context) => const CateringMenuPage(
-                  contentEditable: false,
-                  showStaffChrome: false,
-                ),
+            '/': (context) => const AppRootRoute(),
+            '/login': (context) => _staffPage(const Login(), '/login'),
             '/gallery':
-                (context) => const CustomerRouteRedirect(target: '/gallery'),
+                (context) => _customerPage(
+                  const GalleryPage(
+                    contentEditable: false,
+                    showStaffChrome: false,
+                  ),
+                  '/gallery',
+                ),
             '/contact-us':
-                (context) => const CustomerRouteRedirect(target: '/contact-us'),
+                (context) => _customerPage(
+                  const ContactUsPage(
+                    contentEditable: false,
+                    showStaffChrome: false,
+                  ),
+                  '/contact-us',
+                ),
             '/inquire':
-                (context) => const CustomerRouteRedirect(target: '/inquire'),
+                (context) => _customerPage(
+                  const InquirePage(
+                    contentEditable: false,
+                    showStaffChrome: false,
+                  ),
+                  '/inquire',
+                ),
             '/restaurant':
-                (context) => const CustomerRouteRedirect(target: '/restaurant'),
+                (context) => _customerPage(
+                  const RestaurantOrderPage(
+                    contentEditable: false,
+                    showStaffChrome: false,
+                  ),
+                  '/restaurant',
+                ),
             '/catering-menu':
-                (context) =>
-                    const CustomerRouteRedirect(target: '/catering-menu'),
+                (context) => _customerPage(
+                  const CateringMenuPage(
+                    contentEditable: false,
+                    showStaffChrome: false,
+                  ),
+                  '/catering-menu',
+                ),
+            kLegacyCustomerPathPrefix:
+                (context) => const LegacyPathRedirect(target: '/'),
+            '$kLegacyCustomerPathPrefix/gallery':
+                (context) => const LegacyPathRedirect(target: '/gallery'),
+            '$kLegacyCustomerPathPrefix/contact-us':
+                (context) => const LegacyPathRedirect(target: '/contact-us'),
+            '$kLegacyCustomerPathPrefix/inquire':
+                (context) => const LegacyPathRedirect(target: '/inquire'),
+            '$kLegacyCustomerPathPrefix/restaurant':
+                (context) => const LegacyPathRedirect(target: '/restaurant'),
+            '$kLegacyCustomerPathPrefix/catering-menu':
+                (context) => const LegacyPathRedirect(target: '/catering-menu'),
             '/dashboard':
-                (context) => RoleGuard(
-                  requiredRole: Role.manager,
-                  allowedRoles: {Role.manager, Role.supervisor},
-                  child: PagePermissionGuard(
-                    route: PagePermissionRoutes.dashboard,
-                    child: const Dashboard(),
-                  ),
-                ),
-            '/manage-accounts':
-                (context) => const RoleGuard(
-                  requiredRole: Role.superAdmin,
-                  child: ManageAccounts(),
-                ),
-            '/help-requests':
-                (context) => const RoleGuard(
-                  requiredRole: Role.superAdmin,
-                  child: HelpRequestsPage(),
-                ),
-            '/action-logs':
-                (context) => const RoleGuard(
-                  requiredRole: Role.superAdmin,
-                  child: ActionLogsPage(),
-                ),
-            '/customer-management':
-                (context) => const RoleGuard(
-                  requiredRole: Role.superAdmin,
-                  child: CustomerManagementPage(),
-                ),
-            '/manage-events':
-                (context) => RoleGuard(
-                  requiredRole: Role.manager,
-                  allowedRoles: {Role.manager, Role.supervisor},
-                  child: PagePermissionGuard(
-                    route: PagePermissionRoutes.manageEvents,
-                    child: const ManageEvents(),
-                  ),
-                ),
-            '/loyalty':
-                (context) => RoleGuard(
-                  requiredRole: Role.manager,
-                  allowedRoles: {Role.manager, Role.supervisor},
-                  child: PagePermissionGuard(
-                    route: PagePermissionRoutes.loyalty,
-                    child: const ManageLoyaltyRewards(),
-                  ),
-                ),
-            '/catering-restaurant-menu':
-                (context) => RoleGuard(
-                  requiredRole: Role.manager,
-                  allowedRoles: {Role.manager},
-                  child: PagePermissionGuard(
-                    route: PagePermissionRoutes.menu,
-                    child: const Menu(),
-                  ),
-                ),
-            '/inventory':
-                (context) => RoleGuard(
-                  requiredRole: Role.manager,
-                  allowedRoles: {Role.manager, Role.supervisor},
-                  child: PagePermissionGuard(
-                    route: PagePermissionRoutes.inventory,
-                    child: const Inventory(),
-                  ),
-                ),
-            '/restaurant-orders':
-                (context) => RoleGuard(
-                  requiredRole: Role.manager,
-                  allowedRoles: {Role.manager, Role.supervisor},
-                  child: PagePermissionGuard(
-                    route: PagePermissionRoutes.restaurantOrders,
-                    child: const AppScaffold(
-                      child: RestaurantTransactionsPage(),
+                (context) => _staffPage(
+                  RoleGuard(
+                    requiredRole: Role.manager,
+                    allowedRoles: {Role.manager, Role.supervisor},
+                    child: PagePermissionGuard(
+                      route: PagePermissionRoutes.dashboard,
+                      child: const Dashboard(),
                     ),
                   ),
+                  '/dashboard',
+                ),
+            '/manage-accounts':
+                (context) => _staffPage(
+                  const RoleGuard(
+                    requiredRole: Role.superAdmin,
+                    child: ManageAccounts(),
+                  ),
+                  '/manage-accounts',
+                ),
+            '/help-requests':
+                (context) => _staffPage(
+                  const RoleGuard(
+                    requiredRole: Role.superAdmin,
+                    child: HelpRequestsPage(),
+                  ),
+                  '/help-requests',
+                ),
+            '/action-logs':
+                (context) => _staffPage(
+                  const RoleGuard(
+                    requiredRole: Role.superAdmin,
+                    child: ActionLogsPage(),
+                  ),
+                  '/action-logs',
+                ),
+            '/customer-management':
+                (context) => _staffPage(
+                  const RoleGuard(
+                    requiredRole: Role.superAdmin,
+                    child: CustomerManagementPage(),
+                  ),
+                  '/customer-management',
+                ),
+            '/manage-events':
+                (context) => _staffPage(
+                  RoleGuard(
+                    requiredRole: Role.manager,
+                    allowedRoles: {Role.manager, Role.supervisor},
+                    child: PagePermissionGuard(
+                      route: PagePermissionRoutes.manageEvents,
+                      child: const ManageEvents(),
+                    ),
+                  ),
+                  '/manage-events',
+                ),
+            '/loyalty':
+                (context) => _staffPage(
+                  RoleGuard(
+                    requiredRole: Role.manager,
+                    allowedRoles: {Role.manager, Role.supervisor},
+                    child: PagePermissionGuard(
+                      route: PagePermissionRoutes.loyalty,
+                      child: const ManageLoyaltyRewards(),
+                    ),
+                  ),
+                  '/loyalty',
+                ),
+            '/catering-restaurant-menu':
+                (context) => _staffPage(
+                  RoleGuard(
+                    requiredRole: Role.manager,
+                    allowedRoles: {Role.manager},
+                    child: PagePermissionGuard(
+                      route: PagePermissionRoutes.menu,
+                      child: const Menu(),
+                    ),
+                  ),
+                  '/catering-restaurant-menu',
+                ),
+            '/inventory':
+                (context) => _staffPage(
+                  RoleGuard(
+                    requiredRole: Role.manager,
+                    allowedRoles: {Role.manager, Role.supervisor},
+                    child: PagePermissionGuard(
+                      route: PagePermissionRoutes.inventory,
+                      child: const Inventory(),
+                    ),
+                  ),
+                  '/inventory',
+                ),
+            '/restaurant-orders':
+                (context) => _staffPage(
+                  RoleGuard(
+                    requiredRole: Role.manager,
+                    allowedRoles: {Role.manager, Role.supervisor},
+                    child: PagePermissionGuard(
+                      route: PagePermissionRoutes.restaurantOrders,
+                      child: const AppScaffold(
+                        child: RestaurantTransactionsPage(),
+                      ),
+                    ),
+                  ),
+                  '/restaurant-orders',
                 ),
             '/reports':
-                (context) => RoleGuard(
-                  requiredRole: Role.manager,
-                  allowedRoles: {Role.manager},
-                  child: PagePermissionGuard(
-                    route: PagePermissionRoutes.reports,
-                    child: const Reports(),
+                (context) => _staffPage(
+                  RoleGuard(
+                    requiredRole: Role.manager,
+                    allowedRoles: {Role.manager},
+                    child: PagePermissionGuard(
+                      route: PagePermissionRoutes.reports,
+                      child: const Reports(),
+                    ),
                   ),
+                  '/reports',
                 ),
             '/order-history':
-                (context) => RoleGuard(
-                  requiredRole: Role.manager,
-                  allowedRoles: {Role.manager, Role.supervisor},
-                  child: PagePermissionGuard(
-                    route: PagePermissionRoutes.orderHistory,
-                    child: const Transactions(),
+                (context) => _staffPage(
+                  RoleGuard(
+                    requiredRole: Role.manager,
+                    allowedRoles: {Role.manager, Role.supervisor},
+                    child: PagePermissionGuard(
+                      route: PagePermissionRoutes.orderHistory,
+                      child: const Transactions(),
+                    ),
                   ),
+                  '/order-history',
                 ),
             '/archive':
-                (context) => RoleGuard(
-                  requiredRole: Role.manager,
-                  allowedRoles: {Role.manager, Role.superAdmin},
-                  child: PagePermissionGuard(
-                    route: PagePermissionRoutes.archive,
-                    child: Archive(),
+                (context) => _staffPage(
+                  RoleGuard(
+                    requiredRole: Role.manager,
+                    allowedRoles: {Role.manager, Role.superAdmin},
+                    child: PagePermissionGuard(
+                      route: PagePermissionRoutes.archive,
+                      child: Archive(),
+                    ),
                   ),
+                  '/archive',
                 ),
             '/website':
-                (context) => const RoleGuard(
-                  requiredRole: Role.superAdmin,
-                  child: CustomerWebsiteScreen(
-                    contentEditable: false,
-                    showStaffChrome: true,
+                (context) => _staffPage(
+                  const RoleGuard(
+                    requiredRole: Role.superAdmin,
+                    child: CustomerWebsiteScreen(
+                      contentEditable: false,
+                      showStaffChrome: true,
+                    ),
                   ),
+                  '/website',
                 ),
             '/website-admin':
-                (context) => const RoleGuard(
-                  requiredRole: Role.superAdmin,
-                  child: WebsiteAdminPage(),
+                (context) => _staffPage(
+                  const RoleGuard(
+                    requiredRole: Role.superAdmin,
+                    child: WebsiteAdminPage(),
+                  ),
+                  '/website-admin',
                 ),
             '/settings':
-                (context) => RoleGuard(
-                  requiredRole: Role.manager,
-                  allowedRoles: {Role.manager, Role.supervisor},
-                  child: PagePermissionGuard(
-                    route: PagePermissionRoutes.settings,
-                    child: const Settings(),
+                (context) => _staffPage(
+                  RoleGuard(
+                    requiredRole: Role.manager,
+                    allowedRoles: {Role.manager, Role.supervisor},
+                    child: PagePermissionGuard(
+                      route: PagePermissionRoutes.settings,
+                      child: const Settings(),
+                    ),
                   ),
+                  '/settings',
                 ),
           },
         );
