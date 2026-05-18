@@ -203,7 +203,7 @@ export async function ensureAuthSchemaQuick() {
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       full_name TEXT NOT NULL,
-      phone TEXT,
+      contact_number TEXT,
       is_verified BOOLEAN NOT NULL DEFAULT FALSE,
       otp_code VARCHAR(6),
       otp_expiry TIMESTAMPTZ,
@@ -214,6 +214,23 @@ export async function ensureAuthSchemaQuick() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  try {
+    const caCols = await getTableColumnNames('customer_accounts');
+    if (!caCols.has('contact_number')) {
+      if (caCols.has('phone')) {
+        await pool.query(
+          `ALTER TABLE customer_accounts RENAME COLUMN phone TO contact_number`,
+        );
+      } else {
+        await pool.query(
+          `ALTER TABLE customer_accounts ADD COLUMN contact_number TEXT`,
+        );
+      }
+    }
+  } catch (err) {
+    console.warn('Auth schema customer_accounts contact_number:', err.message);
+  }
 
   try {
     await pool.query(
@@ -819,7 +836,7 @@ export async function initDb() {
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       full_name TEXT NOT NULL,
-      phone TEXT,
+      contact_number TEXT,
       is_verified BOOLEAN NOT NULL DEFAULT FALSE,
       otp_code VARCHAR(6),
       otp_expiry TIMESTAMPTZ,
@@ -832,6 +849,25 @@ export async function initDb() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  try {
+    const caCols = await getTableColumnNames('customer_accounts');
+    if (!caCols.has('contact_number')) {
+      if (caCols.has('phone')) {
+        await pool.query(
+          `ALTER TABLE customer_accounts RENAME COLUMN phone TO contact_number`,
+        );
+        console.log('Migration: renamed customer_accounts.phone → contact_number');
+      } else {
+        await pool.query(
+          `ALTER TABLE customer_accounts ADD COLUMN contact_number TEXT`,
+        );
+        console.log('Migration: added customer_accounts.contact_number');
+      }
+    }
+  } catch (err) {
+    console.log('Migration customer_accounts contact_number:', err.message);
+  }
 
   // Migration: Add loyalty points columns to customer_accounts if they don't exist
   try {

@@ -1577,6 +1577,12 @@ function sendOtpEmailAsync(email, otp) {
  * @param {import("express").Express} app
  * @param {import("express").RequestHandler} [dbGate]
  */
+/** Customer phone from DB row (Supabase uses contact_number). */
+function customerPhoneFromRow(row) {
+  if (!row) return null;
+  return row.contact_number ?? row.phone ?? null;
+}
+
 function registerCustomerAuthRoutes(app, dbGate) {
   const gate = dbGate || ((_req, _res, next) => next());
 
@@ -1612,7 +1618,7 @@ function registerCustomerAuthRoutes(app, dbGate) {
            SET email = $1,
                password_hash = $2,
                full_name = $3,
-               phone = $4,
+               contact_number = $4,
                otp_code = $5,
                otp_expiry = $6,
                archived = FALSE,
@@ -1638,7 +1644,7 @@ function registerCustomerAuthRoutes(app, dbGate) {
       const customerId = await generateSequentialId("CUS", 4);
 
       const result = await pool.query(
-        `INSERT INTO customer_accounts (id, email, password_hash, full_name, phone, otp_code, otp_expiry, registration_platform)
+        `INSERT INTO customer_accounts (id, email, password_hash, full_name, contact_number, otp_code, otp_expiry, registration_platform)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id, email, full_name, is_verified`,
         [customerId, emailNorm, passwordHash, fullName, phone || null, otpCode, otpExpiry, registrationPlatform],
@@ -1705,7 +1711,7 @@ function registerCustomerAuthRoutes(app, dbGate) {
       const emailNorm = String(email).trim().toLowerCase();
 
       const result = await pool.query(
-        `SELECT id, email, password_hash, full_name, phone, is_verified
+        `SELECT id, email, password_hash, full_name, contact_number, is_verified
          FROM customer_accounts
          WHERE lower(trim(email::text)) = $1 AND archived = FALSE
          LIMIT 1`,
@@ -1765,7 +1771,7 @@ function registerCustomerAuthRoutes(app, dbGate) {
           id: customer.id,
           email: customer.email,
           fullName: customer.full_name,
-          phone: customer.phone,
+          phone: customerPhoneFromRow(customer),
         },
       });
     } catch (error) {
@@ -7225,7 +7231,7 @@ async function registerRoutesAfterDbInit() {
           id: account.id != null ? String(account.id) : account.id,
           email: account.email,
           fullName: account.full_name,
-          phone: account.phone,
+          phone: customerPhoneFromRow(account),
           createdAt:
             account.created_at instanceof Date
               ? account.created_at.toISOString()
@@ -7265,7 +7271,7 @@ async function registerRoutesAfterDbInit() {
 
           if (phone) {
             paramCount++;
-            updates.push(`phone = $${paramCount}`);
+            updates.push(`contact_number = $${paramCount}`);
             values.push(phone);
           }
 
@@ -7378,7 +7384,7 @@ async function registerRoutesAfterDbInit() {
         }
 
         const result = await pool.query(
-          `SELECT id, email, full_name, phone, is_verified, archived, created_at,
+          `SELECT id, email, full_name, contact_number AS phone, is_verified, archived, created_at,
              COALESCE(restaurant_loyalty_points, 0) as restaurant_loyalty_points,
              COALESCE(catering_loyalty_points, 0) as catering_loyalty_points,
              (COALESCE(restaurant_loyalty_points, 0) + COALESCE(catering_loyalty_points, 0)) as loyalty_points
@@ -7404,7 +7410,7 @@ async function registerRoutesAfterDbInit() {
 
         // Fetch customers with loyalty points directly from customer_accounts
         const result = await pool.query(
-          `SELECT id, email, full_name, phone, is_verified, archived, created_at,
+          `SELECT id, email, full_name, contact_number AS phone, is_verified, archived, created_at,
              COALESCE(restaurant_loyalty_points, 0) as restaurant_loyalty_points,
              COALESCE(catering_loyalty_points, 0) as catering_loyalty_points,
              (COALESCE(restaurant_loyalty_points, 0) + COALESCE(catering_loyalty_points, 0)) as loyalty_points
@@ -7485,7 +7491,7 @@ async function registerRoutesAfterDbInit() {
         }
 
         const customerResult = await pool.query(
-          `SELECT id, email, full_name, phone, is_verified, archived, created_at,
+          `SELECT id, email, full_name, contact_number AS phone, is_verified, archived, created_at,
                   COALESCE(restaurant_loyalty_points, 0) as restaurant_loyalty_points,
                   COALESCE(catering_loyalty_points, 0) as catering_loyalty_points
            FROM customer_accounts
