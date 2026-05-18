@@ -82,6 +82,6 @@ class NominatimService {
     } catch (_) {
       /* fall through */
     }
-    return '${pin.lat.toFixed(6)}, ${pin.lng.toFixed(6)}';
+    return '${pin.lat.toStringAsFixed(6)}, ${pin.lng.toStringAsFixed(6)}';
   }
 }
