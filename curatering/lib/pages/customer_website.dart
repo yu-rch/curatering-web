@@ -29,6 +29,8 @@ import '../widgets/antd_profile_menu.dart';
 import '../widgets/antd_tokens.dart';
 import '../widgets/pexels_attribution_badge.dart';
 import '../widgets/catering_dish_info_dialog.dart';
+import '../widgets/website_rich_text.dart';
+import '../theme/website_header_font.dart';
 import 'customer_login.dart';
 import 'checkout_page.dart';
 import 'my_orders_page.dart';
@@ -797,128 +799,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     }
   }
 
-  List<InlineSpan> _simpleMarkupSpans(String text, TextStyle baseStyle) {
-    final spans = <InlineSpan>[];
-    final exp = RegExp(r'\[(\/?)(b|i|u)\]');
-    var cursor = 0;
-    var bold = false;
-    var italic = false;
-    var underline = false;
-    TextStyle active() => baseStyle.copyWith(
-      fontWeight: bold ? FontWeight.w700 : baseStyle.fontWeight,
-      fontStyle: italic ? FontStyle.italic : baseStyle.fontStyle,
-      decoration: underline ? TextDecoration.underline : baseStyle.decoration,
-    );
-    for (final m in exp.allMatches(text)) {
-      if (m.start > cursor) {
-        spans.add(
-          TextSpan(text: text.substring(cursor, m.start), style: active()),
-        );
-      }
-      final closing = m.group(1) == '/';
-      final tag = m.group(2);
-      if (tag == 'b') bold = !closing;
-      if (tag == 'i') italic = !closing;
-      if (tag == 'u') underline = !closing;
-      cursor = m.end;
-    }
-    if (cursor < text.length) {
-      spans.add(TextSpan(text: text.substring(cursor), style: active()));
-    }
-    if (spans.isEmpty) spans.add(TextSpan(text: text, style: baseStyle));
-    return spans;
-  }
-
-  Widget _richTextLabel(
-    String value, {
-    required TextStyle style,
-    TextAlign textAlign = TextAlign.start,
-    int? maxLines,
-    TextOverflow overflow = TextOverflow.clip,
-  }) {
-    return Text.rich(
-      TextSpan(children: _simpleMarkupSpans(value, style)),
-      textAlign: textAlign,
-      maxLines: maxLines,
-      overflow: overflow,
-    );
-  }
-
-  Future<String?> _showRichTextEditorDialog({
-    required String title,
-    required String initialValue,
-  }) async {
-    final ctrl = TextEditingController(text: initialValue);
-    void wrapSelection(String open, String close) {
-      final sel = ctrl.selection;
-      if (!sel.isValid) return;
-      final start = sel.start;
-      final end = sel.end;
-      if (start < 0 || end < 0 || start > end) return;
-      final text = ctrl.text;
-      final selected = text.substring(start, end);
-      final replaced =
-          '${text.substring(0, start)}$open$selected$close${text.substring(end)}';
-      ctrl.text = replaced;
-      ctrl.selection = TextSelection.collapsed(
-        offset: start + open.length + selected.length + close.length,
-      );
-    }
-
-    return showDialog<String>(
-      context: context,
-      builder:
-          (ctx) => AlertDialog(
-            title: Text(title),
-            content: SizedBox(
-              width: 620,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      OutlinedButton(
-                        onPressed: () => wrapSelection('[b]', '[/b]'),
-                        child: const Text('Bold'),
-                      ),
-                      OutlinedButton(
-                        onPressed: () => wrapSelection('[i]', '[/i]'),
-                        child: const Text('Italic'),
-                      ),
-                      OutlinedButton(
-                        onPressed: () => wrapSelection('[u]', '[/u]'),
-                        child: const Text('Underline'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: ctrl,
-                    maxLines: 8,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      hintText: 'Use toolbar for rich formatting',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-                child: const Text('Save'),
-              ),
-            ],
-          ),
-    );
-  }
-
   String _imageKey(String? b64) {
     final v = (b64 ?? '').trim();
     if (v.isEmpty) return '';
@@ -1271,14 +1151,15 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     style: TextStyle(color: Colors.black),
                   ),
                 ),
-                _richTextLabel(
-                  w.footerCopyright,
+                WebsiteRichText(
+                  value: w.footerCopyright,
                   style: const TextStyle(fontSize: 11, height: 1.4),
                 ),
                 if (widget.contentEditable)
                   TextButton.icon(
                     onPressed: () async {
-                      final value = await _showRichTextEditorDialog(
+                      final value = await showWebsiteRichTextEditor(
+                        context: context,
                         title: 'Edit footer copyright',
                         initialValue: w.footerCopyright,
                       );
@@ -1611,7 +1492,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         Text(
                           'WELCOME',
                           textAlign: TextAlign.center,
-                          style: GoogleFonts.dancingScript(
+                          style: websiteHeaderStyle(
                             fontSize: 42,
                             fontWeight: FontWeight.bold,
                             color: const Color(0xFF1E1E1E),
@@ -1650,9 +1531,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             padding: const EdgeInsets.all(32),
                             child: Column(
                               children: [
-                                _richTextLabel(
-                                  w.redBannerText,
-                                  style: GoogleFonts.dancingScript(
+                                WebsiteRichText(
+                                  value: w.redBannerText,
+                                  style: websiteHeaderStyle(
                                     fontSize: 24,
                                     color: Colors.red.shade700,
                                     fontWeight: FontWeight.w700,
@@ -1663,7 +1544,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                   TextButton.icon(
                                     onPressed: () async {
                                       final value =
-                                          await _showRichTextEditorDialog(
+                                          await showWebsiteRichTextEditor(
+                                            context: context,
                                             title: 'Edit red banner text',
                                             initialValue: w.redBannerText,
                                           );
@@ -1720,18 +1602,18 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                                   ),
                                                 ),
                                                 const SizedBox(height: 10),
-                                                _richTextLabel(
-                                                  w.latestEventTitle,
+                                                WebsiteRichText(
+                                                  value: w.latestEventTitle,
                                                   style:
-                                                      GoogleFonts.dancingScript(
+                                                      websiteHeaderStyle(
                                                         fontSize: 42,
                                                         color: const Color(
                                                           0xFFB0305A,
                                                         ),
                                                       ),
                                                 ),
-                                                _richTextLabel(
-                                                  w.latestEventSubtitle,
+                                                WebsiteRichText(
+                                                  value: w.latestEventSubtitle,
                                                   style: const TextStyle(
                                                     fontSize: 12,
                                                     letterSpacing: 1.2,
@@ -1755,8 +1637,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                                           Colors.grey.shade300,
                                                     ),
                                                   ),
-                                                  child: _richTextLabel(
-                                                    w.latestEventBody,
+                                                  child: WebsiteRichText(
+                                                    value: w.latestEventBody,
                                                     style: const TextStyle(
                                                       height: 1.35,
                                                     ),
@@ -1800,7 +1682,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                           ),
                                           _editChip(() async {
                                             final nextTitle =
-                                                await _showRichTextEditorDialog(
+                                                await showWebsiteRichTextEditor(
+                                                  context: context,
                                                   title:
                                                       'Edit latest event title',
                                                   initialValue:
@@ -1808,7 +1691,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                                 );
                                             if (nextTitle == null) return;
                                             final nextSubtitle =
-                                                await _showRichTextEditorDialog(
+                                                await showWebsiteRichTextEditor(
+                                                  context: context,
                                                   title:
                                                       'Edit latest event subtitle',
                                                   initialValue:
@@ -1816,7 +1700,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                                 );
                                             if (nextSubtitle == null) return;
                                             final nextBody =
-                                                await _showRichTextEditorDialog(
+                                                await showWebsiteRichTextEditor(
+                                                  context: context,
                                                   title:
                                                       'Edit latest event body',
                                                   initialValue:
@@ -1953,7 +1838,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         ),
         Text(
           'Our all-time most requested dishes!',
-          style: GoogleFonts.dancingScript(fontSize: 18),
+          style: websiteHeaderStyle(fontSize: 18),
         ),
         const SizedBox(height: 12),
         SizedBox(
@@ -2058,7 +1943,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         ),
         Text(
           'From decorations to dinnerware!',
-          style: GoogleFonts.dancingScript(fontSize: 18),
+          style: websiteHeaderStyle(fontSize: 18),
         ),
         const SizedBox(height: 12),
         SizedBox(
@@ -2353,7 +2238,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 children: [
                   Text(
                     'Gallery',
-                    style: GoogleFonts.dancingScript(
+                    style: websiteHeaderStyle(
                       fontSize: 42,
                       color: Colors.red.shade400,
                     ),
@@ -2666,7 +2551,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               Text(
                 'CATERING MENU',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.dancingScript(
+                style: websiteHeaderStyle(
                   fontSize: 42,
                   fontWeight: FontWeight.bold,
                   color: const Color(0xFF1E1E1E),
@@ -2907,7 +2792,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       child: Center(
                         child: Text(
                           'Restaurant',
-                          style: GoogleFonts.dancingScript(
+                          style: websiteHeaderStyle(
                             fontSize: 42,
                             color: Colors.red.shade400,
                           ),
@@ -4170,7 +4055,7 @@ class _ContactSectionState extends State<_ContactSection> {
                 children: [
                   Text(
                     'Contact Us',
-                    style: GoogleFonts.dancingScript(
+                    style: websiteHeaderStyle(
                       fontSize: 42,
                       color: Colors.red.shade400,
                     ),
@@ -5013,32 +4898,6 @@ class _InquireFormState extends State<_InquireForm> {
         }
       }
 
-      // Persist theme design picks as actual base64 payloads (not URLs),
-      // so they can be displayed in Manage Events online inquiries.
-      final sourcesForSubmission = _designBoardPhotos().toList();
-      final confirmedComposite = (_confirmedCompositeBase64 ?? '').trim();
-      final selectedBase = (_selectedBaseImage ?? '').trim();
-      if (confirmedComposite.isNotEmpty) {
-        // Keep only one final edited image in persisted inquiry records.
-        sourcesForSubmission
-          ..clear()
-          ..add(confirmedComposite);
-      } else if (selectedBase.isNotEmpty) {
-        // If no composite exists yet, avoid duplicating a selected base source.
-        sourcesForSubmission.removeWhere((src) => src.trim() == selectedBase);
-      }
-
-      final serializedDesignPicks = <String>[];
-      for (final src in sourcesForSubmission) {
-        try {
-          final bytes = await _resolveDesignPhotoBytes(src);
-          serializedDesignPicks.add(base64Encode(bytes));
-        } catch (_) {
-          // Skip unreadable photo sources; do not fail whole inquiry submission.
-        }
-      }
-      final themeRequest = _themeRequestCtrl.text.trim();
-
       await PublicEventsApi.instance.submitOnlineInquiry(
         payload: {
           'orderType':
@@ -5065,14 +4924,6 @@ class _InquireFormState extends State<_InquireForm> {
           'address': _address.text.trim(),
           'guestCount': g,
           'menu': menuItems,
-          'themeDesign': {
-            'picksBase64': serializedDesignPicks,
-            'tintEnabled': false,
-            'tintColorHex': null,
-            'colorPrompt': themeRequest,
-            'wantsCustomDesign': _wantsCustomDesign,
-            'customerThemeRequest': themeRequest.isEmpty ? null : themeRequest,
-          },
         },
       );
       if (!mounted) return;
@@ -5171,7 +5022,7 @@ class _InquireFormState extends State<_InquireForm> {
               Text(
                 'Inquire',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.dancingScript(
+                style: websiteHeaderStyle(
                   fontSize: 42,
                   color: Colors.red.shade400,
                 ),

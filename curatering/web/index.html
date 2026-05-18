@@ -43,8 +43,9 @@
     }
   </style>
   
-  <!-- Google Maps API -->
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAfyCaQ7PYtpqGgJIX7MvoWfoTFp-6cY0M&amp;libraries=places"></script>
+  <!-- Google Maps: uncomment and set key=YOUR_KEY, or inject at CI build time.
+       Must match --dart-define=GOOGLE_MAPS_API_KEY=... -->
+  <!-- <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_KEY&libraries=places"></script> -->
   
   <!-- Flutter Web Configuration - Use HTML renderer to prevent CanvasKit issues -->
   <script>

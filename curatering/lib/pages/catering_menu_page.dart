@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../theme/website_header_font.dart';
 
 import '../models/menu_dish.dart';
 import '../services/meal_types_store.dart';
@@ -277,7 +277,7 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                 Text(
                   'CATERING MENU',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.dancingScript(
+                  style: websiteHeaderStyle(
                     fontSize: 42,
                     fontWeight: FontWeight.bold,
                     color: Color(0xFF1E1E1E),

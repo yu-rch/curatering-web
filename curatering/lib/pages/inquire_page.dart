@@ -337,7 +337,6 @@ class _InquirePageState extends State<InquirePage> {
         'guestCount': guestCount,
         'scheduleSlots': scheduleSlots,
         'menu': _buildMenuForApi(),
-        'themeDesign': _buildThemeDesignForApi(),
         'allergens': _allergensSerialized.trim(),
         'source': 'web',
       };
@@ -487,59 +486,6 @@ class _InquirePageState extends State<InquirePage> {
       ];
     }
     return out;
-  }
-
-  /// Theme / design JSON stored on the order (server requires a non-null object).
-  Map<String, dynamic> _buildThemeDesignForApi() {
-    if (_serviceType == 'catering') {
-      final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
-      final menuKind =
-          _menuSelections.isNotEmpty
-              ? (_menuSelections.first['kind'] as String? ?? 'custom')
-              : 'custom';
-      return {
-        'serviceType': 'catering',
-        'menuChoice': menuKind == 'set' ? 'set_menu' : 'custom_menu',
-        if (guestCount > 0 && guestCount < 50)
-          'includeCateringService': _includeCateringService == true,
-      };
-    }
-    if (_eventDesignMode == 'macrina') {
-      final palette = _macrinaPalette.text.trim();
-      final theme = _macrinaTheme.text.trim();
-      return <String, dynamic>{
-        'serviceType': 'catering+event',
-        'menuChoice':
-            _menuSelections.isNotEmpty &&
-                    (_menuSelections.first['kind'] as String?) == 'set'
-                ? 'set_menu'
-                : 'custom_menu',
-        'eventDesignSource': 'macrina',
-        'wantsCustomDesign': false,
-        'macrinaColorPalette': palette,
-        'macrinaTheme': theme,
-        'customInstructions': 'Macrina design request — Palette: $palette. Theme: $theme.',
-        'eventDesignEventType': _eventType,
-      }..removeWhere((_, v) => v == null || (v is String && v.isEmpty));
-    }
-    return <String, dynamic>{
-      'serviceType': 'catering+event',
-      'menuChoice':
-          _menuSelections.isNotEmpty &&
-                  (_menuSelections.first['kind'] as String?) == 'set'
-              ? 'set_menu'
-              : 'custom_menu',
-      'eventDesignSource': 'customer_ai',
-      'eventDesignEventType': _selectedEventType,
-      'style': _selectedStyle,
-      'mood': _selectedMood,
-      'colorPalette': List<String>.from(_selectedColors),
-      'decorElements': List<String>.from(_selectedDecor),
-      'customInstructions': _designPromptController.text.trim(),
-      'venuePhotoBase64': _venuePhotoBase64,
-      'generatedImageUrl': _generatedImageUrl,
-      'wantsCustomDesign': _wantsCustomDesign,
-    }..removeWhere((_, v) => v == null);
   }
 
   void _clearForm() {

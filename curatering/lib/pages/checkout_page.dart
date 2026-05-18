@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../theme/website_header_font.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -358,7 +358,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 Center(
                   child: Text(
                     'Checkout',
-                    style: GoogleFonts.dancingScript(
+                    style: websiteHeaderStyle(
                       fontSize: 42,
                       color: Colors.red.shade400,
                     ),

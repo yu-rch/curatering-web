@@ -123,3 +123,4 @@ app.*.symbols
 .env*.local
 server/.env
 server/.env
+server/.env

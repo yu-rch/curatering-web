@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
+import '../services/api_client.dart';
 import '../utils/responsive_layout.dart';
 
 Uri _apiUri(String path) {
@@ -165,8 +166,10 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
       if (response.statusCode == 200) {
         // Save token
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('customer_token', data['token']);
+        final token = data['token'] as String?;
+        await prefs.setString('customer_token', token ?? '');
         await prefs.setString('customer_data', jsonEncode(data['customer']));
+        ApiClient.instance.setCustomerBearer(token);
 
         if (mounted) {
           Navigator.of(context).pop(data);

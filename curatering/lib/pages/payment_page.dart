@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../theme/website_header_font.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -163,7 +163,7 @@ class _PaymentPageState extends State<PaymentPage> {
                 Center(
                   child: Text(
                     'Payment',
-                    style: GoogleFonts.dancingScript(
+                    style: websiteHeaderStyle(
                       fontSize: 42,
                       color: Colors.red.shade400,
                     ),

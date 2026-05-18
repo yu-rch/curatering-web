@@ -557,6 +557,30 @@ export async function initDb() {
     console.warn('Warning: Could not update catering_orders_status_check constraint:', err.message);
   }
 
+  // event_orders: allow status 'cancelled' (matches cancel routes in index.js)
+  try {
+    await pool.query(`
+      ALTER TABLE event_orders
+      DROP CONSTRAINT IF EXISTS event_orders_status_check;
+    `);
+    await pool.query(`
+      ALTER TABLE event_orders
+      ADD CONSTRAINT event_orders_status_check CHECK (status IN ('new_event','online_inquiries','for_processing','for_post_analysis','completed','cancelled'));
+    `);
+  } catch (err) {
+    console.warn('Warning: Could not update event_orders_status_check constraint:', err.message);
+  }
+
+  // Public contact form: user_id optional (no fake 'guest' FK)
+  try {
+    await pool.query(`
+      ALTER TABLE help_requests
+      ALTER COLUMN user_id DROP NOT NULL;
+    `);
+  } catch (err) {
+    console.warn('Warning: Could not relax help_requests.user_id:', err.message);
+  }
+
   await pool.query(`
     ALTER TABLE event_orders
     ADD COLUMN IF NOT EXISTS actual_event_images JSONB NOT NULL DEFAULT '[]'::jsonb;
@@ -1130,27 +1154,11 @@ export async function initDb() {
     );
   `);
 
-  // Insert default dishes from CSV if table is empty
   const dishCount = await pool.query(`SELECT COUNT(*) FROM menu_dishes`);
-  if (parseInt(dishCount.rows[0].count) === 0) {
-    console.log('Inserting default menu dishes...');
-    
-
-    for (const set of cateringSets) {
-      await pool.query(`
-        INSERT INTO menu_dishes (name, price, category, pax_options, ingredients)
-        VALUES ($1, $2, $3, $4, $5)
-      `, [set.name, '0.00', 'catering', JSON.stringify(['10 pax', '20 pax', '30 pax', '50 pax', '100 pax']), JSON.stringify(set.ingredients)]);
-    }
-
-    for (const item of restaurantItems) {
-      await pool.query(`
-        INSERT INTO menu_dishes (name, price, category, pax_options, ingredients, sauces)
-        VALUES ($1, $2, $3, $4, $5, $6)
-      `, [item.name, item.price, item.category, JSON.stringify(['1 pax', '5 pax', '10 pax', '20 pax', '50 pax']), JSON.stringify(item.ingredients), JSON.stringify(item.sauces || [])]);
-    }
-    
-    console.log('Default menu dishes inserted successfully');
+  if (parseInt(dishCount.rows[0].count, 10) === 0) {
+    console.log(
+      "[initDb] menu_dishes is empty — add dishes via staff Menu admin (default CSV seed disabled).",
+    );
   }
 }
 

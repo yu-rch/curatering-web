@@ -7,6 +7,7 @@ import '../widgets/antd_buttons.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_tokens.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/website_rich_text.dart';
 
 /// Super-admin CMS for customer-facing homepage, gallery, and contact page content.
 class WebsiteAdminPage extends StatefulWidget {
@@ -213,10 +214,10 @@ class _HomepageEditorTab extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               _sectionTitle('Red banner text'),
-              _textField(
-                label: 'Banner (supports *bold* and _italic_)',
+              _richTextField(
+                context: context,
+                label: 'Banner',
                 value: w.redBannerText,
-                maxLines: 2,
                 onChanged: (v) {
                   w.redBannerText = v;
                   onChanged();
@@ -225,7 +226,8 @@ class _HomepageEditorTab extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               _sectionTitle('Latest event block'),
-              _textField(
+              _richTextField(
+                context: context,
                 label: 'Title',
                 value: w.latestEventTitle,
                 onChanged: (v) {
@@ -235,7 +237,8 @@ class _HomepageEditorTab extends StatelessWidget {
                 },
               ),
               const SizedBox(height: 12),
-              _textField(
+              _richTextField(
+                context: context,
                 label: 'Subtitle',
                 value: w.latestEventSubtitle,
                 onChanged: (v) {
@@ -245,10 +248,10 @@ class _HomepageEditorTab extends StatelessWidget {
                 },
               ),
               const SizedBox(height: 12),
-              _textField(
+              _richTextField(
+                context: context,
                 label: 'Body',
                 value: w.latestEventBody,
-                maxLines: 5,
                 onChanged: (v) {
                   w.latestEventBody = v;
                   onChanged();
@@ -338,10 +341,10 @@ class _HomepageEditorTab extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               _sectionTitle('Footer'),
-              _textField(
+              _richTextField(
+                context: context,
                 label: 'Copyright line',
                 value: w.footerCopyright,
-                maxLines: 2,
                 onChanged: (v) {
                   w.footerCopyright = v;
                   onChanged();
@@ -597,6 +600,54 @@ Widget _textField({
       fillColor: Colors.grey.shade50,
     ),
     onChanged: onChanged,
+  );
+}
+
+Widget _richTextField({
+  required BuildContext context,
+  required String label,
+  required String value,
+  required ValueChanged<String> onChanged,
+}) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(
+        label,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: AntdTokens.labelMuted,
+        ),
+      ),
+      const SizedBox(height: 6),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: WebsiteRichText(
+          value: value.isEmpty ? '(empty)' : value,
+          style: const TextStyle(fontSize: 14, height: 1.35),
+        ),
+      ),
+      const SizedBox(height: 8),
+      OutlinedButton.icon(
+        onPressed: () async {
+          final edited = await showWebsiteRichTextEditor(
+            context: context,
+            title: 'Edit $label',
+            initialValue: value,
+          );
+          if (edited != null) onChanged(edited);
+        },
+        icon: const Icon(Icons.format_paint_outlined, size: 18),
+        label: const Text('Edit formatting'),
+      ),
+    ],
   );
 }
 

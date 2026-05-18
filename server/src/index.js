@@ -34,12 +34,13 @@ import {
   getMenuMealTypeCatalog,
   upsertMenuMealType,
 } from "./db.js";
-import CartAPI from './cart_api.js';
+import CartAPI from "./cart_api.js";
 import {
   getTrayDraft,
   saveTrayDraft,
   clearTrayDraft,
-} from './tray_drafts_api.js';
+} from "./tray_drafts_api.js";
+import { createPublicRateLimiter } from "./public_rate_limit.js";
 
 // Prefer IPv4 when resolving SMTP hosts (avoids ENETUNREACH on IPv6 in many cloud/container networks).
 try {
@@ -245,6 +246,10 @@ app.use(
 );
 app.use(express.json({ limit: "50mb" }));
 
+const publicRateLimit = createPublicRateLimiter();
+app.use("/api/public/runpod", publicRateLimit);
+app.use("/api/public/events/theme-design", publicRateLimit);
+
 let dbReady = false;
 let routesRegistered = false;
 /** @type {'pending'|'ready'|'failed'} */
@@ -402,6 +407,18 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-change-me";
+const isProduction =
+  String(process.env.NODE_ENV || "").toLowerCase() === "production";
+if (
+  isProduction &&
+  (!process.env.JWT_SECRET?.trim() ||
+    process.env.JWT_SECRET.trim() === "dev-change-me")
+) {
+  console.error(
+    "[startup] JWT_SECRET must be set to a strong value when NODE_ENV=production",
+  );
+  process.exit(1);
+}
 const connectionString = process.env.DATABASE_URL?.trim() || "";
 const sql = connectionString
   ? postgres(connectionString, {
@@ -2034,9 +2051,9 @@ app.post("/api/public/help-requests", async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO help_requests (user_id, feature, problem, request, status)
-       VALUES ($1, $2, $3, $4, 'unresolved')
+       VALUES (NULL, $1, $2, $3, 'unresolved')
        RETURNING id;`,
-      ['guest', 'Contact Us', `${name} (${email})`, message],
+      ["Contact Us", `${name} (${email})`, message],
     );
 
     return res.json({ ok: true, id: result.rows[0].id });
@@ -4386,7 +4403,6 @@ app.post("/api/online-inquiries", async (req, res) => {
       addressLng,
       guestCount,
       menu,
-      themeDesign,
       allergens,
       source = 'web', // 'web' or 'mobile'
     } = req.body || {};
@@ -4411,8 +4427,7 @@ app.post("/api/online-inquiries", async (req, res) => {
       !address ||
       guestCount === undefined ||
       !Array.isArray(scheduleSlots) ||
-      !Array.isArray(menu) ||
-      !themeDesign
+      !Array.isArray(menu)
     ) {
       return res.status(400).json({ message: "Missing required fields" });
     }
@@ -4432,9 +4447,9 @@ app.post("/api/online-inquiries", async (req, res) => {
       result = await pool.query(
         `INSERT INTO catering_orders
           (source, status, order_type, inquiry_id, customer_name, contact_person, contact_number, email_address,
-           schedule_slots, address, address_lat, address_lng, guest_count, menu, theme_design, allergens)
+           schedule_slots, address, address_lat, address_lng, guest_count, menu, allergens)
         VALUES
-          ('online_inquiry', 'online_inquiries', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          ('online_inquiry', 'online_inquiries', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING id, inquiry_id;`,
         [
           inquiryId,
@@ -4448,7 +4463,6 @@ app.post("/api/online-inquiries", async (req, res) => {
           resolvedAddressLng,
           Number(guestCount),
           JSON.stringify(menu),
-          JSON.stringify(themeDesign),
           allergensText,
         ]
       );
@@ -4458,10 +4472,10 @@ app.post("/api/online-inquiries", async (req, res) => {
         `INSERT INTO event_orders
           (source, status, event_title, order_type, event_type, formality_level, inquiry_id,
            customer_name, contact_person, contact_number, email_address,
-           schedule_slots, address, address_lat, address_lng, guest_count, menu, theme_design, allergens)
+           schedule_slots, address, address_lat, address_lng, guest_count, menu, allergens)
          VALUES
           ('online_inquiry', 'online_inquiries',
-           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
          RETURNING id, inquiry_id;`,
         [
           eventTitle,
@@ -4479,7 +4493,6 @@ app.post("/api/online-inquiries", async (req, res) => {
           resolvedAddressLng,
           Number(guestCount),
           JSON.stringify(menu),
-          JSON.stringify(themeDesign),
           allergensText,
         ]
       );
@@ -4502,7 +4515,8 @@ app.post("/api/online-inquiries", async (req, res) => {
   }
 });
 
-// Debug endpoint to check test account
+// Debug endpoints — development only
+if (process.env.NODE_ENV !== "production") {
 app.get("/api/debug/test-account", async (req, res) => {
   try {
     const testEmail = "admin@curatering.test";
@@ -4551,6 +4565,7 @@ app.get("/api/debug/users", async (req, res) => {
     return res.status(500).json({ message: "Failed to fetch users" });
   }
 });
+}
 
 // Accept an order (move to post-analysis)
 app.post(
@@ -4690,7 +4705,12 @@ async function seedSuperAdminIfNeeded() {
   const fullName = process.env.SEED_SUPER_ADMIN_FULL_NAME || "Super Admin";
 
   if (!email || !password) {
-    // Create default test super admin for development
+    if (process.env.NODE_ENV === "production") {
+      console.warn(
+        "[startup] SEED_SUPER_ADMIN_EMAIL/PASSWORD not set — skipping default admin seed in production",
+      );
+      return;
+    }
     const testEmail = "admin@curatering.test";
     const testPassword = "admin123";
     const testFullName = "Test Super Admin";
@@ -4698,7 +4718,7 @@ async function seedSuperAdminIfNeeded() {
       `SELECT id FROM users WHERE email = $1 LIMIT 1;`,
       [testEmail],
     );
-    
+
     if (existing.rowCount === 0) {
       const passwordHash = await bcrypt.hash(testPassword, 10);
       const userId = await allocateStaffUserId();
@@ -4707,7 +4727,10 @@ async function seedSuperAdminIfNeeded() {
          VALUES ($1, $2, $3, $4, 'super_admin', FALSE, TRUE);`,
         [userId, testEmail, passwordHash, testFullName],
       );
-    } else {}
+      console.warn(
+        "[startup] Created dev super-admin admin@curatering.test / admin123 — set SEED_SUPER_ADMIN_* in production",
+      );
+    }
     return;
   }
 

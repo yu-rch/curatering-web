@@ -21,6 +21,7 @@ class CartSyncService {
       final token = prefs.getString('customer_token');
 
       if (token != null && token.isNotEmpty) {
+        ApiClient.instance.setCustomerBearer(token);
         final response = await ApiClient.instance.getJson('/api/cart');
 
         List<dynamic> cartItems = [];
@@ -74,6 +75,7 @@ class CartSyncService {
       final token = prefs.getString('customer_token');
 
       if (token != null && token.isNotEmpty) {
+        ApiClient.instance.setCustomerBearer(token);
         final cartItems = CartStore.instance.items;
 
         if (cartItems.isNotEmpty) {
@@ -167,6 +169,7 @@ class CartSyncService {
       // Clear on server
       final token = prefs.getString('customer_token');
       if (token != null && token.isNotEmpty) {
+        ApiClient.instance.setCustomerBearer(token);
         await ApiClient.instance.postJson('/api/cart/clear');
         try {
           await ApiClient.instance.delete('/api/tray-draft');

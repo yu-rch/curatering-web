@@ -23,6 +23,17 @@ class ApiClient {
 
   static const Duration _requestTimeout = Duration(seconds: 30);
 
+  /// Customer JWT from SharedPreferences (checkout / cart); staff uses [AuthSession].
+  String? _customerBearer;
+
+  void setCustomerBearer(String? token) {
+    _customerBearer = token?.trim().isEmpty == true ? null : token?.trim();
+  }
+
+  void clearCustomerBearer() {
+    _customerBearer = null;
+  }
+
   String _resolveUrl(String path) {
     if (path.startsWith('http://') || path.startsWith('https://')) {
       return path;
@@ -34,7 +45,7 @@ class ApiClient {
     final headers = <String, String>{
       'Content-Type': 'application/json',
     };
-    final token = AuthSession.instance.token;
+    final token = AuthSession.instance.token ?? _customerBearer;
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
     }

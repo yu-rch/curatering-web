@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../theme/website_header_font.dart';
 import '../utils/order_display_utils.dart';
 import '../utils/responsive_layout.dart';
 
@@ -41,7 +41,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
                 // Payment Title
                 Text(
                   'Payment',
-                  style: GoogleFonts.dancingScript(
+                  style: websiteHeaderStyle(
                     fontSize: 36,
                     color: Colors.red.shade400,
                   ),
