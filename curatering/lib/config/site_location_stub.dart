@@ -1,0 +1,3 @@
+String getWebHostname() => '';
+
+String getWebPathname() => '/';

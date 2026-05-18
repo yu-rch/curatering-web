@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'site_location_stub.dart'
+    if (dart.library.html) 'site_location_web.dart';
 import 'site_redirect_stub.dart'
     if (dart.library.html) 'site_redirect_web.dart';
 
@@ -18,15 +20,25 @@ const String kStaffWebHost = String.fromEnvironment(
   defaultValue: 'staff.curatering.com',
 );
 
-String get _host => Uri.base.host.toLowerCase();
+String get _host {
+  if (kIsWeb) return getWebHostname();
+  return '';
+}
 
 bool get isCustomerSiteHost {
-  if (kIsWeb) return _host == kCustomerWebHost.toLowerCase();
+  if (!kIsWeb) return false;
+  final h = _host;
+  if (h == kCustomerWebHost.toLowerCase()) return true;
+  if (h.startsWith('macrinas-kitchen.')) return true;
   return false;
 }
 
 bool get isStaffSiteHost {
-  if (kIsWeb) return _host == kStaffWebHost.toLowerCase();
+  if (!kIsWeb) return false;
+  final h = _host;
+  if (h == kStaffWebHost.toLowerCase()) return true;
+  if (h == 'staff.$kCustomerWebHost'.toLowerCase()) return true;
+  if (h.startsWith('staff.')) return true;
   return false;
 }
 
@@ -60,12 +72,14 @@ void redirectApexHostToSubdomain(String path) {
   redirectToSiteOrigin(customerSiteOrigin, stripped);
 }
 
+/// Browser URL path for the current page (reliable on Vercel subdomains).
+String currentWebPath() {
+  if (!kIsWeb) return '/';
+  return stripLegacyCustomerPrefix(getWebPathname());
+}
+
 String resolveAppInitialRoute() {
-  var path = Uri.base.path;
-  if (path.length > 1 && path.endsWith('/')) {
-    path = path.substring(0, path.length - 1);
-  }
-  path = stripLegacyCustomerPrefix(path);
+  var path = currentWebPath();
   if (path.isEmpty) path = '/';
 
   if (isStaffSiteHost) {
@@ -73,7 +87,10 @@ String resolveAppInitialRoute() {
     return path;
   }
 
-  if (path == '/') return '/';
+  if (isCustomerSiteHost) {
+    return path == '/' ? '/' : path;
+  }
+
   return path;
 }
 
