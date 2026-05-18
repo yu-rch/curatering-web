@@ -502,6 +502,8 @@ export async function initDb() {
     );
   `);
 
+  await ensureOrderInquiryIdColumns();
+
   // Add catering-specific columns
   await pool.query(`
     ALTER TABLE catering_orders
@@ -603,16 +605,7 @@ export async function initDb() {
     ADD COLUMN IF NOT EXISTS final_status TEXT DEFAULT 'successful' CHECK (final_status IN ('successful','cancelled'));
   `);
 
-  // Add inquiry_id column for formatted IDs (INQ-000000, MINQ-000000)
-  await pool.query(`
-    ALTER TABLE event_orders
-    ADD COLUMN IF NOT EXISTS inquiry_id TEXT UNIQUE;
-  `);
-
-  await pool.query(`
-    ALTER TABLE catering_orders
-    ADD COLUMN IF NOT EXISTS inquiry_id TEXT UNIQUE;
-  `);
+  await ensureOrderInquiryIdColumns();
 
   await pool.query(`
     ALTER TABLE catering_orders
@@ -1068,6 +1061,21 @@ export async function initDb() {
     console.log('Migration check for event_orders points_earned:', err.message);
   }
 
+  try {
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS feedback_stars INTEGER`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS feedback_remarks TEXT`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS feedback_submitted_at TIMESTAMPTZ`,
+    );
+    console.log('Migration: Added restaurant order feedback columns');
+  } catch (err) {
+    console.log('Migration check for restaurant_orders feedback:', err.message);
+  }
+
   // Migration: seating plan (floor image + tables + seats) for event_orders
   try {
     await pool.query(
@@ -1323,6 +1331,37 @@ export async function setLoyaltyProgramConfig(config) {
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
     [LOYALTY_PROGRAM_CONFIG_KEY, JSON.stringify(config ?? {})],
   );
+}
+
+let orderInquiryIdColumnsPromise = null;
+
+/** Ensures inquiry_id exists on event_orders and catering_orders (Railway may serve traffic before full initDb). */
+export async function ensureOrderInquiryIdColumns() {
+  if (!orderInquiryIdColumnsPromise) {
+    orderInquiryIdColumnsPromise = ensureOrderInquiryIdColumnsOnce().catch((err) => {
+      orderInquiryIdColumnsPromise = null;
+      throw err;
+    });
+  }
+  return orderInquiryIdColumnsPromise;
+}
+
+async function ensureOrderInquiryIdColumnsOnce() {
+  for (const table of ['event_orders', 'catering_orders']) {
+    const cols = await getTableColumnNames(table);
+    if (cols.size === 0) continue;
+
+    if (!cols.has('inquiry_id')) {
+      await pool.query(`ALTER TABLE ${table} ADD COLUMN inquiry_id TEXT`);
+      console.log(`[db] Added inquiry_id column to ${table}`);
+    }
+
+    await pool.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS ${table}_inquiry_id_key
+       ON ${table} (inquiry_id)
+       WHERE inquiry_id IS NOT NULL`,
+    );
+  }
 }
 
 /** @returns {Promise<Set<string>>} */

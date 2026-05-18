@@ -31,6 +31,7 @@ import '../widgets/antd_tokens.dart';
 import '../widgets/pexels_attribution_badge.dart';
 import '../widgets/catering_dish_info_dialog.dart';
 import '../widgets/website_rich_text.dart';
+import '../widgets/customer_footer_feedback.dart';
 import '../theme/website_header_font.dart';
 import 'customer_login.dart';
 import 'checkout_page.dart';
@@ -1215,6 +1216,17 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 onPressed: () => setState(() => _navIndex = 5),
                 child: const Text(
                   'CONTACT US',
+                  style: TextStyle(color: Colors.black),
+                ),
+              ),
+              TextButton(
+                onPressed: () => showCustomerFooterFeedback(
+                  context,
+                  isLoggedIn: _isCustomerLoggedIn,
+                  onLogin: _checkCustomerAuth,
+                ),
+                child: const Text(
+                  'FEEDBACK',
                   style: TextStyle(color: Colors.black),
                 ),
               ),

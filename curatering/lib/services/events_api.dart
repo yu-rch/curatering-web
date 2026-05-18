@@ -530,6 +530,15 @@ class EventsApi {
       finalStatus:
           (map['finalStatus'] ?? map['final_status'] ?? 'successful')
               .toString(),
+      updatedAt: _parseDateTime(
+        map['updatedAt'] ?? map['updated_at'] ?? map['created_at'],
+      ),
     );
+  }
+
+  DateTime? _parseDateTime(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is DateTime) return raw;
+    return DateTime.tryParse(raw.toString());
   }
 }

@@ -6587,7 +6587,7 @@ class _ManageEventsState extends State<ManageEvents>
                         final missing = <String>[];
                         final isCateringOnly = _orderType == 'catering';
 
-                        if (_orderType == null) missing.add('Order type');
+                        if (_orderType == null) missing.add('Service type');
 
                         // Only validate event-specific fields for catering + event orders
                         if (!isCateringOnly) {
@@ -6828,12 +6828,12 @@ class _ManageEventsState extends State<ManageEvents>
                 enabled: !isCateringOnly,
               ),
               const SizedBox(height: 12),
-              // Order Type Radio Buttons
+              // Service type radio buttons
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Order Type',
+                    'Service Type',
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                   ),
                   const SizedBox(height: 8),

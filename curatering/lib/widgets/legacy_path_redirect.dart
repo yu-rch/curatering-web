@@ -11,11 +11,11 @@ class LegacyPathRedirect extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final route = customerRoute(target);
       if (isStaffSiteHost) {
-        redirectToSiteOrigin(customerSiteOrigin, route);
+        redirectToSiteOrigin(staffSiteOrigin, '/login');
         return;
       }
+      final route = customerRoute(target);
       if (!context.mounted) return;
       Navigator.of(context).pushReplacementNamed(route);
     });

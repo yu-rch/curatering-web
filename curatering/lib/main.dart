@@ -78,8 +78,11 @@ String _startupRoutePath() => resolveAppInitialRoute();
 
 String _routePathFromSettings(RouteSettings settings) {
   var path = normalizeRoutePath(settings.name ?? rawWebPath());
+  final raw = settings.name ?? rawWebPath();
   path = stripLegacyCustomerPrefix(path);
-  if (isStaffSiteHost && path == '/') return '/login';
+  if (isStaffSiteHost && (path == '/' || isLegacyBookmarkPath(raw))) {
+    return '/login';
+  }
   return path;
 }
 
@@ -423,6 +426,12 @@ class MyApp extends StatelessWidget {
             }
             final rawName = settings.name ?? name;
             if (isLegacyBookmarkPath(rawName)) {
+              if (isStaffSiteHost) {
+                return MaterialPageRoute<void>(
+                  settings: const RouteSettings(name: '/login'),
+                  builder: (_) => _staffPage(const Login(), '/login'),
+                );
+              }
               return MaterialPageRoute<void>(
                 settings: settings,
                 builder:

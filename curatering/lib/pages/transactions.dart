@@ -1,27 +1,39 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
+import '../config.dart';
 import '../models/event_order.dart';
 import '../services/events_api.dart';
-import '../widgets/app_scaffold.dart';
 import '../utils/order_calculations.dart';
+import '../utils/order_display_utils.dart';
+import '../utils/order_type_utils.dart';
+import '../widgets/app_scaffold.dart';
 
-class TransactionItem {
+class _HistoryRow {
   final String orderNo;
   final String customerName;
   final String eventTitle;
+  final String serviceType;
   final String eventType;
+  final String fulfilmentDateTime;
   final String totalCost;
   final String loyaltyRewards;
+  final DateTime? fulfilmentDate;
 
-  TransactionItem({
+  const _HistoryRow({
     required this.orderNo,
     required this.customerName,
     required this.eventTitle,
+    required this.serviceType,
     required this.eventType,
+    required this.fulfilmentDateTime,
     required this.totalCost,
     required this.loyaltyRewards,
+    required this.fulfilmentDate,
   });
 }
 
@@ -35,12 +47,13 @@ class Transactions extends StatefulWidget {
 class _TransactionsState extends State<Transactions> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String _serviceTypeFilter = '';
   String _eventTypeFilter = '';
 
   bool _isLoading = false;
   String? _errorMessage;
 
-  List<EventOrderDto> _completedOrders = const <EventOrderDto>[];
+  List<_HistoryRow> _allRows = const <_HistoryRow>[];
   List<DateTime> _availableDates = const <DateTime>[];
   DateTime _selectedDate = DateTime(
     DateTime.now().year,
@@ -76,26 +89,96 @@ class _TransactionsState extends State<Transactions> {
     });
 
     try {
-      final orders = await EventsApi.instance.listOrders(
+      final cateringFuture = EventsApi.instance.listOrders(
         status: 'completed',
         roleType: roleType,
         compact: true,
       );
+      final restaurantFuture = _loadRestaurantHistory();
+
+      final orders = await cateringFuture;
+      final restaurantOrders = await restaurantFuture;
+
       final completedOnly = orders
           .where((o) => o.status == 'completed' && o.finalStatus != 'cancelled')
           .toList();
 
-      final dates = <DateTime>{};
+      final rows = <_HistoryRow>[];
+
       for (final o in completedOnly) {
-        if (o.scheduleSlots.isEmpty) continue;
-        final d = DateTime.tryParse(o.scheduleSlots.first.date);
+        final totalCost = computeOrderTotalCost(o);
+        final points = o.totalCost > 0
+            ? computeLoyaltyPointsFromCost(o.totalCost)
+            : computeLoyaltyPointsFromCost(totalCost);
+        rows.add(
+          _HistoryRow(
+            orderNo: _displayOrderNo(o),
+            customerName: o.customerName,
+            eventTitle: o.eventTitle.trim().isEmpty ? '—' : o.eventTitle,
+            serviceType: serviceTypeDisplayLabel(
+              o.orderType,
+              eventTitle: o.eventTitle,
+            ),
+            eventType: historyEventTypeColumnValue(
+              serviceKind: 'catering',
+              orderType: o.orderType,
+              eventType: o.eventType,
+            ),
+            fulfilmentDateTime: formatFulfilmentDateTimeFromEvent(o),
+            totalCost: formatPesos(
+              o.totalCost > 0 ? o.totalCost : totalCost,
+            ),
+            loyaltyRewards: '+$points pts',
+            fulfilmentDate: fulfilmentDateOnlyFromEvent(o),
+          ),
+        );
+      }
+
+      for (final o in restaurantOrders) {
+        final total = _parseAmount(o['total_amount']);
+        final pointsEarned = o['points_earned'];
+        final points = pointsEarned is num && pointsEarned > 0
+            ? pointsEarned.round()
+            : computeLoyaltyPointsFromCost(total);
+        rows.add(
+          _HistoryRow(
+            orderNo: formatRestaurantOrderNo(o),
+            customerName: (o['full_name'] ?? o['guest_contact_email'] ?? '—')
+                .toString(),
+            eventTitle: '—',
+            serviceType: serviceTypeDisplayLabel('restaurant'),
+            eventType: historyEventTypeColumnValue(
+              serviceKind: 'restaurant',
+              orderType: 'restaurant',
+              eventType: '',
+            ),
+            fulfilmentDateTime: formatFulfilmentDateTimeFromRestaurant(o),
+            totalCost: formatPesos(total),
+            loyaltyRewards: '+$points pts',
+            fulfilmentDate: fulfilmentDateOnlyFromRestaurant(o),
+          ),
+        );
+      }
+
+      rows.sort((a, b) {
+        final ad = a.fulfilmentDate;
+        final bd = b.fulfilmentDate;
+        if (ad == null && bd == null) return 0;
+        if (ad == null) return 1;
+        if (bd == null) return -1;
+        return bd.compareTo(ad);
+      });
+
+      final dates = <DateTime>{};
+      for (final r in rows) {
+        final d = r.fulfilmentDate;
         if (d == null) continue;
         dates.add(DateTime(d.year, d.month, d.day));
       }
       final sortedDates = dates.toList()..sort((a, b) => b.compareTo(a));
 
       setState(() {
-        _completedOrders = completedOnly;
+        _allRows = rows;
         _availableDates = sortedDates;
         if (sortedDates.isNotEmpty) {
           _selectedDate = sortedDates.first;
@@ -106,6 +189,42 @@ class _TransactionsState extends State<Transactions> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadRestaurantHistory() async {
+    if (!AuthSession.instance.hasToken) return const [];
+
+    final token = AuthSession.instance.token;
+    if (token == null || token.isEmpty) return const [];
+
+    final response = await http.get(
+      Uri.parse(
+        '$apiBaseUrl/api/manager/restaurant/orders?status=delivered&limit=200',
+      ),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode != 200) return const [];
+
+    final data = jsonDecode(response.body);
+    final raw = data is Map ? data['orders'] : data;
+    if (raw is! List) return const [];
+
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((o) => (o['status'] ?? '').toString().toLowerCase() == 'delivered')
+        .toList();
+  }
+
+  double _parseAmount(dynamic amount) {
+    if (amount == null) return 0.0;
+    if (amount is num) return amount.toDouble();
+    if (amount is String) return double.tryParse(amount) ?? 0.0;
+    return 0.0;
   }
 
   Widget _dateTile(DateTime date) {
@@ -158,44 +277,38 @@ class _TransactionsState extends State<Transactions> {
       _selectedDate.day,
     );
 
-    final ordersForSelectedDate = _completedOrders.where((o) {
-      if (o.scheduleSlots.isEmpty) return false;
-      final d = DateTime.tryParse(o.scheduleSlots.first.date);
+    var filteredRows = _allRows.where((r) {
+      final d = r.fulfilmentDate;
       if (d == null) return false;
       return DateTime(d.year, d.month, d.day) == selectedKey;
     }).toList();
 
-    var filteredOrders = ordersForSelectedDate;
-    if (_eventTypeFilter.isNotEmpty) {
-      filteredOrders = filteredOrders
+    if (_serviceTypeFilter.isNotEmpty) {
+      filteredRows = filteredRows
           .where(
-            (o) =>
-                o.eventType.trim().toLowerCase() ==
+            (r) =>
+                r.serviceType.trim().toLowerCase() ==
+                _serviceTypeFilter.toLowerCase(),
+          )
+          .toList();
+    }
+    if (_eventTypeFilter.isNotEmpty) {
+      filteredRows = filteredRows
+          .where(
+            (r) =>
+                r.eventType.trim().toLowerCase() ==
                 _eventTypeFilter.toLowerCase(),
           )
           .toList();
     }
     if (_searchQuery.isNotEmpty) {
-      filteredOrders = filteredOrders.where((o) {
+      filteredRows = filteredRows.where((r) {
         final haystack =
-            '${_displayOrderNo(o)} ${o.eventTitle} ${o.customerName} ${o.eventType}'
+            '${r.orderNo} ${r.eventTitle} ${r.customerName} ${r.serviceType} ${r.eventType} ${r.fulfilmentDateTime}'
                 .toLowerCase();
         return haystack.contains(_searchQuery);
       }).toList();
     }
-
-    final orders = filteredOrders.map((o) {
-      final totalCost = computeOrderTotalCost(o);
-      final points = computeLoyaltyPointsFromCost(totalCost);
-      return TransactionItem(
-        orderNo: _displayOrderNo(o),
-        customerName: o.customerName,
-        eventTitle: o.eventTitle,
-        eventType: o.eventType,
-        totalCost: formatPesos(totalCost),
-        loyaltyRewards: '+$points pts',
-      );
-    }).toList();
 
     return AppScaffold(
       showSearch: true,
@@ -215,7 +328,7 @@ class _TransactionsState extends State<Transactions> {
             Row(
               children: [
                 Text(
-                  'Completed catering and event orders.',
+                  'Completed catering, event, and restaurant orders.',
                   style: TextStyle(color: Colors.grey.shade700),
                 ),
                 const Spacer(),
@@ -239,6 +352,30 @@ class _TransactionsState extends State<Transactions> {
                 SizedBox(
                   width: 220,
                   child: DropdownButtonFormField<String>(
+                    value: _serviceTypeFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Service type',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('All service types'),
+                      ),
+                      ...{
+                        for (final r in _allRows) r.serviceType.trim(),
+                      }.where((t) => t.isNotEmpty).map(
+                        (t) => DropdownMenuItem(value: t, child: Text(t)),
+                      ),
+                    ],
+                    onChanged: (v) =>
+                        setState(() => _serviceTypeFilter = v ?? ''),
+                  ),
+                ),
+                SizedBox(
+                  width: 220,
+                  child: DropdownButtonFormField<String>(
                     value: _eventTypeFilter,
                     decoration: const InputDecoration(
                       labelText: 'Event type',
@@ -248,11 +385,14 @@ class _TransactionsState extends State<Transactions> {
                     items: [
                       const DropdownMenuItem(
                         value: '',
-                        child: Text('All types'),
+                        child: Text('All event types'),
                       ),
                       ...{
-                        for (final o in _completedOrders)
-                          if (o.eventType.trim().isNotEmpty) o.eventType.trim(),
+                        for (final r in _allRows)
+                          if (r.eventType.trim().isNotEmpty &&
+                              r.eventType != 'N/A' &&
+                              r.eventType != '—')
+                            r.eventType.trim(),
                       }.map(
                         (t) => DropdownMenuItem(value: t, child: Text(t)),
                       ),
@@ -261,10 +401,13 @@ class _TransactionsState extends State<Transactions> {
                         setState(() => _eventTypeFilter = v ?? ''),
                   ),
                 ),
-                if (_eventTypeFilter.isNotEmpty || _searchQuery.isNotEmpty)
+                if (_serviceTypeFilter.isNotEmpty ||
+                    _eventTypeFilter.isNotEmpty ||
+                    _searchQuery.isNotEmpty)
                   TextButton.icon(
                     onPressed: () {
                       setState(() {
+                        _serviceTypeFilter = '';
                         _eventTypeFilter = '';
                         _searchQuery = '';
                         _searchController.clear();
@@ -336,7 +479,7 @@ class _TransactionsState extends State<Transactions> {
                                   child: CircularProgressIndicator(),
                                 ),
                               )
-                            else if (orders.isEmpty)
+                            else if (filteredRows.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 40,
@@ -359,17 +502,23 @@ class _TransactionsState extends State<Transactions> {
                                       DataColumn(label: Text('Order No.')),
                                       DataColumn(label: Text('Customer')),
                                       DataColumn(label: Text('Event')),
-                                      DataColumn(label: Text('Type')),
+                                      DataColumn(label: Text('Service type')),
+                                      DataColumn(label: Text('Event type')),
+                                      DataColumn(
+                                        label: Text('Fulfilment date & time'),
+                                      ),
                                       DataColumn(label: Text('Total')),
                                       DataColumn(label: Text('Loyalty')),
                                     ],
-                                    rows: orders.map((tx) {
+                                    rows: filteredRows.map((tx) {
                                       return DataRow(
                                         cells: [
                                           DataCell(Text(tx.orderNo)),
                                           DataCell(Text(tx.customerName)),
                                           DataCell(Text(tx.eventTitle)),
+                                          DataCell(Text(tx.serviceType)),
                                           DataCell(Text(tx.eventType)),
+                                          DataCell(Text(tx.fulfilmentDateTime)),
                                           DataCell(Text(tx.totalCost)),
                                           DataCell(Text(tx.loyaltyRewards)),
                                         ],

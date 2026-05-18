@@ -107,7 +107,7 @@ String resolveAppInitialRoute() {
   var path = normalizeRoutePath(currentWebPath());
 
   if (isStaffSiteHost) {
-    if (path == '/') return '/login';
+    if (path == '/' || isLegacyBookmarkPath(rawWebPath())) return '/login';
     return path;
   }
 
@@ -129,7 +129,7 @@ void bootstrapWebRouting() {
 
   if (host == 'www.$staffCanonical') {
     var target = rawPath;
-    if (target == '/') target = '/login';
+    if (target == '/' || isLegacyBookmarkPath(rawPath)) target = '/login';
     redirectBrowserTo(Uri.parse('https://$staffCanonical$target'));
     return;
   }
@@ -142,10 +142,7 @@ void bootstrapWebRouting() {
   if (!isStaffSiteHost) return;
 
   if (isLegacyBookmarkPath(rawPath)) {
-    redirectToSiteOrigin(
-      customerSiteOrigin,
-      stripLegacyCustomerPrefix(rawPath),
-    );
+    redirectBrowserTo(Uri.parse('$staffSiteOrigin/login'));
     return;
   }
 

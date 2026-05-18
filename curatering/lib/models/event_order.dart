@@ -103,6 +103,8 @@ class EventOrderDto {
   /// True when [listSummaryOnly] was returned: theme image payloads omitted; use [EventsApi.getEventOrder] for full data.
   final bool themeAssetsDeferred;
 
+  final DateTime? updatedAt;
+
   const EventOrderDto({
     required this.id,
     this.inquiryId = '',
@@ -133,6 +135,7 @@ class EventOrderDto {
     this.actualEventImages = const [],
     this.finalStatus = 'successful',
     this.themeAssetsDeferred = false,
+    this.updatedAt,
   });
 }
 

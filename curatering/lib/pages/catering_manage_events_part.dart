@@ -73,7 +73,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         dto.totalCost > 0 ? dto.totalCost : computeOrderTotalCost(dto);
   return [
       AntdDescriptionItem(
-        label: 'Order type',
+        label: 'Service type',
         value: _orderTypeColumnLabel(dto),
       ),
       AntdDescriptionItem(label: 'Status', value: dto.status),
@@ -270,7 +270,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                     Colors.grey.shade100,
                   ),
                   columns: const [
-                    DataColumn(label: Text('Order type')),
+                    DataColumn(label: Text('Service type')),
                     DataColumn(label: Text('Event / customer')),
                     DataColumn(label: Text('Customer')),
                     DataColumn(label: Text('Date')),
@@ -403,7 +403,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                       Colors.grey.shade100,
                     ),
                     columns: const [
-                      DataColumn(label: Text('Order type')),
+                      DataColumn(label: Text('Service type')),
                       DataColumn(label: Text('Customer')),
                       DataColumn(label: Text('Contact')),
                       DataColumn(label: Text('Event type')),

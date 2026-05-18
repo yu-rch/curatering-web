@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url'
 import {
   initDb,
   ensureAuthSchemaQuick,
+  ensureOrderInquiryIdColumns,
   pool,
   poolQueryWithRetry,
   generateUserId,
@@ -561,6 +562,7 @@ function themeDesignListColumn(compact) {
 async function fetchEventOrderRowById(orderId) {
   const id = String(orderId || "").trim();
   if (!id) return null;
+  await ensureOrderInquiryIdColumns();
   const catering = await pool.query(
     `SELECT
         id,
@@ -568,7 +570,7 @@ async function fetchEventOrderRowById(orderId) {
         source,
         status,
         null AS "eventTitle",
-        'catering' AS "eventType",
+        null AS "eventType",
         null AS "formalityLevel",
         customer_name AS "customerName",
         contact_person AS "contactPerson",
@@ -585,7 +587,8 @@ async function fetchEventOrderRowById(orderId) {
         post_analysis AS "postAnalysis",
         total_cost AS "totalCost",
         final_status AS "finalStatus",
-        created_at
+        created_at,
+        COALESCE(updated_at, created_at) AS "updatedAt"
        FROM catering_orders
        WHERE id = $1`,
     [id],
@@ -594,6 +597,7 @@ async function fetchEventOrderRowById(orderId) {
   const ev = await pool.query(
     `SELECT
         id,
+        inquiry_id AS "inquiryId",
         source,
         status,
         event_title AS "eventTitle",
@@ -614,7 +618,8 @@ async function fetchEventOrderRowById(orderId) {
         post_analysis AS "postAnalysis",
         total_cost AS "totalCost",
         final_status AS "finalStatus",
-        created_at
+        created_at,
+        COALESCE(updated_at, created_at) AS "updatedAt"
        FROM event_orders
        WHERE id = $1`,
     [id],
@@ -3757,6 +3762,7 @@ app.get(
     requireRoles(req, res, next, new Set(["manager", "admin", "super_admin"])),
   async (req, res) => {
     try {
+    await ensureOrderInquiryIdColumns();
     const { status } = req.query || {};
     if (!status)
       return res
@@ -3773,7 +3779,7 @@ app.get(
         source,
         status,
         null AS "eventTitle",
-        'catering' AS "eventType",
+        null AS "eventType",
         null AS "formalityLevel",
         customer_name AS "customerName",
         contact_person AS "contactPerson",
@@ -3790,7 +3796,8 @@ app.get(
         post_analysis AS "postAnalysis",
         total_cost AS "totalCost",
         final_status AS "finalStatus",
-        created_at
+        created_at,
+        COALESCE(updated_at, created_at) AS "updatedAt"
        FROM catering_orders
        WHERE
          status = $1
@@ -3819,7 +3826,8 @@ app.get(
         post_analysis AS "postAnalysis",
         total_cost AS "totalCost",
         final_status AS "finalStatus",
-        created_at
+        created_at,
+        COALESCE(updated_at, created_at) AS "updatedAt"
        FROM event_orders
        WHERE
          status = $1
@@ -4169,6 +4177,7 @@ app.get(
   (req, res, next) =>
     requireRoles(req, res, next, new Set(["supervisor", "admin", "super_admin"])),
   async (req, res) => {
+    await ensureOrderInquiryIdColumns();
     const { status } = req.query || {};
     if (!status)
       return res
@@ -4185,7 +4194,7 @@ app.get(
         source,
         status,
         null AS "eventTitle",
-        'catering' AS "eventType",
+        null AS "eventType",
         null AS "formalityLevel",
         customer_name AS "customerName",
         contact_person AS "contactPerson",
@@ -4202,7 +4211,8 @@ app.get(
         post_analysis AS "postAnalysis",
         total_cost AS "totalCost",
         final_status AS "finalStatus",
-        created_at
+        created_at,
+        COALESCE(updated_at, created_at) AS "updatedAt"
        FROM catering_orders
        WHERE
          status = $1
@@ -4231,7 +4241,8 @@ app.get(
         post_analysis AS "postAnalysis",
         total_cost AS "totalCost",
         final_status AS "finalStatus",
-        created_at
+        created_at,
+        COALESCE(updated_at, created_at) AS "updatedAt"
        FROM event_orders
        WHERE
          status = $1
@@ -6249,6 +6260,75 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
+    app.post(
+      '/api/restaurant/orders/:orderId/feedback',
+      customerAuthRequired,
+      async (req, res) => {
+        try {
+          const { orderId } = req.params;
+          const stars = Number(req.body?.stars ?? req.body?.feedback_stars);
+          const remarks = String(req.body?.remarks ?? req.body?.feedback_remarks ?? '').trim();
+
+          if (!Number.isFinite(stars) || stars < 1 || stars > 5) {
+            return res.status(400).json({ error: 'Rating must be between 1 and 5 stars' });
+          }
+
+          const lookup = restaurantOrderWhereClause(orderId, 1);
+          if (!lookup) {
+            return res.status(400).json({ error: 'Invalid order id' });
+          }
+
+          const existing = await pool.query(
+            `SELECT id, customer_id, order_status, feedback_stars
+             FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
+            [lookup.value],
+          );
+          if (existing.rowCount === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+          }
+          const order = existing.rows[0];
+          if (String(order.customer_id) !== String(req.customer.id)) {
+            return res.status(403).json({ error: 'Order not found' });
+          }
+          if (String(order.order_status).toLowerCase() !== 'delivered') {
+            return res.status(400).json({ error: 'Feedback is only available for delivered orders' });
+          }
+          if (order.feedback_stars != null) {
+            return res.status(409).json({ error: 'Feedback was already submitted for this order' });
+          }
+
+          const updated = await pool.query(
+            `UPDATE restaurant_orders
+             SET feedback_stars = $2,
+                 feedback_remarks = $3,
+                 feedback_submitted_at = now(),
+                 updated_at = now()
+             WHERE id = $1
+             RETURNING *`,
+            [order.id, Math.round(stars), remarks || null],
+          );
+
+          let parsedItems = updated.rows[0].items;
+          if (typeof parsedItems === 'string') {
+            try {
+              parsedItems = JSON.parse(parsedItems);
+            } catch {
+              parsedItems = [];
+            }
+          }
+          if (!Array.isArray(parsedItems)) parsedItems = [];
+
+          res.json({
+            ok: true,
+            order: serializeRestaurantOrderRow(updated.rows[0], parsedItems),
+          });
+        } catch (error) {
+          console.error('Error saving restaurant order feedback:', error);
+          res.status(500).json({ error: 'Failed to save feedback' });
+        }
+      },
+    );
+
     app.get('/api/restaurant/orders', customerAuthRequired, async (req, res) => {
       try {
         const result = await pool.query(
@@ -7049,6 +7129,7 @@ async function registerRoutesAfterDbInit() {
     // Get customer event/catering orders
     app.get('/api/customer/events/orders', customerAuthRequired, async (req, res) => {
       try {
+        await ensureOrderInquiryIdColumns();
         const customerId = req.customer.id;
         const customerResult = await pool.query(
           `SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1;`,
