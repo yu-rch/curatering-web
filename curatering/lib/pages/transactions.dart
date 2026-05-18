@@ -12,6 +12,7 @@ import '../utils/order_calculations.dart';
 import '../utils/order_display_utils.dart';
 import '../utils/order_type_utils.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/paginated_data_table.dart';
 
 class _HistoryRow {
   final String orderNo;
@@ -495,36 +496,33 @@ class _TransactionsState extends State<Transactions> {
                               )
                             else
                               Expanded(
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: DataTable(
-                                    columns: const [
-                                      DataColumn(label: Text('Order No.')),
-                                      DataColumn(label: Text('Customer')),
-                                      DataColumn(label: Text('Event')),
-                                      DataColumn(label: Text('Service type')),
-                                      DataColumn(label: Text('Event type')),
-                                      DataColumn(
-                                        label: Text('Fulfilment date & time'),
-                                      ),
-                                      DataColumn(label: Text('Total')),
-                                      DataColumn(label: Text('Loyalty')),
-                                    ],
-                                    rows: filteredRows.map((tx) {
-                                      return DataRow(
-                                        cells: [
-                                          DataCell(Text(tx.orderNo)),
-                                          DataCell(Text(tx.customerName)),
-                                          DataCell(Text(tx.eventTitle)),
-                                          DataCell(Text(tx.serviceType)),
-                                          DataCell(Text(tx.eventType)),
-                                          DataCell(Text(tx.fulfilmentDateTime)),
-                                          DataCell(Text(tx.totalCost)),
-                                          DataCell(Text(tx.loyaltyRewards)),
-                                        ],
-                                      );
-                                    }).toList(),
-                                  ),
+                                child: PagedDataTable(
+                                  columns: const [
+                                    DataColumn(label: Text('Order No.')),
+                                    DataColumn(label: Text('Customer')),
+                                    DataColumn(label: Text('Event')),
+                                    DataColumn(label: Text('Service type')),
+                                    DataColumn(label: Text('Event type')),
+                                    DataColumn(
+                                      label: Text('Fulfilment date & time'),
+                                    ),
+                                    DataColumn(label: Text('Total')),
+                                    DataColumn(label: Text('Loyalty')),
+                                  ],
+                                  rows: filteredRows.map((tx) {
+                                    return DataRow(
+                                      cells: [
+                                        DataCell(Text(tx.orderNo)),
+                                        DataCell(Text(tx.customerName)),
+                                        DataCell(Text(tx.eventTitle)),
+                                        DataCell(Text(tx.serviceType)),
+                                        DataCell(Text(tx.eventType)),
+                                        DataCell(Text(tx.fulfilmentDateTime)),
+                                        DataCell(Text(tx.totalCost)),
+                                        DataCell(Text(tx.loyaltyRewards)),
+                                      ],
+                                    );
+                                  }).toList(),
                                 ),
                               ),
                           ],

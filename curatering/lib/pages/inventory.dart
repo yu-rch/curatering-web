@@ -6,6 +6,7 @@ import '../auth/roles.dart';
 import '../services/api_client.dart';
 import '../utils/debouncer.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/paginated_data_table.dart';
 
 class InventoryItem {
   final String id;
@@ -522,14 +523,9 @@ class _InventoryState extends State<Inventory> {
   }
 
   Widget _buildTabularView(List<InventoryItem> items) {
-    return Scrollbar(
-      thumbVisibility: true,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.vertical,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: DataTable(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: PagedDataTable(
         headingRowColor: const WidgetStatePropertyAll(Color(0xFFF5F7F9)),
         columnSpacing: 20,
         columns: const [
@@ -628,8 +624,6 @@ class _InventoryState extends State<Inventory> {
                 ],
               );
             }).toList(),
-          ),
-        ),
       ),
     );
   }

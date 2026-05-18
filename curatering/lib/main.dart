@@ -30,6 +30,7 @@ import 'auth/roles.dart';
 import 'auth/staff_permission_refresh.dart';
 import 'widgets/page_permission_guard.dart';
 import 'pages/help_requests.dart';
+import 'pages/customer_feedback_page.dart';
 import 'pages/action_logs.dart';
 import 'pages/customer_management.dart';
 import 'pages/website_admin_page.dart';
@@ -149,6 +150,14 @@ Route<dynamic>? _buildRouteForPath(String path) {
           ),
           '/help-requests',
         ),
+    '/customer-feedback':
+        (context) => _staffPage(
+          const RoleGuard(
+            requiredRole: Role.superAdmin,
+            child: CustomerFeedbackPage(),
+          ),
+          '/customer-feedback',
+        ),
     '/action-logs':
         (context) => _staffPage(
           const RoleGuard(
@@ -266,7 +275,7 @@ Route<dynamic>? _buildRouteForPath(String path) {
           const RoleGuard(
             requiredRole: Role.superAdmin,
             child: CustomerWebsiteScreen(
-              contentEditable: false,
+              contentEditable: true,
               showStaffChrome: true,
             ),
           ),
@@ -516,6 +525,14 @@ class MyApp extends StatelessWidget {
                   ),
                   '/help-requests',
                 ),
+            '/customer-feedback':
+                (context) => _staffPage(
+                  const RoleGuard(
+                    requiredRole: Role.superAdmin,
+                    child: CustomerFeedbackPage(),
+                  ),
+                  '/customer-feedback',
+                ),
             '/action-logs':
                 (context) => _staffPage(
                   const RoleGuard(
@@ -633,7 +650,7 @@ class MyApp extends StatelessWidget {
                   const RoleGuard(
                     requiredRole: Role.superAdmin,
                     child: CustomerWebsiteScreen(
-                      contentEditable: false,
+                      contentEditable: true,
                       showStaffChrome: true,
                     ),
                   ),

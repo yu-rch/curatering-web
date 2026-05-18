@@ -263,9 +263,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                 ),
               )
             else
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
+              PagedDataTable(
                   headingRowColor: WidgetStateProperty.all(
                     Colors.grey.shade100,
                   ),
@@ -317,7 +315,6 @@ extension _ManageEventsTableExt on _ManageEventsState {
                         );
                       }).toList(),
                 ),
-              ),
           ],
         ),
       ),
@@ -396,9 +393,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                   ),
                 )
               else
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
+                PagedDataTable(
                     headingRowColor: WidgetStateProperty.all(
                       Colors.grey.shade100,
                     ),
@@ -490,7 +485,6 @@ extension _ManageEventsTableExt on _ManageEventsState {
                           );
                         }).toList(),
                   ),
-                ),
             ],
           ),
         ),

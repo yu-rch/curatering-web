@@ -2753,6 +2753,258 @@ app.get(
   },
 );
 
+function buildHeuristicFeedbackAnalysis(feedbacks) {
+  const count = feedbacks.length;
+  if (count === 0) {
+    return {
+      summary: "No customer feedback to analyze yet.",
+      interpretation: "Encourage customers to rate delivered restaurant orders from the website footer.",
+      recommendations: [
+        "Promote the feedback link after order delivery notifications.",
+        "Review delivery times and food quality once reviews arrive.",
+      ],
+      source: "heuristic",
+      feedbackCount: 0,
+      averageStars: null,
+    };
+  }
+
+  const stars = feedbacks.map((f) => Number(f.stars)).filter((n) => Number.isFinite(n));
+  const avg = stars.length ? stars.reduce((a, b) => a + b, 0) / stars.length : null;
+  const low = feedbacks.filter((f) => Number(f.stars) <= 2);
+  const high = feedbacks.filter((f) => Number(f.stars) >= 4);
+  const withRemarks = feedbacks.filter((f) => String(f.remarks || "").trim().length > 0);
+
+  const summary = `Based on ${count} review(s), average rating is ${avg != null ? avg.toFixed(1) : "n/a"} stars. `
+    + `${high.length} positive (4–5★), ${low.length} critical (1–2★), ${withRemarks.length} included written remarks.`;
+
+  let interpretation = "Overall sentiment appears ";
+  if (avg != null) {
+    if (avg >= 4.2) interpretation += "strong — customers are generally satisfied.";
+    else if (avg >= 3.5) interpretation += "mixed — some areas may need attention.";
+    else interpretation += "weak — investigate recurring complaints in remarks.";
+  } else {
+    interpretation += "unclear — star ratings are missing on some rows.";
+  }
+
+  const recommendations = [];
+  if (low.length > 0) {
+    recommendations.push(
+      `Follow up on ${low.length} low-rated order(s); read remarks for delivery, temperature, or portion issues.`,
+    );
+  }
+  if (withRemarks.length > 0) {
+    recommendations.push(
+      "Tag recurring themes from written remarks (e.g. late delivery, packaging) and assign owners in kitchen or logistics.",
+    );
+  }
+  recommendations.push(
+    "Share positive feedback with the team weekly; address top complaint in the next ops meeting.",
+  );
+  if (avg != null && avg < 4) {
+    recommendations.push(
+      "Consider a short customer recovery offer (discount or free item) for 1–2★ orders within 48 hours.",
+    );
+  }
+
+  return {
+    summary,
+    interpretation,
+    recommendations,
+    source: "heuristic",
+    feedbackCount: count,
+    averageStars: avg,
+  };
+}
+
+async function analyzeFeedbackWithOpenAI(feedbacks) {
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!apiKey) {
+    return buildHeuristicFeedbackAnalysis(feedbacks);
+  }
+
+  const model = String(process.env.OPENAI_MODEL || "gpt-4o-mini").trim();
+  const sample = feedbacks.slice(0, 120).map((f) => ({
+    orderNo: f.orderNo,
+    stars: f.stars,
+    remarks: f.remarks,
+    customerName: f.customerName,
+    submittedAt: f.submittedAt,
+  }));
+
+  const system = `You analyze restaurant customer order feedback for a catering business operations team.
+Respond ONLY with valid JSON (no markdown) using keys:
+summary (string, 2-3 sentences),
+interpretation (string, 2-4 sentences on themes and sentiment),
+recommendations (array of 3-5 short actionable strings for management).`;
+
+  const user = `Analyze these ${feedbacks.length} customer feedback entries:\n${JSON.stringify(sample)}`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000);
+  try {
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.35,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error("[feedback AI] OpenAI error:", resp.status, errText.slice(0, 400));
+      return buildHeuristicFeedbackAnalysis(feedbacks);
+    }
+
+    const data = await resp.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) return buildHeuristicFeedbackAnalysis(feedbacks);
+
+    let parsed;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      return buildHeuristicFeedbackAnalysis(feedbacks);
+    }
+
+    const stars = feedbacks.map((f) => Number(f.stars)).filter((n) => Number.isFinite(n));
+    const avg = stars.length ? stars.reduce((a, b) => a + b, 0) / stars.length : null;
+
+    return {
+      summary: String(parsed.summary || "").trim() || buildHeuristicFeedbackAnalysis(feedbacks).summary,
+      interpretation: String(parsed.interpretation || "").trim(),
+      recommendations: Array.isArray(parsed.recommendations)
+        ? parsed.recommendations.map((r) => String(r).trim()).filter(Boolean).slice(0, 8)
+        : [],
+      source: "openai",
+      feedbackCount: feedbacks.length,
+      averageStars: avg,
+    };
+  } catch (e) {
+    clearTimeout(timeout);
+    console.error("[feedback AI] request failed:", e?.message || e);
+    return buildHeuristicFeedbackAnalysis(feedbacks);
+  }
+}
+
+// Super Admin: Customer feedback (restaurant orders)
+app.get(
+  "/api/super-admin/customer-feedback",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    try {
+      const { search } = req.query || {};
+      const params = [];
+      let whereSql = "WHERE ro.feedback_stars IS NOT NULL";
+      if (search) {
+        whereSql += ` AND (
+          ro.order_no::text ILIKE $1 OR
+          COALESCE(ro.full_name, '') ILIKE $1 OR
+          COALESCE(ca.email, ro.guest_contact_email, '') ILIKE $1 OR
+          COALESCE(ro.feedback_remarks, '') ILIKE $1
+        )`;
+        params.push(`%${search}%`);
+      }
+
+      const result = await pool.query(
+        `SELECT
+          ro.id,
+          ro.order_no AS "orderNo",
+          COALESCE(ca.full_name, ro.full_name, 'Guest') AS "customerName",
+          COALESCE(ca.email, ro.guest_contact_email, '') AS "customerEmail",
+          ro.feedback_stars AS stars,
+          COALESCE(ro.feedback_remarks, '') AS remarks,
+          ro.feedback_submitted_at AS "submittedAt"
+        FROM restaurant_orders ro
+        LEFT JOIN customer_accounts ca ON ca.id = ro.customer_id
+        ${whereSql}
+        ORDER BY ro.feedback_submitted_at DESC NULLS LAST, ro.updated_at DESC
+        LIMIT 1000`,
+        params,
+      );
+
+      return res.json({
+        feedback: result.rows.map((r) => ({
+          id: String(r.id),
+          orderNo: r.orderNo != null ? String(r.orderNo) : "",
+          customerName: r.customerName || "Guest",
+          customerEmail: r.customerEmail || "",
+          stars: Number(r.stars) || 0,
+          remarks: r.remarks || "",
+          submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
+        })),
+      });
+    } catch (error) {
+      console.error("Error listing customer feedback:", error);
+      return res.status(500).json({ error: "Failed to load customer feedback" });
+    }
+  },
+);
+
+app.post(
+  "/api/super-admin/customer-feedback/analyze",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    try {
+      const { search } = { ...req.query, ...(req.body || {}) };
+      const params = [];
+      let whereSql = "WHERE ro.feedback_stars IS NOT NULL";
+      if (search) {
+        whereSql += ` AND (
+          ro.order_no::text ILIKE $1 OR
+          COALESCE(ro.full_name, '') ILIKE $1 OR
+          COALESCE(ca.email, ro.guest_contact_email, '') ILIKE $1 OR
+          COALESCE(ro.feedback_remarks, '') ILIKE $1
+        )`;
+        params.push(`%${search}%`);
+      }
+
+      const result = await pool.query(
+        `SELECT
+          ro.order_no AS "orderNo",
+          COALESCE(ca.full_name, ro.full_name, 'Guest') AS "customerName",
+          ro.feedback_stars AS stars,
+          COALESCE(ro.feedback_remarks, '') AS remarks,
+          ro.feedback_submitted_at AS "submittedAt"
+        FROM restaurant_orders ro
+        LEFT JOIN customer_accounts ca ON ca.id = ro.customer_id
+        ${whereSql}
+        ORDER BY ro.feedback_submitted_at DESC NULLS LAST
+        LIMIT 200`,
+        params,
+      );
+
+      const feedbacks = result.rows.map((r) => ({
+        orderNo: r.orderNo != null ? String(r.orderNo) : "",
+        customerName: r.customerName || "Guest",
+        stars: Number(r.stars) || 0,
+        remarks: r.remarks || "",
+        submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
+      }));
+
+      const analysis = await analyzeFeedbackWithOpenAI(feedbacks);
+      return res.json({ analysis });
+    } catch (error) {
+      console.error("Error analyzing customer feedback:", error);
+      return res.status(500).json({ error: "Failed to analyze customer feedback" });
+    }
+  },
+);
+
 // Manager: create/list/finalize event orders
 async function readWebsiteContent() {
   try {

@@ -7,6 +7,7 @@ import '../services/api_client.dart';
 import '../services/menu_store.dart';
 import '../services/super_admin_api.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/paginated_data_table.dart';
 import 'inventory.dart';
 
 class ArchivedTransaction {
@@ -141,13 +142,7 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.vertical,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(columns: columns, rows: rows),
-          ),
-        ),
+        child: PagedDataTable(columns: columns, rows: rows),
       ),
     );
   }
@@ -472,69 +467,59 @@ class _ArchiveInventoryTabState extends State<ArchiveInventoryTab> {
                       style: TextStyle(color: Colors.grey.shade600),
                     ),
                   )
-                  : Scrollbar(
-                    thumbVisibility: true,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.vertical,
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: DataTable(
-                          headingRowColor: const WidgetStatePropertyAll(
-                            Color(0xFFF5F7F9),
-                          ),
-                          columns: const [
-                            DataColumn(label: Text('Name')),
-                            DataColumn(label: Text('Category')),
-                            DataColumn(label: Text('Qty')),
-                            DataColumn(label: Text('Unit')),
-                            DataColumn(label: Text('Unit cost')),
-                            DataColumn(label: Text('Updated')),
-                            DataColumn(label: Text('Actions')),
-                          ],
-                          rows:
-                              rows.map((item) {
-                                return DataRow(
-                                  cells: [
-                                    DataCell(Text(item.name)),
-                                    DataCell(Text(item.category)),
-                                    DataCell(Text('${item.quantity}')),
-                                    DataCell(Text(item.unit)),
-                                    DataCell(
-                                      Text('₱${item.unitCost.toStringAsFixed(2)}'),
-                                    ),
-                                    DataCell(Text(_fmt(item.lastUpdated))),
-                                    DataCell(
-                                      _isManager
-                                          ? Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              IconButton(
-                                                tooltip: 'Restore',
-                                                icon: const Icon(
-                                                  Icons.unarchive,
-                                                  color: Colors.blue,
-                                                ),
-                                                onPressed: () => _restore(item),
-                                              ),
-                                              IconButton(
-                                                tooltip: 'Delete',
-                                                icon: const Icon(
-                                                  Icons.delete_forever,
-                                                  color: Colors.red,
-                                                ),
-                                                onPressed:
-                                                    () => _deleteForever(item),
-                                              ),
-                                            ],
-                                          )
-                                          : const Text('—'),
-                                    ),
-                                  ],
-                                );
-                              }).toList(),
-                        ),
-                      ),
+                  : PagedDataTable(
+                    headingRowColor: const WidgetStatePropertyAll(
+                      Color(0xFFF5F7F9),
                     ),
+                    columns: const [
+                      DataColumn(label: Text('Name')),
+                      DataColumn(label: Text('Category')),
+                      DataColumn(label: Text('Qty')),
+                      DataColumn(label: Text('Unit')),
+                      DataColumn(label: Text('Unit cost')),
+                      DataColumn(label: Text('Updated')),
+                      DataColumn(label: Text('Actions')),
+                    ],
+                    rows:
+                        rows.map((item) {
+                          return DataRow(
+                            cells: [
+                              DataCell(Text(item.name)),
+                              DataCell(Text(item.category)),
+                              DataCell(Text('${item.quantity}')),
+                              DataCell(Text(item.unit)),
+                              DataCell(
+                                Text('₱${item.unitCost.toStringAsFixed(2)}'),
+                              ),
+                              DataCell(Text(_fmt(item.lastUpdated))),
+                              DataCell(
+                                _isManager
+                                    ? Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          tooltip: 'Restore',
+                                          icon: const Icon(
+                                            Icons.unarchive,
+                                            color: Colors.blue,
+                                          ),
+                                          onPressed: () => _restore(item),
+                                        ),
+                                        IconButton(
+                                          tooltip: 'Delete',
+                                          icon: const Icon(
+                                            Icons.delete_forever,
+                                            color: Colors.red,
+                                          ),
+                                          onPressed: () => _deleteForever(item),
+                                        ),
+                                      ],
+                                    )
+                                    : const Text('—'),
+                              ),
+                            ],
+                          );
+                        }).toList(),
                   ),
         ),
       ],

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../widgets/app_scaffold.dart';
+import '../widgets/paginated_data_table.dart';
 import '../models/menu_dish.dart';
 import '../services/meal_types_store.dart';
 import '../services/menu_store.dart';
@@ -1431,8 +1432,7 @@ class _MenuState extends State<Menu> {
 
     return Card(
       margin: const EdgeInsets.all(16),
-      child: SingleChildScrollView(
-        child: DataTable(
+      child: PagedDataTable(
           columns: [
             const DataColumn(label: Text('Name')),
             const DataColumn(label: Text('Price')),
@@ -1627,7 +1627,6 @@ class _MenuState extends State<Menu> {
                   ],
                 );
               }).toList(),
-        ),
       ),
     );
   }

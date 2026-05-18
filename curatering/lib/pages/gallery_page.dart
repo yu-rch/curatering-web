@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../services/website_content_store.dart';
+import '../utils/gallery_search.dart';
+import '../utils/website_image_utils.dart';
 import '../widgets/centered_viewport_scroll.dart';
 import '../widgets/customer_website_topbar.dart';
 import '../widgets/pexels_attribution_badge.dart';
@@ -50,6 +52,14 @@ class _GalleryPageState extends State<GalleryPage> {
   String _gallerySearchQuery = '';
 
   @override
+  void initState() {
+    super.initState();
+    WebsiteContentStore.instance.ensureLoaded().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final w = WebsiteContentStore.instance;
 
@@ -66,7 +76,10 @@ class _GalleryPageState extends State<GalleryPage> {
             Expanded(
               child: CenteredViewportScroll(
                 padding: websitePagePadding(context),
-                child: _buildGalleryDetail(w, cat),
+                child: ListenableBuilder(
+                  listenable: w,
+                  builder: (context, _) => _buildGalleryDetail(w, cat),
+                ),
               ),
             ),
           ],
@@ -85,7 +98,10 @@ class _GalleryPageState extends State<GalleryPage> {
           Expanded(
             child: CenteredViewportScroll(
               padding: websitePagePadding(context),
-              child: _buildGallery(w),
+              child: ListenableBuilder(
+                listenable: w,
+                builder: (context, _) => _buildGallery(w),
+              ),
             ),
           ),
         ],
@@ -94,34 +110,182 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   Widget _buildGallery(WebsiteContentStore w) {
+    final categories =
+        w.galleryCategories
+            .where((c) => galleryCategoryMatchesSearch(c, _gallerySearchQuery))
+            .toList();
+
     return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 24),
-          Text(
-            'GALLERY',
-            style: GoogleFonts.getFont(
-              _primaryFont,
-              fontSize: 36,
-              fontWeight: FontWeight.bold,
-              color: const Color(0xFF1E1E1E),
-            ),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 24),
+        Text(
+          'GALLERY',
+          style: GoogleFonts.getFont(
+            _primaryFont,
+            fontSize: 36,
+            fontWeight: FontWeight.bold,
+            color: const Color(0xFF1E1E1E),
           ),
-          const SizedBox(height: 16),
-          TextField(
-            onChanged:
-                (v) => setState(
-                  () => _gallerySearchQuery = v.trim().toLowerCase(),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          onChanged:
+              (v) => setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
+          decoration: InputDecoration(
+            hintText: 'SEARCH BY TAG OR CATEGORY',
+            prefixIcon: const Icon(Icons.search),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        const SizedBox(height: 32),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount:
+                isMobile(context)
+                    ? 1
+                    : isTablet(context)
+                    ? 2
+                    : 3,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: 1.2,
+          ),
+          itemCount: categories.length,
+          itemBuilder: (context, index) {
+            final cat = categories[index];
+            final realIndex = w.galleryCategories.indexOf(cat);
+            final visibleCount = filterGalleryImages(cat, _gallerySearchQuery).length;
+
+            return GestureDetector(
+              onTap: () => setState(() => _galleryDetailIndex = realIndex),
+              child: Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-            decoration: InputDecoration(
-              hintText: 'SEARCH',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (cat.images.isNotEmpty)
+                      Image.memory(
+                        base64Decode(cat.images.first.imageBase64),
+                        fit: BoxFit.cover,
+                      )
+                    else
+                      Container(color: Colors.grey.shade300),
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.7),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 16,
+                      left: 16,
+                      right: 16,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            cat.label,
+                            style: GoogleFonts.getFont(
+                              _primaryFont,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '$visibleCount images',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
+            );
+          },
+        ),
+        const SizedBox(height: 48),
+        const PexelsAttributionBadge(photographer: 'Curatering Gallery'),
+      ],
+    );
+  }
+
+  Widget _buildGalleryDetail(WebsiteContentStore w, GalleryCategoryData cat) {
+    final filteredImages = filterGalleryImages(cat, _gallerySearchQuery);
+
+    return Column(
+      children: [
+        const SizedBox(height: 24),
+        Row(
+          children: [
+            FilledButton.tonal(
+              onPressed: () => setState(() => _galleryDetailIndex = null),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF1E1E1E),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('BACK TO GALLERY'),
             ),
+            if (widget.contentEditable) ...[
+              const SizedBox(width: 10),
+              FilledButton.icon(
+                onPressed: () async {
+                  final b64s = await pickMultipleWebsiteImagesBase64();
+                  if (b64s.isEmpty) return;
+                  cat.addImagesFromBase64(b64s);
+                  await w.save();
+                  setState(() {});
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('ADD IMAGE'),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 24),
+        TextField(
+          onChanged:
+              (v) => setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
+          decoration: InputDecoration(
+            hintText: 'SEARCH BY TAG',
+            prefixIcon: const Icon(Icons.search),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           ),
-          const SizedBox(height: 32),
+        ),
+        const SizedBox(height: 32),
+        if (filteredImages.isEmpty)
+          Center(
+            child: Column(
+              children: [
+                const SizedBox(height: 100),
+                Icon(Icons.image_not_supported, size: 64, color: Colors.grey.shade400),
+                const SizedBox(height: 16),
+                Text(
+                  'No images found',
+                  style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          )
+        else
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -134,224 +298,67 @@ class _GalleryPageState extends State<GalleryPage> {
                       : 3,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
-              childAspectRatio: 1.2,
             ),
-            itemCount: w.galleryCategories.length,
+            itemCount: filteredImages.length,
             itemBuilder: (context, index) {
-              final cat = w.galleryCategories[index];
-              final filteredImages =
-                  _gallerySearchQuery.isEmpty
-                      ? cat.imageBase64List
-                      : cat.imageBase64List
-                          .where(
-                            (img) =>
-                                img.toLowerCase().contains(_gallerySearchQuery),
-                          )
-                          .toList();
-
-              return GestureDetector(
-                onTap: () => setState(() => _galleryDetailIndex = index),
-                child: Card(
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (cat.imageBase64List.isNotEmpty)
-                        Image.memory(
-                          base64Decode(cat.imageBase64List.first),
-                          fit: BoxFit.cover,
-                        )
-                      else
-                        Container(color: Colors.grey.shade300),
-                      Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          gradient: LinearGradient(
-                            begin: Alignment.bottomCenter,
-                            end: Alignment.topCenter,
-                            colors: [
-                              Colors.black.withOpacity(0.7),
-                              Colors.transparent,
-                            ],
-                          ),
-                        ),
-                      ),
+              final imgData = filteredImages[index];
+              final fullIndex = cat.images.indexOf(imgData);
+              return Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (imgData.imageBase64.isNotEmpty)
+                      Image.memory(
+                        base64Decode(imgData.imageBase64),
+                        fit: BoxFit.cover,
+                      )
+                    else
+                      Container(color: Colors.grey.shade300),
+                    if (imgData.tags.isNotEmpty)
                       Positioned(
-                        bottom: 16,
-                        left: 16,
-                        right: 16,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              cat.label,
-                              style: GoogleFonts.getFont(
-                                _primaryFont,
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${filteredImages.length} images',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
+                        left: 8,
+                        bottom: 8,
+                        right: 8,
+                        child: Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: imgData.tags
+                              .map(
+                                (t) => Chip(
+                                  label: Text(t, style: const TextStyle(fontSize: 10)),
+                                  visualDensity: VisualDensity.compact,
+                                  backgroundColor: Colors.white.withValues(alpha: 0.9),
+                                ),
+                              )
+                              .toList(),
                         ),
                       ),
-                      if (widget.contentEditable)
-                        Positioned(
-                          right: 6,
-                          top: 6,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: IconButton(
-                              icon: const Icon(Icons.edit, size: 16),
-                              onPressed: () async {
-                                // TODO: Implement edit functionality
-                              },
-                            ),
+                    if (widget.contentEditable)
+                      Positioned(
+                        right: 6,
+                        top: 6,
+                        child: IconButton(
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white,
                           ),
+                          icon: const Icon(Icons.delete, size: 18),
+                          onPressed: () async {
+                            if (fullIndex >= 0) cat.images.removeAt(fullIndex);
+                            await w.save();
+                            setState(() {});
+                          },
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               );
             },
           ),
-          const SizedBox(height: 48),
-          const PexelsAttributionBadge(photographer: 'Curatering Gallery'),
-        ],
-    );
-  }
-
-  Widget _buildGalleryDetail(WebsiteContentStore w, dynamic cat) {
-    final filteredImages =
-        _gallerySearchQuery.isEmpty
-            ? cat.imageBase64List
-            : cat.imageBase64List
-                .where((img) => img.toLowerCase().contains(_gallerySearchQuery))
-                .toList();
-
-    return Column(
-        children: [
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              FilledButton.tonal(
-                onPressed: () => setState(() => _galleryDetailIndex = null),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF1E1E1E),
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('BACK TO GALLERY'),
-              ),
-              if (widget.contentEditable) ...[
-                const SizedBox(width: 10),
-                FilledButton.icon(
-                  onPressed: () async {
-                    // TODO: Implement add image functionality
-                  },
-                  icon: const Icon(Icons.add),
-                  label: const Text('ADD IMAGE'),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 24),
-          TextField(
-            onChanged:
-                (v) => setState(
-                  () => _gallerySearchQuery = v.trim().toLowerCase(),
-                ),
-            decoration: InputDecoration(
-              hintText: 'SEARCH IMAGES',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-          const SizedBox(height: 32),
-          if (filteredImages.isEmpty)
-            Center(
-              child: Column(
-                children: [
-                  const SizedBox(height: 100),
-                  Icon(
-                    Icons.image_not_supported,
-                    size: 64,
-                    color: Colors.grey.shade400,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No images found',
-                    style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
-                  ),
-                ],
-              ),
-            )
-          else
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount:
-                    isMobile(context)
-                        ? 1
-                        : isTablet(context)
-                        ? 2
-                        : 3,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-              ),
-              itemCount: filteredImages.length,
-              itemBuilder: (context, index) {
-                final img = filteredImages[index];
-                return Card(
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Stack(
-                    children: [
-                      if (img.isNotEmpty)
-                        Image.memory(base64Decode(img), fit: BoxFit.cover)
-                      else
-                        Container(color: Colors.grey.shade300),
-                      if (widget.contentEditable)
-                        Positioned(
-                          right: 6,
-                          top: 6,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: IconButton(
-                              icon: const Icon(Icons.delete, size: 16),
-                              onPressed: () async {
-                                // TODO: Implement delete functionality
-                              },
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
-        ],
+      ],
     );
   }
 }

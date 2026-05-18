@@ -4,31 +4,101 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_client.dart';
 
+/// Single gallery photo with optional search tags.
+class GalleryImageData {
+  final String id;
+  String imageBase64;
+  List<String> tags;
+
+  GalleryImageData({
+    required this.id,
+    required this.imageBase64,
+    List<String>? tags,
+  }) : tags = tags ?? [];
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'imageBase64': imageBase64,
+        'tags': tags,
+      };
+
+  factory GalleryImageData.fromJson(dynamic raw) {
+    if (raw is String) {
+      return GalleryImageData(
+        id: 'img_${raw.hashCode.abs()}',
+        imageBase64: raw,
+      );
+    }
+    final m = Map<String, dynamic>.from(raw as Map);
+    final tagsRaw = m['tags'];
+    return GalleryImageData(
+      id: (m['id'] ?? 'img_${DateTime.now().microsecondsSinceEpoch}').toString(),
+      imageBase64: (m['imageBase64'] ?? m['image'] ?? '').toString(),
+      tags:
+          tagsRaw is List
+              ? tagsRaw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList()
+              : [],
+    );
+  }
+
+  static GalleryImageData fromBase64(String b64, {List<String>? tags}) {
+    return GalleryImageData(
+      id: 'img_${DateTime.now().microsecondsSinceEpoch}',
+      imageBase64: b64,
+      tags: tags,
+    );
+  }
+}
+
 /// Editable copy for the Macrina’s customer-facing site (persisted locally).
 class GalleryCategoryData {
   final String id;
   String label;
-  final List<String> imageBase64List;
+  final List<GalleryImageData> images;
+  /// Applied to photos added via CMS before upload.
+  List<String> defaultTagsForUpload = [];
 
   GalleryCategoryData({
     required this.id,
     required this.label,
+    List<GalleryImageData>? images,
     List<String>? imageBase64List,
-  }) : imageBase64List = imageBase64List ?? [];
+  }) : images =
+           images ??
+           (imageBase64List != null
+               ? imageBase64List
+                   .map((b) => GalleryImageData.fromBase64(b))
+                   .toList()
+               : []);
+
+  /// Legacy access for callers still using base64 strings only.
+  List<String> get imageBase64List => images.map((e) => e.imageBase64).toList();
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'label': label,
-        'images': imageBase64List,
+        'images': images.map((e) => e.toJson()).toList(),
       };
 
   factory GalleryCategoryData.fromJson(Map<String, dynamic> m) {
     final imgs = m['images'];
+    final parsed = <GalleryImageData>[];
+    if (imgs is List) {
+      for (final e in imgs) {
+        parsed.add(GalleryImageData.fromJson(e));
+      }
+    }
     return GalleryCategoryData(
       id: m['id'] as String,
       label: m['label'] as String? ?? '',
-      imageBase64List: imgs is List ? imgs.map((e) => e.toString()).toList() : [],
+      images: parsed,
     );
+  }
+
+  void addImagesFromBase64(List<String> base64List, {List<String> defaultTags = const []}) {
+    for (final b64 in base64List) {
+      images.add(GalleryImageData.fromBase64(b64, tags: defaultTags));
+    }
   }
 }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/site_routes.dart';
 import '../services/website_content_store.dart';
+import '../utils/gallery_search.dart';
 import '../utils/website_image_utils.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_message.dart';
@@ -411,7 +412,7 @@ class _GalleryEditorTab extends StatelessWidget {
                   child: ExpansionTile(
                     initiallyExpanded: i == 0,
                     title: Text(cat.label.isEmpty ? 'Untitled' : cat.label),
-                    subtitle: Text('${cat.imageBase64List.length} photos'),
+                    subtitle: Text('${cat.images.length} photos'),
                     children: [
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -428,35 +429,129 @@ class _GalleryEditorTab extends StatelessWidget {
                               },
                             ),
                             const SizedBox(height: 12),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                for (var j = 0; j < cat.imageBase64List.length; j++)
-                                  SizedBox(
-                                    width: 140,
-                                    child: Column(
-                                      children: [
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(8),
+                            TextField(
+                              decoration: InputDecoration(
+                                labelText: 'Default tags for new photos',
+                                hintText: galleryTagsHint(),
+                                isDense: true,
+                                border: const OutlineInputBorder(),
+                              ),
+                              onChanged:
+                                  (v) => cat.defaultTagsForUpload = parseTagsInput(v),
+                            ),
+                            const SizedBox(height: 12),
+                            ...cat.images.asMap().entries.map((imgEntry) {
+                              final j = imgEntry.key;
+                              final img = imgEntry.value;
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: SizedBox(
+                                          width: 88,
                                           child: websiteBase64Thumbnail(
-                                            cat.imageBase64List[j],
-                                            height: 100,
+                                            img.imageBase64,
+                                            height: 88,
                                           ),
                                         ),
-                                        TextButton(
-                                          onPressed: () {
-                                            cat.imageBase64List.removeAt(j);
-                                            onChanged();
-                                            w.touch();
-                                          },
-                                          child: const Text('Remove'),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            if (img.tags.isNotEmpty)
+                                              Wrap(
+                                                spacing: 4,
+                                                runSpacing: 4,
+                                                children: img.tags
+                                                    .map(
+                                                      (t) => Chip(
+                                                        label: Text(
+                                                          t,
+                                                          style: const TextStyle(
+                                                            fontSize: 11,
+                                                          ),
+                                                        ),
+                                                        visualDensity:
+                                                            VisualDensity.compact,
+                                                      ),
+                                                    )
+                                                    .toList(),
+                                              )
+                                            else
+                                              Text(
+                                                'No tags',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                            TextButton.icon(
+                                              onPressed: () async {
+                                                final ctrl = TextEditingController(
+                                                  text: img.tags.join(', '),
+                                                );
+                                                final saved = await showDialog<bool>(
+                                                  context: context,
+                                                  builder: (ctx) => AlertDialog(
+                                                    title: const Text('Photo tags'),
+                                                    content: TextField(
+                                                      controller: ctrl,
+                                                      decoration: InputDecoration(
+                                                        hintText: galleryTagsHint(),
+                                                      ),
+                                                      maxLines: 2,
+                                                    ),
+                                                    actions: [
+                                                      TextButton(
+                                                        onPressed:
+                                                            () => Navigator.pop(ctx, false),
+                                                        child: const Text('Cancel'),
+                                                      ),
+                                                      FilledButton(
+                                                        onPressed:
+                                                            () => Navigator.pop(ctx, true),
+                                                        child: const Text('Save'),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                                if (saved == true) {
+                                                  img.tags
+                                                    ..clear()
+                                                    ..addAll(parseTagsInput(ctrl.text));
+                                                  onChanged();
+                                                  w.touch();
+                                                }
+                                                ctrl.dispose();
+                                              },
+                                              icon: const Icon(Icons.label_outline, size: 18),
+                                              label: const Text('Edit tags'),
+                                            ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Remove photo',
+                                        onPressed: () {
+                                          cat.images.removeAt(j);
+                                          onChanged();
+                                          w.touch();
+                                        },
+                                        icon: const Icon(Icons.delete_outline),
+                                      ),
+                                    ],
                                   ),
-                              ],
-                            ),
+                                ),
+                              );
+                            }),
                             Row(
                               children: [
                                 OutlinedButton.icon(
@@ -464,7 +559,10 @@ class _GalleryEditorTab extends StatelessWidget {
                                     final imgs =
                                         await pickMultipleWebsiteImagesBase64();
                                     if (imgs.isEmpty) return;
-                                    cat.imageBase64List.addAll(imgs);
+                                    cat.addImagesFromBase64(
+                                      imgs,
+                                      defaultTags: cat.defaultTagsForUpload,
+                                    );
                                     onChanged();
                                     w.touch();
                                   },

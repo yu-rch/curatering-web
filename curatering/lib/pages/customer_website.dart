@@ -33,6 +33,7 @@ import '../widgets/catering_dish_info_dialog.dart';
 import '../widgets/website_rich_text.dart';
 import '../widgets/customer_footer_feedback.dart';
 import '../theme/website_header_font.dart';
+import '../utils/gallery_search.dart';
 import 'customer_login.dart';
 import 'checkout_page.dart';
 import 'my_orders_page.dart';
@@ -2045,9 +2046,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Widget _buildGallery(WebsiteContentStore w) {
-    if (_galleryDetailIndex != null) {
-      final cat = w.galleryCategories[_galleryDetailIndex!];
-      return SingleChildScrollView(
+    return ListenableBuilder(
+      listenable: w,
+      builder: (context, _) {
+        if (_galleryDetailIndex != null) {
+          final cat = w.galleryCategories[_galleryDetailIndex!];
+          final filteredImages = filterGalleryImages(cat, _gallerySearchQuery);
+          return SingleChildScrollView(
         padding: websitePagePadding(context),
         child: Center(
           child: ConstrainedBox(
@@ -2092,7 +2097,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         onPressed: () async {
                           final b64s = await _pickMultipleImageB64();
                           if (b64s.isEmpty) return;
-                          cat.imageBase64List.addAll(b64s);
+                          cat.addImagesFromBase64(b64s);
                           await w.save();
                           setState(() {});
                         },
@@ -2109,7 +2114,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         () => _gallerySearchQuery = v.trim().toLowerCase(),
                       ),
                   decoration: InputDecoration(
-                    hintText: 'SEARCH',
+                    hintText: 'SEARCH BY TAG',
                     isDense: true,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -2136,9 +2141,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     mainAxisSpacing: 16,
                     childAspectRatio: 0.95,
                   ),
-                  itemCount: cat.imageBase64List.length,
+                  itemCount: filteredImages.length,
                   itemBuilder: (ctx, i) {
-                    final img = cat.imageBase64List[i];
+                    final imgData = filteredImages[i];
+                    final img = imgData.imageBase64;
+                    final fullIndex = cat.images.indexOf(imgData);
                     return Card(
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -2181,72 +2188,140 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         },
                         child: Padding(
                           padding: const EdgeInsets.all(10),
-                          child: Stack(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              Positioned.fill(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: _b64Image(
-                                    img,
-                                    fit: BoxFit.cover,
-                                    alignment: _imageAlignmentFor(w, img),
-                                  ),
+                              Expanded(
+                                child: Stack(
+                                  children: [
+                                    Positioned.fill(
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(10),
+                                        child: _b64Image(
+                                          img,
+                                          fit: BoxFit.cover,
+                                          alignment: _imageAlignmentFor(w, img),
+                                        ),
+                                      ),
+                                    ),
+                                    if (widget.contentEditable)
+                                      Positioned(
+                                        right: 6,
+                                        top: 6,
+                                        child: PopupMenuButton<String>(
+                                          icon: const Icon(
+                                            Icons.more_vert,
+                                            color: Colors.white,
+                                          ),
+                                          onSelected: (value) async {
+                                            if (value == 'position') {
+                                              await _editImagePosition(
+                                                w: w,
+                                                b64: img,
+                                              );
+                                              return;
+                                            } else if (value == 'tags') {
+                                              final ctrl = TextEditingController(
+                                                text: imgData.tags.join(', '),
+                                              );
+                                              final saved = await showDialog<bool>(
+                                                context: context,
+                                                builder: (ctx) => AlertDialog(
+                                                  title: const Text('Photo tags'),
+                                                  content: TextField(
+                                                    controller: ctrl,
+                                                    decoration: InputDecoration(
+                                                      hintText: galleryTagsHint(),
+                                                    ),
+                                                  ),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed:
+                                                          () => Navigator.pop(ctx, false),
+                                                      child: const Text('Cancel'),
+                                                    ),
+                                                    FilledButton(
+                                                      onPressed:
+                                                          () => Navigator.pop(ctx, true),
+                                                      child: const Text('Save'),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                              if (saved == true) {
+                                                imgData.tags
+                                                  ..clear()
+                                                  ..addAll(parseTagsInput(ctrl.text));
+                                              }
+                                              ctrl.dispose();
+                                            } else if (value == 'delete' &&
+                                                fullIndex >= 0) {
+                                              cat.images.removeAt(fullIndex);
+                                            } else if (value == 'up' &&
+                                                fullIndex > 0) {
+                                              final tmp = cat.images[fullIndex - 1];
+                                              cat.images[fullIndex - 1] =
+                                                  cat.images[fullIndex];
+                                              cat.images[fullIndex] = tmp;
+                                            } else if (value == 'down' &&
+                                                fullIndex >= 0 &&
+                                                fullIndex < cat.images.length - 1) {
+                                              final tmp = cat.images[fullIndex + 1];
+                                              cat.images[fullIndex + 1] =
+                                                  cat.images[fullIndex];
+                                              cat.images[fullIndex] = tmp;
+                                            } else {
+                                              return;
+                                            }
+                                            await w.save();
+                                            setState(() {});
+                                          },
+                                          itemBuilder:
+                                              (_) => const [
+                                                PopupMenuItem(
+                                                  value: 'position',
+                                                  child: Text('Adjust Position'),
+                                                ),
+                                                PopupMenuItem(
+                                                  value: 'tags',
+                                                  child: Text('Edit tags'),
+                                                ),
+                                                PopupMenuItem(
+                                                  value: 'up',
+                                                  child: Text('Move Up'),
+                                                ),
+                                                PopupMenuItem(
+                                                  value: 'down',
+                                                  child: Text('Move Down'),
+                                                ),
+                                                PopupMenuItem(
+                                                  value: 'delete',
+                                                  child: Text('Delete'),
+                                                ),
+                                              ],
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
-                              if (widget.contentEditable)
-                                Positioned(
-                                  right: 6,
-                                  top: 6,
-                                  child: PopupMenuButton<String>(
-                                    icon: const Icon(
-                                      Icons.more_vert,
-                                      color: Colors.white,
-                                    ),
-                                    onSelected: (value) async {
-                                      if (value == 'position') {
-                                        await _editImagePosition(
-                                          w: w,
-                                          b64: img,
-                                        );
-                                        return;
-                                      } else if (value == 'delete') {
-                                        cat.imageBase64List.removeAt(i);
-                                      } else if (value == 'up' && i > 0) {
-                                        final tmp = cat.imageBase64List[i - 1];
-                                        cat.imageBase64List[i - 1] =
-                                            cat.imageBase64List[i];
-                                        cat.imageBase64List[i] = tmp;
-                                      } else if (value == 'down' &&
-                                          i < cat.imageBase64List.length - 1) {
-                                        final tmp = cat.imageBase64List[i + 1];
-                                        cat.imageBase64List[i + 1] =
-                                            cat.imageBase64List[i];
-                                        cat.imageBase64List[i] = tmp;
-                                      } else {
-                                        return;
-                                      }
-                                      await w.save();
-                                      setState(() {});
-                                    },
-                                    itemBuilder:
-                                        (_) => const [
-                                          PopupMenuItem(
-                                            value: 'position',
-                                            child: Text('Adjust Position'),
+                              if (imgData.tags.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Wrap(
+                                    spacing: 4,
+                                    runSpacing: 2,
+                                    children: imgData.tags
+                                        .map(
+                                          (t) => Chip(
+                                            label: Text(
+                                              t,
+                                              style: const TextStyle(fontSize: 10),
+                                            ),
+                                            visualDensity: VisualDensity.compact,
+                                            padding: EdgeInsets.zero,
                                           ),
-                                          PopupMenuItem(
-                                            value: 'up',
-                                            child: Text('Move Up'),
-                                          ),
-                                          PopupMenuItem(
-                                            value: 'down',
-                                            child: Text('Move Down'),
-                                          ),
-                                          PopupMenuItem(
-                                            value: 'delete',
-                                            child: Text('Delete'),
-                                          ),
-                                        ],
+                                        )
+                                        .toList(),
                                   ),
                                 ),
                             ],
@@ -2261,11 +2336,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           ),
         ),
       );
-    }
+        }
 
-    return ListenableBuilder(
-      listenable: w,
-      builder: (context, _) {
         return SingleChildScrollView(
           padding: websitePagePadding(context),
           child: Center(
@@ -2294,7 +2366,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           () => _gallerySearchQuery = v.trim().toLowerCase(),
                         ),
                     decoration: InputDecoration(
-                      hintText: 'SEARCH',
+                      hintText: 'SEARCH BY TAG OR CATEGORY',
                       isDense: true,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -2324,30 +2396,26 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     itemCount:
                         w.galleryCategories
                             .where(
-                              (c) =>
-                                  _gallerySearchQuery.isEmpty ||
-                                  c.label.toLowerCase().contains(
-                                    _gallerySearchQuery,
-                                  ),
+                              (c) => galleryCategoryMatchesSearch(
+                                c,
+                                _gallerySearchQuery,
+                              ),
                             )
                             .length,
                     itemBuilder: (ctx, i) {
                       final filtered =
                           w.galleryCategories
                               .where(
-                                (c) =>
-                                    _gallerySearchQuery.isEmpty ||
-                                    c.label.toLowerCase().contains(
-                                      _gallerySearchQuery,
-                                    ),
+                                (c) => galleryCategoryMatchesSearch(
+                                  c,
+                                  _gallerySearchQuery,
+                                ),
                               )
                               .toList();
                       final c = filtered[i];
                       final realIndex = w.galleryCategories.indexOf(c);
                       final thumb =
-                          c.imageBase64List.isNotEmpty
-                              ? c.imageBase64List.first
-                              : null;
+                          c.images.isNotEmpty ? c.images.first.imageBase64 : null;
                       return InkWell(
                         onTap:
                             () =>

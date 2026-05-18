@@ -1,5 +1,6 @@
 import '../auth/roles.dart';
 import '../models/action_log.dart';
+import '../models/customer_feedback.dart';
 import '../models/help_request.dart';
 import '../models/user.dart';
 import 'api_client.dart';
@@ -183,6 +184,41 @@ class SuperAdminApi {
       '/api/super-admin/role-limits',
       body: {'limits': limits},
     );
+  }
+
+  Future<List<CustomerFeedbackDto>> listCustomerFeedback({String? search}) async {
+    final query = <String, String>{};
+    if (search != null && search.trim().isNotEmpty) {
+      query['search'] = search.trim();
+    }
+
+    final decoded = await ApiClient.instance.getJson(
+      '/api/super-admin/customer-feedback',
+      queryParameters: query.isEmpty ? null : query,
+    );
+    final raw = decoded['feedback'];
+    if (raw is! List) return const <CustomerFeedbackDto>[];
+
+    return raw
+        .map((r) => CustomerFeedbackDto.fromJson(Map<String, dynamic>.from(r as Map)))
+        .toList();
+  }
+
+  Future<CustomerFeedbackAnalysis> analyzeCustomerFeedback({String? search}) async {
+    final body = <String, dynamic>{};
+    if (search != null && search.trim().isNotEmpty) {
+      body['search'] = search.trim();
+    }
+
+    final decoded = await ApiClient.instance.postJson(
+      '/api/super-admin/customer-feedback/analyze',
+      body: body,
+    );
+    final raw = decoded['analysis'];
+    if (raw is! Map) {
+      throw StateError('Invalid analysis response');
+    }
+    return CustomerFeedbackAnalysis.fromJson(Map<String, dynamic>.from(raw));
   }
 }
 

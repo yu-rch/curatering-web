@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/help_request.dart';
 import '../services/super_admin_api.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/paginated_data_table.dart';
 import '../widgets/antd_message.dart';
 
 class HelpRequestsPage extends StatefulWidget {
@@ -156,9 +157,7 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
                         style: TextStyle(color: Colors.grey.shade600),
                       ),
                     )
-                  : SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
+                  : PagedDataTable(
                         columns: const [
                           DataColumn(label: Text('Feature')),
                           DataColumn(label: Text('Problem')),
@@ -201,7 +200,6 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
                           );
                         }).toList(),
                       ),
-                    ),
             ),
           ],
         ),

@@ -200,6 +200,7 @@ bool isStaffRoute(String? routeName) {
     '/website-admin',
     '/settings',
     '/help-requests',
+    '/customer-feedback',
     '/action-logs',
     '/customer-management',
   ];

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/action_log.dart';
 import '../services/super_admin_api.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/paginated_data_table.dart';
 
 class ActionLogsPage extends StatefulWidget {
   const ActionLogsPage({super.key});
@@ -138,9 +139,7 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
                         style: TextStyle(color: Colors.grey.shade600),
                       ),
                     )
-                  : SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
+                  : PagedDataTable(
                         columns: const [
                           DataColumn(label: Text('User')),
                           DataColumn(label: Text('Feature')),
@@ -160,7 +159,6 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
                           );
                         }).toList(),
                       ),
-                    ),
             ),
           ],
         ),

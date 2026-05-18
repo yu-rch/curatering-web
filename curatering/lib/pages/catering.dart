@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:async';
@@ -22,6 +22,7 @@ import '../widgets/antd_descriptions.dart';
 import '../widgets/antd_dialog.dart';
 import '../widgets/antd_tokens.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/paginated_data_table.dart';
 import '../widgets/map_picker.dart';
 import '../widgets/processing_seating_section.dart';
 import '../utils/order_calculations.dart';
@@ -1237,7 +1238,7 @@ class _ManageEventsState extends State<ManageEvents>
                                       CrossAxisAlignment.stretch,
                                   children: [
                                     _buildLabeledReadonlyCost(
-                                      'Dish cost (menu prices Ã— guests)',
+                                      'Dish cost (menu prices × guests)',
                                       dishCost,
                                     ),
                                     const SizedBox(height: 8),
@@ -3706,7 +3707,7 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
-  /// Staff â€œcatering + eventâ€ rows: DB uses `catering_event`; some APIs use `event` or omit type when an event title exists.
+  /// Staff “catering + event” rows: DB uses `catering_event`; some APIs use `event` or omit type when an event title exists.
   bool _isCateringPlusEventOrder(EventOrderDto o) {
     return isCateringPlusEventOrderType(
       o.orderType,
@@ -4028,7 +4029,7 @@ class _ManageEventsState extends State<ManageEvents>
                               decimal: true,
                             ),
                             decoration: const InputDecoration(
-                              labelText: 'Custom amount (â‚±)',
+                              labelText: 'Custom amount (₱)',
                               border: OutlineInputBorder(),
                             ),
                             onChanged: (_) => dialogSetState(() {}),
@@ -4080,7 +4081,7 @@ class _ManageEventsState extends State<ManageEvents>
                               decimal: true,
                             ),
                             decoration: const InputDecoration(
-                              labelText: 'Custom amount (â‚±)',
+                              labelText: 'Custom amount (₱)',
                               border: OutlineInputBorder(),
                             ),
                             onChanged: (_) => dialogSetState(() {}),
@@ -4241,8 +4242,7 @@ class _ManageEventsState extends State<ManageEvents>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: SingleChildScrollView(
-                    child: DataTable(
+                  child: PagedDataTable(
                       headingRowColor: WidgetStateProperty.all(
                         Colors.grey.shade200,
                       ),
@@ -4271,7 +4271,6 @@ class _ManageEventsState extends State<ManageEvents>
                             );
                           }).toList(),
                     ),
-                  ),
                 ),
                 const SizedBox(height: 16),
                 _buildCostBlock(
@@ -4385,8 +4384,7 @@ class _ManageEventsState extends State<ManageEvents>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Expanded(
-                      child: SingleChildScrollView(
-                        child: DataTable(
+                      child: PagedDataTable(
                           key: ValueKey(editableItems.length),
                           headingRowColor: WidgetStateProperty.all(
                             Colors.grey.shade200,
@@ -4669,7 +4667,6 @@ class _ManageEventsState extends State<ManageEvents>
                                 );
                               }).toList(),
                         ),
-                      ),
                     ),
                     const SizedBox(height: 8),
                     if (_isManager) ...[
@@ -6324,7 +6321,7 @@ class _ManageEventsState extends State<ManageEvents>
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '${m.price} Â· ${m.paxOption}',
+                                    '${m.price} · ${m.paxOption}',
                                     style: TextStyle(
                                       color: Colors.grey.shade600,
                                     ),
@@ -6362,15 +6359,15 @@ class _ManageEventsState extends State<ManageEvents>
             const SizedBox(height: 12),
             _buildInfoRow(
               'Business cards given away',
-              pa == null ? 'â€”' : '${pa.businessCardsGivenAway}',
+              pa == null ? '—' : '${pa.businessCardsGivenAway}',
             ),
             _buildInfoRow(
               'On-the-spot inquiries',
-              pa == null ? 'â€”' : '${pa.onTheSpotInquiries}',
+              pa == null ? '—' : '${pa.onTheSpotInquiries}',
             ),
             _buildInfoRow(
               'No. of Complaints',
-              pa == null ? 'â€”' : '${pa.complaints}',
+              pa == null ? '—' : '${pa.complaints}',
             ),
             const SizedBox(height: 16),
             _buildCostBlock(
@@ -7238,7 +7235,7 @@ class _ManageEventsState extends State<ManageEvents>
                               children: [
                                 Expanded(
                                   child: Text(
-                                    '${item.dish.name} Â· ${item.paxOption}',
+                                    '${item.dish.name} · ${item.paxOption}',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -7504,7 +7501,7 @@ class _ManageEventsState extends State<ManageEvents>
         ),
         const SizedBox(height: 8),
         Text(
-          'Choose 5â€“8 dishes (all dishes) or pick one premade set menu.',
+          'Choose 5–8 dishes (all dishes) or pick one premade set menu.',
           style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
         ),
         const SizedBox(height: 12),

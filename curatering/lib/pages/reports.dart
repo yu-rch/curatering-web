@@ -9,6 +9,7 @@ import '../widgets/antd_buttons.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_tokens.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/paginated_data_table.dart';
 
 enum _ReportScope { catering, restaurant, combined }
 
@@ -143,23 +144,20 @@ class _ReportsState extends State<Reports> {
           children: [
             Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: const [
-                  DataColumn(label: Text('Name')),
-                  DataColumn(label: Text('Count')),
-                ],
-                rows: [
-                  for (final e in filtered)
-                    DataRow(
-                      cells: [
-                        DataCell(Text(e.name)),
-                        DataCell(Text('${e.count}')),
-                      ],
-                    ),
-                ],
-              ),
+            PagedDataTable(
+              columns: const [
+                DataColumn(label: Text('Name')),
+                DataColumn(label: Text('Count')),
+              ],
+              rows: [
+                for (final e in filtered)
+                  DataRow(
+                    cells: [
+                      DataCell(Text(e.name)),
+                      DataCell(Text('${e.count}')),
+                    ],
+                  ),
+              ],
             ),
           ],
         ),

@@ -30,7 +30,7 @@ class AppScaffold extends StatelessWidget {
   static const _commonSidebarItems = <_SidebarItemData>[
     _SidebarItemData(
       icon: Icons.dashboard,
-      label: 'Liveboards',
+      label: 'Dashboard',
       route: '/dashboard',
     ),
     _SidebarItemData(
@@ -76,6 +76,11 @@ class AppScaffold extends StatelessWidget {
       icon: Icons.help_outline,
       label: 'Help Requests Management',
       route: '/help-requests',
+    ),
+    _SidebarItemData(
+      icon: Icons.reviews_outlined,
+      label: 'Customer Feedback',
+      route: '/customer-feedback',
     ),
     _SidebarItemData(
       icon: Icons.web_asset,
