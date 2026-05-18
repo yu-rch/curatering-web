@@ -454,9 +454,9 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 10,
-                            ),
+                                ),
                             textAlign: TextAlign.center,
-                          ),
+                              ),
                             ),
                           ),
                       ],
@@ -467,8 +467,8 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                     triggerLabel: _customerData?['fullName'] ?? 'Customer',
                     leading: const Icon(
                       Icons.person_outline,
-                      color: Colors.white,
-                      size: 20,
+                            color: Colors.white,
+                            size: 20,
                     ),
                     items: [
                       AntdProfileMenuItem.header(
@@ -533,7 +533,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         },
                       ),
                     ],
-                  )
+                )
               else
                 TextButton.icon(
                     onPressed: _handleLogin,

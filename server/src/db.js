@@ -184,16 +184,19 @@ export async function ensureAuthSchemaQuick() {
     );
   `);
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS customer_profiles (
-      id SERIAL PRIMARY KEY,
-      customer_id TEXT NOT NULL REFERENCES customer_accounts(id) ON DELETE CASCADE,
-      loyalty_points INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      UNIQUE(customer_id)
+  try {
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_address TEXT`,
     );
-  `);
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_lat DECIMAL(10,8)`,
+    );
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_lng DECIMAL(10,8)`,
+    );
+  } catch (err) {
+    console.warn('Auth schema customer_accounts delivery columns:', err.message);
+  }
 
   try {
     await pool.query(
@@ -584,37 +587,8 @@ export async function initDb() {
     console.log('Index create (site_page_views):', err.message);
   }
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS menu_dishes_allergens (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-  try {
-    await pool.query(
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_dishes_allergens_name_lower
-       ON menu_dishes_allergens (lower(trim(name)))`,
-    );
-  } catch (err) {
-    console.log('Index create (menu_dishes_allergens):', err.message);
-  }
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS menu_dishes_meal_types (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-  try {
-    await pool.query(
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_dishes_meal_types_name_lower
-       ON menu_dishes_meal_types (lower(trim(name)))`,
-    );
-  } catch (err) {
-    console.log('Index create (menu_dishes_meal_types):', err.message);
-  }
+  await ensureMenuCatalogTable('menu_dishes_allergens');
+  await ensureMenuCatalogTable('menu_dishes_meal_types');
 
   await pool.query(`
     ALTER TABLE menu_dishes
@@ -837,23 +811,19 @@ export async function initDb() {
     console.log('Migration check for customer_accounts loyalty points columns:', err.message);
   }
 
-  // Create customer_profiles table for delivery addresses and additional info
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS customer_profiles (
-      id SERIAL PRIMARY KEY,
-      customer_id TEXT NOT NULL REFERENCES customer_accounts(id) ON DELETE CASCADE,
-      delivery_address TEXT,
-      delivery_lat DECIMAL(10,8),
-      delivery_lng DECIMAL(10,8),
-      loyalty_points INTEGER NOT NULL DEFAULT 0,
-      restaurant_loyalty_points INTEGER NOT NULL DEFAULT 0,
-      catering_loyalty_points INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      UNIQUE(customer_id)
+  try {
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_address TEXT`,
     );
-  `);
-
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_lat DECIMAL(10,8)`,
+    );
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_lng DECIMAL(10,8)`,
+    );
+  } catch (err) {
+    console.log('Migration check for customer_accounts delivery columns:', err.message);
+  }
 
   // Create restaurant_orders table for customer orders
   await pool.query(`
@@ -1225,6 +1195,68 @@ export async function setLoyaltyProgramConfig(config) {
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
     [LOYALTY_PROGRAM_CONFIG_KEY, JSON.stringify(config ?? {})],
   );
+}
+
+/** @returns {Promise<Set<string>>} */
+async function getTableColumnNames(tableName) {
+  const r = await pool.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = $1`,
+    [tableName],
+  );
+  return new Set(r.rows.map((row) => row.column_name));
+}
+
+/**
+ * Catalog tables store unique allergen / meal-type labels (column `name`).
+ * Older DBs may have junction tables with the same names — rename and recreate.
+ */
+async function ensureMenuCatalogTable(tableName) {
+  const allowed = new Set(['menu_dishes_allergens', 'menu_dishes_meal_types']);
+  if (!allowed.has(tableName)) {
+    throw new Error(`ensureMenuCatalogTable: invalid table ${tableName}`);
+  }
+
+  const cols = await getTableColumnNames(tableName);
+  if (cols.size === 0) {
+    await pool.query(`
+      CREATE TABLE ${tableName} (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
+  } else if (!cols.has('name')) {
+    const legacy = `${tableName}_legacy_junction`;
+    const legacyExists = await getTableColumnNames(legacy);
+    const renameTo =
+      legacyExists.size > 0
+        ? `${tableName}_legacy_${Date.now()}`
+        : legacy;
+    await pool.query(`ALTER TABLE ${tableName} RENAME TO ${renameTo}`);
+    console.log(`Migration: renamed legacy ${tableName} to ${renameTo}`);
+    await pool.query(`
+      CREATE TABLE ${tableName} (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
+  }
+
+  try {
+    const indexName =
+      tableName === 'menu_dishes_allergens'
+        ? 'idx_menu_dishes_allergens_name_lower'
+        : 'idx_menu_dishes_meal_types_name_lower';
+    await pool.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS ${indexName}
+       ON ${tableName} (lower(trim(name)))`,
+    );
+  } catch (err) {
+    console.log(`Index create (${tableName}):`, err.message);
+  }
 }
 
 /** @returns {string[]} */

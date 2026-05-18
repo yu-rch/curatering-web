@@ -1600,13 +1600,6 @@ function registerCustomerAuthRoutes(app, dbGate) {
           [emailNorm, passwordHash, fullName, phone || null, otpCode, otpExpiry, row.id],
         );
 
-        await pool.query(
-          `INSERT INTO customer_profiles (customer_id, loyalty_points)
-           VALUES ($1, $2)
-           ON CONFLICT (customer_id) DO NOTHING`,
-          [row.id, 0],
-        );
-
         sendOtpEmailAsync(emailNorm, otpCode);
 
         return res.status(201).json({
@@ -1627,13 +1620,6 @@ function registerCustomerAuthRoutes(app, dbGate) {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id, email, full_name, is_verified`,
         [customerId, emailNorm, passwordHash, fullName, phone || null, otpCode, otpExpiry, registrationPlatform],
-      );
-
-      await pool.query(
-        `INSERT INTO customer_profiles (customer_id, loyalty_points)
-         VALUES ($1, $2)
-         ON CONFLICT (customer_id) DO NOTHING`,
-        [customerId, 0],
       );
 
       sendOtpEmailAsync(emailNorm, otpCode);
@@ -7159,27 +7145,11 @@ const dbInitPromise = authSchemaPromise
       }
     });
 
-    async function getCustomerProfileColumns() {
-      const result = await pool.query(
-        `SELECT column_name
-         FROM information_schema.columns
-         WHERE table_schema = 'public'
-           AND table_name = 'customer_profiles'`,
-      );
-      const cols = new Set(result.rows.map((r) => r.column_name));
-      return {
-        hasCustomerId: cols.has('customer_id'),
-        hasUserEmail: cols.has('user_email'),
-        hasId: cols.has('id'),
-      };
-    }
-
     // Get customer profile (for My Profile page)
     app.get('/api/customer/profile', customerAuthRequired, async (req, res) => {
       try {
         const customerId = req.customer.id;
 
-        // Get customer account info with loyalty points
         const accountResult = await pool.query(
           `SELECT * FROM customer_accounts WHERE id = $1`,
           [customerId],
@@ -7190,37 +7160,6 @@ const dbInitPromise = authSchemaPromise
         }
 
         const account = accountResult.rows[0];
-
-        // Get delivery address from customer_profiles
-        const profileColumns = await getCustomerProfileColumns();
-        let profileResult = { rows: [] };
-        if (profileColumns.hasCustomerId) {
-          profileResult = await pool.query(
-            `SELECT delivery_address, delivery_lat, delivery_lng
-             FROM customer_profiles
-             WHERE customer_id = $1
-             LIMIT 1`,
-            [customerId],
-          );
-        } else if (profileColumns.hasUserEmail) {
-          profileResult = await pool.query(
-            `SELECT delivery_address, delivery_lat, delivery_lng
-             FROM customer_profiles
-             WHERE user_email = $1
-             LIMIT 1`,
-            [account.email],
-          );
-        } else if (profileColumns.hasId) {
-          profileResult = await pool.query(
-            `SELECT delivery_address, delivery_lat, delivery_lng
-             FROM customer_profiles
-             WHERE id::text = $1
-             LIMIT 1`,
-            [customerId],
-          );
-        }
-        const profile = profileResult.rows[0] || {};
-
         const restaurantPoints = Number(account.restaurant_loyalty_points ?? 0);
         const cateringPoints = Number(account.catering_loyalty_points ?? 0);
 
@@ -7236,9 +7175,11 @@ const dbInitPromise = authSchemaPromise
           loyaltyPoints: restaurantPoints + cateringPoints,
           restaurantLoyaltyPoints: restaurantPoints,
           cateringLoyaltyPoints: cateringPoints,
-          deliveryAddress: profile.delivery_address || null,
-          deliveryLat: profile.delivery_lat != null ? Number(profile.delivery_lat) : null,
-          deliveryLng: profile.delivery_lng != null ? Number(profile.delivery_lng) : null,
+          deliveryAddress: account.delivery_address || null,
+          deliveryLat:
+            account.delivery_lat != null ? Number(account.delivery_lat) : null,
+          deliveryLng:
+            account.delivery_lng != null ? Number(account.delivery_lng) : null,
         });
       } catch (error) {
         console.error('Error fetching customer profile:', error);
@@ -7283,57 +7224,39 @@ const dbInitPromise = authSchemaPromise
           );
         }
 
-        // Update or insert customer_profiles (for address and coordinates)
-        if (deliveryAddress !== undefined || deliveryLat !== undefined || deliveryLng !== undefined) {
-          const profileColumns = await getCustomerProfileColumns();
-          const accountResult = await pool.query(
-            `SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1`,
-            [customerId],
-          );
-          const customerEmail = accountResult.rows[0]?.email ?? null;
+        if (
+          deliveryAddress !== undefined ||
+          deliveryLat !== undefined ||
+          deliveryLng !== undefined
+        ) {
+          const deliveryUpdates = [];
+          const deliveryValues = [];
+          let p = 0;
 
-          if (profileColumns.hasCustomerId) {
-            if (profileColumns.hasUserEmail) {
-              await pool.query(
-                `INSERT INTO customer_profiles (customer_id, user_email, delivery_address, delivery_lat, delivery_lng)
-                 VALUES ($1, $2, $3, $4, $5)
-                 ON CONFLICT (customer_id)
-                 DO UPDATE SET
-                   user_email = COALESCE(EXCLUDED.user_email, customer_profiles.user_email),
-                   delivery_address = COALESCE(EXCLUDED.delivery_address, customer_profiles.delivery_address),
-                   delivery_lat = COALESCE(EXCLUDED.delivery_lat, customer_profiles.delivery_lat),
-                   delivery_lng = COALESCE(EXCLUDED.delivery_lng, customer_profiles.delivery_lng),
-                   updated_at = now()`,
-                [customerId, customerEmail, deliveryAddress, deliveryLat, deliveryLng],
-              );
-            } else {
-              await pool.query(
-                `INSERT INTO customer_profiles (customer_id, delivery_address, delivery_lat, delivery_lng)
-                 VALUES ($1, $2, $3, $4)
-                 ON CONFLICT (customer_id)
-                 DO UPDATE SET
-                   delivery_address = COALESCE(EXCLUDED.delivery_address, customer_profiles.delivery_address),
-                   delivery_lat = COALESCE(EXCLUDED.delivery_lat, customer_profiles.delivery_lat),
-                   delivery_lng = COALESCE(EXCLUDED.delivery_lng, customer_profiles.delivery_lng),
-                   updated_at = now()`,
-                [customerId, deliveryAddress, deliveryLat, deliveryLng],
-              );
-            }
-          } else if (profileColumns.hasUserEmail) {
-            await pool.query(
-              `INSERT INTO customer_profiles (user_email, delivery_address, delivery_lat, delivery_lng)
-               VALUES ($1, $2, $3, $4)
-               ON CONFLICT (user_email)
-               DO UPDATE SET
-                 delivery_address = COALESCE(EXCLUDED.delivery_address, customer_profiles.delivery_address),
-                 delivery_lat = COALESCE(EXCLUDED.delivery_lat, customer_profiles.delivery_lat),
-                 delivery_lng = COALESCE(EXCLUDED.delivery_lng, customer_profiles.delivery_lng),
-                 updated_at = now()`,
-              [customerEmail, deliveryAddress, deliveryLat, deliveryLng],
-            );
-          } else {
-            return res.status(500).json({ error: 'Unsupported customer profile schema' });
+          if (deliveryAddress !== undefined) {
+            p += 1;
+            deliveryUpdates.push(`delivery_address = $${p}`);
+            deliveryValues.push(deliveryAddress);
           }
+          if (deliveryLat !== undefined) {
+            p += 1;
+            deliveryUpdates.push(`delivery_lat = $${p}`);
+            deliveryValues.push(deliveryLat);
+          }
+          if (deliveryLng !== undefined) {
+            p += 1;
+            deliveryUpdates.push(`delivery_lng = $${p}`);
+            deliveryValues.push(deliveryLng);
+          }
+
+          deliveryUpdates.push('updated_at = now()');
+          p += 1;
+          deliveryValues.push(customerId);
+
+          await pool.query(
+            `UPDATE customer_accounts SET ${deliveryUpdates.join(', ')} WHERE id = $${p}`,
+            deliveryValues,
+          );
         }
 
         res.json({ success: true, message: 'Profile updated successfully' });
