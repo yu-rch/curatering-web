@@ -1,6 +1,19 @@
 /// Customer-facing site lives under this path prefix (staff app uses root paths).
 const String kCustomerSitePrefix = '/macrinas-kitchen-and-catering';
 
+/// Web cold-start route from the browser URL (PathUrlStrategy).
+/// Without this, a hardcoded [initialRoute] ignores `/login` and similar deep links.
+String resolveAppInitialRoute() {
+  var path = Uri.base.path;
+  if (path.length > 1 && path.endsWith('/')) {
+    path = path.substring(0, path.length - 1);
+  }
+  if (path.isEmpty) {
+    return '/';
+  }
+  return path;
+}
+
 /// Build a customer website route (e.g. `/macrinas-kitchen-and-catering/gallery`).
 String customerRoute(String path) {
   if (path.isEmpty || path == '/') {

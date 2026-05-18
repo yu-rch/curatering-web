@@ -103,7 +103,23 @@ class MyApp extends StatelessWidget {
               }),
             ),
           ),
-          initialRoute: kCustomerSitePrefix,
+          initialRoute: resolveAppInitialRoute(),
+          onUnknownRoute: (settings) {
+            final name = settings.name ?? resolveAppInitialRoute();
+            if (isStaffRoute(name)) {
+              return MaterialPageRoute<void>(
+                settings: settings,
+                builder: (_) => const Login(),
+              );
+            }
+            return MaterialPageRoute<void>(
+              settings: settings,
+              builder:
+                  (_) => CustomerRouteRedirect(
+                    target: name.startsWith('/') ? name : '/$name',
+                  ),
+            );
+          },
           routes: {
             '/login': (context) => const Login(),
             '/': (context) => const CustomerRouteRedirect(target: '/'),
