@@ -2,6 +2,8 @@ import bcrypt from "bcryptjs";
 import {
   ensureRestaurantOrdersCanonicalColumns,
   buildRestaurantOrderSelectSql,
+  restaurantOrderLookupWhereSql,
+  restaurantOrderIdInsertColumn,
 } from "./order_schema.js";
 import { getTableColumnNames } from "./db.js";
 
@@ -260,9 +262,7 @@ async function getOrderById(pool, orderId) {
   if (!id) return null;
   const selectSql = await restaurantOrderSelectSql();
   const roCols = await getTableColumnNames('restaurant_orders');
-  const idMatch = roCols.has('order_id')
-    ? 'id::text = $1 OR order_no = $1 OR order_id = $1'
-    : 'id::text = $1 OR order_no = $1';
+  const idMatch = restaurantOrderLookupWhereSql(roCols, 1);
   const r = await pool.query(
     `SELECT ${selectSql} FROM restaurant_orders WHERE ${idMatch} LIMIT 1`,
     [id],
@@ -345,7 +345,7 @@ export function registerPosRoutes(app, {
           await sendCustomerNotificationEmail({
             to: email,
             subject: "Curatering: Payment confirmed",
-            text: `Your payment for order ${order.order_no} was confirmed. Your order is being prepared.\n\n- Curatering Team`,
+            text: `Your payment for order ${order.order_id ?? order.order_no} was confirmed. Your order is being prepared.\n\n- Curatering Team`,
           });
         }
         return res.json({ ok: true, status: "ORDER CONFIRMED" });
@@ -400,7 +400,7 @@ export function registerPosRoutes(app, {
         to: email,
         subject: "Curatering: Balance payment required",
         text:
-          `Hello,\n\nYour order ${order.order_no} has an outstanding balance.\n` +
+          `Hello,\n\nYour order ${order.order_id ?? order.order_no} has an outstanding balance.\n` +
           `Order total: PHP ${total.toFixed(2)}\nAmount received: PHP ${paid.toFixed(2)}\n` +
           `Please submit the remaining payment.\n\n- Curatering Team`,
       });
@@ -473,12 +473,14 @@ export function registerPosRoutes(app, {
       }
 
       const orderNo = await allocateRestaurantOrderNo();
+      const roCols = await ensureRestaurantOrdersCanonicalColumns();
+      const orderIdCol = restaurantOrderIdInsertColumn(roCols);
       const change =
         amountReceived > total ? Number((amountReceived - total).toFixed(2)) : 0;
 
       const r = await pool.query(
         `INSERT INTO restaurant_orders (
-           order_no, full_name, phone, items, total_amount,
+           ${orderIdCol}, full_name, phone, items, total_amount,
            delivery_address, delivery_lat, delivery_lng,
            order_status, fulfillment_stage, payment_status, payment_method,
            order_source, pos_customer_label, payment_proof,

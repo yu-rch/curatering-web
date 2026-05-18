@@ -18,7 +18,7 @@ import { fileURLToPath } from 'url'
 import {
   initDb,
   ensureAuthSchemaQuick,
-  ensureOrderInquiryIdColumns,
+  ensureOrderCateringIdColumns,
   ensureCustomerTrayDraftsSchema,
   ensureRestaurantOrderWorkflowColumns,
   getTableColumnNames,
@@ -47,6 +47,12 @@ import {
   ensureCateringEventOrdersCanonicalColumns,
   buildRestaurantOrderSelectSql,
   buildCustomerCateringOrdersSql,
+  buildStaffEventsOrdersListSql,
+  buildStaffEventOrderByIdQueries,
+  cateringIdSelectAlias,
+  restaurantOrderLookupWhereSql,
+  restaurantOrderIdInsertColumn,
+  restaurantOrderIdExpr,
   normalizeRestaurantOrderRow,
   normalizeCustomerCateringOrderRow,
 } from "./order_schema.js";
@@ -582,68 +588,17 @@ function themeDesignListColumn(compact) {
 async function fetchEventOrderRowById(orderId) {
   const id = String(orderId || "").trim();
   if (!id) return null;
-  await ensureOrderInquiryIdColumns();
-  const catering = await pool.query(
-    `SELECT
-        id,
-        inquiry_id AS "inquiryId",
-        source,
-        status,
-        null AS "eventTitle",
-        null AS "eventType",
-        null AS "formalityLevel",
-        customer_name AS "customerName",
-        contact_person AS "contactPerson",
-        contact_number AS "contactNumber",
-        email_address AS "emailAddress",
-        schedule_slots AS "scheduleSlots",
-        address,
-        order_type AS "orderType",
-        guest_count AS "guestCount",
-        COALESCE(allergens, '') AS allergens,
-        menu,
-        '{}'::jsonb AS "themeDesign",
-        '{}'::jsonb AS "seatingPlan",
-        post_analysis AS "postAnalysis",
-        total_cost AS "totalCost",
-        final_status AS "finalStatus",
-        created_at,
-        COALESCE(updated_at, created_at) AS "updatedAt"
-       FROM catering_orders
-       WHERE id = $1`,
-    [id],
+  await ensureOrderCateringIdColumns();
+  await ensureCateringEventOrdersCanonicalColumns();
+  const cateringCols = await getTableColumnNames('catering_orders');
+  const eventCols = await getTableColumnNames('event_orders');
+  const { cateringSql, eventSql } = buildStaffEventOrderByIdQueries(
+    cateringCols,
+    eventCols,
   );
+  const catering = await pool.query(cateringSql, [id]);
   if (catering.rows.length > 0) return catering.rows[0];
-  const ev = await pool.query(
-    `SELECT
-        id,
-        inquiry_id AS "inquiryId",
-        source,
-        status,
-        event_title AS "eventTitle",
-        event_type AS "eventType",
-        formality_level AS "formalityLevel",
-        customer_name AS "customerName",
-        contact_person AS "contactPerson",
-        contact_number AS "contactNumber",
-        email_address AS "emailAddress",
-        schedule_slots AS "scheduleSlots",
-        address,
-        order_type AS "orderType",
-        guest_count AS "guestCount",
-        COALESCE(allergens, '') AS allergens,
-        menu,
-        theme_design AS "themeDesign",
-        COALESCE(seating_plan, '{}'::jsonb) AS "seatingPlan",
-        post_analysis AS "postAnalysis",
-        total_cost AS "totalCost",
-        final_status AS "finalStatus",
-        created_at,
-        COALESCE(updated_at, created_at) AS "updatedAt"
-       FROM event_orders
-       WHERE id = $1`,
-    [id],
-  );
+  const ev = await pool.query(eventSql, [id]);
   return ev.rows[0] || null;
 }
 
@@ -2973,12 +2928,14 @@ app.get(
   requireSuperAdmin,
   async (req, res) => {
     try {
+      const roCols = await ensureRestaurantOrdersCanonicalColumns();
+      const orderIdSql = restaurantOrderIdExpr(roCols);
       const { search } = req.query || {};
       const params = [];
       let whereSql = "WHERE ro.feedback_stars IS NOT NULL";
       if (search) {
         whereSql += ` AND (
-          ro.order_no::text ILIKE $1 OR
+          (${orderIdSql})::text ILIKE $1 OR
           COALESCE(ro.full_name, '') ILIKE $1 OR
           COALESCE(ca.email, ro.guest_contact_email, '') ILIKE $1 OR
           COALESCE(ro.feedback_remarks, '') ILIKE $1
@@ -2989,7 +2946,7 @@ app.get(
       const result = await pool.query(
         `SELECT
           ro.id,
-          ro.order_no AS "orderNo",
+          (${orderIdSql}) AS "orderNo",
           COALESCE(ca.full_name, ro.full_name, 'Guest') AS "customerName",
           COALESCE(ca.email, ro.guest_contact_email, '') AS "customerEmail",
           ro.feedback_stars AS stars,
@@ -3027,12 +2984,14 @@ app.post(
   requireSuperAdmin,
   async (req, res) => {
     try {
+      const roCols = await ensureRestaurantOrdersCanonicalColumns();
+      const orderIdSql = restaurantOrderIdExpr(roCols);
       const { search } = { ...req.query, ...(req.body || {}) };
       const params = [];
       let whereSql = "WHERE ro.feedback_stars IS NOT NULL";
       if (search) {
         whereSql += ` AND (
-          ro.order_no::text ILIKE $1 OR
+          (${orderIdSql})::text ILIKE $1 OR
           COALESCE(ro.full_name, '') ILIKE $1 OR
           COALESCE(ca.email, ro.guest_contact_email, '') ILIKE $1 OR
           COALESCE(ro.feedback_remarks, '') ILIKE $1
@@ -3042,7 +3001,7 @@ app.post(
 
       const result = await pool.query(
         `SELECT
-          ro.order_no AS "orderNo",
+          (${orderIdSql}) AS "orderNo",
           COALESCE(ca.full_name, ro.full_name, 'Guest') AS "customerName",
           ro.feedback_stars AS stars,
           COALESCE(ro.feedback_remarks, '') AS remarks,
@@ -3203,11 +3162,11 @@ app.post(
         // Use separate catering_orders table for catering-only orders
         result = await pool.query(
           `INSERT INTO catering_orders
-            (source, status, order_type, inquiry_id, customer_name, contact_person, contact_number, email_address,
+            (source, status, order_type, catering_id, customer_name, contact_person, contact_number, email_address,
              schedule_slots, address, guest_count, menu, allergens, created_by, updated_by)
           VALUES
             ('new_event', 'for_processing', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-           RETURNING id, inquiry_id;`,
+           RETURNING id, catering_id;`,
           [
             transactionId,
             customerName,
@@ -3227,13 +3186,13 @@ app.post(
         // Use event_orders table for catering+event orders
         result = await pool.query(
           `INSERT INTO event_orders
-            (source, status, event_title, order_type, event_type, formality_level, inquiry_id,
+            (source, status, event_title, order_type, event_type, formality_level, catering_id,
              customer_name, contact_person, contact_number, email_address,
              schedule_slots, address, guest_count, menu, theme_design, allergens,
              created_by, updated_by)
            VALUES
             ('new_event', 'for_processing', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-           RETURNING id, inquiry_id;`,
+           RETURNING id, catering_id;`,
           [
             eventTitle,
             orderType,
@@ -3260,13 +3219,13 @@ app.post(
         userId: req.user.id,
         feature: "Events",
         action: "submitted new event",
-        other: { orderId: result.rows[0].id, inquiryId: result.rows[0].inquiry_id },
+        other: { orderId: result.rows[0].id, cateringId: result.rows[0].catering_id },
       });
 
       return res.json({
         ok: true,
         id: result.rows[0].id,
-        inquiryId: result.rows[0].inquiry_id,
+        cateringId: result.rows[0].catering_id,
       });
     } catch (e) {
       console.error(e);
@@ -4086,86 +4045,28 @@ app.get(
     requireRoles(req, res, next, new Set(["manager", "admin", "super_admin"])),
   async (req, res) => {
     try {
-    await ensureOrderInquiryIdColumns();
-    const { status } = req.query || {};
-    if (!status)
-      return res
-        .status(400)
-        .json({ message: "status query param is required" });
+      await ensureOrderCateringIdColumns();
+      await ensureCateringEventOrdersCanonicalColumns();
+      const { status } = req.query || {};
+      if (!status)
+        return res
+          .status(400)
+          .json({ message: "status query param is required" });
 
-    const compact = String(req.query.compact || "") === "1";
-    const themeCol = themeDesignListColumn(compact);
+      const compact = String(req.query.compact || "") === "1";
+      const cateringCols = await getTableColumnNames('catering_orders');
+      const eventCols = await getTableColumnNames('event_orders');
+      const listSql = buildStaffEventsOrdersListSql(cateringCols, eventCols, {
+        compact,
+      });
 
-    const result = await pool.query(
-      `SELECT
-        id,
-        inquiry_id AS "inquiryId",
-        source,
-        status,
-        null AS "eventTitle",
-        null AS "eventType",
-        null AS "formalityLevel",
-        customer_name AS "customerName",
-        contact_person AS "contactPerson",
-        contact_number AS "contactNumber",
-        email_address AS "emailAddress",
-        schedule_slots AS "scheduleSlots",
-        address,
-        order_type AS "orderType",
-        guest_count AS "guestCount",
-        COALESCE(allergens, '') AS allergens,
-        menu,
-        '{}'::jsonb AS "themeDesign",
-        '{}'::jsonb AS "seatingPlan",
-        post_analysis AS "postAnalysis",
-        total_cost AS "totalCost",
-        final_status AS "finalStatus",
-        created_at,
-        COALESCE(updated_at, created_at) AS "updatedAt"
-       FROM catering_orders
-       WHERE
-         status = $1
-         OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')
-       UNION ALL
-       SELECT
-        id,
-        inquiry_id AS "inquiryId",
-        source,
-        status,
-        event_title AS "eventTitle",
-        event_type AS "eventType",
-        formality_level AS "formalityLevel",
-        customer_name AS "customerName",
-        contact_person AS "contactPerson",
-        contact_number AS "contactNumber",
-        email_address AS "emailAddress",
-        schedule_slots AS "scheduleSlots",
-        address,
-        order_type AS "orderType",
-        guest_count AS "guestCount",
-        COALESCE(allergens, '') AS allergens,
-        menu,
-        ${themeCol},
-        COALESCE(seating_plan, '{}'::jsonb) AS "seatingPlan",
-        post_analysis AS "postAnalysis",
-        total_cost AS "totalCost",
-        final_status AS "finalStatus",
-        created_at,
-        COALESCE(updated_at, created_at) AS "updatedAt"
-       FROM event_orders
-       WHERE
-         status = $1
-         OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')
-       ORDER BY created_at DESC
-       LIMIT 500;`,
-      [status],
-    );
+      const result = await pool.query(listSql, [status]);
 
-    let orders = result.rows;
-    if (compact) {
-      orders = orders.map(compactEventOrderRow);
-    }
-    return res.json({ orders });
+      let orders = result.rows;
+      if (compact) {
+        orders = orders.map(compactEventOrderRow);
+      }
+      return res.json({ orders });
     } catch (e) {
       console.error("GET /api/manager/events/orders", e);
       return res.status(500).json({ message: "Failed to load orders" });
@@ -4501,7 +4402,8 @@ app.get(
   (req, res, next) =>
     requireRoles(req, res, next, new Set(["supervisor", "admin", "super_admin"])),
   async (req, res) => {
-    await ensureOrderInquiryIdColumns();
+    await ensureOrderCateringIdColumns();
+    await ensureCateringEventOrdersCanonicalColumns();
     const { status } = req.query || {};
     if (!status)
       return res
@@ -4509,72 +4411,13 @@ app.get(
         .json({ message: "status query param is required" });
 
     const compact = String(req.query.compact || "") === "1";
-    const themeCol = themeDesignListColumn(compact);
+    const cateringCols = await getTableColumnNames('catering_orders');
+    const eventCols = await getTableColumnNames('event_orders');
+    const listSql = buildStaffEventsOrdersListSql(cateringCols, eventCols, {
+      compact,
+    });
 
-    const result = await pool.query(
-      `SELECT
-        id,
-        inquiry_id AS "inquiryId",
-        source,
-        status,
-        null AS "eventTitle",
-        null AS "eventType",
-        null AS "formalityLevel",
-        customer_name AS "customerName",
-        contact_person AS "contactPerson",
-        contact_number AS "contactNumber",
-        email_address AS "emailAddress",
-        schedule_slots AS "scheduleSlots",
-        address,
-        order_type AS "orderType",
-        guest_count AS "guestCount",
-        COALESCE(allergens, '') AS allergens,
-        menu,
-        '{}'::jsonb AS "themeDesign",
-        '{}'::jsonb AS "seatingPlan",
-        post_analysis AS "postAnalysis",
-        total_cost AS "totalCost",
-        final_status AS "finalStatus",
-        created_at,
-        COALESCE(updated_at, created_at) AS "updatedAt"
-       FROM catering_orders
-       WHERE
-         status = $1
-         OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')
-       UNION ALL
-       SELECT
-        id,
-        inquiry_id AS "inquiryId",
-        source,
-        status,
-        event_title AS "eventTitle",
-        event_type AS "eventType",
-        formality_level AS "formalityLevel",
-        customer_name AS "customerName",
-        contact_person AS "contactPerson",
-        contact_number AS "contactNumber",
-        email_address AS "emailAddress",
-        schedule_slots AS "scheduleSlots",
-        address,
-        order_type AS "orderType",
-        guest_count AS "guestCount",
-        COALESCE(allergens, '') AS allergens,
-        menu,
-        ${themeCol},
-        COALESCE(seating_plan, '{}'::jsonb) AS "seatingPlan",
-        post_analysis AS "postAnalysis",
-        total_cost AS "totalCost",
-        final_status AS "finalStatus",
-        created_at,
-        COALESCE(updated_at, created_at) AS "updatedAt"
-       FROM event_orders
-       WHERE
-         status = $1
-         OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')
-       ORDER BY created_at DESC
-       LIMIT 500;`,
-      [status],
-    );
+    const result = await pool.query(listSql, [status]);
 
     let orders = result.rows;
     if (compact) {
@@ -4807,20 +4650,20 @@ app.post("/api/online-inquiries", async (req, res) => {
       }
     }
 
-    const inquiryId = await allocateCateringTransactionId();
+    const cateringId = await allocateCateringTransactionId();
 
     let result;
     if (isCateringOnly) {
       // Use catering_orders table for catering-only orders
       result = await pool.query(
         `INSERT INTO catering_orders
-          (source, status, order_type, inquiry_id, customer_name, contact_person, contact_number, email_address,
+          (source, status, order_type, catering_id, customer_name, contact_person, contact_number, email_address,
            schedule_slots, address, address_lat, address_lng, guest_count, menu, allergens)
         VALUES
           ('online_inquiry', 'online_inquiries', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-         RETURNING id, inquiry_id;`,
+         RETURNING id, catering_id;`,
         [
-          inquiryId,
+          cateringId,
           customerName,
           contactPerson,
           contactNumber,
@@ -4838,19 +4681,19 @@ app.post("/api/online-inquiries", async (req, res) => {
       // Use event_orders table for catering+event orders
       result = await pool.query(
         `INSERT INTO event_orders
-          (source, status, event_title, order_type, event_type, formality_level, inquiry_id,
+          (source, status, event_title, order_type, event_type, formality_level, catering_id,
            customer_name, contact_person, contact_number, email_address,
            schedule_slots, address, address_lat, address_lng, guest_count, menu, theme_design, allergens)
          VALUES
           ('online_inquiry', 'online_inquiries',
            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-         RETURNING id, inquiry_id;`,
+         RETURNING id, catering_id;`,
         [
           eventTitle,
           'catering_event',
           eventType,
           formalityLevel,
-          inquiryId,
+          cateringId,
           customerName,
           contactPerson,
           contactNumber,
@@ -4872,12 +4715,12 @@ app.post("/api/online-inquiries", async (req, res) => {
       subject: "Curatering: Inquiry received",
       text:
         `Hello ${customerName || "Customer"},\n\n` +
-        `We received your inquiry (${result.rows[0].inquiry_id}).\n` +
+        `We received your inquiry (${result.rows[0].catering_id}).\n` +
         `Our team will review it and contact you soon.\n\n` +
         `- Curatering Team`,
     });
 
-    return res.json({ ok: true, id: result.rows[0].id, inquiryId: result.rows[0].inquiry_id });
+    return res.json({ ok: true, id: result.rows[0].id, cateringId: result.rows[0].catering_id });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ message: "Failed to create online inquiry" });
@@ -5267,7 +5110,7 @@ async function autoCancelStalePendingCashierOrders() {
           to: email,
           subject: 'Curatering: Order cancelled (payment timeout)',
           text:
-            `Your order ${order.order_no} was cancelled because payment was not confirmed within 1 hour.\n\n` +
+            `Your order ${order.order_id ?? order.order_no} was cancelled because payment was not confirmed within 1 hour.\n\n` +
             `- Curatering Team`,
         });
       }
@@ -6292,7 +6135,7 @@ async function registerRoutesAfterDbInit() {
     // Customer auth: registered early via registerCustomerAuthRoutes()
 
     // Restaurant Order endpoints
-    function restaurantOrderWhereClause(orderId, paramIndex) {
+    async function restaurantOrderWhereClause(orderId, paramIndex) {
       const raw = String(orderId ?? "").trim();
       if (!raw) return null;
       const isUuid =
@@ -6302,7 +6145,11 @@ async function registerRoutesAfterDbInit() {
       if (isUuid) {
         return { sql: `id = $${paramIndex}::uuid`, value: raw };
       }
-      return { sql: `order_no = $${paramIndex}`, value: raw };
+      const roCols = await ensureRestaurantOrdersCanonicalColumns();
+      return {
+        sql: restaurantOrderLookupWhereSql(roCols, paramIndex),
+        value: raw,
+      };
     }
 
     const customerAuthRequired = (req, res, next) => {
@@ -6401,10 +6248,12 @@ async function registerRoutesAfterDbInit() {
         const lat = parseRestaurantCoord(deliveryLat);
         const lng = parseRestaurantCoord(deliveryLng);
         const orderNo = await allocateRestaurantOrderNo();
+        const roCols = await ensureRestaurantOrdersCanonicalColumns();
+        const orderIdCol = restaurantOrderIdInsertColumn(roCols);
 
         const result = await pool.query(
           `INSERT INTO restaurant_orders (
-             order_no, customer_id, guest_contact_email, full_name, phone, items,
+             ${orderIdCol}, customer_id, guest_contact_email, full_name, phone, items,
              total_amount, delivery_address, delivery_lat, delivery_lng,
              delivery_time, delivery_notes, order_status
            )
@@ -6442,7 +6291,7 @@ async function registerRoutesAfterDbInit() {
             text:
               `Hello ${fullName || 'Customer'},\n\n` +
               `Your order has been placed.\n` +
-              `Order No: ${result.rows[0].order_no}\n` +
+              `Order No: ${result.rows[0].order_id ?? result.rows[0].order_no}\n` +
               `Total: PHP ${Number(totalAmount || 0).toFixed(2)}\n\n` +
               `Complete payment to submit for cashier review.\n\n` +
               `- Curatering Team`,
@@ -6467,7 +6316,7 @@ async function registerRoutesAfterDbInit() {
           });
         }
 
-        const lookup = restaurantOrderWhereClause(orderId, 1);
+        const lookup = await restaurantOrderWhereClause(orderId, 1);
         if (!lookup) {
           return res.status(400).json({ error: 'Invalid order id' });
         }
@@ -6498,7 +6347,7 @@ async function registerRoutesAfterDbInit() {
           }
         }
 
-        const payLookup = restaurantOrderWhereClause(orderId, 3);
+        const payLookup = await restaurantOrderWhereClause(orderId, 3);
         if (!payLookup) {
           return res.status(400).json({ error: 'Invalid order id' });
         }
@@ -6529,7 +6378,7 @@ async function registerRoutesAfterDbInit() {
               to: email,
               subject: 'Curatering: Payment submitted',
               text:
-                `Your payment for order ${updated.order_no} is awaiting cashier verification.\n\n` +
+                `Your payment for order ${updated.order_id ?? updated.order_no} is awaiting cashier verification.\n\n` +
                 `- Curatering Team`,
             });
           }
@@ -6550,7 +6399,7 @@ async function registerRoutesAfterDbInit() {
       try {
         const { orderId } = req.params;
         
-        const lookup = restaurantOrderWhereClause(orderId, 1);
+        const lookup = await restaurantOrderWhereClause(orderId, 1);
         if (!lookup) {
           return res.status(400).json({ error: 'Invalid order id' });
         }
@@ -6600,7 +6449,7 @@ async function registerRoutesAfterDbInit() {
             return res.status(400).json({ error: 'Rating must be between 1 and 5 stars' });
           }
 
-          const lookup = restaurantOrderWhereClause(orderId, 1);
+          const lookup = await restaurantOrderWhereClause(orderId, 1);
           if (!lookup) {
             return res.status(400).json({ error: 'Invalid order id' });
           }
@@ -7013,45 +6862,39 @@ async function registerRoutesAfterDbInit() {
       const startTime = Date.now();
       try {
         const { status, limit = 50 } = req.query;
-        
-        // Use a simpler, faster query with only essential fields
+        const roCols = await ensureRestaurantOrdersCanonicalColumns();
+        const selectSql = buildRestaurantOrderSelectSql(roCols);
+        const statusCol = roCols.has('order_status')
+          ? 'order_status'
+          : roCols.has('status')
+            ? 'status'
+            : 'order_status';
+
         let query = `
-          SELECT id, order_no, customer_id, guest_contact_email, full_name, phone, items,
-                 total_amount, delivery_address, delivery_lat, delivery_lng, delivery_time,
-                 order_status AS status, payment_status, payment_reference, payment_proof,
-                 amount_paid, change_given, delivery_tracking_url,
-                 created_at, updated_at
-          FROM restaurant_orders 
-          ORDER BY created_at DESC 
+          SELECT ${selectSql}
+          FROM restaurant_orders
+          ORDER BY created_at DESC NULLS LAST
           LIMIT $1
         `;
         let params = [limit];
-        
+
         if (status) {
           const statusValues = status.split(',');
           if (statusValues.length === 1) {
             query = `
-              SELECT id, order_no, customer_id, guest_contact_email, full_name, phone, items,
-                     total_amount, delivery_address, delivery_lat, delivery_lng, delivery_time,
-                     order_status AS status, payment_status, payment_reference, payment_proof,
-                     amount_paid, change_given, delivery_tracking_url,
-                     created_at, updated_at
-              FROM restaurant_orders 
-              WHERE order_status = $1 
-              ORDER BY created_at DESC 
+              SELECT ${selectSql}
+              FROM restaurant_orders
+              WHERE ${statusCol} = $1
+              ORDER BY created_at DESC NULLS LAST
               LIMIT $2
             `;
             params = [statusValues[0], limit];
           } else {
             query = `
-              SELECT id, order_no, customer_id, guest_contact_email, full_name, phone, items,
-                     total_amount, delivery_address, delivery_lat, delivery_lng, delivery_time,
-                     order_status AS status, payment_status, payment_reference, payment_proof,
-                     amount_paid, change_given, delivery_tracking_url,
-                     created_at, updated_at
-              FROM restaurant_orders 
-              WHERE order_status IN (${statusValues.map((_, i) => `$${i + 1}`).join(', ')}) 
-              ORDER BY created_at DESC 
+              SELECT ${selectSql}
+              FROM restaurant_orders
+              WHERE ${statusCol} IN (${statusValues.map((_, i) => `$${i + 1}`).join(', ')})
+              ORDER BY created_at DESC NULLS LAST
               LIMIT $${statusValues.length + 1}
             `;
             params = [...statusValues, limit];
@@ -7080,11 +6923,18 @@ async function registerRoutesAfterDbInit() {
           }
         }
         
-        // Process items JSON to reduce client-side processing
-        const processedOrders = result.rows.map(order => ({
-          ...order,
-          items: typeof order.items === 'string' ? JSON.parse(order.items) : order.items
-        }));
+        const processedOrders = result.rows.map((order) => {
+          let parsedItems = order.items ?? order.tray_items;
+          if (typeof parsedItems === 'string') {
+            try {
+              parsedItems = JSON.parse(parsedItems);
+            } catch {
+              parsedItems = [];
+            }
+          }
+          if (!Array.isArray(parsedItems)) parsedItems = [];
+          return serializeRestaurantOrderRow(order, parsedItems);
+        });
         
         const endTime = Date.now();
         console.log(`Restaurant orders query took ${endTime - startTime}ms for ${processedOrders.length} orders`);
@@ -7146,7 +6996,7 @@ async function registerRoutesAfterDbInit() {
         
         updateFields.push(`updated_at = now()`);
 
-        const lookup = restaurantOrderWhereClause(orderId, paramIndex);
+        const lookup = await restaurantOrderWhereClause(orderId, paramIndex);
         if (!lookup) {
           return res.status(400).json({ error: 'Invalid order id' });
         }
@@ -7190,7 +7040,7 @@ async function registerRoutesAfterDbInit() {
             }
             
             // Update order with calculated points
-            const pointsLookup = restaurantOrderWhereClause(orderId, 2);
+            const pointsLookup = await restaurantOrderWhereClause(orderId, 2);
             if (pointsLookup) {
               await pool.query(
                 `UPDATE restaurant_orders SET points_earned = $1 WHERE ${pointsLookup.sql}`,
@@ -7247,7 +7097,7 @@ async function registerRoutesAfterDbInit() {
             return res.status(400).json({ error: 'amountPaid is required' });
           }
 
-          const lookup = restaurantOrderWhereClause(orderId, 1);
+          const lookup = await restaurantOrderWhereClause(orderId, 1);
           const existing = await pool.query(
             `SELECT * FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
             [lookup.value],
@@ -7267,7 +7117,7 @@ async function registerRoutesAfterDbInit() {
           }
 
           const changeGiven = Number((paid - total).toFixed(2));
-          const confirmLookup = restaurantOrderWhereClause(orderId, 3);
+          const confirmLookup = await restaurantOrderWhereClause(orderId, 3);
           const result = await pool.query(
             `UPDATE restaurant_orders
              SET amount_paid = $1,
@@ -7287,7 +7137,7 @@ async function registerRoutesAfterDbInit() {
               to: email,
               subject: 'Curatering: Payment confirmed',
               text:
-                `Your payment for order ${updated.order_no} was confirmed.\n` +
+                `Your payment for order ${updated.order_id ?? updated.order_no} was confirmed.\n` +
                 `Your order is now being prepared.\n\n` +
                 `- Curatering Team`,
             });
@@ -7309,7 +7159,7 @@ async function registerRoutesAfterDbInit() {
         try {
           const { orderId } = req.params;
           const { amountPaid, message } = req.body || {};
-          const lookup = restaurantOrderWhereClause(orderId, 1);
+          const lookup = await restaurantOrderWhereClause(orderId, 1);
           const existing = await pool.query(
             `SELECT * FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
             [lookup.value],
@@ -7329,7 +7179,7 @@ async function registerRoutesAfterDbInit() {
             subject: 'Curatering: Payment issue on your order',
             text:
               (message ||
-                `We could not confirm payment for order ${order.order_no}.\n` +
+                `We could not confirm payment for order ${order.order_id ?? order.order_no}.\n` +
                   `Order total: PHP ${total.toFixed(2)}\n` +
                   `Amount received: PHP ${paid.toFixed(2)}\n` +
                   `Please submit the correct payment or contact us.\n`) +
@@ -7349,7 +7199,7 @@ async function registerRoutesAfterDbInit() {
       async (req, res) => {
         try {
           const { orderId } = req.params;
-          const lookup = restaurantOrderWhereClause(orderId, 1);
+          const lookup = await restaurantOrderWhereClause(orderId, 1);
           const result = await pool.query(
             `UPDATE restaurant_orders
              SET order_status = 'cancelled', updated_at = now()
@@ -7368,7 +7218,7 @@ async function registerRoutesAfterDbInit() {
               to: email,
               subject: 'Curatering: Order cancelled',
               text:
-                `Your order ${order.order_no} has been cancelled.\n\n` +
+                `Your order ${order.order_id ?? order.order_no} has been cancelled.\n\n` +
                 `- Curatering Team`,
             });
           }
@@ -7514,7 +7364,7 @@ async function registerRoutesAfterDbInit() {
     // Get customer event/catering orders
     app.get('/api/customer/events/orders', customerAuthRequired, async (req, res) => {
       try {
-        await ensureOrderInquiryIdColumns();
+        await ensureOrderCateringIdColumns();
         await ensureCateringEventOrdersCanonicalColumns();
         const customerId = req.customer.id;
         const customerResult = await pool.query(
@@ -7660,14 +7510,19 @@ async function registerRoutesAfterDbInit() {
         const customerName = customerResult.rows[0].full_name || "Customer";
         const nextStatus = normalizedAction === 'confirm_inquiry' ? 'for_down_payment' : 'cancelled';
 
+        await ensureOrderCateringIdColumns();
+        const eventCols = await getTableColumnNames('event_orders');
+        const cateringCols = await getTableColumnNames('catering_orders');
+
         const tryUpdateByTable = async (tableName) => {
+          const cols = tableName === 'event_orders' ? eventCols : cateringCols;
           const result = await pool.query(
             `UPDATE ${tableName}
              SET status = $1, updated_at = now()
              WHERE id::text = $2
                AND lower(email_address) = lower($3)
                AND status = 'online_inquiries'
-             RETURNING id, inquiry_id as "inquiryId", status, updated_at as "updatedAt"`,
+             RETURNING id, ${cateringIdSelectAlias(cols)}, status, updated_at as "updatedAt"`,
             [nextStatus, orderId, customerEmail]
           );
           return result.rows[0] || null;
@@ -7739,8 +7594,13 @@ async function registerRoutesAfterDbInit() {
         }
         const customerEmail = customerResult.rows[0].email;
 
+        await ensureOrderCateringIdColumns();
+        const eventCols = await getTableColumnNames('event_orders');
+        const cateringCols = await getTableColumnNames('catering_orders');
+
         if (venueOnly === true) {
           const tryVenueOnly = async (tableName) => {
+            const cols = tableName === 'event_orders' ? eventCols : cateringCols;
             const result = await pool.query(
               `UPDATE ${tableName}
                SET guest_count = $1, address = $2, updated_at = now()
@@ -7749,7 +7609,7 @@ async function registerRoutesAfterDbInit() {
                  AND status IN ('on_going', 'for_full_payment', 'for_processing', 'for_post_analysis')
                RETURNING
                  id,
-                 inquiry_id as "inquiryId",
+                 ${cateringIdSelectAlias(cols)},
                  guest_count as "guestCount",
                  address,
                  status,
@@ -7809,6 +7669,7 @@ async function registerRoutesAfterDbInit() {
         }
 
         const tryUpdateByTable = async (tableName) => {
+          const cols = tableName === 'event_orders' ? eventCols : cateringCols;
           const result = await pool.query(
             `UPDATE ${tableName}
              SET
@@ -7822,7 +7683,7 @@ async function registerRoutesAfterDbInit() {
                AND status IN ('online_inquiries', 'for_down_payment', 'on_going', 'for_full_payment', 'for_processing', 'for_post_analysis')
              RETURNING
                id,
-               inquiry_id as "inquiryId",
+               ${cateringIdSelectAlias(cols)},
                guest_count as "guestCount",
                address,
                schedule_slots as "scheduleSlots",

@@ -1,6 +1,6 @@
 import '../models/event_order.dart';
 
-/// Display label for restaurant orders (prefers `order_no` e.g. ORD-0001).
+/// Display label for restaurant orders (prefers `order_id` / `order_no` e.g. ORD-0001).
 String uiOrderNo(dynamic orderNo, {dynamic id}) {
   if (orderNo != null) {
     final s = orderNo.toString().trim();
@@ -15,7 +15,7 @@ String uiOrderNo(dynamic orderNo, {dynamic id}) {
 }
 
 String formatRestaurantOrderNo(Map<String, dynamic> order) {
-  final orderNo = order['order_no']?.toString().trim();
+  final orderNo = (order['order_id'] ?? order['order_no'])?.toString().trim();
   if (orderNo != null && orderNo.isNotEmpty) return orderNo;
   final id = order['id']?.toString().trim();
   if (id != null && id.isNotEmpty) return id;

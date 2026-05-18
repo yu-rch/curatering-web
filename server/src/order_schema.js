@@ -33,6 +33,41 @@ function pickCol(cols, candidates) {
   return null;
 }
 
+/** Public ORD-0001 id (order_id preferred; order_no legacy). */
+export function restaurantOrderIdExpr(cols) {
+  if (cols.has('order_id') && cols.has('order_no')) {
+    return 'COALESCE(order_id, order_no::text)';
+  }
+  const col = pickCol(cols, ['order_id', 'order_no']);
+  return col ?? 'NULL::text';
+}
+
+export function restaurantOrderIdInsertColumn(cols) {
+  return pickCol(cols, ['order_id', 'order_no']) ?? 'order_id';
+}
+
+/** WHERE fragment: match UUID id or public order id. */
+export function restaurantOrderLookupWhereSql(cols, paramIndex) {
+  const parts = [];
+  if (cols.has('order_id')) parts.push(`order_id = $${paramIndex}`);
+  if (cols.has('order_no')) parts.push(`order_no = $${paramIndex}`);
+  if (parts.length === 0) return `id::text = $${paramIndex}`;
+  return `(${parts.join(' OR ')} OR id::text = $${paramIndex})`;
+}
+
+/** Public TR-000001 id column (catering_id preferred; inquiry_id legacy). */
+export function cateringIdExpr(cols) {
+  if (cols.has('catering_id') && cols.has('inquiry_id')) {
+    return 'COALESCE(catering_id, inquiry_id)';
+  }
+  const col = pickCol(cols, ['catering_id', 'inquiry_id']);
+  return col ?? 'NULL::text';
+}
+
+export function cateringIdSelectAlias(cols, alias = 'cateringId') {
+  return `${cateringIdExpr(cols)} AS "${alias}"`;
+}
+
 function sqlExpr(cols, candidates, fallbackSql) {
   const col = pickCol(cols, candidates);
   return col ? col : fallbackSql;
@@ -55,6 +90,19 @@ export async function ensureRestaurantOrdersCanonicalColumns() {
 async function ensureRestaurantOrdersCanonicalColumnsOnce() {
   const cols = await getTableColumnNames('restaurant_orders');
   if (cols.size === 0) return cols;
+
+  if (cols.has('order_no') && !cols.has('order_id')) {
+    try {
+      await pool.query(
+        `ALTER TABLE restaurant_orders RENAME COLUMN order_no TO order_id`,
+      );
+      cols.delete('order_no');
+      cols.add('order_id');
+      console.log('[order_schema] Renamed order_no → order_id on restaurant_orders');
+    } catch (err) {
+      console.warn('[order_schema] restaurant_orders order_no rename:', err.message);
+    }
+  }
 
   const adds = [
     ['tray_items', 'JSONB NOT NULL DEFAULT \'[]\'::jsonb'],
@@ -122,7 +170,7 @@ async function ensureRestaurantOrdersCanonicalColumnsOnce() {
     ['total_cost', 'total_amount', 'total_amount'],
     ['total_amount', 'total_cost', 'total_cost'],
     ['order_id', 'order_no', 'order_no::text'],
-    ['order_no', 'order_id', 'order_id'],
+    ['order_no', 'order_id', 'order_id::text'],
     ['contact_number', 'phone', 'phone'],
     ['phone', 'contact_number', 'contact_number'],
     ['user_email', 'guest_contact_email', 'guest_contact_email'],
@@ -246,7 +294,7 @@ const EVENT_CATERING_COLUMN_DEFS = [
   ['pax_buffer', 'INT DEFAULT 0'],
   ['estimated_cost', 'DECIMAL(10,2) DEFAULT 0.00'],
   ['allergens', "TEXT NOT NULL DEFAULT ''"],
-  ['inquiry_id', 'TEXT'],
+  ['catering_id', 'TEXT'],
   ['created_at', 'TIMESTAMPTZ NOT NULL DEFAULT now()'],
   ['updated_at', 'TIMESTAMPTZ NOT NULL DEFAULT now()'],
 ];
@@ -255,6 +303,19 @@ async function ensureCateringEventOrdersCanonicalColumnsOnce() {
   for (const table of ['event_orders', 'catering_orders']) {
     const cols = await getTableColumnNames(table);
     if (cols.size === 0) continue;
+
+    if (cols.has('inquiry_id') && !cols.has('catering_id')) {
+      try {
+        await pool.query(
+          `ALTER TABLE ${table} RENAME COLUMN inquiry_id TO catering_id`,
+        );
+        cols.delete('inquiry_id');
+        cols.add('catering_id');
+      } catch (err) {
+        console.warn(`[order_schema] ${table} inquiry_id rename:`, err.message);
+      }
+    }
+    await pool.query(`DROP INDEX IF EXISTS ${table}_inquiry_id_key`);
 
     for (const [name, typ] of EVENT_CATERING_COLUMN_DEFS) {
       if (!cols.has(name)) {
@@ -311,10 +372,11 @@ async function ensureCateringEventOrdersCanonicalColumnsOnce() {
 
 /** Build SELECT list for restaurant_orders using only existing columns. */
 export function buildRestaurantOrderSelectSql(cols) {
+  const publicId = restaurantOrderIdExpr(cols);
   const parts = [
     `${sqlExpr(cols, ['id'], 'NULL::uuid')} AS id`,
-    `${sqlExpr(cols, ['order_no', 'order_id'], 'NULL::text')} AS order_no`,
-    `${sqlExpr(cols, ['order_id', 'order_no'], 'NULL::text')} AS order_id`,
+    `${publicId} AS order_id`,
+    `${publicId} AS order_no`,
     `${sqlExpr(cols, ['customer_id'], 'NULL::text')} AS customer_id`,
     `${sqlExpr(cols, ['guest_contact_email'], 'NULL::text')} AS guest_contact_email`,
     `${sqlExpr(cols, ['user_email', 'guest_contact_email'], 'NULL::text')} AS user_email`,
@@ -431,13 +493,10 @@ export function buildCustomerCateringOrdersSql(eventCols, cateringCols) {
   const eventTheme = eventCols.has('theme_design')
     ? 'theme_design'
     : '\'{}\'::jsonb';
-  const eventInquiry = eventCols.has('inquiry_id') ? 'inquiry_id' : 'NULL::text';
-  const catInquiry = cateringCols.has('inquiry_id') ? 'inquiry_id' : 'NULL::text';
-
   const eventPart = `
     SELECT
       id::text AS id,
-      ${eventInquiry} AS "inquiryId",
+      ${cateringIdSelectAlias(eventCols)},
       ${cateringSelectField(eventCols, 'eventTitle', ['event_title'], 'NULL::text')},
       ${cateringSelectField(eventCols, 'eventType', ['event_type'], 'NULL::text')},
       status,
@@ -455,7 +514,7 @@ export function buildCustomerCateringOrdersSql(eventCols, cateringCols) {
   const cateringPart = `
     SELECT
       id::text AS id,
-      ${catInquiry} AS "inquiryId",
+      ${cateringIdSelectAlias(cateringCols)},
       NULL::text AS "eventTitle",
       'catering'::text AS "eventType",
       status,
@@ -478,4 +537,149 @@ export function normalizeCustomerCateringOrderRow(row) {
   o.status = normalizeCateringOrderStatus(o.status);
   if (o.createdAt instanceof Date) o.createdAt = o.createdAt.toISOString();
   return o;
+}
+
+/** theme_design column for staff list queries (optional column + compact mode). */
+export function staffThemeDesignColumnSql(eventCols, compact) {
+  if (!eventCols.has('theme_design')) {
+    return `'{}'::jsonb AS "themeDesign"`;
+  }
+  if (compact) {
+    return `jsonb_set(
+      COALESCE(theme_design::jsonb, '{}'::jsonb),
+      '{picksBase64}',
+      '[]'::jsonb,
+      true
+    ) AS "themeDesign"`;
+  }
+  return `theme_design AS "themeDesign"`;
+}
+
+function staffCateringOrderSelectList(cateringCols) {
+  return `
+    SELECT
+      id,
+      ${cateringIdSelectAlias(cateringCols)},
+      ${cateringSelectField(cateringCols, 'source', ['source'], "''")},
+      ${cateringSelectField(cateringCols, 'status', ['status'], "'online_inquiries'")},
+      NULL::text AS "eventTitle",
+      NULL::text AS "eventType",
+      NULL::text AS "formalityLevel",
+      ${cateringSelectField(cateringCols, 'customerName', ['customer_name'], "''")},
+      ${cateringSelectField(cateringCols, 'contactPerson', ['contact_person'], "''")},
+      ${cateringSelectField(cateringCols, 'contactNumber', ['contact_number'], "''")},
+      ${cateringSelectField(cateringCols, 'emailAddress', ['email_address'], "''")},
+      ${cateringSelectField(cateringCols, 'scheduleSlots', ['schedule_slots'], "'[]'::jsonb")},
+      ${cateringSelectField(cateringCols, 'address', ['address'], "''")},
+      ${cateringSelectField(cateringCols, 'orderType', ['order_type'], "'catering'")},
+      ${cateringSelectField(cateringCols, 'guestCount', ['guest_count'], '0')},
+      ${cateringSelectField(cateringCols, 'allergens', ['allergens'], "''")},
+      ${cateringSelectField(cateringCols, 'menu', ['menu'], "'[]'::jsonb")},
+      '{}'::jsonb AS "themeDesign",
+      '{}'::jsonb AS "seatingPlan",
+      ${cateringSelectField(cateringCols, 'postAnalysis', ['post_analysis'], "'{}'::jsonb")},
+      ${cateringSelectField(cateringCols, 'totalCost', ['total_cost'], '0')},
+      ${cateringSelectField(cateringCols, 'finalStatus', ['final_status'], "'successful'")},
+      ${cateringSelectField(cateringCols, 'created_at', ['created_at'], 'now()')},
+      COALESCE(${sqlExpr(cateringCols, ['updated_at'], 'created_at')}, ${sqlExpr(cateringCols, ['created_at'], 'now()')}) AS "updatedAt"
+    FROM catering_orders`;
+}
+
+function staffEventOrderSelectList(eventCols, themeColSql) {
+  const seating = eventCols.has('seating_plan')
+    ? 'COALESCE(seating_plan, \'{}\'::jsonb)'
+    : '\'{}\'::jsonb';
+  return `
+    SELECT
+      id,
+      ${cateringIdSelectAlias(eventCols)},
+      ${cateringSelectField(eventCols, 'source', ['source'], "''")},
+      ${cateringSelectField(eventCols, 'status', ['status'], "'online_inquiries'")},
+      ${cateringSelectField(eventCols, 'eventTitle', ['event_title'], 'NULL::text')},
+      ${cateringSelectField(eventCols, 'eventType', ['event_type'], 'NULL::text')},
+      ${cateringSelectField(eventCols, 'formalityLevel', ['formality_level'], 'NULL::text')},
+      ${cateringSelectField(eventCols, 'customerName', ['customer_name'], "''")},
+      ${cateringSelectField(eventCols, 'contactPerson', ['contact_person'], "''")},
+      ${cateringSelectField(eventCols, 'contactNumber', ['contact_number'], "''")},
+      ${cateringSelectField(eventCols, 'emailAddress', ['email_address'], "''")},
+      ${cateringSelectField(eventCols, 'scheduleSlots', ['schedule_slots'], "'[]'::jsonb")},
+      ${cateringSelectField(eventCols, 'address', ['address'], "''")},
+      ${cateringSelectField(eventCols, 'orderType', ['order_type'], "'catering_event'")},
+      ${cateringSelectField(eventCols, 'guestCount', ['guest_count'], '0')},
+      ${cateringSelectField(eventCols, 'allergens', ['allergens'], "''")},
+      ${cateringSelectField(eventCols, 'menu', ['menu'], "'[]'::jsonb")},
+      ${themeColSql},
+      ${seating} AS "seatingPlan",
+      ${cateringSelectField(eventCols, 'postAnalysis', ['post_analysis'], "'{}'::jsonb")},
+      ${cateringSelectField(eventCols, 'totalCost', ['total_cost'], '0')},
+      ${cateringSelectField(eventCols, 'finalStatus', ['final_status'], "'successful'")},
+      ${cateringSelectField(eventCols, 'created_at', ['created_at'], 'now()')},
+      COALESCE(${sqlExpr(eventCols, ['updated_at'], 'created_at')}, ${sqlExpr(eventCols, ['created_at'], 'now()')}) AS "updatedAt"
+    FROM event_orders`;
+}
+
+const STAFF_EVENTS_STATUS_WHERE = `
+  WHERE
+    status = $1
+    OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')`;
+
+/** Manager/supervisor list: catering_orders UNION event_orders by status. */
+export function buildStaffEventsOrdersListSql(
+  cateringCols,
+  eventCols,
+  { compact = false } = {},
+) {
+  const themeColSql = staffThemeDesignColumnSql(eventCols, compact);
+  const cateringPart =
+    staffCateringOrderSelectList(cateringCols) + STAFF_EVENTS_STATUS_WHERE;
+  const eventPart =
+    staffEventOrderSelectList(eventCols, themeColSql) + STAFF_EVENTS_STATUS_WHERE;
+  return `${cateringPart}\nUNION ALL\n${eventPart}\nORDER BY created_at DESC\nLIMIT 500`;
+}
+
+function staffCateringOrderSelectById(cateringCols) {
+  return `${staffCateringOrderSelectList(cateringCols).trim()}\nWHERE id = $1`;
+}
+
+function staffEventOrderSelectById(eventCols) {
+  const themeColSql = staffThemeDesignColumnSql(eventCols, false);
+  const seating = eventCols.has('seating_plan')
+    ? 'COALESCE(seating_plan, \'{}\'::jsonb)'
+    : '\'{}\'::jsonb';
+  return `
+    SELECT
+      id,
+      ${cateringIdSelectAlias(eventCols)},
+      ${cateringSelectField(eventCols, 'source', ['source'], "''")},
+      ${cateringSelectField(eventCols, 'status', ['status'], "'online_inquiries'")},
+      ${cateringSelectField(eventCols, 'eventTitle', ['event_title'], 'NULL::text')},
+      ${cateringSelectField(eventCols, 'eventType', ['event_type'], 'NULL::text')},
+      ${cateringSelectField(eventCols, 'formalityLevel', ['formality_level'], 'NULL::text')},
+      ${cateringSelectField(eventCols, 'customerName', ['customer_name'], "''")},
+      ${cateringSelectField(eventCols, 'contactPerson', ['contact_person'], "''")},
+      ${cateringSelectField(eventCols, 'contactNumber', ['contact_number'], "''")},
+      ${cateringSelectField(eventCols, 'emailAddress', ['email_address'], "''")},
+      ${cateringSelectField(eventCols, 'scheduleSlots', ['schedule_slots'], "'[]'::jsonb")},
+      ${cateringSelectField(eventCols, 'address', ['address'], "''")},
+      ${cateringSelectField(eventCols, 'orderType', ['order_type'], "'catering_event'")},
+      ${cateringSelectField(eventCols, 'guestCount', ['guest_count'], '0')},
+      ${cateringSelectField(eventCols, 'allergens', ['allergens'], "''")},
+      ${cateringSelectField(eventCols, 'menu', ['menu'], "'[]'::jsonb")},
+      ${themeColSql},
+      ${seating} AS "seatingPlan",
+      ${cateringSelectField(eventCols, 'postAnalysis', ['post_analysis'], "'{}'::jsonb")},
+      ${cateringSelectField(eventCols, 'totalCost', ['total_cost'], '0')},
+      ${cateringSelectField(eventCols, 'finalStatus', ['final_status'], "'successful'")},
+      ${cateringSelectField(eventCols, 'created_at', ['created_at'], 'now()')},
+      COALESCE(${sqlExpr(eventCols, ['updated_at'], 'created_at')}, ${sqlExpr(eventCols, ['created_at'], 'now()')}) AS "updatedAt"
+    FROM event_orders
+    WHERE id = $1`;
+}
+
+/** Single row from catering_orders or event_orders by UUID. */
+export function buildStaffEventOrderByIdQueries(cateringCols, eventCols) {
+  return {
+    cateringSql: staffCateringOrderSelectById(cateringCols),
+    eventSql: staffEventOrderSelectById(eventCols),
+  };
 }

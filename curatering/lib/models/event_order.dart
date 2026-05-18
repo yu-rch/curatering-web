@@ -62,7 +62,7 @@ class PostAnalysisDto {
 
 class EventOrderDto {
   final String id;
-  final String inquiryId;
+  final String cateringId;
   final String source;
   final String status;
 
@@ -107,7 +107,7 @@ class EventOrderDto {
 
   const EventOrderDto({
     required this.id,
-    this.inquiryId = '',
+    this.cateringId = '',
     required this.source,
     required this.status,
     required this.eventTitle,

@@ -508,7 +508,7 @@ export async function initDb() {
     );
   `);
 
-  await ensureOrderInquiryIdColumns();
+  await ensureOrderCateringIdColumns();
 
   // Add catering-specific columns
   await pool.query(`
@@ -595,7 +595,7 @@ export async function initDb() {
     ADD COLUMN IF NOT EXISTS final_status TEXT DEFAULT 'successful' CHECK (final_status IN ('successful','cancelled'));
   `);
 
-  await ensureOrderInquiryIdColumns();
+  await ensureOrderCateringIdColumns();
 
   await pool.query(`
     ALTER TABLE catering_orders
@@ -1305,20 +1305,30 @@ export async function setRoleAccountLimits(limits) {
  * (counters can drift after manual imports / restores).
  */
 export async function allocateRestaurantOrderNo() {
+  const roCols = await getTableColumnNames('restaurant_orders');
+  const idCol =
+    roCols.has('order_id')
+      ? 'order_id'
+      : roCols.has('order_no')
+        ? 'order_no'
+        : null;
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(902103447)");
-    const maxRow = await client.query(`
+    const maxRow = idCol
+      ? await client.query(`
       SELECT COALESCE(MAX(
         CASE
-          WHEN order_no ~ '^ORD-[0-9]+$'
-          THEN NULLIF((regexp_match(order_no, '^ORD-([0-9]+)$'))[1], '')::integer
+          WHEN ${idCol} ~ '^ORD-[0-9]+$'
+          THEN NULLIF((regexp_match(${idCol}, '^ORD-([0-9]+)$'))[1], '')::integer
           ELSE NULL
         END
       ), 0)::int AS mx
       FROM restaurant_orders
-    `);
+    `)
+      : { rows: [{ mx: 0 }] };
     const tableMax = Number(maxRow.rows[0]?.mx ?? 0) || 0;
     const ctr = await client.query(
       `SELECT last_number FROM id_counters WHERE prefix = 'ORD' FOR UPDATE`,
@@ -1576,33 +1586,54 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
   }
 }
 
-let orderInquiryIdColumnsPromise = null;
+let orderCateringIdColumnsPromise = null;
 
-/** Ensures inquiry_id exists on event_orders and catering_orders (Railway may serve traffic before full initDb). */
-export async function ensureOrderInquiryIdColumns() {
-  if (!orderInquiryIdColumnsPromise) {
-    orderInquiryIdColumnsPromise = ensureOrderInquiryIdColumnsOnce().catch((err) => {
-      orderInquiryIdColumnsPromise = null;
+function pickCateringIdCol(cols) {
+  if (cols.has('catering_id')) return 'catering_id';
+  if (cols.has('inquiry_id')) return 'inquiry_id';
+  return null;
+}
+
+/** Ensures catering_id exists on event_orders and catering_orders (migrates legacy inquiry_id). */
+export async function ensureOrderCateringIdColumns() {
+  if (!orderCateringIdColumnsPromise) {
+    orderCateringIdColumnsPromise = ensureOrderCateringIdColumnsOnce().catch((err) => {
+      orderCateringIdColumnsPromise = null;
       throw err;
     });
   }
-  return orderInquiryIdColumnsPromise;
+  return orderCateringIdColumnsPromise;
 }
 
-async function ensureOrderInquiryIdColumnsOnce() {
+/** @deprecated use ensureOrderCateringIdColumns */
+export const ensureOrderInquiryIdColumns = ensureOrderCateringIdColumns;
+
+async function ensureOrderCateringIdColumnsOnce() {
   for (const table of ['event_orders', 'catering_orders']) {
     const cols = await getTableColumnNames(table);
     if (cols.size === 0) continue;
 
-    if (!cols.has('inquiry_id')) {
-      await pool.query(`ALTER TABLE ${table} ADD COLUMN inquiry_id TEXT`);
-      console.log(`[db] Added inquiry_id column to ${table}`);
+    if (cols.has('inquiry_id') && !cols.has('catering_id')) {
+      await pool.query(
+        `ALTER TABLE ${table} RENAME COLUMN inquiry_id TO catering_id`,
+      );
+      console.log(`[db] Renamed inquiry_id → catering_id on ${table}`);
+      cols.delete('inquiry_id');
+      cols.add('catering_id');
     }
 
+    if (!cols.has('catering_id')) {
+      await pool.query(
+        `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS catering_id TEXT`,
+      );
+      console.log(`[db] Added catering_id column to ${table}`);
+    }
+
+    await pool.query(`DROP INDEX IF EXISTS ${table}_inquiry_id_key`);
     await pool.query(
-      `CREATE UNIQUE INDEX IF NOT EXISTS ${table}_inquiry_id_key
-       ON ${table} (inquiry_id)
-       WHERE inquiry_id IS NOT NULL`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS ${table}_catering_id_key
+       ON ${table} (catering_id)
+       WHERE catering_id IS NOT NULL`,
     );
   }
 }
@@ -1818,6 +1849,24 @@ export async function allocateStaffUserId() {
  * Catering / event order public id: TR-000001 (shared counter for catering_orders + event_orders).
  */
 export async function allocateCateringTransactionId() {
+  const cateringCols = await getTableColumnNames('catering_orders');
+  const eventCols = await getTableColumnNames('event_orders');
+  const catIdCol = pickCateringIdCol(cateringCols);
+  const evIdCol = pickCateringIdCol(eventCols);
+
+  const trMaxSubquery = (table, idCol) =>
+    idCol
+      ? `COALESCE((
+          SELECT MAX(
+            CASE
+              WHEN ${idCol} ~ '^TR-[0-9]+$'
+              THEN NULLIF((regexp_match(${idCol}, '^TR-([0-9]+)$'))[1], '')::integer
+              ELSE NULL
+            END
+          ) FROM ${table}
+        ), 0)`
+      : '0';
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -1825,24 +1874,8 @@ export async function allocateCateringTransactionId() {
 
     const maxFromTables = await client.query(`
       SELECT GREATEST(
-        COALESCE((
-          SELECT MAX(
-            CASE
-              WHEN inquiry_id ~ '^TR-[0-9]+$'
-              THEN NULLIF((regexp_match(inquiry_id, '^TR-([0-9]+)$'))[1], '')::integer
-              ELSE NULL
-            END
-          ) FROM catering_orders
-        ), 0),
-        COALESCE((
-          SELECT MAX(
-            CASE
-              WHEN inquiry_id ~ '^TR-[0-9]+$'
-              THEN NULLIF((regexp_match(inquiry_id, '^TR-([0-9]+)$'))[1], '')::integer
-              ELSE NULL
-            END
-          ) FROM event_orders
-        ), 0)
+        ${trMaxSubquery('catering_orders', catIdCol)},
+        ${trMaxSubquery('event_orders', evIdCol)}
       )::int AS mx
     `);
     const tableMax = Number(maxFromTables.rows[0]?.mx ?? 0) || 0;

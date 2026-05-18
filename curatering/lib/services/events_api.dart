@@ -488,7 +488,12 @@ class EventsApi {
 
     return EventOrderDto(
       id: (map['id'] ?? '').toString(),
-      inquiryId: (map['inquiryId'] ?? map['inquiry_id'] ?? '').toString(),
+      cateringId: (map['cateringId'] ??
+              map['catering_id'] ??
+              map['inquiryId'] ??
+              map['inquiry_id'] ??
+              '')
+          .toString(),
       source: (map['source'] ?? '').toString(),
       status: (map['status'] ?? '').toString(),
       themeAssetsDeferred: _toBool(map['listSummaryOnly']),

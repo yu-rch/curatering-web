@@ -107,7 +107,7 @@ OrderSummaryPdfData buildOrderSummaryPdfData({
         isDownPayment
             ? 'Order Summary before Down Payment'
             : 'Order Summary | Additional Costs',
-    transactionNo: order.inquiryId.isNotEmpty ? order.inquiryId : order.id,
+    transactionNo: order.cateringId.isNotEmpty ? order.cateringId : order.id,
     processedAt: DateTime.now(),
     eventTitle: order.eventTitle.trim().isNotEmpty
         ? order.eventTitle.trim()

@@ -75,7 +75,7 @@ class _TransactionsState extends State<Transactions> {
   }
 
   String _displayOrderNo(EventOrderDto o) {
-    final id = o.inquiryId.trim();
+    final id = o.cateringId.trim();
     if (id.isNotEmpty) return id;
     return o.id.length > 8 ? o.id.substring(o.id.length - 8) : o.id;
   }

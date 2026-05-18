@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_client.dart';
 import 'cart_store.dart';
+import '../models/menu_dish.dart';
 
 /// Service for synchronizing cart between mobile and web platforms
 class CartSyncService {
@@ -14,53 +15,129 @@ class CartSyncService {
   static const String _lastSyncKey = 'cart_last_sync';
   static const String _deviceIdKey = 'device_id';
 
+  /// Server returns `{ cart: { items: [...] } }` or legacy `{ cart: [...] }`.
+  static List<dynamic> _itemsListFromCartPayload(dynamic cartPayload) {
+    if (cartPayload is List) return cartPayload;
+    if (cartPayload is Map) {
+      final items = cartPayload['items'];
+      if (items is List) return items;
+      if (items is String && items.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(items);
+          if (decoded is List) return decoded;
+        } catch (_) {}
+      }
+    }
+    return [];
+  }
+
+  static List<dynamic> _itemsListFromTrayPayload(dynamic itemsPayload) {
+    if (itemsPayload is List) return itemsPayload;
+    if (itemsPayload is String && itemsPayload.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(itemsPayload);
+        if (decoded is List) return decoded;
+      } catch (_) {}
+    }
+    return [];
+  }
+
+  /// Cart JSON from tray draft (`dish` nested) or cart_sessions rows (flat columns).
+  static CartItem? _parseCartItem(dynamic raw) {
+    if (raw is! Map) return null;
+    final map = Map<String, dynamic>.from(raw);
+
+    if (map['dish'] is Map) {
+      try {
+        return CartItem.fromJson(map);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final dishId = map['dish_id'] ?? map['dishId'];
+    if (dishId == null) return null;
+
+    final qty = map['quantity'];
+    final quantity = qty is num
+        ? qty.toInt()
+        : int.tryParse(qty?.toString() ?? '') ?? 1;
+
+    return CartItem(
+      dish: MenuDish(
+        id: dishId.toString(),
+        name: (map['dish_name'] ?? map['dishName'] ?? '').toString(),
+        price: (map['dish_price'] ?? map['dishPrice'] ?? '0').toString(),
+        category:
+            (map['dish_category'] ?? map['dishCategory'] ?? 'restaurant')
+                .toString(),
+        paxOptions: const [],
+        type: (map['dish_type'] ?? map['dishType'] ?? '').toString(),
+        mealType:
+            (map['meal_type'] ?? map['mealType'] ?? '').toString(),
+      ),
+      quantity: quantity < 1 ? 1 : quantity,
+      selectedSauce:
+          (map['selected_sauce'] ?? map['selectedSauce'])?.toString(),
+    );
+  }
+
+  static void _applyItemsToStore(List<dynamic> rawItems) {
+    CartStore.instance.clearCart();
+    for (final raw in rawItems) {
+      final parsed = _parseCartItem(raw);
+      if (parsed == null) continue;
+      CartStore.instance.addItem(
+        parsed.dish,
+        selectedSauce: parsed.selectedSauce,
+      );
+      if (parsed.quantity > 1) {
+        CartStore.instance.updateQuantity(
+          parsed.dish.id,
+          parsed.quantity,
+        );
+      }
+    }
+  }
+
   /// Sync cart from server to local storage
   Future<void> syncFromServer() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
 
-      if (token != null && token.isNotEmpty) {
-        ApiClient.instance.setCustomerBearer(token);
-        final response = await ApiClient.instance.getJson('/api/cart');
+      if (token == null || token.isEmpty) return;
 
-        List<dynamic> cartItems = [];
-        if (response['success'] == true && response['cart'] != null) {
-          cartItems = response['cart'] as List<dynamic>;
+      ApiClient.instance.setCustomerBearer(token);
+      final response = await ApiClient.instance.getJson('/api/cart');
+
+      var cartItems = _itemsListFromCartPayload(response['cart']);
+
+      try {
+        final trayResponse = await ApiClient.instance.getJson('/api/tray-draft');
+        if (trayResponse['success'] == true) {
+          final trayItems = _itemsListFromTrayPayload(trayResponse['items']);
+          if (trayItems.isNotEmpty) {
+            cartItems = trayItems;
+          }
+        }
+      } catch (_) {
+        /* cart endpoint may still have data */
+      }
+
+      if (cartItems.isNotEmpty || response['success'] == true) {
+        final cartJson = jsonEncode(cartItems);
+        await prefs.setString(_cartKey, cartJson);
+        await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());
+
+        final localCount = CartStore.instance.items.length;
+        if (cartItems.isEmpty && localCount > 0) {
+          await syncToServer();
+          return;
         }
 
-        // Tray draft (customer_tray_drafts) — shared with mobile
-        try {
-          final trayResponse = await ApiClient.instance.getJson('/api/tray-draft');
-          if (trayResponse['success'] == true && trayResponse['items'] is List) {
-            final trayItems = trayResponse['items'] as List<dynamic>;
-            if (trayItems.isNotEmpty) {
-              cartItems = trayItems;
-            }
-          }
-        } catch (_) {
-          /* cart endpoint may still have data */
-        }
-
-        if (cartItems.isNotEmpty || response['success'] == true) {
-          final cartJson = jsonEncode(cartItems);
-          await prefs.setString(_cartKey, cartJson);
-          await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());
-
-          final localCount = CartStore.instance.items.length;
-          if (cartItems.isEmpty && localCount > 0) {
-            await syncToServer();
-            return;
-          }
-
-          CartStore.instance.clearCart();
-          for (final item in cartItems) {
-            final parsed = CartItem.fromJson(item as Map<String, dynamic>);
-            CartStore.instance.addItem(
-              parsed.dish,
-              selectedSauce: parsed.selectedSauce,
-            );
-          }
+        if (cartItems.isNotEmpty) {
+          _applyItemsToStore(cartItems);
         }
       }
     } catch (e) {
@@ -129,23 +206,16 @@ class CartSyncService {
       final lastSyncTime = DateTime.parse(lastSync);
       final now = DateTime.now();
 
-      // Sync if more than 5 minutes have passed
       return now.difference(lastSyncTime).inMinutes > 5;
     } catch (e) {
       return true;
     }
   }
 
-  /// Initialize sync service and perform initial sync if needed
   Future<void> initialize() async {
     try {
-      final needsSync = await this.needsSync();
-
-      if (needsSync) {
-        // Try to sync from server first (server takes precedence)
+      if (await needsSync()) {
         await syncFromServer();
-
-        // Then sync any local changes back to server
         await syncToServer();
       }
     } catch (e) {
@@ -153,20 +223,17 @@ class CartSyncService {
     }
   }
 
-  /// Force full sync between local and server
   Future<void> forceSync() async {
     await syncFromServer();
     await syncToServer();
   }
 
-  /// Clear cart on all platforms
   Future<void> clearCart() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_cartKey);
       await prefs.remove(_lastSyncKey);
 
-      // Clear on server
       final token = prefs.getString('customer_token');
       if (token != null && token.isNotEmpty) {
         ApiClient.instance.setCustomerBearer(token);
