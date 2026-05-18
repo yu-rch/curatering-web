@@ -303,10 +303,11 @@ class _InquirePageState extends State<InquirePage> {
     setState(() => _submitting = true);
 
     try {
-      await runWithBlockingLoadingDialog<void>(
+      await showBlockingLoadingDialog(
         context,
         message: 'Submitting inquiry…',
-        task: () async {
+      );
+
       final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
       final scheduleSlots = <Map<String, dynamic>>[
         {
@@ -316,7 +317,6 @@ class _InquirePageState extends State<InquirePage> {
         },
       ];
 
-      // Contract: `POST /api/online-inquiries` (see server/src/index.js)
       final payload = <String, dynamic>{
         'orderType': _serviceType == 'catering' ? 'catering' : 'catering_event',
         'eventTitle':
@@ -352,8 +352,6 @@ class _InquirePageState extends State<InquirePage> {
         );
         _clearForm();
       }
-        },
-      );
     } catch (e) {
       if (mounted) {
         showAntdMessage(
@@ -364,6 +362,7 @@ class _InquirePageState extends State<InquirePage> {
       }
     } finally {
       if (mounted) {
+        hideBlockingLoadingDialog(context);
         setState(() => _submitting = false);
       }
     }
