@@ -1728,9 +1728,10 @@ function registerCustomerAuthRoutes(app, dbGate) {
       const emailNorm = String(email).trim().toLowerCase();
 
       const result = await pool.query(
-        `SELECT id, email, password_hash, full_name, contact_number, is_verified
+        `SELECT id, email, password_hash, full_name, contact_number, is_verified,
+                COALESCE(archived, FALSE) AS archived
          FROM customer_accounts
-         WHERE lower(trim(email::text)) = $1 AND archived = FALSE
+         WHERE lower(trim(email::text)) = $1
          LIMIT 1`,
         [emailNorm],
       );
@@ -1740,6 +1741,12 @@ function registerCustomerAuthRoutes(app, dbGate) {
       }
 
       const customer = result.rows[0];
+      if (customer.archived) {
+        return res.status(401).json({
+          error: "This account has been archived. Contact support if you need access restored.",
+        });
+      }
+
       const isValidPassword = await bcrypt.compare(password, customer.password_hash);
 
       if (!isValidPassword) {
@@ -7431,15 +7438,19 @@ async function registerRoutesAfterDbInit() {
           return res.status(403).json({ error: 'Super admin access required' });
         }
 
-        // Fetch customers with loyalty points directly from customer_accounts
+        const includeArchived =
+          String(req.query.includeArchived || "").toLowerCase() === "true";
+        const whereClause = includeArchived ? "" : "WHERE COALESCE(archived, FALSE) = FALSE";
+
         const result = await pool.query(
-          `SELECT id, email, full_name, contact_number AS phone, is_verified, archived, created_at,
+          `SELECT id, email, full_name, contact_number AS phone, is_verified,
+             COALESCE(archived, FALSE) AS archived, created_at,
              COALESCE(restaurant_loyalty_points, 0) as restaurant_loyalty_points,
              COALESCE(catering_loyalty_points, 0) as catering_loyalty_points,
              (COALESCE(restaurant_loyalty_points, 0) + COALESCE(catering_loyalty_points, 0)) as loyalty_points
            FROM customer_accounts
-           WHERE archived = FALSE
-           ORDER BY created_at DESC`
+           ${whereClause}
+           ORDER BY created_at DESC`,
         );
 
         res.json({ customers: result.rows });
@@ -7514,7 +7525,8 @@ async function registerRoutesAfterDbInit() {
         }
 
         const customerResult = await pool.query(
-          `SELECT id, email, full_name, contact_number AS phone, is_verified, archived, created_at,
+          `SELECT id, email, full_name, contact_number AS phone, is_verified,
+                  COALESCE(archived, FALSE) AS archived, created_at,
                   COALESCE(restaurant_loyalty_points, 0) as restaurant_loyalty_points,
                   COALESCE(catering_loyalty_points, 0) as catering_loyalty_points
            FROM customer_accounts

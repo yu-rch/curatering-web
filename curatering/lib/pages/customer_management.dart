@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../auth/auth_session.dart';
+import '../auth/roles.dart';
 import '../config.dart';
 import '../widgets/app_scaffold.dart';
 
@@ -18,6 +19,10 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
   List<dynamic> _customers = [];
   bool _isLoading = true;
   String? _error;
+  bool _includeArchived = false;
+
+  bool get _isSuperAdmin =>
+      AuthSession.instance.currentRole == Role.superAdmin;
 
   @override
   void initState() {
@@ -32,8 +37,12 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
     });
 
     try {
+      final uri = Uri.parse('$_apiBaseUrl/api/admin/customers').replace(
+        queryParameters:
+            _includeArchived ? {'includeArchived': 'true'} : null,
+      );
       final response = await http.get(
-        Uri.parse('$_apiBaseUrl/api/admin/customers'),
+        uri,
         headers: {'Authorization': 'Bearer ${AuthSession.instance.token}'},
       );
 
@@ -58,12 +67,77 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
     }
   }
 
-  void _showCustomerDetails(String customerId) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => CustomerDetailsPage(customerId: customerId),
+  Future<void> _archiveCustomer(String customerId, {required bool archived}) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$_apiBaseUrl/api/admin/customers/$customerId/archive'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${AuthSession.instance.token}',
+        },
+        body: jsonEncode({'archived': archived}),
+      );
+      final data = jsonDecode(response.body);
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(archived ? 'Customer archived' : 'Customer restored'),
+          ),
+        );
+        await _loadCustomers();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['error'] ?? 'Failed to update customer')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+
+  Future<void> _confirmArchiveFromList(
+    String customerId,
+    String name,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Archive customer'),
+        content: Text(
+          'Archive $name? They will no longer be able to log in.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Archive'),
+          ),
+        ],
       ),
     );
+    if (ok == true) {
+      await _archiveCustomer(customerId, archived: true);
+    }
+  }
+
+  void _showCustomerDetails(Map<String, dynamic> customer) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder:
+            (context) => CustomerDetailsPage(
+              customerId: customer['id'] as String,
+              initialArchived: customer['archived'] == true,
+            ),
+      ),
+    ).then((_) => _loadCustomers());
   }
 
   @override
@@ -81,6 +155,17 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
                 ),
                 const Spacer(),
+                if (_isSuperAdmin) ...[
+                  FilterChip(
+                    label: const Text('Show archived'),
+                    selected: _includeArchived,
+                    onSelected: (v) {
+                      setState(() => _includeArchived = v);
+                      _loadCustomers();
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 ElevatedButton.icon(
                   onPressed: _loadCustomers,
                   icon: const Icon(Icons.refresh),
@@ -126,6 +211,7 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
                         itemCount: _customers.length,
                         itemBuilder: (context, index) {
                           final customer = _customers[index];
+                          final isArchived = customer['archived'] == true;
                           return Card(
                             margin: const EdgeInsets.only(bottom: 12),
                             elevation: 0,
@@ -138,22 +224,51 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
                             child: ListTile(
                               leading: CircleAvatar(
                                 backgroundColor:
-                                    customer['is_verified'] == true
+                                    isArchived
+                                        ? Colors.grey
+                                        : customer['is_verified'] == true
                                         ? Colors.green
                                         : Colors.orange,
                                 child: Icon(
-                                  customer['is_verified'] == true
+                                  isArchived
+                                      ? Icons.archive
+                                      : customer['is_verified'] == true
                                       ? Icons.check
                                       : Icons.pending,
                                   color: Colors.white,
                                   size: 20,
                                 ),
                               ),
-                              title: Text(
-                                customer['full_name'] ?? 'Unknown',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                              title: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      customer['full_name'] ?? 'Unknown',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  if (isArchived)
+                                    Container(
+                                      margin: const EdgeInsets.only(left: 8),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade300,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Text(
+                                        'Archived',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -233,11 +348,44 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
                                   ),
                                 ],
                               ),
-                              trailing: const Icon(
-                                Icons.arrow_forward_ios,
-                                size: 16,
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_isSuperAdmin && !isArchived)
+                                    IconButton(
+                                      tooltip: 'Archive customer',
+                                      icon: Icon(
+                                        Icons.archive_outlined,
+                                        color: Colors.red.shade700,
+                                      ),
+                                      onPressed: () => _confirmArchiveFromList(
+                                        customer['id'] as String,
+                                        customer['full_name']?.toString() ??
+                                            'this customer',
+                                      ),
+                                    ),
+                                  if (_isSuperAdmin && isArchived)
+                                    IconButton(
+                                      tooltip: 'Restore customer',
+                                      icon: Icon(
+                                        Icons.unarchive_outlined,
+                                        color: Colors.green.shade700,
+                                      ),
+                                      onPressed:
+                                          () => _archiveCustomer(
+                                            customer['id'] as String,
+                                            archived: false,
+                                          ),
+                                    ),
+                                  const Icon(
+                                    Icons.arrow_forward_ios,
+                                    size: 16,
+                                  ),
+                                ],
                               ),
-                              onTap: () => _showCustomerDetails(customer['id']),
+                              onTap: () => _showCustomerDetails(
+                                customer as Map<String, dynamic>,
+                              ),
                             ),
                           );
                         },
@@ -251,14 +399,22 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
 }
 
 class CustomerDetailsPage extends StatefulWidget {
+  const CustomerDetailsPage({
+    super.key,
+    required this.customerId,
+    this.initialArchived = false,
+  });
+
   final String customerId;
-  const CustomerDetailsPage({super.key, required this.customerId});
+  final bool initialArchived;
 
   @override
   State<CustomerDetailsPage> createState() => _CustomerDetailsPageState();
 }
 
 class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
+  bool get _isSuperAdmin =>
+      AuthSession.instance.currentRole == Role.superAdmin;
   Map<String, dynamic>? _customerData;
   List<dynamic> _orders = [];
   int _loyaltyPoints = 0;
@@ -328,12 +484,13 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(archived ? 'Customer archived' : 'Customer restored'),
           ),
         );
-        Navigator.of(context).pop();
+        if (mounted) Navigator.of(context).pop(true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(data['error'] ?? 'Failed to update customer')),
@@ -523,15 +680,21 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
                                         Expanded(
                                           child: _buildInfoCard(
                                             'Status',
-                                            _customerData?['is_verified'] ==
+                                            _customerData?['archived'] == true
+                                                ? 'Archived'
+                                                : _customerData?['is_verified'] ==
                                                     true
                                                 ? 'Verified'
                                                 : 'Pending',
-                                            _customerData?['is_verified'] ==
+                                            _customerData?['archived'] == true
+                                                ? Icons.archive
+                                                : _customerData?['is_verified'] ==
                                                     true
                                                 ? Icons.verified
                                                 : Icons.pending,
-                                            _customerData?['is_verified'] ==
+                                            _customerData?['archived'] == true
+                                                ? Colors.grey
+                                                : _customerData?['is_verified'] ==
                                                     true
                                                 ? Colors.green
                                                 : Colors.orange,
@@ -591,160 +754,72 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
                               ),
                             const SizedBox(height: 24),
 
-                            // Archive Button
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: () {
-                                  showDialog(
-                                    context: context,
-                                    builder:
-                                        (context) => Dialog(
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              20,
+                            if (_isSuperAdmin) ...[
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: () async {
+                                    final isArchived =
+                                        _customerData?['archived'] == true;
+                                    if (isArchived) {
+                                      await _archiveCustomer(false);
+                                      return;
+                                    }
+                                    final ok = await showDialog<bool>(
+                                      context: context,
+                                      builder:
+                                          (ctx) => AlertDialog(
+                                            title: const Text('Archive customer'),
+                                            content: const Text(
+                                              'This customer will no longer be able to log in. You can restore them later from the archived list.',
                                             ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed:
+                                                    () => Navigator.pop(ctx, false),
+                                                child: const Text('Cancel'),
+                                              ),
+                                              FilledButton(
+                                                onPressed:
+                                                    () => Navigator.pop(ctx, true),
+                                                style: FilledButton.styleFrom(
+                                                  backgroundColor: Colors.red,
+                                                ),
+                                                child: const Text('Archive'),
+                                              ),
+                                            ],
                                           ),
-                                          child: Container(
-                                            constraints: const BoxConstraints(
-                                              maxWidth: 420,
-                                            ),
-                                            padding: const EdgeInsets.all(24),
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                // Close button
-                                                Align(
-                                                  alignment: Alignment.topRight,
-                                                  child: IconButton(
-                                                    onPressed:
-                                                        () =>
-                                                            Navigator.of(
-                                                              context,
-                                                            ).pop(),
-                                                    icon: const Icon(
-                                                      Icons.close,
-                                                      color: Colors.black,
-                                                    ),
-                                                    padding: EdgeInsets.zero,
-                                                    constraints:
-                                                        const BoxConstraints(),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                // Title
-                                                const Text(
-                                                  'ARCHIVE CUSTOMER',
-                                                  style: TextStyle(
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.bold,
-                                                    letterSpacing: 1,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 24),
-                                                const Text(
-                                                  'Are you sure you want to archive this customer? They will no longer be able to log in.',
-                                                  style: TextStyle(
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 24),
-                                                // Buttons
-                                                Row(
-                                                  children: [
-                                                    Expanded(
-                                                      child: ElevatedButton(
-                                                        onPressed: () {
-                                                          Navigator.of(
-                                                            context,
-                                                          ).pop();
-                                                          _archiveCustomer(
-                                                            true,
-                                                          );
-                                                        },
-                                                        style: ElevatedButton.styleFrom(
-                                                          backgroundColor:
-                                                              Colors.red,
-                                                          foregroundColor:
-                                                              Colors.white,
-                                                          padding:
-                                                              const EdgeInsets.symmetric(
-                                                                vertical: 10,
-                                                              ),
-                                                          shape: RoundedRectangleBorder(
-                                                            borderRadius:
-                                                                BorderRadius.circular(
-                                                                  8,
-                                                                ),
-                                                          ),
-                                                        ),
-                                                        child: const Text(
-                                                          'ARCHIVE',
-                                                          style: TextStyle(
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                            fontSize: 12,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 12),
-                                                    Expanded(
-                                                      child: ElevatedButton(
-                                                        onPressed:
-                                                            () =>
-                                                                Navigator.of(
-                                                                  context,
-                                                                ).pop(),
-                                                        style: ElevatedButton.styleFrom(
-                                                          backgroundColor:
-                                                              Colors
-                                                                  .grey
-                                                                  .shade300,
-                                                          foregroundColor:
-                                                              Colors.black,
-                                                          padding:
-                                                              const EdgeInsets.symmetric(
-                                                                vertical: 10,
-                                                              ),
-                                                          shape: RoundedRectangleBorder(
-                                                            borderRadius:
-                                                                BorderRadius.circular(
-                                                                  8,
-                                                                ),
-                                                          ),
-                                                        ),
-                                                        child: const Text(
-                                                          'CANCEL',
-                                                          style: TextStyle(
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                            fontSize: 12,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                  );
-                                },
-                                icon: const Icon(Icons.archive),
-                                label: const Text('Archive Customer'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.red.shade100,
-                                  foregroundColor: Colors.red,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
+                                    );
+                                    if (ok == true) {
+                                      await _archiveCustomer(true);
+                                    }
+                                  },
+                                  icon: Icon(
+                                    _customerData?['archived'] == true
+                                        ? Icons.unarchive
+                                        : Icons.archive,
+                                  ),
+                                  label: Text(
+                                    _customerData?['archived'] == true
+                                        ? 'Restore Customer'
+                                        : 'Archive Customer',
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor:
+                                        _customerData?['archived'] == true
+                                            ? Colors.green.shade50
+                                            : Colors.red.shade100,
+                                    foregroundColor:
+                                        _customerData?['archived'] == true
+                                            ? Colors.green.shade800
+                                            : Colors.red,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 16,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
+                            ],
                           ],
                         ),
                       ),
@@ -764,7 +839,7 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(

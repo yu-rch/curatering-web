@@ -248,6 +248,14 @@ export async function ensureAuthSchemaQuick() {
 
   try {
     await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE`,
+    );
+  } catch (err) {
+    console.warn('Auth schema customer_accounts archived:', err.message);
+  }
+
+  try {
+    await pool.query(
       `CREATE INDEX IF NOT EXISTS idx_customer_accounts_email_lower
        ON customer_accounts (lower(trim(email::text)))`,
     );
@@ -900,6 +908,15 @@ export async function initDb() {
     console.log('Migration: Added loyalty points columns to customer_accounts');
   } catch (err) {
     console.log('Migration check for customer_accounts loyalty points columns:', err.message);
+  }
+
+  try {
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE`,
+    );
+    console.log('Migration: Added archived column to customer_accounts');
+  } catch (err) {
+    console.log('Migration check for customer_accounts archived:', err.message);
   }
 
   try {
