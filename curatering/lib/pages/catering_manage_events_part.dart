@@ -338,6 +338,335 @@ extension _ManageEventsTableExt on _ManageEventsState {
     );
   }
 
+  double _dishCostForFinalize(EventOrderDto order) {
+    final fromTheme = order.themeDesign.dishCost;
+    if (fromTheme != null && fromTheme > 0) return fromTheme;
+    final fromMenu = computeOrderTotalCost(order);
+    if (fromMenu > 0) return fromMenu;
+    return 0;
+  }
+
+  Map<String, dynamic> _finalizeInquiryPayload(
+    EventOrderDto order,
+    double laborCost,
+    double travelCost,
+    double totalCost,
+    String action,
+  ) {
+    final serviceType =
+        order.orderType == 'catering' ? 'catering' : 'catering+event';
+    final date =
+        order.scheduleSlots.isNotEmpty ? order.scheduleSlots.first.date : '';
+    final time =
+        order.scheduleSlots.isNotEmpty
+            ? order.scheduleSlots.first.startTime
+            : '';
+    return _buildOnlineInquiryPayload(
+      order,
+      order.address,
+      date,
+      time,
+      serviceType,
+      'yes',
+      const <String>[],
+      null,
+      laborCost,
+      travelCost,
+      totalCost,
+      action,
+    );
+  }
+
+  Widget _buildFinalizeCostSection({
+    required EventOrderDto order,
+    required TextEditingController laborController,
+    required TextEditingController travelController,
+    required VoidCallback onFieldsChanged,
+  }) {
+    double parseCost(TextEditingController c) =>
+        double.tryParse(c.text.trim()) ?? 0.0;
+    final dishCost = _dishCostForFinalize(order);
+    final laborCost = parseCost(laborController);
+    final travelCost = parseCost(travelController);
+    final totalCost = dishCost + laborCost + travelCost;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'COST ESTIMATION',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+          const SizedBox(height: 10),
+          _buildLabeledReadonlyCost(
+            'Dish cost (from menu)',
+            dishCost,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: laborController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  onChanged: (_) => onFieldsChanged(),
+                  decoration: const InputDecoration(
+                    labelText: 'Labor cost',
+                    prefixText: 'PHP ',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: travelController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  onChanged: (_) => onFieldsChanged(),
+                  decoration: const InputDecoration(
+                    labelText: 'Travel cost',
+                    prefixText: 'PHP ',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _buildLabeledReadonlyCost('Total estimated cost', totalCost),
+          const SizedBox(height: 8),
+          Text(
+            'Post changes sends the updated estimate to the customer without moving the inquiry.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _submitFinalizeInquiryAction({
+    required BuildContext dialogContext,
+    required EventOrderDto order,
+    required TextEditingController laborController,
+    required TextEditingController travelController,
+    required String action,
+    required String successMessage,
+  }) async {
+    final laborCost = double.tryParse(laborController.text.trim()) ?? 0.0;
+    final travelCost = double.tryParse(travelController.text.trim()) ?? 0.0;
+    final dishCost = _dishCostForFinalize(order);
+    final totalCost = dishCost + laborCost + travelCost;
+    final payload = _finalizeInquiryPayload(
+      order,
+      laborCost,
+      travelCost,
+      totalCost,
+      action,
+    );
+    await EventsApi.instance.managerFinalizeOnlineInquiry(
+      orderId: order.id,
+      payload: payload,
+    );
+    if (!mounted) return;
+    Navigator.of(dialogContext).pop();
+    await _refreshOrders();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(successMessage)),
+    );
+  }
+
+  Future<void> _openFinalizeOnlineInquiryDialog(EventOrderDto order) async {
+    final laborCostController = TextEditingController(
+      text: (order.themeDesign.laborCost ?? 0).toStringAsFixed(2),
+    );
+    final travelCostController = TextEditingController(
+      text: (order.themeDesign.travelCost ?? 0).toStringAsFixed(2),
+    );
+
+    try {
+      await showAntdModal<void>(
+        context: context,
+        title:
+            order.eventTitle.isEmpty ? order.customerName : order.eventTitle,
+        maxWidth: 800,
+        barrierDismissible: false,
+        body: StatefulBuilder(
+          builder: (dialogContext, setModalState) {
+            return FutureBuilder<EventOrderDto>(
+              future: _loadOrderForDetail(order),
+              builder: (context, snap) {
+                final full = snap.data ?? order;
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                final w = MediaQuery.sizeOf(context).width;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AntdDescriptions(
+                      column: w < 700 ? 1 : 3,
+                      labelColor: Colors.grey.shade600,
+                      valueColor: Colors.black87,
+                      items: _orderDetailDescriptionItems(
+                        full,
+                        screenWidth: w,
+                      ),
+                    ),
+                    if (_orderHasEventDesign(full))
+                      _buildEventDesignDetailSection(full),
+                    _buildFinalizeCostSection(
+                      order: full,
+                      laborController: laborCostController,
+                      travelController: travelCostController,
+                      onFieldsChanged: () => setModalState(() {}),
+                    ),
+                    const SizedBox(height: 20),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.end,
+                      children: [
+                        AntdCancelButton(
+                          label: 'Close',
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                        ),
+                        ElevatedButton(
+                          onPressed: () async {
+                            try {
+                              await _submitFinalizeInquiryAction(
+                                dialogContext: dialogContext,
+                                order: full,
+                                laborController: laborCostController,
+                                travelController: travelCostController,
+                                action: 'post_changes',
+                                successMessage:
+                                    'Changes posted. Customer can review updates in My Caterings.',
+                              );
+                            } catch (e) {
+                              if (!dialogContext.mounted) return;
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                SnackBar(
+                                  content: Text('Failed to post changes: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFF4511E),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                          ),
+                          child: const Text(
+                            'Post changes',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        ElevatedButton(
+                          onPressed: () async {
+                            try {
+                              await _submitFinalizeInquiryAction(
+                                dialogContext: dialogContext,
+                                order: full,
+                                laborController: laborCostController,
+                                travelController: travelCostController,
+                                action: 'confirm_inquiry',
+                                successMessage:
+                                    'Order accepted and moved to For down payment.',
+                              );
+                            } catch (e) {
+                              if (!dialogContext.mounted) return;
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                SnackBar(
+                                  content: Text('Failed to accept order: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1DB954),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                          ),
+                          child: const Text(
+                            'Accept order',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        OutlinedButton(
+                          onPressed: () async {
+                            try {
+                              await _submitFinalizeInquiryAction(
+                                dialogContext: dialogContext,
+                                order: full,
+                                laborController: laborCostController,
+                                travelController: travelCostController,
+                                action: 'cancel_event',
+                                successMessage:
+                                    'Inquiry cancelled.',
+                              );
+                            } catch (e) {
+                              if (!dialogContext.mounted) return;
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                SnackBar(
+                                  content: Text('Failed to cancel: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.black87,
+                            side: const BorderSide(color: Color(0xFFFFC107)),
+                            backgroundColor: const Color(0xFFFFC107),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                          ),
+                          child: const Text('Cancel order'),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        ),
+      );
+    } finally {
+      laborCostController.dispose();
+      travelCostController.dispose();
+    }
+  }
+
   Future<void> _showConfirmDownpaymentDialog(EventOrderDto order) async {
     await _showDownpaymentConfirmationDialog(order);
   }

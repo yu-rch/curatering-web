@@ -12,6 +12,10 @@ const double deliveryMaxDistanceKm = 5;
 const double defaultMapLat = 14.5995;
 const double defaultMapLng = 120.9842;
 
+/// Contact Us page map preview (Macrina's Kitchen).
+const double contactPageMapLat = 14.513537;
+const double contactPageMapLng = 121.061896;
+
 const String cateringCoverageError =
     'Service area is limited to NCR, Bulacan, Cavite, Rizal, and Laguna (Philippines).';
 

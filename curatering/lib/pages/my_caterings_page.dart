@@ -9,6 +9,9 @@ import '../models/seating_plan.dart';
 import '../services/customer_orders_cache.dart';
 import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
+import '../widgets/antd_buttons.dart';
+import '../widgets/antd_descriptions.dart';
+import '../widgets/antd_dialog.dart';
 import '../widgets/app_snackbar.dart';
 import '../widgets/customer_pages_top_bar.dart';
 import '../utils/order_type_utils.dart';
@@ -141,26 +144,121 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
   }
 
   void _showSessionExpiredDialog() {
-    showDialog(
+    showAntdModal<void>(
       context: context,
+      title: 'Session expired',
       barrierDismissible: false,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Session Expired'),
-            content: const Text(
-              'Your session has expired. Please log in again.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  Navigator.of(context).pop('login_required');
-                },
-                child: const Text('OK'),
-              ),
-            ],
-          ),
+      maxWidth: 420,
+      body: const Text(
+        'Your session has expired. Please log in again.',
+      ),
+      actions: [
+        AntdPrimaryButton(
+          label: 'Log in',
+          onPressed: () {
+            Navigator.of(context).pop();
+            Navigator.of(context).pop('login_required');
+          },
+        ),
+      ],
     );
+  }
+
+  String _formatMenuForDisplay(List<dynamic> menuList) {
+    if (menuList.isEmpty) return '—';
+    final lines = <String>[];
+    for (final item in menuList) {
+      if (item is! Map) continue;
+      final m = Map<String, dynamic>.from(item);
+      final setName =
+          (m['setMenuName'] ?? m['set_menu_name'] ?? '').toString().trim();
+      final dish =
+          (m['dishName'] ?? m['dish_name'] ?? m['name'] ?? 'Dish').toString();
+      final pax = (m['paxOption'] ?? m['pax_option'] ?? '').toString();
+      final price = _formatPeso(m['price']);
+      final dishAllergens =
+          (m['dishAllergens'] ?? m['dish_allergens'] ?? '').toString().trim();
+      if (setName.isNotEmpty) lines.add('Set: $setName');
+      var line = '  • $dish';
+      if (pax.isNotEmpty) line += ' ($pax)';
+      if (price != '—' && price != '₱0.00') line += ' $price';
+      if (dishAllergens.isNotEmpty) line += ' · allergens: $dishAllergens';
+      lines.add(line);
+      final names = m['dishNames'] ?? m['dish_names'];
+      if (names is List) {
+        for (final n in names) {
+          final name = n.toString().trim();
+          if (name.isNotEmpty) lines.add('  • $name');
+        }
+      }
+    }
+    return lines.isEmpty ? '—' : lines.join('\n');
+  }
+
+  String _formatScheduleForDisplay(List<dynamic> slots) {
+    if (slots.isEmpty) return '—';
+    return slots
+        .map((slot) {
+          if (slot is! Map) return '';
+          final s = Map<String, dynamic>.from(slot);
+          final date = (s['date'] ?? '').toString();
+          final start = (s['startTime'] ?? s['start_time'] ?? '').toString();
+          final end = (s['endTime'] ?? s['end_time'] ?? '').toString();
+          return '$date  $start–$end'.trim();
+        })
+        .where((s) => s.isNotEmpty)
+        .join('\n');
+  }
+
+  List<AntdDescriptionItem> _cateringDescriptionItems(
+    Map<String, dynamic> catering,
+    String status,
+  ) {
+    final menuList = _parseDynamicList(catering['menu']);
+    final slots = _parseDynamicList(
+      catering['scheduleSlots'] ?? catering['schedule_slots'],
+    );
+    final w = MediaQuery.sizeOf(context).width;
+    final cols = w < 700 ? 1 : 2;
+    return [
+      AntdDescriptionItem(label: 'Status', value: _formatStatus(status)),
+      AntdDescriptionItem(
+        label: 'Total cost',
+        value: _formatPeso(catering['total_cost'] ?? catering['totalCost']),
+      ),
+      AntdDescriptionItem(
+        label: 'Event type',
+        value: _getEventTypeDisplay(
+          catering['event_type'] ?? catering['eventType'],
+        ),
+      ),
+      AntdDescriptionItem(
+        label: 'Guests',
+        value:
+            '${catering['guest_count'] ?? catering['guestCount'] ?? '—'}',
+      ),
+      AntdDescriptionItem(
+        label: 'Created',
+        value: _formatDate(catering['created_at'] ?? catering['createdAt']),
+      ),
+      AntdDescriptionItem(
+        label: 'Schedule',
+        value: _formatScheduleForDisplay(slots),
+        span: cols,
+      ),
+      AntdDescriptionItem(
+        label: 'Menu',
+        value: _formatMenuForDisplay(menuList),
+        span: cols,
+      ),
+      AntdDescriptionItem(
+        label: 'Allergens',
+        value: (catering['allergens'] ?? '').toString().trim().isEmpty
+            ? '—'
+            : (catering['allergens'] ?? '').toString(),
+        span: cols,
+      ),
+    ];
   }
 
   String _formatStatus(String? status) {
@@ -621,72 +719,66 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       final venueCtrl = TextEditingController(
         text: (catering['address'] ?? '').toString(),
       );
-      await showDialog<void>(
+      await showAntdModal<void>(
         context: context,
-        builder: (ctx) {
-          return AlertDialog(
-            title: const Text('Update venue & guests'),
-            content: SizedBox(
-              width: 420,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: guestCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Number of guests',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: venueCtrl,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Event venue / address',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ],
+        title: 'Update venue & guests',
+        maxWidth: 480,
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: guestCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Number of guests',
+                border: OutlineInputBorder(),
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: venueCtrl,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Event venue / address',
+                border: OutlineInputBorder(),
               ),
-              FilledButton(
-                onPressed: () async {
-                  final guestCount = int.tryParse(guestCtrl.text.trim()) ?? 0;
-                  final venue = venueCtrl.text.trim();
-                  if (guestCount <= 0 || venue.isEmpty) return;
-                  try {
-                    await _editInquiry(
-                      orderId: catering['id'].toString(),
-                      guestCount: guestCount,
-                      address: venue,
-                      venueOnly: true,
-                    );
-                    if (!mounted) return;
-                    Navigator.of(ctx).pop();
-                    await _loadCaterings(force: true);
-                    if (!mounted) return;
-                    showAppSnackBar(
-                      context,
-                      'Event details updated.',
-                      icon: Icons.check_circle_outline,
-                    );
-                  } catch (e) {
-                    if (!mounted) return;
-                    showAppSnackBar(context, 'Update failed: $e', error: true);
-                  }
-                },
-                child: const Text('Save'),
-              ),
-            ],
-          );
-        },
+            ),
+          ],
+        ),
+        actions: [
+          AntdCancelButton(
+            label: 'Cancel',
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          AntdPrimaryButton(
+            label: 'Save',
+            onPressed: () async {
+              final guestCount = int.tryParse(guestCtrl.text.trim()) ?? 0;
+              final venue = venueCtrl.text.trim();
+              if (guestCount <= 0 || venue.isEmpty) return;
+              try {
+                await _editInquiry(
+                  orderId: catering['id'].toString(),
+                  guestCount: guestCount,
+                  address: venue,
+                  venueOnly: true,
+                );
+                if (!mounted) return;
+                Navigator.of(context).pop();
+                await _loadCaterings(force: true);
+                if (!mounted) return;
+                showAppSnackBar(
+                  context,
+                  'Event details updated.',
+                  icon: Icons.check_circle_outline,
+                );
+              } catch (e) {
+                if (!mounted) return;
+                showAppSnackBar(context, 'Update failed: $e', error: true);
+              }
+            },
+          ),
+        ],
       );
       guestCtrl.dispose();
       venueCtrl.dispose();
@@ -807,20 +899,16 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
             (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
           );
 
-    await showDialog<void>(
+    await showAntdModal<void>(
       context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setLocalState) {
-            return AlertDialog(
-              title: const Text('Edit Catering Inquiry'),
-              content: SizedBox(
-                width: 760,
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
+      title: 'Edit catering inquiry',
+      maxWidth: 760,
+      body: StatefulBuilder(
+        builder: (dialogContext, setLocalState) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
                       TextField(
                         controller: guestCtrl,
                         keyboardType: TextInputType.number,
@@ -1076,100 +1164,91 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                             );
                           }),
                         ),
-                    ],
+              const SizedBox(height: 20),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.end,
+                children: [
+                  AntdCancelButton(
+                    label: 'Cancel',
+                    onPressed:
+                        isSubmitting
+                            ? null
+                            : () => Navigator.of(dialogContext).pop(),
                   ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed:
-                      isSubmitting ? null : () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed:
-                      isSubmitting
-                          ? null
-                          : () async {
-                            final guestCount =
-                                int.tryParse(guestCtrl.text.trim()) ?? 0;
-                            final venue = venueCtrl.text.trim();
-                            final date = dateCtrl.text.trim();
-                            final start = startCtrl.text.trim();
-                            final end = endCtrl.text.trim();
-                            if (guestCount <= 0 ||
-                                venue.isEmpty ||
-                                date.isEmpty ||
-                                start.isEmpty ||
-                                end.isEmpty ||
-                                editableDishes.isEmpty) {
-                              showAppSnackBar(
-                                context,
-                                'Please complete all required fields.',
-                                error: true,
-                                icon: Icons.warning_amber_rounded,
-                              );
-                              return;
-                            }
+                  AntdPrimaryButton(
+                    label: 'Save changes',
+                    loading: isSubmitting,
+                    onPressed:
+                        isSubmitting
+                            ? null
+                            : () async {
+                              final guestCount =
+                                  int.tryParse(guestCtrl.text.trim()) ?? 0;
+                              final venue = venueCtrl.text.trim();
+                              final date = dateCtrl.text.trim();
+                              final start = startCtrl.text.trim();
+                              final end = endCtrl.text.trim();
+                              if (guestCount <= 0 ||
+                                  venue.isEmpty ||
+                                  date.isEmpty ||
+                                  start.isEmpty ||
+                                  end.isEmpty ||
+                                  editableDishes.isEmpty) {
+                                showAppSnackBar(
+                                  context,
+                                  'Please complete all required fields.',
+                                  error: true,
+                                  icon: Icons.warning_amber_rounded,
+                                );
+                                return;
+                              }
 
-                            setLocalState(() => isSubmitting = true);
-                            try {
-                              await _editInquiry(
-                                orderId: catering['id'].toString(),
-                                guestCount: guestCount,
-                                address: venue,
-                                scheduleSlots: [
-                                  {
-                                    'date': date,
-                                    'startTime': start,
-                                    'endTime': end,
-                                  },
-                                ],
-                                menu:
-                                    editableDishes
-                                        .map((dish) => {'dishName': dish})
-                                        .toList(),
-                              );
-                              if (!mounted) return;
-                              Navigator.of(context).pop();
-                              await _loadCaterings(force: true);
-                              if (!mounted) return;
-                              showAppSnackBar(
-                                context,
-                                'Inquiry updated successfully.',
-                                icon: Icons.check_circle_outline,
-                              );
-                            } catch (e) {
-                              if (!mounted) return;
-                              setLocalState(() => isSubmitting = false);
-                              showAppSnackBar(
-                                context,
-                                'Update failed: $e',
-                                error: true,
-                              );
-                            }
-                          },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E1E1E),
-                    foregroundColor: Colors.white,
+                              setLocalState(() => isSubmitting = true);
+                              try {
+                                await _editInquiry(
+                                  orderId: catering['id'].toString(),
+                                  guestCount: guestCount,
+                                  address: venue,
+                                  scheduleSlots: [
+                                    {
+                                      'date': date,
+                                      'startTime': start,
+                                      'endTime': end,
+                                    },
+                                  ],
+                                  menu:
+                                      editableDishes
+                                          .map((dish) => {'dishName': dish})
+                                          .toList(),
+                                );
+                                if (!mounted) return;
+                                Navigator.of(dialogContext).pop();
+                                await _loadCaterings(force: true);
+                                if (!mounted) return;
+                                showAppSnackBar(
+                                  context,
+                                  'Inquiry updated successfully.',
+                                  icon: Icons.check_circle_outline,
+                                );
+                              } catch (e) {
+                                if (!mounted) return;
+                                setLocalState(() => isSubmitting = false);
+                                showAppSnackBar(
+                                  context,
+                                  'Update failed: $e',
+                                  error: true,
+                                );
+                              }
+                            },
                   ),
-                  child:
-                      isSubmitting
-                          ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                          : const Text('Save Changes'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+                ],
+              ),
+            ],
+          );
+        },
+      ),
     );
 
     guestCtrl.dispose();
@@ -1189,88 +1268,78 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
 
     var plan = initial;
 
-    await showDialog<void>(
+    await showAntdModal<void>(
       context: context,
+      title: 'Edit seat labels',
+      maxWidth: 800,
       barrierDismissible: false,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setSt) {
-            return AlertDialog(
-              title: const Text('Edit seat labels'),
-              content: SizedBox(
-                width: 760,
-                child: SingleChildScrollView(
-                  child: SeatingPlanInteractive(
-                    plan: plan,
-                    editable: true,
-                    layoutEditable: false,
-                    onChanged: (p) => setSt(() => plan = p),
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () async {
-                    try {
-                      final uri = Uri.parse(
-                        '$_apiBaseUrl/api/customer/events/orders/$orderId/seating',
-                      );
-                      var res = await http.post(
-                        uri,
-                        headers: {
-                          'Authorization': 'Bearer $token',
-                          'Content-Type': 'application/json',
-                        },
-                        body: jsonEncode({'seatingPlan': plan.toJson()}),
-                      );
-                      if (res.statusCode == 404 || res.statusCode == 405) {
-                        res = await http.put(
-                          uri,
-                          headers: {
-                            'Authorization': 'Bearer $token',
-                            'Content-Type': 'application/json',
-                          },
-                          body: jsonEncode({'seatingPlan': plan.toJson()}),
-                        );
-                      }
-                      if (res.statusCode != 200) {
-                        throw Exception(
-                          res.body.isNotEmpty ? res.body : 'HTTP ${res.statusCode}',
-                        );
-                      }
-                      if (dialogContext.mounted) {
-                        Navigator.of(dialogContext).pop();
-                      }
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Seating layout saved.'),
-                            backgroundColor: Color(0xFF1DB954),
-                          ),
-                        );
-                      }
-                    } catch (e) {
-                      if (dialogContext.mounted) {
-                        ScaffoldMessenger.of(dialogContext).showSnackBar(
-                          SnackBar(
-                            content: Text('Save failed: $e'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      }
-                    }
+      body: StatefulBuilder(
+        builder: (modalContext, setSt) {
+          return SeatingPlanInteractive(
+            plan: plan,
+            editable: true,
+            layoutEditable: false,
+            onChanged: (p) => setSt(() => plan = p),
+          );
+        },
+      ),
+      actions: [
+        AntdCancelButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        AntdPrimaryButton(
+          label: 'Save',
+          onPressed: () async {
+            try {
+              final uri = Uri.parse(
+                '$_apiBaseUrl/api/customer/events/orders/$orderId/seating',
+              );
+              var res = await http.post(
+                uri,
+                headers: {
+                  'Authorization': 'Bearer $token',
+                  'Content-Type': 'application/json',
+                },
+                body: jsonEncode({'seatingPlan': plan.toJson()}),
+              );
+              if (res.statusCode == 404 || res.statusCode == 405) {
+                res = await http.put(
+                  uri,
+                  headers: {
+                    'Authorization': 'Bearer $token',
+                    'Content-Type': 'application/json',
                   },
-                  child: const Text('Save'),
+                  body: jsonEncode({'seatingPlan': plan.toJson()}),
+                );
+              }
+              if (res.statusCode != 200) {
+                throw Exception(
+                  res.body.isNotEmpty ? res.body : 'HTTP ${res.statusCode}',
+                );
+              }
+              if (!context.mounted) return;
+              Navigator.of(context).pop();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Seating layout saved.'),
+                    backgroundColor: Color(0xFF1DB954),
+                  ),
+                );
+              }
+            } catch (e) {
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Save failed: $e'),
+                  backgroundColor: Colors.red,
                 ),
-              ],
-            );
+              );
+            }
           },
-        );
-      },
+        ),
+      ],
     );
   }
 
@@ -1279,10 +1348,6 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     final isInquiry = _isEditableInquiryStatus(status);
     final themeDesign = _parseThemeDesign(
       catering['themeDesign'] ?? catering['theme_design'],
-    );
-    final menuList = _parseDynamicList(catering['menu']);
-    final slots = _parseDynamicList(
-      catering['scheduleSlots'] ?? catering['schedule_slots'],
     );
     final orderType =
         (catering['order_type'] ?? catering['orderType'] ?? '').toString();
@@ -1301,230 +1366,163 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
             status == 'for_post_analysis' ||
             status == 'ongoing');
 
-    await showDialog<void>(
+    final title =
+        (catering['event_title'] ?? catering['eventTitle'] ?? 'Catering')
+            .toString();
+    final w = MediaQuery.sizeOf(context).width;
+
+    await showAntdModal<void>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(
-            catering['event_title'] ??
-                catering['eventTitle'] ??
-                'Catering Details',
+      title: title,
+      maxWidth: 800,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AntdDescriptions(
+            column: w < 700 ? 1 : 2,
+            labelColor: Colors.grey.shade600,
+            valueColor: Colors.black87,
+            items: _cateringDescriptionItems(catering, status),
           ),
-          content: SizedBox(
-            width: 720,
-            child: SingleChildScrollView(
-              child: Column(
+          ..._buildEventThemeDesignSection(context, themeDesign),
+          const SizedBox(height: 12),
+          const Text(
+            'Cost breakdown',
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+          ),
+          const SizedBox(height: 6),
+          Builder(
+            builder: (_) {
+              final breakdown = themeDesign['costBreakdown'];
+              if (breakdown is! Map) {
+                return Text(
+                  '—',
+                  style: TextStyle(color: Colors.grey.shade700),
+                );
+              }
+              final b = Map<String, dynamic>.from(breakdown);
+              return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Status: ${_formatStatus(status)}'),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Total Cost: ${_formatPeso(catering['total_cost'] ?? catering['totalCost'])}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFFF4511E),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Event Type: ${_getEventTypeDisplay(catering['event_type'] ?? catering['eventType'])}',
-                  ),
-                  Text(
-                    'Guests: ${(catering['guest_count'] ?? catering['guestCount'] ?? 'N/A')}',
-                  ),
-                  Text(
-                    'Created: ${_formatDate(catering['created_at'] ?? catering['createdAt'])}',
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Schedule',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 6),
-                  if (slots.isEmpty)
-                    const Text('- No schedule provided')
-                  else
-                    ...slots.map((slot) {
-                      final s =
-                          slot is Map
-                              ? Map<String, dynamic>.from(slot)
-                              : <String, dynamic>{};
-                      final date = (s['date'] ?? '').toString();
-                      final start =
-                          (s['startTime'] ?? s['start_time'] ?? '').toString();
-                      final end =
-                          (s['endTime'] ?? s['end_time'] ?? '').toString();
-                      return Text('- $date  $start - $end');
-                    }),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Menu',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 6),
-                  if (menuList.isEmpty)
-                    const Text('- No menu provided')
-                  else
-                    ...menuList.map((item) {
-                      final m =
-                          item is Map
-                              ? Map<String, dynamic>.from(item)
-                              : <String, dynamic>{};
-                      final dish =
-                          (m['dishName'] ?? m['dish_name'] ?? 'Dish')
-                              .toString();
-                      final pax =
-                          (m['paxOption'] ?? m['pax_option'] ?? '').toString();
-                      final price = _formatPeso(m['price']);
-                      return Text(
-                        '- $dish ${pax.isEmpty ? '' : '($pax)'}  $price',
-                      );
-                    }),
-                  ..._buildEventThemeDesignSection(context, themeDesign),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Cost Breakdown',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 6),
-                  Builder(
-                    builder: (_) {
-                      final breakdown = themeDesign['costBreakdown'];
-                      if (breakdown is! Map)
-                        return const Text('- No breakdown available');
-                      final b = Map<String, dynamic>.from(breakdown);
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('- Dish Cost: ${_formatPeso(b['dishCost'])}'),
-                          Text('- Labor Cost: ${_formatPeso(b['laborCost'])}'),
-                          Text(
-                            '- Travel Cost: ${_formatPeso(b['travelCost'])}',
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                  if (_buildEstimateUpdateBanner(themeDesign) != null)
-                    _buildEstimateUpdateBanner(themeDesign)!,
-                  if (themeDesign['managerUpdateNotice'] is Map &&
-                      !_hasManagerEstimateUpdate(themeDesign)) ...[
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Manager Notes',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      (themeDesign['managerUpdateNotice']['message'] ??
-                              'Your inquiry was updated.')
-                          .toString(),
-                    ),
-                  ],
-                  if (showSeatingBlock) ...[
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Seating layout',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    if (seatingPlan.isEffectivelyEmpty)
-                      Text(
-                        'No seating layout has been set yet.',
-                        style: TextStyle(color: Colors.grey.shade600),
-                      )
-                    else
-                      SeatingPlanInteractive(
-                        plan: seatingPlan,
-                        editable: false,
-                      ),
-                    const SizedBox(height: 8),
-                    TextButton.icon(
-                      onPressed: () async {
-                        Navigator.of(context).pop();
-                        await _showCustomerSeatingEditor(
-                          catering['id'].toString(),
-                          seatingPlan,
-                        );
-                        if (mounted) await _loadCaterings(force: true);
-                      },
-                      icon: const Icon(Icons.edit_location_alt_outlined, size: 18),
-                      label: const Text('Edit seating layout'),
-                    ),
-                  ],
+                  Text('Dish: ${_formatPeso(b['dishCost'])}'),
+                  Text('Labor: ${_formatPeso(b['laborCost'])}'),
+                  Text('Travel: ${_formatPeso(b['travelCost'])}'),
                 ],
-              ),
-            ),
+              );
+            },
           ),
-          actions: [
-            if (isInquiry)
-              OutlinedButton.icon(
-                onPressed: () async {
-                  Navigator.of(context).pop();
-                  await _showEditCateringDialog(catering);
-                },
-                icon: const Icon(Icons.edit),
-                label: const Text('Edit Inquiry'),
-              ),
-            if (isInquiry)
-              TextButton(
-                onPressed: () async {
-                  try {
-                    await _respondToInquiry(
-                      orderId: catering['id'].toString(),
-                      action: 'cancel_inquiry',
-                    );
-                    if (!mounted) return;
-                    Navigator.of(context).pop();
-                    await _loadCaterings(force: true);
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Inquiry cancelled.')),
-                    );
-                  } catch (e) {
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Cancel failed: $e')),
-                    );
-                  }
-                },
-                child: const Text('Cancel Inquiry'),
-              ),
-            if (isInquiry)
-              ElevatedButton(
-                onPressed: () async {
-                  try {
-                    await _respondToInquiry(
-                      orderId: catering['id'].toString(),
-                      action: 'confirm_inquiry',
-                    );
-                    if (!mounted) return;
-                    Navigator.of(context).pop();
-                    await _loadCaterings(force: true);
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Order confirmed.')),
-                    );
-                  } catch (e) {
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Confirm failed: $e')),
-                    );
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1DB954),
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Confirm Order'),
-              ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
+          if (_buildEstimateUpdateBanner(themeDesign) != null)
+            _buildEstimateUpdateBanner(themeDesign)!,
+          if (themeDesign['managerUpdateNotice'] is Map &&
+              !_hasManagerEstimateUpdate(themeDesign)) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Manager notes',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              (themeDesign['managerUpdateNotice']['message'] ??
+                      'Your inquiry was updated.')
+                  .toString(),
             ),
           ],
-        );
-      },
+          if (showSeatingBlock) ...[
+            const SizedBox(height: 16),
+            const Text(
+              'Seating layout',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            if (seatingPlan.isEffectivelyEmpty)
+              Text(
+                'No seating layout has been set yet.',
+                style: TextStyle(color: Colors.grey.shade600),
+              )
+            else
+              SeatingPlanInteractive(
+                plan: seatingPlan,
+                editable: false,
+              ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _showCustomerSeatingEditor(
+                  catering['id'].toString(),
+                  seatingPlan,
+                );
+                if (mounted) await _loadCaterings(force: true);
+              },
+              icon: const Icon(Icons.edit_location_alt_outlined, size: 18),
+              label: const Text('Edit seating layout'),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        if (isInquiry)
+          OutlinedButton.icon(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await _showEditCateringDialog(catering);
+            },
+            icon: const Icon(Icons.edit, size: 18),
+            label: const Text('Edit inquiry'),
+          ),
+        if (isInquiry)
+          AntdCancelButton(
+            label: 'Cancel inquiry',
+            onPressed: () async {
+              try {
+                await _respondToInquiry(
+                  orderId: catering['id'].toString(),
+                  action: 'cancel_inquiry',
+                );
+                if (!mounted) return;
+                Navigator.of(context).pop();
+                await _loadCaterings(force: true);
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Inquiry cancelled.')),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Cancel failed: $e')),
+                );
+              }
+            },
+          ),
+        if (isInquiry)
+          AntdPrimaryButton(
+            label: 'Confirm order',
+            onPressed: () async {
+              try {
+                await _respondToInquiry(
+                  orderId: catering['id'].toString(),
+                  action: 'confirm_inquiry',
+                );
+                if (!mounted) return;
+                Navigator.of(context).pop();
+                await _loadCaterings(force: true);
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Order confirmed.')),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Confirm failed: $e')),
+                );
+              }
+            },
+          ),
+        AntdCancelButton(
+          label: 'Close',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
     );
   }
 
