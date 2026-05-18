@@ -6,6 +6,7 @@ import '../services/website_content_store.dart';
 import '../widgets/centered_viewport_scroll.dart';
 import '../widgets/website_rich_text.dart';
 import '../widgets/contact_address_map.dart';
+import '../utils/maps_launcher.dart';
 import '../widgets/customer_website_topbar.dart';
 
 // Font constants
@@ -132,12 +133,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
   }
 
   Future<void> _launchMap(String address) async {
-    final uri = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$address',
-    );
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    }
+    await openGoogleMaps(address);
   }
 
   @override

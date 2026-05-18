@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/menu_dish.dart';
+import '../utils/inquiry_pricing.dart';
 import '../services/set_menu_store.dart';
 import 'antd_buttons.dart';
 import 'antd_dialog.dart';
@@ -359,7 +360,7 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
                 },
                 title: Text(d.name),
                 subtitle: Text(
-                  d.price,
+                  '${formatInquiryCateringDishPrice()} / guest (× guests at checkout)',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
               );

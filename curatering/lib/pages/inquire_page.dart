@@ -27,7 +27,9 @@ import '../widgets/allergen_selector_field.dart';
 import '../widgets/inquiry_menu_selection_dialog.dart';
 import '../widgets/map_picker.dart';
 import '../widgets/venue_autocomplete_field.dart';
+import '../widgets/event_venue_map_preview.dart';
 import '../utils/geo_utils.dart';
+import '../utils/inquiry_pricing.dart';
 import '../widgets/async_dialogs.dart';
 import '../widgets/antd_dialog.dart';
 import '../utils/image_download.dart';
@@ -237,30 +239,13 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   double _estimateMenuCost() {
-    var total = 0.0;
-    final dishes = MenuStore.instance.activeDishes;
-    for (final block in _menuSelections) {
-      final names =
-          (block['dishNames'] as List<dynamic>?)
-              ?.map((e) => e.toString().trim())
-              .where((n) => n.isNotEmpty) ??
-          const [];
-      for (final name in names) {
-        for (final d in dishes) {
-          if (d.name == name) {
-            total += double.tryParse(d.price) ?? 0;
-            break;
-          }
-        }
-      }
-    }
-    return total;
+    final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
+    return estimateInquiryCateringTotal(guestCount);
   }
 
   Future<void> _showOrderSummaryAndConfirm() async {
     final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
     final estimated = _estimateMenuCost();
-    final perGuest = guestCount > 0 ? estimated / guestCount : 0.0;
 
     final confirmed = await showAntdModal<bool>(
       context: context,
@@ -275,14 +260,16 @@ class _InquirePageState extends State<InquirePage> {
           Text('Guests: $guestCount'),
           Text('Service: $_serviceType'),
           const SizedBox(height: 12),
-          const Text(
-            'Initial menu estimate (dishes only — final quote may differ):',
-            style: TextStyle(fontWeight: FontWeight.w600),
+          Text(
+            'Initial catering estimate (₱${kCateringInquiryPricePerGuest.toStringAsFixed(0)} × guests — final quote may differ):',
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text('Estimated subtotal: ₱${estimated.toStringAsFixed(2)}'),
           if (guestCount > 0)
-            Text('≈ ₱${perGuest.toStringAsFixed(2)} per guest (food only)'),
+            Text(
+              '₱${kCateringInquiryPricePerGuest.toStringAsFixed(0)} × $guestCount guests',
+            ),
           const SizedBox(height: 12),
           Text(
             'By confirming, you submit this inquiry to our team for review.',
@@ -508,8 +495,6 @@ class _InquirePageState extends State<InquirePage> {
         'wantsCustomDesign': _wantsCustomDesign,
         if (_generatedImageUrl != null && _generatedImageUrl!.trim().isNotEmpty)
           'generatedImageUrl': _generatedImageUrl!.trim(),
-        if (_venuePhotoBase64 != null && _venuePhotoBase64!.trim().isNotEmpty)
-          'venuePhotoBase64': _venuePhotoBase64!.trim(),
         if (eventType.isNotEmpty) 'eventDesignEventType': eventType,
         if (style.isNotEmpty) 'style': style,
         if (mood.isNotEmpty) 'mood': mood,
@@ -692,8 +677,13 @@ class _InquirePageState extends State<InquirePage> {
         _inquiryEventTypes.contains(_eventType) ? _eventType : _inquiryEventTypes.first;
 
     return [
-      _inquirySectionTitle('Service Type'),
+      _inquirySectionTitle('Event Information'),
       const SizedBox(height: 12),
+      const Text(
+        'Service type',
+        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+      ),
+      const SizedBox(height: 8),
       Row(
         children: [
           Expanded(
@@ -735,9 +725,7 @@ class _InquirePageState extends State<InquirePage> {
           ),
         ],
       ),
-      const SizedBox(height: 32),
-      _inquirySectionTitle('Event Information'),
-      const SizedBox(height: 16),
+      const SizedBox(height: 20),
       _responsiveTwoCol(
         context,
         AntdFieldShell(
@@ -894,9 +882,13 @@ class _InquirePageState extends State<InquirePage> {
             });
           },
           icon: const Icon(Icons.map_outlined, size: 20),
-          label: const Text('Pick on map'),
+          label: const Text('Pick on map (OpenStreetMap)'),
         ),
       ),
+      if (_address.text.trim().isNotEmpty) ...[
+        const SizedBox(height: 12),
+        EventVenueMapPreview(address: _address.text.trim()),
+      ],
       const SizedBox(height: 32),
       _inquirySectionTitle('Event Details'),
       const SizedBox(height: 16),
@@ -2295,6 +2287,10 @@ class _InquirePageState extends State<InquirePage> {
       }
 
       final runpodUserId = await _resolveRunpodUserId();
+
+      if (kDebugMode) {
+        debugPrint('RunPod: submitting job (prompt ${prompt.length} chars)');
+      }
 
       final imageUrl = await RunPodService.generateImageWithPolling(
         prompt,

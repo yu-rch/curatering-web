@@ -256,7 +256,6 @@ app.use(
 app.use(express.json({ limit: "50mb" }));
 
 const publicRateLimit = createPublicRateLimiter();
-app.use("/api/public/runpod", publicRateLimit);
 app.use("/api/public/events/theme-design", publicRateLimit);
 
 let dbReady = false;
@@ -325,7 +324,7 @@ function normalizeRunpodInput(input) {
 }
 
 /** Public proxy to RunPod — API key stays in server env (Railway). Body: `{ "input": { ... } }`. */
-app.post("/api/public/runpod/run", async (req, res) => {
+app.post("/api/public/runpod/run", publicRateLimit, async (req, res) => {
   try {
     if (!RUNPOD_API_KEY || !RUNPOD_ENDPOINT_ID) {
       return res.status(503).json({
@@ -366,6 +365,9 @@ app.post("/api/public/runpod/run", async (req, res) => {
       method: "POST",
       jsonBody: { input: normalized },
     });
+    if (rp.ok && data?.id) {
+      console.log("[runpod proxy] job queued:", data.id, "status:", data.status);
+    }
     return res.status(rp.status).json(data);
   } catch (e) {
     if (e?.code === "runpod_not_configured") {
@@ -4696,11 +4698,18 @@ app.post("/api/online-inquiries", async (req, res) => {
       source = 'web', // 'web' or 'mobile'
     } = req.body || {};
     const allergensText = String(allergens ?? '').trim();
-    const themeDesignJson = JSON.stringify(
+    const slimTheme =
       themeDesign && typeof themeDesign === "object" && !Array.isArray(themeDesign)
-        ? themeDesign
-        : {},
-    );
+        ? { ...themeDesign }
+        : {};
+    if (
+      typeof slimTheme.venuePhotoBase64 === "string" &&
+      slimTheme.venuePhotoBase64.length > 120_000
+    ) {
+      delete slimTheme.venuePhotoBase64;
+      slimTheme.venuePhotoOmitted = true;
+    }
+    const themeDesignJson = JSON.stringify(slimTheme);
 
     const parseCoord = (v) => {
       if (v === undefined || v === null || v === "") return null;
@@ -4793,7 +4802,7 @@ app.post("/api/online-inquiries", async (req, res) => {
       );
     }
 
-    await sendCustomerNotificationEmail({
+    sendCustomerNotificationEmailAsync({
       to: emailAddress,
       subject: "Curatering: Inquiry received",
       text:

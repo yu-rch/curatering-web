@@ -24,6 +24,9 @@ import '../services/cart_store.dart';
 import '../services/loyalty_rewards_store.dart';
 import '../services/api_client.dart';
 import '../widgets/map_picker.dart';
+import '../widgets/contact_address_map.dart';
+import '../widgets/event_venue_map_preview.dart';
+import '../widgets/venue_autocomplete_field.dart';
 import '../widgets/app_snackbar.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_profile_menu.dart';
@@ -34,6 +37,7 @@ import '../widgets/website_rich_text.dart';
 import '../widgets/customer_footer_feedback.dart';
 import '../theme/website_header_font.dart';
 import '../utils/gallery_search.dart';
+import '../utils/inquiry_pricing.dart';
 import 'customer_login.dart';
 import 'checkout_page.dart';
 import 'my_orders_page.dart';
@@ -4261,6 +4265,10 @@ class _ContactSectionState extends State<_ContactSection> {
                             );
                           },
                         ),
+                        if (widget.store.contactAddress.trim().isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          ContactAddressMap(address: widget.store.contactAddress),
+                        ],
                         _contactRow(
                           Icons.schedule,
                           widget.store.contactHours,
@@ -4492,6 +4500,8 @@ class _InquireFormState extends State<_InquireForm> {
   final _phone = TextEditingController();
   final _email = TextEditingController();
   final _address = TextEditingController();
+  double? _addressLat;
+  double? _addressLng;
   final _guests = TextEditingController();
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
@@ -4658,10 +4668,14 @@ class _InquireFormState extends State<_InquireForm> {
     final picked = await showMapPicker(
       context: context,
       initialAddress: _address.text.trim(),
+      initialLatitude: _addressLat,
+      initialLongitude: _addressLng,
     );
     if (picked != null) {
       setState(() {
         _address.text = picked.address;
+        _addressLat = picked.latitude;
+        _addressLng = picked.longitude;
       });
     }
   }
@@ -4799,6 +4813,12 @@ class _InquireFormState extends State<_InquireForm> {
                     _buildSummaryRow('Date', _dateController.text.trim()),
                     _buildSummaryRow('Time', _timeController.text.trim()),
                     _buildSummaryRow('Guests', _guests.text.trim()),
+                    if (g != null && g > 0)
+                      _buildSummaryRow(
+                        'Catering estimate',
+                        '₱${estimateInquiryCateringTotal(g).toStringAsFixed(0)} '
+                            '(₱${kCateringInquiryPricePerGuest.toStringAsFixed(0)} × $g guests)',
+                      ),
                   ]),
                   const Divider(height: 24),
 
@@ -5029,6 +5049,8 @@ class _InquireFormState extends State<_InquireForm> {
                   )
                   .toList(),
           'address': _address.text.trim(),
+          if (_addressLat != null) 'addressLat': _addressLat,
+          if (_addressLng != null) 'addressLng': _addressLng,
           'guestCount': g,
           'menu': menuItems,
         },
@@ -5152,10 +5174,6 @@ class _InquireFormState extends State<_InquireForm> {
               ),
               const SizedBox(height: 24),
 
-              // Service Type Selection
-              _buildServiceTypeSelection(),
-              const SizedBox(height: 24),
-
               // Three Column Layout
               isDesktop(context)
                   ? Row(
@@ -5220,33 +5238,6 @@ class _InquireFormState extends State<_InquireForm> {
     );
   }
 
-  Widget _buildServiceTypeSelection() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        children: [
-          const Text(
-            'WHAT SERVICE DO YOU NEED?',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildServiceTypeButton('Catering Only', 'catering'),
-              const SizedBox(width: 16),
-              _buildServiceTypeButton('Catering + Event', 'catering+event'),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildServiceTypeButton(String label, String value) {
     final isSelected = _serviceType == value;
     return ElevatedButton(
@@ -5292,6 +5283,23 @@ class _InquireFormState extends State<_InquireForm> {
               textAlign: TextAlign.center,
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
             ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'SERVICE TYPE',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _buildServiceTypeButton('Catering Only', 'catering'),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildServiceTypeButton('Catering + Event', 'catering+event'),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           // Only show event fields for catering+event
@@ -5343,17 +5351,24 @@ class _InquireFormState extends State<_InquireForm> {
             keyboardType: TextInputType.emailAddress,
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: _buildTextField(_address, 'Address')),
-              const SizedBox(width: 8),
-              IconButton(
-                tooltip: 'Pick on map',
-                onPressed: _pickAddressFromMap,
-                icon: const Icon(Icons.map_outlined),
-              ),
-            ],
+          VenueAutocompleteField(
+            controller: _address,
+            label: 'Venue / address',
+            onSelected: (_) => setState(() {}),
           ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: _pickAddressFromMap,
+              icon: const Icon(Icons.map_outlined, size: 20),
+              label: const Text('Pick on map (OpenStreetMap)'),
+            ),
+          ),
+          if (_address.text.trim().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            EventVenueMapPreview(address: _address.text.trim()),
+          ],
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -5660,7 +5675,10 @@ class _InquireFormState extends State<_InquireForm> {
                       dish.name,
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    subtitle: null,
+                    subtitle: Text(
+                      '${formatInquiryCateringDishPrice()} / guest',
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    ),
                     trailing:
                         isSelected
                             ? const Icon(

@@ -10,15 +10,18 @@ class PublicEventsApi {
   PublicEventsApi._();
   static final PublicEventsApi instance = PublicEventsApi._();
   static const Duration _aiTimeout = Duration(seconds: 180);
+  static const Duration _inquirySubmitTimeout = Duration(seconds: 45);
   /// Composite rendering often runs longer than search/extract.
   static const Duration _compositeTimeout = Duration(seconds: 180);
 
   Future<void> submitOnlineInquiry({required Map<String, dynamic> payload}) async {
-    final res = await http.post(
-      Uri.parse('$apiBaseUrl/api/online-inquiries'),
-      headers: const <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(payload),
-    );
+    final res = await http
+        .post(
+          Uri.parse('$apiBaseUrl/api/online-inquiries'),
+          headers: const <String, String>{'Content-Type': 'application/json'},
+          body: jsonEncode(payload),
+        )
+        .timeout(_inquirySubmitTimeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       var msg = 'Failed to submit online inquiry (${res.statusCode})';
       try {

@@ -48,7 +48,9 @@ class RunPodService {
     return status == 'IN_QUEUE' ||
         status == 'IN_PROGRESS' ||
         status == 'QUEUED' ||
-        status == 'RUNNING';
+        status == 'RUNNING' ||
+        status == 'PROCESSING' ||
+        status == 'SUBMITTED';
   }
 
   static bool _statusIsCompleted(String? status) => status == 'COMPLETED';
@@ -182,6 +184,7 @@ class RunPodService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final status = _normalizeStatus(data['status']);
+        final jobId = _extractJobId(data);
 
         if (_statusIsCompleted(status)) {
           final out = data['output'] is Map<String, dynamic>
@@ -194,20 +197,23 @@ class RunPodService {
               out['message']?.toString() ?? 'Worker returned status error',
             );
           }
-          return null;
-        } else if (_statusIsQueued(status)) {
-          final jobId = _extractJobId(data);
-          if (jobId == null || jobId.isEmpty) {
-            throw Exception('RunPod response missing job id');
+          if (jobId != null && jobId.isNotEmpty) {
+            return await _pollForCompletion(jobId);
           }
-          return await _pollForCompletion(jobId);
-        } else if (_statusIsFailed(status)) {
-          throw Exception(_formatRunpodFailure(data));
-        } else {
-          throw Exception(
-            'Generation failed: ${data['error'] ?? data['message'] ?? 'Unknown error'}',
-          );
+          return null;
         }
+
+        if (jobId != null && jobId.isNotEmpty) {
+          return await _pollForCompletion(jobId);
+        }
+
+        if (_statusIsFailed(status)) {
+          throw Exception(_formatRunpodFailure(data));
+        }
+
+        throw Exception(
+          'Generation failed: ${data['error'] ?? data['message'] ?? 'No job id from RunPod'}',
+        );
       } else {
         _throwHttp(response);
       }
@@ -243,6 +249,12 @@ class RunPodService {
         final response = await http
             .get(_statusUri(jobId))
             .timeout(_pollGetTimeout);
+
+        if (response.statusCode == 429) {
+          throw Exception(
+            'Too many requests — wait a moment and try again.',
+          );
+        }
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body) as Map<String, dynamic>;

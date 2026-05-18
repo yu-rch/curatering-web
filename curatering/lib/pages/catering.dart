@@ -4270,7 +4270,7 @@ class _ManageEventsState extends State<ManageEvents>
                               ],
                             );
                           }).toList(),
-                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 _buildCostBlock(
@@ -4666,7 +4666,7 @@ class _ManageEventsState extends State<ManageEvents>
                                   ],
                                 );
                               }).toList(),
-                        ),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     if (_isManager) ...[
@@ -7419,16 +7419,16 @@ class _ManageEventsState extends State<ManageEvents>
                     child: Row(
                       children: [
                         if (!_isSupervisor) ...[
-                          _buildEventTabButton('New Event', 0),
-                          const SizedBox(width: 2),
-                          _buildEventTabButton('Online Inquiries', 1),
-                          const SizedBox(width: 2),
+                        _buildEventTabButton('New Event', 0),
+                        const SizedBox(width: 2),
+                        _buildEventTabButton('Online Inquiries', 1),
+                        const SizedBox(width: 2),
                           _buildEventTabButton('For Downpayment', 2),
-                          const SizedBox(width: 2),
+                        const SizedBox(width: 2),
                         ],
                         _buildEventTabButton('Ongoing', 3),
                         if (!_isSupervisor) ...[
-                          const SizedBox(width: 2),
+                        const SizedBox(width: 2),
                           _buildEventTabButton('For Full Payment', 4),
                           const SizedBox(width: 2),
                           _buildEventTabButton('Completed', 5),
@@ -7907,21 +7907,21 @@ class _ManageEventsState extends State<ManageEvents>
         orderId: order.id,
         deductInventory: _isCateringPlusEventOrder(order),
         items:
-            editableItems
-                .map(
-                  (item) => {
-                    'item': item.item,
+              editableItems
+                  .map(
+                    (item) => {
+                      'item': item.item,
                     'title': item.item,
-                    'description': item.description,
-                    'quantity': item.quantity,
-                    'cost': item.cost,
+                      'description': item.description,
+                      'quantity': item.quantity,
+                      'cost': item.cost,
                     'price': item.cost,
-                    'isCompleted': item.isCompleted,
+                      'isCompleted': item.isCompleted,
                     if (item.inventoryId != null)
                       'inventoryId': item.inventoryId,
-                  },
-                )
-                .toList(),
+                    },
+                  )
+                  .toList(),
       );
 
       ScaffoldMessenger.of(context).showSnackBar(
