@@ -31,7 +31,6 @@ import '../widgets/venue_autocomplete_field.dart';
 import '../widgets/event_venue_map_preview.dart';
 import '../utils/geo_utils.dart';
 import '../utils/inquiry_pricing.dart';
-import '../widgets/async_dialogs.dart';
 import '../widgets/antd_dialog.dart';
 import '../utils/image_download.dart';
 
@@ -303,11 +302,6 @@ class _InquirePageState extends State<InquirePage> {
     setState(() => _submitting = true);
 
     try {
-      await showBlockingLoadingDialog(
-        context,
-        message: 'Submitting inquiry…',
-      );
-
       final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
       final scheduleSlots = <Map<String, dynamic>>[
         {
@@ -362,7 +356,6 @@ class _InquirePageState extends State<InquirePage> {
       }
     } finally {
       if (mounted) {
-        hideBlockingLoadingDialog(context);
         setState(() => _submitting = false);
       }
     }

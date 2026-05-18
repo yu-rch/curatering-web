@@ -284,12 +284,8 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         );
         await _loadOrders(forceRefresh: true);
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Payment update error: $e')),
-        );
-      }
+    } catch (_) {
+      // Payment update failed — no snackbar (staff can retry from the table).
     }
   }
 
