@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Placeholder;
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -49,7 +50,13 @@ Future<void> main() async {
     // Ignore .env loading error for web deployment
   }
 
-  await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
+  if (supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty) {
+    await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
+  } else if (kDebugMode) {
+    debugPrint(
+      'Supabase not initialized — set SUPABASE_URL and SUPABASE_ANON_KEY for storage features.',
+    );
+  }
 
   if (isApexCurateringHost) {
     redirectApexHostToSubdomain(currentWebPath());
@@ -303,7 +310,7 @@ Route<dynamic>? _buildRouteForPath(String path) {
         ),
   };
 
-  if (isStaffSiteHost && isCustomerContentRoute(path)) {
+  if (needsRedirectToCustomerSite(path)) {
     return MaterialPageRoute<void>(
       settings: RouteSettings(name: path),
       builder:
@@ -313,7 +320,7 @@ Route<dynamic>? _buildRouteForPath(String path) {
           ),
     );
   }
-  if (isCustomerSiteHost && isStaffRoute(path)) {
+  if (needsRedirectToStaffSite(path)) {
     return MaterialPageRoute<void>(
       settings: RouteSettings(name: path),
       builder:
@@ -406,26 +413,26 @@ class MyApp extends StatelessWidget {
                   builder: (_) => _staffPage(const Login(), '/login'),
                 );
               }
-              return MaterialPageRoute<void>(
-                settings: settings,
-                builder:
-                    (_) => ExternalHostRedirect(
-                      origin: customerSiteOrigin,
-                      path: customerRoute(name),
-                    ),
-              );
-            }
-            if (isCustomerSiteHost) {
-              if (isStaffRoute(name)) {
+              if (needsRedirectToCustomerSite(name)) {
                 return MaterialPageRoute<void>(
                   settings: settings,
                   builder:
                       (_) => ExternalHostRedirect(
-                        origin: staffSiteOrigin,
-                        path: name,
+                        origin: customerSiteOrigin,
+                        path: customerRoute(name),
                       ),
                 );
               }
+            }
+            if (needsRedirectToStaffSite(name)) {
+              return MaterialPageRoute<void>(
+                settings: settings,
+                builder:
+                    (_) => ExternalHostRedirect(
+                      origin: staffSiteOrigin,
+                      path: name,
+                    ),
+              );
             }
             if (isStaffRoute(name)) {
               return MaterialPageRoute<void>(

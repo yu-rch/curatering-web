@@ -69,8 +69,21 @@ String get staffSiteOrigin => 'https://$kStaffWebHost';
 
 void redirectToSiteOrigin(String origin, String path) {
   if (!kIsWeb) return;
-  var p = normalizeRoutePath(path);
-  redirectBrowserTo(Uri.parse(origin).replace(path: p));
+  final target = Uri.parse(origin).replace(path: normalizeRoutePath(path));
+  if (browserLocationMatches(target)) return;
+  redirectBrowserTo(target);
+}
+
+/// Staff routes (e.g. `/login`) belong on the staff host only.
+bool needsRedirectToStaffSite(String? routeName) {
+  if (!isStaffRoute(routeName)) return false;
+  return !isStaffSiteHost;
+}
+
+/// Customer storefront routes belong on the customer host only.
+bool needsRedirectToCustomerSite(String? routeName) {
+  if (!isCustomerContentRoute(routeName)) return false;
+  return !isCustomerSiteHost;
 }
 
 /// Send curatering.com / www traffic to the correct subdomain.
@@ -142,12 +155,12 @@ void bootstrapWebRouting() {
   if (!isStaffSiteHost) return;
 
   if (isLegacyBookmarkPath(rawPath)) {
-    redirectBrowserTo(Uri.parse('$staffSiteOrigin/login'));
+    redirectToSiteOrigin(staffSiteOrigin, '/login');
     return;
   }
 
   if (rawPath == '/' && currentWebPath() == '/') {
-    redirectBrowserTo(Uri.parse('$staffSiteOrigin/login'));
+    redirectToSiteOrigin(staffSiteOrigin, '/login');
     return;
   }
 }

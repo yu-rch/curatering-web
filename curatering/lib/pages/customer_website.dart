@@ -1456,44 +1456,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         ),
         Positioned.fill(
           child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'MACRINA\'S',
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: isMobile(context) ? 36 : 58,
-                    color: Colors.white,
-                    letterSpacing: 1.6,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: 'KITCHEN AND ',
-                        style: GoogleFonts.cormorantGaramond(
-                          fontSize: isMobile(context) ? 18 : 26,
-                          color: const Color(0xFFFFC024),
-                          letterSpacing: 2.2,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      TextSpan(
-                        text: 'CATERING',
-                        style: GoogleFonts.cormorantGaramond(
-                          fontSize: isMobile(context) ? 18 : 26,
-                          color: const Color(0xFFE53935),
-                          letterSpacing: 2.2,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            child: Image.asset(
+              'lib/assets/main-2.png',
+              height: isMobile(context) ? 80 : 128,
+              fit: BoxFit.contain,
             ),
           ),
         ),

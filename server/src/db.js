@@ -1213,13 +1213,7 @@ export async function initDb() {
     console.log('Migration restaurant_orders workflow:', err.message);
   }
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS customer_tray_drafts (
-      customer_id TEXT PRIMARY KEY REFERENCES customer_accounts(id) ON DELETE CASCADE,
-      items JSONB NOT NULL DEFAULT '[]'::jsonb,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `);
+  await ensureCustomerTrayDraftsSchema();
 
   try {
     await pool.query(`
@@ -1426,6 +1420,78 @@ async function ensureRestaurantOrderWorkflowColumnsOnce() {
   for (const sql of alters) {
     await pool.query(sql);
   }
+}
+
+let customerTrayDraftsSchemaPromise = null;
+
+/** Ensures customer_tray_drafts has customer_id PK (legacy tables may lack it). */
+export async function ensureCustomerTrayDraftsSchema() {
+  if (!customerTrayDraftsSchemaPromise) {
+    customerTrayDraftsSchemaPromise = ensureCustomerTrayDraftsSchemaOnce().catch(
+      (err) => {
+        customerTrayDraftsSchemaPromise = null;
+        throw err;
+      },
+    );
+  }
+  return customerTrayDraftsSchemaPromise;
+}
+
+async function ensureCustomerTrayDraftsSchemaOnce() {
+  const cols = await getTableColumnNames('customer_tray_drafts');
+  if (cols.size === 0) {
+    await pool.query(`
+      CREATE TABLE customer_tray_drafts (
+        customer_id TEXT PRIMARY KEY REFERENCES customer_accounts(id) ON DELETE CASCADE,
+        items JSONB NOT NULL DEFAULT '[]'::jsonb,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    console.log('[db] created customer_tray_drafts');
+    return;
+  }
+
+  if (cols.has('customer_id')) {
+    await pool.query(
+      `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb`,
+    );
+    await pool.query(
+      `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+    );
+    return;
+  }
+
+  for (const legacyCol of [
+    'account_id',
+    'user_id',
+    'customer_account_id',
+  ]) {
+    if (cols.has(legacyCol)) {
+      await pool.query(
+        `ALTER TABLE customer_tray_drafts RENAME COLUMN ${legacyCol} TO customer_id`,
+      );
+      console.log(`[db] renamed customer_tray_drafts.${legacyCol} → customer_id`);
+      await pool.query(
+        `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb`,
+      );
+      await pool.query(
+        `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+      );
+      return;
+    }
+  }
+
+  console.warn(
+    '[db] customer_tray_drafts missing customer_id — recreating table (orphan draft rows dropped)',
+  );
+  await pool.query(`DROP TABLE IF EXISTS customer_tray_drafts CASCADE`);
+  await pool.query(`
+    CREATE TABLE customer_tray_drafts (
+      customer_id TEXT PRIMARY KEY REFERENCES customer_accounts(id) ON DELETE CASCADE,
+      items JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
 }
 
 let orderInquiryIdColumnsPromise = null;

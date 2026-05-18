@@ -200,13 +200,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
 
     final phoneDigits = _phoneController.text.replaceAll(RegExp(r'\D'), '');
-    if (phoneDigits.isEmpty ||
-        phoneDigits.length < 10 ||
-        phoneDigits.length > 15) {
+    if (phoneDigits.length != 11) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Please enter a valid phone number (10–15 digits).',
+            'Contact number must be exactly 11 digits (e.g. 091234567890).',
           ),
         ),
       );
@@ -646,8 +644,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     '',
                                     controller: _phoneController,
                                     keyboardType: TextInputType.number,
-                                    maxLength: 20,
+                                    maxLength: 11,
                                     digitsOnly: true,
+                                    hintText: '6391234567890',
                                   ),
                                   if (_customerData == null) ...[
                                     const SizedBox(height: 16),
@@ -996,6 +995,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     TextInputType? keyboardType,
     int? maxLength,
     bool digitsOnly = false,
+    String? hintText,
   }) {
     return Row(
       crossAxisAlignment:
@@ -1022,11 +1022,20 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     maxLength: maxLength,
                     inputFormatters:
                         digitsOnly
-                            ? [FilteringTextInputFormatter.digitsOnly]
+                            ? [
+                              FilteringTextInputFormatter.digitsOnly,
+                              if (maxLength != null)
+                                LengthLimitingTextInputFormatter(maxLength),
+                            ]
                             : null,
                     style: const TextStyle(fontSize: 12),
                     decoration: InputDecoration(
                       isDense: true,
+                      hintText: hintText,
+                      hintStyle: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade400,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(6),
                         borderSide: BorderSide(color: Colors.grey.shade300),

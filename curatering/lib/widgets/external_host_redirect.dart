@@ -47,13 +47,13 @@ class HostRouteGuard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isCustomerSiteHost && isStaffRoute(routePath)) {
+    if (needsRedirectToStaffSite(routePath)) {
       return ExternalHostRedirect(
         origin: staffSiteOrigin,
         path: routePath,
       );
     }
-    if (isStaffSiteHost && isCustomerContentRoute(routePath)) {
+    if (needsRedirectToCustomerSite(routePath)) {
       return ExternalHostRedirect(
         origin: customerSiteOrigin,
         path: customerRoute(routePath),

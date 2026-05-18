@@ -19,6 +19,7 @@ import {
   initDb,
   ensureAuthSchemaQuick,
   ensureOrderInquiryIdColumns,
+  ensureCustomerTrayDraftsSchema,
   ensureRestaurantOrderWorkflowColumns,
   pool,
   poolQueryWithRetry,
@@ -5131,6 +5132,9 @@ function runDatabaseBootstrap() {
     .then(() => ensureRestaurantOrderWorkflowColumns().catch((err) => {
       console.warn('[startup] restaurant_orders workflow columns:', err?.message || err);
     }))
+    .then(() => ensureCustomerTrayDraftsSchema().catch((err) => {
+      console.warn('[startup] customer_tray_drafts schema:', err?.message || err);
+    }))
     .then(() => {
       dbReady = true;
       console.log('[startup] Auth schema ready — customer login enabled');
@@ -8465,6 +8469,7 @@ async function registerRoutesAfterDbInit() {
     app.post('/api/cart/sync', CartAPI.syncCart);
     app.post('/api/cart/clear', CartAPI.clearCart);
 
+    await ensureCustomerTrayDraftsSchema();
     app.get('/api/tray-draft', customerAuthRequired, getTrayDraft);
     app.put('/api/tray-draft', customerAuthRequired, saveTrayDraft);
     app.delete('/api/tray-draft', customerAuthRequired, clearTrayDraft);

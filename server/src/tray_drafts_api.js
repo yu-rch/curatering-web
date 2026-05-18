@@ -1,4 +1,4 @@
-import { pool } from './db.js';
+import { pool, ensureCustomerTrayDraftsSchema } from './db.js';
 
 function customerIdFromReq(req) {
   return req.customer?.id ? String(req.customer.id) : null;
@@ -6,6 +6,7 @@ function customerIdFromReq(req) {
 
 export async function getTrayDraft(req, res) {
   try {
+    await ensureCustomerTrayDraftsSchema();
     const customerId = customerIdFromReq(req);
     if (!customerId) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -31,6 +32,7 @@ export async function getTrayDraft(req, res) {
 
 export async function saveTrayDraft(req, res) {
   try {
+    await ensureCustomerTrayDraftsSchema();
     const customerId = customerIdFromReq(req);
     if (!customerId) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -56,6 +58,7 @@ export async function saveTrayDraft(req, res) {
 
 export async function clearTrayDraft(req, res) {
   try {
+    await ensureCustomerTrayDraftsSchema();
     const customerId = customerIdFromReq(req);
     if (!customerId) {
       return res.status(401).json({ error: 'Authentication required' });
