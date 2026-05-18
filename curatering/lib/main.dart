@@ -54,6 +54,8 @@ Future<void> main() async {
     return;
   }
 
+  bootstrapWebRouting();
+
   runApp(const MyApp());
 }
 
@@ -71,10 +73,11 @@ Widget _staffPage(Widget child, String path) {
   );
 }
 
+String _startupRoutePath() => resolveAppInitialRoute();
+
 String _routePathFromSettings(RouteSettings settings) {
-  var path = settings.name ?? currentWebPath();
+  var path = normalizeRoutePath(settings.name ?? rawWebPath());
   path = stripLegacyCustomerPrefix(path);
-  if (path.isEmpty) path = '/';
   if (isStaffSiteHost && path == '/') return '/login';
   return path;
 }
@@ -373,7 +376,17 @@ class MyApp extends StatelessWidget {
               }),
             ),
           ),
-          initialRoute: resolveAppInitialRoute(),
+          onGenerateInitialRoutes: (_) {
+            final path = _startupRoutePath();
+            final built = _buildRouteForPath(path);
+            return [
+              built ??
+                  MaterialPageRoute<void>(
+                    settings: RouteSettings(name: path),
+                    builder: (_) => const AppRootRoute(),
+                  ),
+            ];
+          },
           onGenerateRoute: (settings) {
             final path = _routePathFromSettings(settings);
             final built = _buildRouteForPath(path);

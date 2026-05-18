@@ -132,7 +132,9 @@ function collectAllowedCorsOrigins() {
 
   // Production web apps (subdomains only)
   addExact("https://macrinas-kitchen.curatering.com");
+  addExact("https://www.macrinas-kitchen.curatering.com");
   addExact("https://staff.curatering.com");
+  addExact("https://www.staff.curatering.com");
 
   return exact;
 }
@@ -577,7 +579,7 @@ async function fetchEventOrderRowById(orderId) {
         guest_count AS "guestCount",
         COALESCE(allergens, '') AS allergens,
         menu,
-        theme_design AS "themeDesign",
+        '{}'::jsonb AS "themeDesign",
         '{}'::jsonb AS "seatingPlan",
         post_analysis AS "postAnalysis",
         total_cost AS "totalCost",
@@ -2847,7 +2849,7 @@ app.post(
         guestCount === undefined ||
         !Array.isArray(scheduleSlots) ||
         !Array.isArray(menu) ||
-        !themeDesign
+        (!isCateringOnly && !themeDesign)
       ) {
         return res.status(400).json({ message: "Missing required fields" });
       }
@@ -2865,9 +2867,9 @@ app.post(
         result = await pool.query(
           `INSERT INTO catering_orders
             (source, status, order_type, inquiry_id, customer_name, contact_person, contact_number, email_address,
-             schedule_slots, address, guest_count, menu, theme_design, allergens, created_by, updated_by)
+             schedule_slots, address, guest_count, menu, allergens, created_by, updated_by)
           VALUES
-            ('new_event', 'for_processing', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ('new_event', 'for_processing', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
            RETURNING id, inquiry_id;`,
           [
             transactionId,
@@ -2879,7 +2881,6 @@ app.post(
             address,
             Number(guestCount),
             JSON.stringify(menu),
-            JSON.stringify(themeDesign),
             allergensText,
             req.user.id,
             req.user.id,
@@ -3747,6 +3748,7 @@ app.get(
   (req, res, next) =>
     requireRoles(req, res, next, new Set(["manager", "admin", "super_admin"])),
   async (req, res) => {
+    try {
     const { status } = req.query || {};
     if (!status)
       return res
@@ -3775,7 +3777,7 @@ app.get(
         guest_count AS "guestCount",
         COALESCE(allergens, '') AS allergens,
         menu,
-        ${themeCol},
+        '{}'::jsonb AS "themeDesign",
         '{}'::jsonb AS "seatingPlan",
         post_analysis AS "postAnalysis",
         total_cost AS "totalCost",
@@ -3824,6 +3826,10 @@ app.get(
       orders = orders.map(compactEventOrderRow);
     }
     return res.json({ orders });
+    } catch (e) {
+      console.error("GET /api/manager/events/orders", e);
+      return res.status(500).json({ message: "Failed to load orders" });
+    }
   },
 );
 
@@ -3965,7 +3971,6 @@ app.post(
              address,
              guest_count AS "guestCount",
              menu,
-             theme_design AS "themeDesign",
              total_cost AS "totalCost"
            FROM catering_orders
            WHERE id = $1
@@ -4000,7 +4005,9 @@ app.post(
       addChanged('address', existing.address, address);
       addChanged('guestCount', existing.guestCount, Number(guestCount));
       addChanged('menu', existing.menu, menu || []);
-      addChanged('themeDesign', existing.themeDesign, themeDesign || {});
+      if (sourceTable === 'event_orders') {
+        addChanged('themeDesign', existing.themeDesign, themeDesign || {});
+      }
       addChanged('totalCost', Number(existing.totalCost || 0), Number(totalCost || 0));
 
       const mergedThemeDesign = {
@@ -4067,12 +4074,11 @@ app.post(
                address = $6,
                guest_count = $7,
                menu = $8,
-               theme_design = $9,
-               status = $10,
-               total_cost = $11,
-               updated_by = $12,
+               status = $9,
+               total_cost = $10,
+               updated_by = $11,
                updated_at = now()
-             WHERE id = $13
+             WHERE id = $12
                AND source = 'online_inquiry'
                AND status = 'online_inquiries'
              RETURNING id;`,
@@ -4085,7 +4091,6 @@ app.post(
               address,
               Number(guestCount),
               JSON.stringify(menu || []),
-              JSON.stringify(mergedThemeDesign),
               nextStatus,
               totalCost != null ? Number(totalCost) : 0,
               req.user.id,
@@ -4184,7 +4189,7 @@ app.get(
         guest_count AS "guestCount",
         COALESCE(allergens, '') AS allergens,
         menu,
-        ${themeCol},
+        '{}'::jsonb AS "themeDesign",
         '{}'::jsonb AS "seatingPlan",
         post_analysis AS "postAnalysis",
         total_cost AS "totalCost",
@@ -4411,9 +4416,15 @@ app.post("/api/online-inquiries", async (req, res) => {
       guestCount,
       menu,
       allergens,
+      themeDesign,
       source = 'web', // 'web' or 'mobile'
     } = req.body || {};
     const allergensText = String(allergens ?? '').trim();
+    const themeDesignJson = JSON.stringify(
+      themeDesign && typeof themeDesign === "object" && !Array.isArray(themeDesign)
+        ? themeDesign
+        : {},
+    );
 
     const parseCoord = (v) => {
       if (v === undefined || v === null || v === "") return null;
@@ -4479,10 +4490,10 @@ app.post("/api/online-inquiries", async (req, res) => {
         `INSERT INTO event_orders
           (source, status, event_title, order_type, event_type, formality_level, inquiry_id,
            customer_name, contact_person, contact_number, email_address,
-           schedule_slots, address, address_lat, address_lng, guest_count, menu, allergens)
+           schedule_slots, address, address_lat, address_lng, guest_count, menu, theme_design, allergens)
          VALUES
           ('online_inquiry', 'online_inquiries',
-           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
          RETURNING id, inquiry_id;`,
         [
           eventTitle,
@@ -4500,6 +4511,7 @@ app.post("/api/online-inquiries", async (req, res) => {
           resolvedAddressLng,
           Number(guestCount),
           JSON.stringify(menu),
+          themeDesignJson,
           allergensText,
         ]
       );
@@ -6935,7 +6947,7 @@ async function registerRoutesAfterDbInit() {
             schedule_slots as "scheduleSlots",
             menu,
             total_cost as "totalCost",
-            theme_design as "themeDesign",
+            '{}'::jsonb as "themeDesign",
             '{}'::jsonb as "seatingPlan",
             created_at as "createdAt",
             'catering' as order_type

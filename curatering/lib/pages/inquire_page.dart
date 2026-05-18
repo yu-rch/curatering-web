@@ -340,6 +340,10 @@ class _InquirePageState extends State<InquirePage> {
         'allergens': _allergensSerialized.trim(),
         'source': 'web',
       };
+      final themeDesign = _buildThemeDesignForApi();
+      if (themeDesign != null) {
+        payload['themeDesign'] = themeDesign;
+      }
 
       await PublicEventsApi.instance.submitOnlineInquiry(payload: payload);
 
@@ -465,6 +469,47 @@ class _InquirePageState extends State<InquirePage> {
         _generatedImageUrl = null;
       }
     });
+  }
+
+  /// Event design payload for staff "view details" (AI image vs Macrina text inspiration).
+  Map<String, dynamic>? _buildThemeDesignForApi() {
+    if (_serviceType == 'catering') return null;
+    if (_eventDesignMode == 'macrina') {
+      return {
+        'eventDesignSource': 'macrina',
+        'macrinaColorPalette': _macrinaPalette.text.trim(),
+        'macrinaTheme': _macrinaTheme.text.trim(),
+        'serviceType': _serviceType,
+      };
+    }
+    if (_eventDesignMode == 'customer') {
+      final style = _selectedStyle == 'Other'
+          ? _styleOtherController.text.trim()
+          : (_selectedStyle ?? '');
+      final mood = _selectedMood == 'Other'
+          ? _moodOtherController.text.trim()
+          : (_selectedMood ?? '');
+      final eventType = _selectedEventType == 'Other'
+          ? _eventTypeOtherController.text.trim()
+          : (_selectedEventType ?? '');
+      return {
+        'eventDesignSource': 'customer_ai',
+        'wantsCustomDesign': _wantsCustomDesign,
+        if (_generatedImageUrl != null && _generatedImageUrl!.trim().isNotEmpty)
+          'generatedImageUrl': _generatedImageUrl!.trim(),
+        if (_venuePhotoBase64 != null && _venuePhotoBase64!.trim().isNotEmpty)
+          'venuePhotoBase64': _venuePhotoBase64!.trim(),
+        if (eventType.isNotEmpty) 'eventDesignEventType': eventType,
+        if (style.isNotEmpty) 'style': style,
+        if (mood.isNotEmpty) 'mood': mood,
+        if (_selectedColors.isNotEmpty) 'colorPalette': List<String>.from(_selectedColors),
+        if (_selectedDecor.isNotEmpty) 'decorElements': List<String>.from(_selectedDecor),
+        if (_designPromptController.text.trim().isNotEmpty)
+          'customInstructions': _designPromptController.text.trim(),
+        'serviceType': _serviceType,
+      };
+    }
+    return null;
   }
 
   /// API `/api/online-inquiries` expects `menu`: list of `{ dishName }`.

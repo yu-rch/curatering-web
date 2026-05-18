@@ -25,27 +25,42 @@ String get _host {
   return '';
 }
 
+/// Strips leading `www.` so `www.staff.curatering.com` → `staff.curatering.com`.
+String normalizeWebHost(String host) {
+  var h = host.toLowerCase().trim();
+  while (h.startsWith('www.')) {
+    h = h.substring(4);
+  }
+  return h;
+}
+
+String get _normalizedHost {
+  if (!kIsWeb) return '';
+  return normalizeWebHost(_host);
+}
+
 bool get isCustomerSiteHost {
   if (!kIsWeb) return false;
-  final h = _host;
+  final h = _normalizedHost;
   if (h == kCustomerWebHost.toLowerCase()) return true;
-  if (h.startsWith('macrinas-kitchen.')) return true;
-  return false;
+  final parts = h.split('.');
+  if (parts.isEmpty) return false;
+  return parts.first == 'macrinas-kitchen';
 }
 
 bool get isStaffSiteHost {
   if (!kIsWeb) return false;
-  final h = _host;
+  final h = _normalizedHost;
   if (h == kStaffWebHost.toLowerCase()) return true;
-  if (h == 'staff.$kCustomerWebHost'.toLowerCase()) return true;
-  if (h.startsWith('staff.')) return true;
-  return false;
+  final parts = h.split('.');
+  if (parts.isEmpty) return false;
+  return parts.first == 'staff';
 }
 
 /// Deprecated apex domain — redirect to a subdomain.
 bool get isApexCurateringHost {
   if (!kIsWeb) return false;
-  return _host == 'curatering.com' || _host == 'www.curatering.com';
+  return _normalizedHost == 'curatering.com';
 }
 
 String get customerSiteOrigin => 'https://$kCustomerWebHost';
@@ -54,9 +69,7 @@ String get staffSiteOrigin => 'https://$kStaffWebHost';
 
 void redirectToSiteOrigin(String origin, String path) {
   if (!kIsWeb) return;
-  var p = path.trim();
-  if (p.isEmpty) p = '/';
-  if (!p.startsWith('/')) p = '/$p';
+  var p = normalizeRoutePath(path);
   redirectBrowserTo(Uri.parse(origin).replace(path: p));
 }
 
@@ -72,15 +85,26 @@ void redirectApexHostToSubdomain(String path) {
   redirectToSiteOrigin(customerSiteOrigin, stripped);
 }
 
-/// Browser URL path for the current page (reliable on Vercel subdomains).
-String currentWebPath() {
+String normalizeRoutePath(String path) {
+  var p = path.trim();
+  if (p.isEmpty) return '/';
+  if (!p.startsWith('/')) p = '/$p';
+  return p;
+}
+
+/// Unstripped browser path.
+String rawWebPath() {
   if (!kIsWeb) return '/';
-  return stripLegacyCustomerPrefix(getWebPathname());
+  return normalizeRoutePath(getWebPathname());
+}
+
+/// Browser URL path with legacy prefix removed.
+String currentWebPath() {
+  return stripLegacyCustomerPrefix(rawWebPath());
 }
 
 String resolveAppInitialRoute() {
-  var path = currentWebPath();
-  if (path.isEmpty) path = '/';
+  var path = normalizeRoutePath(currentWebPath());
 
   if (isStaffSiteHost) {
     if (path == '/') return '/login';
@@ -88,19 +112,57 @@ String resolveAppInitialRoute() {
   }
 
   if (isCustomerSiteHost) {
-    return path == '/' ? '/' : path;
+    return path;
   }
 
   return path;
 }
 
+/// Run before [runApp] to fix www staff host, legacy bookmarks, and staff `/`.
+void bootstrapWebRouting() {
+  if (!kIsWeb) return;
+
+  final host = _host.toLowerCase();
+  final rawPath = rawWebPath();
+  final staffCanonical = kStaffWebHost.toLowerCase();
+  final customerCanonical = kCustomerWebHost.toLowerCase();
+
+  if (host == 'www.$staffCanonical') {
+    var target = rawPath;
+    if (target == '/') target = '/login';
+    redirectBrowserTo(Uri.parse('https://$staffCanonical$target'));
+    return;
+  }
+
+  if (host == 'www.$customerCanonical') {
+    redirectBrowserTo(Uri.parse('https://$customerCanonical$rawPath'));
+    return;
+  }
+
+  if (!isStaffSiteHost) return;
+
+  if (isLegacyBookmarkPath(rawPath)) {
+    redirectToSiteOrigin(
+      customerSiteOrigin,
+      stripLegacyCustomerPrefix(rawPath),
+    );
+    return;
+  }
+
+  if (rawPath == '/' && currentWebPath() == '/') {
+    redirectBrowserTo(Uri.parse('$staffSiteOrigin/login'));
+    return;
+  }
+}
+
 String stripLegacyCustomerPrefix(String path) {
-  if (path == kLegacyCustomerPathPrefix) return '/';
-  if (path.startsWith('$kLegacyCustomerPathPrefix/')) {
-    final rest = path.substring(kLegacyCustomerPathPrefix.length);
+  final p = normalizeRoutePath(path);
+  if (p == kLegacyCustomerPathPrefix) return '/';
+  if (p.startsWith('$kLegacyCustomerPathPrefix/')) {
+    final rest = p.substring(kLegacyCustomerPathPrefix.length);
     return rest.isEmpty ? '/' : rest;
   }
-  return path;
+  return p;
 }
 
 /// Customer paths always use the site root (no path prefix).
@@ -115,7 +177,7 @@ String customerRoute(String path) {
 
 bool isStaffRoute(String? routeName) {
   if (routeName == null || routeName.isEmpty) return false;
-  final name = stripLegacyCustomerPrefix(routeName);
+  final name = stripLegacyCustomerPrefix(normalizeRoutePath(routeName));
   const customerRootPaths = {
     '/',
     '/gallery',
@@ -152,7 +214,7 @@ bool isStaffRoute(String? routeName) {
 
 bool isCustomerContentRoute(String? routeName) {
   if (routeName == null || routeName.isEmpty) return false;
-  final name = stripLegacyCustomerPrefix(routeName);
+  final name = stripLegacyCustomerPrefix(normalizeRoutePath(routeName));
   if (name == '/') return true;
   const customerPaths = [
     '/gallery',
@@ -166,6 +228,7 @@ bool isCustomerContentRoute(String? routeName) {
 
 bool isLegacyBookmarkPath(String? path) {
   if (path == null) return false;
-  return path == kLegacyCustomerPathPrefix ||
-      path.startsWith('$kLegacyCustomerPathPrefix/');
+  final p = normalizeRoutePath(path);
+  return p == kLegacyCustomerPathPrefix ||
+      p.startsWith('$kLegacyCustomerPathPrefix/');
 }

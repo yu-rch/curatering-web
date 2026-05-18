@@ -493,7 +493,6 @@ export async function initDb() {
       guest_count INT NOT NULL CHECK (guest_count >= 0),
       
       menu JSONB NOT NULL DEFAULT '[]'::jsonb,
-      theme_design JSONB NOT NULL DEFAULT '{}'::jsonb,
       
       created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
       updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
@@ -1023,6 +1022,16 @@ export async function initDb() {
     console.log('Migration check for restaurant_orders points_earned:', err.message);
   }
 
+  // Migration: line items JSON (older restaurant_orders tables may lack this column)
+  try {
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb`,
+    );
+    console.log('Migration: ensured items column on restaurant_orders');
+  } catch (err) {
+    console.log('Migration check for restaurant_orders items:', err.message);
+  }
+
   // Migration: Add points_earned column to catering_orders
   try {
     await pool.query(`ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS points_earned INTEGER DEFAULT 0`);
@@ -1047,6 +1056,16 @@ export async function initDb() {
     console.log('Migration: Added seating_plan column to event_orders');
   } catch (err) {
     console.log('Migration check for event_orders seating_plan:', err.message);
+  }
+
+  // Migration: theme_design for catering+event orders only (event_orders table)
+  try {
+    await pool.query(
+      `ALTER TABLE event_orders ADD COLUMN IF NOT EXISTS theme_design JSONB NOT NULL DEFAULT '{}'::jsonb`,
+    );
+    console.log('Migration: ensured theme_design on event_orders');
+  } catch (err) {
+    console.log('Migration check for event_orders theme_design:', err.message);
   }
 
   // Migration: order_status column (Supabase schema; legacy deployments may have `status`)
