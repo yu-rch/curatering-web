@@ -37,8 +37,7 @@ const RESTAURANT_ORDER_SELECT = `
   balance_proof_pending_review,
   pos_claimed_at,
   created_at,
-  updated_at,
-  pending_cashier_at
+  updated_at
 `;
 
 export async function ensureRestaurantPosColumns(pool) {

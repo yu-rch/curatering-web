@@ -5180,8 +5180,7 @@ async function autoCancelStalePendingCashierOrders() {
       `UPDATE restaurant_orders
        SET order_status = 'cancelled', updated_at = now()
        WHERE order_status = 'pending_cashier'
-         AND pending_cashier_at IS NOT NULL
-         AND pending_cashier_at < now() - interval '1 hour'
+         AND COALESCE(updated_at, created_at) < now() - interval '1 hour'
        RETURNING *`,
     );
     for (const order of result.rows) {
@@ -6458,7 +6457,6 @@ async function registerRoutesAfterDbInit() {
                payment_proof = COALESCE($2, payment_proof),
                payment_status = 'pending',
                order_status = 'pending_cashier',
-               pending_cashier_at = now(),
                updated_at = now()
            WHERE ${payLookup.sql}
            RETURNING *`,
@@ -6912,7 +6910,7 @@ async function registerRoutesAfterDbInit() {
                  total_amount, delivery_address, delivery_lat, delivery_lng, delivery_time,
                  order_status AS status, payment_status, payment_reference, payment_proof,
                  amount_paid, change_given, delivery_tracking_url,
-                 created_at, updated_at, pending_cashier_at
+                 created_at, updated_at
           FROM restaurant_orders 
           ORDER BY created_at DESC 
           LIMIT $1
@@ -6927,7 +6925,7 @@ async function registerRoutesAfterDbInit() {
                      total_amount, delivery_address, delivery_lat, delivery_lng, delivery_time,
                      order_status AS status, payment_status, payment_reference, payment_proof,
                      amount_paid, change_given, delivery_tracking_url,
-                     created_at, updated_at, pending_cashier_at
+                     created_at, updated_at
               FROM restaurant_orders 
               WHERE order_status = $1 
               ORDER BY created_at DESC 
@@ -6940,7 +6938,7 @@ async function registerRoutesAfterDbInit() {
                      total_amount, delivery_address, delivery_lat, delivery_lng, delivery_time,
                      order_status AS status, payment_status, payment_reference, payment_proof,
                      amount_paid, change_given, delivery_tracking_url,
-                     created_at, updated_at, pending_cashier_at
+                     created_at, updated_at
               FROM restaurant_orders 
               WHERE order_status IN (${statusValues.map((_, i) => `$${i + 1}`).join(', ')}) 
               ORDER BY created_at DESC 

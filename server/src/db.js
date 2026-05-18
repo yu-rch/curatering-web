@@ -1189,9 +1189,6 @@ export async function initDb() {
     await pool.query(
       `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS change_given DECIMAL(10,2)`,
     );
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS pending_cashier_at TIMESTAMPTZ`,
-    );
     await pool.query(`
       ALTER TABLE restaurant_orders DROP CONSTRAINT IF EXISTS restaurant_orders_status_check
     `);
@@ -1210,10 +1207,6 @@ export async function initDb() {
       CHECK (order_status IN (
         'pending_cashier', 'in_preparation', 'out_for_delivery', 'delivered', 'cancelled'
       ))
-    `);
-    await pool.query(`
-      UPDATE restaurant_orders SET pending_cashier_at = created_at
-      WHERE order_status = 'pending_cashier' AND pending_cashier_at IS NULL
     `);
     console.log('Migration: restaurant_orders workflow columns and statuses');
   } catch (err) {
@@ -1410,28 +1403,28 @@ async function ensureRestaurantOrderWorkflowColumnsOnce() {
   const tableCols = await getTableColumnNames('restaurant_orders');
   if (tableCols.size === 0) return;
 
+  if (!tableCols.has('order_status')) {
+    if (tableCols.has('status')) {
+      await pool.query(
+        `ALTER TABLE restaurant_orders RENAME COLUMN status TO order_status`,
+      );
+      console.log('[db] renamed restaurant_orders.status → order_status');
+    } else {
+      await pool.query(
+        `ALTER TABLE restaurant_orders ADD COLUMN order_status TEXT NOT NULL DEFAULT 'pending_cashier'`,
+      );
+      console.log('[db] added restaurant_orders.order_status');
+    }
+  }
+
   const alters = [
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS guest_contact_email TEXT`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_proof TEXT`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS amount_paid DECIMAL(10,2)`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS change_given DECIMAL(10,2)`,
-    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS pending_cashier_at TIMESTAMPTZ`,
   ];
   for (const sql of alters) {
     await pool.query(sql);
-  }
-
-  if (tableCols.has('created_at') && tableCols.has('order_status')) {
-    try {
-      await pool.query(`
-        UPDATE restaurant_orders
-        SET pending_cashier_at = created_at
-        WHERE order_status = 'pending_cashier'
-          AND pending_cashier_at IS NULL
-      `);
-    } catch (err) {
-      console.warn('[db] backfill pending_cashier_at:', err.message);
-    }
   }
 }
 
