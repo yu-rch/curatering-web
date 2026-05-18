@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-
 import '../auth/auth_session.dart';
 import '../auth/page_permissions.dart';
 import '../auth/roles.dart';
+import '../config/site_open_tab_stub.dart'
+    if (dart.library.html) '../config/site_open_tab_web.dart';
+import '../config/site_routes.dart';
 import 'antd_profile_menu.dart';
 
 void _staffSignOut(BuildContext context) {
@@ -96,6 +99,17 @@ class AppScaffold extends StatelessWidget {
     ),
   ];
 
+  static void _openRoute(BuildContext context, String route, {bool newTab = false}) {
+    if (newTab && kIsWeb) {
+      openAppRouteInNewTab(staffSiteOrigin, route);
+      return;
+    }
+    final currentRoute = ModalRoute.of(context)?.settings.name;
+    if (currentRoute != route) {
+      Navigator.of(context).pushReplacementNamed(route);
+    }
+  }
+
   static Widget _buildSidebarItem(
     BuildContext context,
     IconData icon,
@@ -106,12 +120,15 @@ class AppScaffold extends StatelessWidget {
     final isActive = currentRoute == route;
 
     return GestureDetector(
-      onTap: () {
-        if (currentRoute != route) {
-          Navigator.of(context).pushReplacementNamed(route);
-        }
-      },
-      child: Container(
+      onSecondaryTap: kIsWeb ? () => _openRoute(context, route, newTab: true) : null,
+      onTap: () => _openRoute(context, route),
+      child: Listener(
+        onPointerDown: (e) {
+          if (kIsWeb && e.buttons == 4) {
+            _openRoute(context, route, newTab: true);
+          }
+        },
+        child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
         decoration: BoxDecoration(
           color: isActive ? const Color(0xFFFFC024) : Colors.transparent,
@@ -142,26 +159,64 @@ class AppScaffold extends StatelessWidget {
           ],
         ),
       ),
+      ),
     );
+  }
+
+  static List<_SidebarItemData> _sidebarItemsForRole(
+    Role? role,
+    Map<String, dynamic>? perms,
+  ) {
+    if (role == Role.cashier) {
+      return const [
+        _SidebarItemData(
+          icon: Icons.receipt_long,
+          label: 'Restaurant Orders',
+          route: '/restaurant-orders',
+        ),
+      ];
+    }
+    if (role == Role.supervisor) {
+      return const [
+        _SidebarItemData(
+          icon: Icons.event,
+          label: 'Manage Events',
+          route: '/manage-events',
+        ),
+      ];
+    }
+    if (role == Role.superAdmin) {
+      return [
+        ..._superAdminSidebarItems,
+        ..._commonSidebarItems,
+      ];
+    }
+    return _commonSidebarItems.where(
+      (item) => pageRouteAllowed(item.route, perms),
+    ).toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = AuthSession.instance.currentUser.value;
+    return ValueListenableBuilder<UserProfile?>(
+      valueListenable: AuthSession.instance.currentUser,
+      builder: (context, user, _) {
+        return _buildScaffold(context, user);
+      },
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context, UserProfile? user) {
     final userName = user?.fullName ?? 'Guest';
     final role = user?.role;
 
     final perms = user?.pagePermissions;
-    final sidebarItems = <_SidebarItemData>[
-      if (role == Role.superAdmin) ..._superAdminSidebarItems,
-      ..._commonSidebarItems.where(
-        (item) => pageRouteAllowed(item.route, perms),
-      ),
-    ];
+    final sidebarItems = _sidebarItemsForRole(role, perms);
 
     final profileItems = <AntdProfileMenuItem>[
       AntdProfileMenuItem.header(userName),
-      if (pageRouteAllowed(PagePermissionRoutes.settings, perms))
+      if (role == Role.superAdmin ||
+          pageRouteAllowed(PagePermissionRoutes.settings, perms))
         AntdProfileMenuItem.action(
           id: 'settings',
           icon: Icons.settings_outlined,

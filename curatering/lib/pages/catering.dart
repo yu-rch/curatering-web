@@ -5,15 +5,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:http/http.dart' as http;
 import '../auth/action_permissions.dart';
 import '../auth/auth_session.dart';
 import '../config/api_config.dart';
 import '../auth/roles.dart';
 import '../models/event_order.dart';
 import '../models/menu_dish.dart';
+import '../services/api_client.dart';
 import '../services/events_api.dart';
 import '../services/menu_store.dart';
+import '../services/order_summary_pdf_service.dart';
 import '../services/set_menu_store.dart';
 import '../widgets/allergen_selector_field.dart';
 import '../widgets/antd_buttons.dart';
@@ -206,6 +207,7 @@ class ChecklistItem {
     required this.quantity,
     required this.cost,
     this.isCompleted = false,
+    this.inventoryId,
   });
 
   final String item;
@@ -213,6 +215,7 @@ class ChecklistItem {
   final int quantity;
   final double cost;
   bool isCompleted;
+  final String? inventoryId;
 }
 
 enum EventStatus {
@@ -408,6 +411,9 @@ class _ManageEventsState extends State<ManageEvents>
     _loadThemeTemplates();
     AuthSession.instance.currentUser.addListener(_handleAuthSessionChange);
     final role = AuthSession.instance.currentRole;
+    if (role == Role.supervisor) {
+      _selectedStatus = EventStatus.ongoing;
+    }
     final restored = ManageEventsOrdersCache.instance.tryRestore(
       role: role,
       onData: ({
@@ -3659,8 +3665,6 @@ class _ManageEventsState extends State<ManageEvents>
               ),
               Colors.blue,
             ),
-            const SizedBox(height: 8),
-            _buildCostBlock('Total Cost', formatPesos(totalCost), Colors.green),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -3711,6 +3715,10 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Widget _buildProcessingSeatingSection() {
+    final role = AuthSession.instance.currentRole;
+    if (role != Role.manager && role != Role.superAdmin) {
+      return const SizedBox.shrink();
+    }
     final o = _selectedProcessingOrderDto!;
     if (!_isCateringPlusEventOrder(o)) return const SizedBox.shrink();
     return ProcessingSeatingSection(
@@ -3824,6 +3832,24 @@ class _ManageEventsState extends State<ManageEvents>
         referenceNumber: referenceNumber,
         amount: amount,
       );
+
+      try {
+        final isDown = mode == PaymentConfirmationMode.downpayment;
+        final pdfData = buildOrderSummaryPdfData(
+          order: order,
+          isDownPayment: isDown,
+          amountDue: amount,
+        );
+        final bytes = await buildOrderSummaryPdfBytes(pdfData);
+        await EventsApi.instance.sendOrderSummaryEmail(
+          orderId: order.id,
+          pdfBase64: base64Encode(bytes),
+          paymentType: paymentType,
+        );
+      } catch (_) {
+        // Email is best-effort; payment already recorded.
+      }
+
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -4259,12 +4285,6 @@ class _ManageEventsState extends State<ManageEvents>
                   formatPesos(orderTotal / 2),
                   Colors.blue,
                 ),
-                const SizedBox(height: 8),
-                _buildCostBlock(
-                  'Total Cost',
-                  formatPesos(orderTotal),
-                  Colors.green,
-                ),
               ],
             ),
           ),
@@ -4334,6 +4354,22 @@ class _ManageEventsState extends State<ManageEvents>
                   ),
                 )
                 .toList();
+
+    final showInventoryPicker = _isManager && _isCateringPlusEventOrder(order);
+    final inventoryOptions = <Map<String, dynamic>>[];
+    if (showInventoryPicker) {
+      try {
+        final decoded = await ApiClient.instance.getJson('/api/inventory');
+        final items = decoded['items'];
+        if (items is List) {
+          for (final raw in items) {
+            if (raw is! Map) continue;
+            if (raw['archived'] == true) continue;
+            inventoryOptions.add(Map<String, dynamic>.from(raw));
+          }
+        }
+      } catch (_) {}
+    }
 
     await showDialog<void>(
       context: context,
@@ -4663,6 +4699,54 @@ class _ManageEventsState extends State<ManageEvents>
                           ),
                         ],
                       ),
+                      if (showInventoryPicker && inventoryOptions.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Add from inventory',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          hint: const Text('Select inventory item'),
+                          items:
+                              inventoryOptions
+                                  .map(
+                                    (row) => DropdownMenuItem<String>(
+                                      value: row['id']?.toString(),
+                                      child: Text(
+                                        '${row['name']} (${row['quantity']} ${row['unit']})',
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                          onChanged: (id) {
+                            if (id == null) return;
+                            final row = inventoryOptions.firstWhere(
+                              (r) => r['id']?.toString() == id,
+                            );
+                            final unitCost =
+                                row['unitCost'] is num
+                                    ? (row['unitCost'] as num).toDouble()
+                                    : double.tryParse('${row['unitCost']}') ??
+                                        0;
+                            dialogSetState(() {
+                              editableItems.add(
+                                ChecklistItem(
+                                  item: '${row['name']}',
+                                  description:
+                                      (row['category'] ?? 'Inventory')
+                                          .toString(),
+                                  quantity: 1,
+                                  cost: unitCost,
+                                  inventoryId: id,
+                                ),
+                              );
+                            });
+                          },
+                        ),
+                      ],
                       const SizedBox(height: 16),
                     ],
                     const Spacer(),
@@ -7337,17 +7421,21 @@ class _ManageEventsState extends State<ManageEvents>
                     ),
                     child: Row(
                       children: [
-                        _buildEventTabButton('New Event', 0),
-                        const SizedBox(width: 2),
-                        _buildEventTabButton('Online Inquiries', 1),
-                        const SizedBox(width: 2),
-                        _buildEventTabButton('For Downpayment', 2),
-                        const SizedBox(width: 2),
+                        if (!_isSupervisor) ...[
+                          _buildEventTabButton('New Event', 0),
+                          const SizedBox(width: 2),
+                          _buildEventTabButton('Online Inquiries', 1),
+                          const SizedBox(width: 2),
+                          _buildEventTabButton('For Downpayment', 2),
+                          const SizedBox(width: 2),
+                        ],
                         _buildEventTabButton('Ongoing', 3),
-                        const SizedBox(width: 2),
-                        _buildEventTabButton('For Full Payment', 4),
-                        const SizedBox(width: 2),
-                        _buildEventTabButton('Completed', 5),
+                        if (!_isSupervisor) ...[
+                          const SizedBox(width: 2),
+                          _buildEventTabButton('For Full Payment', 4),
+                          const SizedBox(width: 2),
+                          _buildEventTabButton('Completed', 5),
+                        ],
                       ],
                     ),
                   ),
@@ -7818,34 +7906,26 @@ class _ManageEventsState extends State<ManageEvents>
     try {
       if (!mounted) return;
 
-      // Save checklist to database
-      final response = await http.put(
-        Uri.parse(
-          '${ApiConfig.baseUrl}/api/events/orders/${order.id}/checklist',
-        ),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${AuthSession.instance.token}',
-        },
-        body: jsonEncode({
-          'checklist':
-              editableItems
-                  .map(
-                    (item) => {
-                      'item': item.item,
-                      'description': item.description,
-                      'quantity': item.quantity,
-                      'cost': item.cost,
-                      'isCompleted': item.isCompleted,
-                    },
-                  )
-                  .toList(),
-        }),
+      await EventsApi.instance.replaceChecklist(
+        orderId: order.id,
+        deductInventory: _isCateringPlusEventOrder(order),
+        items:
+            editableItems
+                .map(
+                  (item) => {
+                    'item': item.item,
+                    'title': item.item,
+                    'description': item.description,
+                    'quantity': item.quantity,
+                    'cost': item.cost,
+                    'price': item.cost,
+                    'isCompleted': item.isCompleted,
+                    if (item.inventoryId != null)
+                      'inventoryId': item.inventoryId,
+                  },
+                )
+                .toList(),
       );
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to save checklist: ${response.body}');
-      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

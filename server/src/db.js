@@ -1032,6 +1032,26 @@ export async function initDb() {
     console.log('Migration check for restaurant_orders items:', err.message);
   }
 
+  // Migration: order total (reports + POS; legacy tables may use other column names)
+  try {
+    const roCols = await getTableColumnNames('restaurant_orders');
+    if (!roCols.has('total_amount')) {
+      if (roCols.has('total')) {
+        await pool.query(
+          `ALTER TABLE restaurant_orders RENAME COLUMN total TO total_amount`,
+        );
+        console.log('Migration: renamed restaurant_orders.total → total_amount');
+      } else {
+        await pool.query(
+          `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS total_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00`,
+        );
+        console.log('Migration: added restaurant_orders.total_amount');
+      }
+    }
+  } catch (err) {
+    console.log('Migration check for restaurant_orders total_amount:', err.message);
+  }
+
   // Migration: Add points_earned column to catering_orders
   try {
     await pool.query(`ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS points_earned INTEGER DEFAULT 0`);

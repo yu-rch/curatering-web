@@ -1,60 +1,76 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:http/http.dart' as http;
 
-class ApiService {
-  static const String baseUrl = "curatering.up.railway.app";
+import 'runpod_service.dart';
 
+/// Event theme generation via the Curatering API RunPod proxy.
+class ApiService {
   static Future<Map<String, dynamic>?> generateTheme({
     required File imageFile,
     required String eventType,
     required String colorScheme,
     required String style,
     int guestCount = 50,
-    String customPrompt = "",
-    String negativePrompt = "blurry, distorted, unrealistic, poor quality",
+    String customPrompt = '',
+    String negativePrompt = 'blurry, distorted, unrealistic, poor quality',
     double strength = 0.5,
   }) async {
-    var uri = Uri.parse("$baseUrl/generate-theme");
+    try {
+      final bytes = await imageFile.readAsBytes();
+      final initB64 = base64Encode(bytes);
+      final prompt = StringBuffer()
+        ..write('$eventType event design')
+        ..write(', $colorScheme color scheme')
+        ..write(', $style style')
+        ..write(', for $guestCount guests');
+      if (customPrompt.trim().isNotEmpty) {
+        prompt.write('. $customPrompt');
+      }
+      prompt.write(
+        '. Decorate the venue in the reference photo, preserve layout, realistic lighting.',
+      );
 
-    var request = http.MultipartRequest("POST", uri);
+      final imageUrl = await RunPodService.generateImageWithPolling(
+        prompt.toString(),
+        initImageBase64: initB64,
+        strength: strength.clamp(0.15, 0.95),
+        numInferenceSteps: 20,
+        designMeta: {
+          'event_type': eventType,
+          'color_scheme': colorScheme,
+          'style': style,
+          'guest_count': guestCount,
+          if (negativePrompt.trim().isNotEmpty) 'negative_prompt': negativePrompt,
+        },
+      );
 
-    request.fields['event_type'] = eventType;
-    request.fields['color_scheme'] = colorScheme;
-    request.fields['style'] = style;
-    request.fields['guest_count'] = guestCount.toString();
-    request.fields['custom_prompt'] = customPrompt;
-    request.fields['negative_prompt'] = negativePrompt;
-    request.fields['strength'] = strength.toString();
-
-    request.files.add(
-      await http.MultipartFile.fromPath('image', imageFile.path),
-    );
-
-    var response = await request.send();
-
-    if (response.statusCode == 200) {
-      final respStr = await response.stream.bytesToString();
-      final data = jsonDecode(respStr);
-
-      return {'image': data['image'], 'success': data['success'] ?? true};
-    } else {
-      print("Error: ${response.statusCode}");
-      final respStr = await response.stream.bytesToString();
-      try {
-        final errorData = jsonDecode(respStr);
+      if (imageUrl == null || imageUrl.isEmpty) {
         return {
-          'image': null,
           'success': false,
-          'error': errorData['error'] ?? 'Unknown error',
-        };
-      } catch (e) {
-        return {
-          'image': null,
-          'success': false,
-          'error': 'Server error: ${response.statusCode}',
+          'error': 'RunPod did not return an image URL',
         };
       }
+
+      if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+        final res = await http.get(Uri.parse(imageUrl));
+        if (res.statusCode != 200) {
+          return {
+            'success': false,
+            'error': 'Failed to download generated image',
+          };
+        }
+        return {
+          'success': true,
+          'image': base64Encode(res.bodyBytes),
+          'imageUrl': imageUrl,
+        };
+      }
+
+      return {'success': true, 'image': imageUrl};
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
     }
   }
 }

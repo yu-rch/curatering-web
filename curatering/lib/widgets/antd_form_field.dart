@@ -89,6 +89,7 @@ class AntdOutlineInput extends StatelessWidget {
     this.inputFormatters,
     this.maxLength,
     this.onChanged,
+    this.readOnly = false,
     this.decoration = const InputDecoration(border: InputBorder.none, isDense: true),
   });
 
@@ -99,6 +100,7 @@ class AntdOutlineInput extends StatelessWidget {
   final List<TextInputFormatter>? inputFormatters;
   final int? maxLength;
   final ValueChanged<String>? onChanged;
+  final bool readOnly;
   final InputDecoration decoration;
 
   @override
@@ -109,6 +111,7 @@ class AntdOutlineInput extends StatelessWidget {
       maxLines: maxLines,
       maxLength: maxLength,
       inputFormatters: inputFormatters,
+      readOnly: readOnly,
       onChanged: onChanged,
       style: const TextStyle(fontSize: 14, color: Color(0xFF262626)),
       decoration: decoration.copyWith(

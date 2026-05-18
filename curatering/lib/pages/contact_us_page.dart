@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/website_content_store.dart';
 import '../widgets/centered_viewport_scroll.dart';
+import '../widgets/website_rich_text.dart';
 import '../widgets/contact_address_map.dart';
 import '../widgets/customer_website_topbar.dart';
 
@@ -168,8 +169,8 @@ class _ContactUsPageState extends State<ContactUsPage> {
               ),
             ),
             const SizedBox(height: 16),
-            Text(
-              'We\'d love to hear from you. Send us a message and we\'ll respond as soon as possible.',
+            WebsiteRichText(
+              value: w.contactPageIntro,
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey.shade600,

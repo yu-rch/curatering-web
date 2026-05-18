@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/allergen_presets_store.dart';
+import 'antd_tokens.dart';
 
 /// Common allergens (top list) plus "Other" with free text — serialized as comma-separated [AllergenSelectorField.value].
 class AllergenSelectorField extends StatefulWidget {
@@ -117,36 +118,41 @@ class _AllergenSelectorFieldState extends State<AllergenSelectorField> {
 
   @override
   Widget build(BuildContext context) {
+    FilterChip chip(String label, bool selected, VoidCallback onTap) {
+      return FilterChip(
+        label: Text(label, style: const TextStyle(fontSize: 12)),
+        selected: selected,
+        showCheckmark: true,
+        selectedColor: AntdTokens.brandPrimary.withValues(alpha: 0.2),
+        checkmarkColor: AntdTokens.brandOnPrimary,
+        side: BorderSide(
+          color: selected ? AntdTokens.brandPrimary : AntdTokens.borderSubtle,
+        ),
+        labelStyle: TextStyle(
+          color: selected ? AntdTokens.brandOnPrimary : AntdTokens.valueDark,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+        ),
+        onSelected: (_) => onTap(),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Allergens',
-          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-        ),
-        const SizedBox(height: 8),
         Wrap(
-          spacing: 6,
-          runSpacing: 6,
+          spacing: 8,
+          runSpacing: 8,
           children: [
             ..._preset.map(
-              (a) => FilterChip(
-                label: Text(a, style: const TextStyle(fontSize: 11)),
-                selected: _selected.contains(a),
-                onSelected: (_) => _togglePreset(a),
-              ),
+              (a) => chip(a, _selected.contains(a), () => _togglePreset(a)),
             ),
-            FilterChip(
-              label: const Text('Other', style: TextStyle(fontSize: 11)),
-              selected: _otherSelected,
-              onSelected: (v) {
-                setState(() {
-                  _otherSelected = v;
-                  if (!v) _otherCtrl.clear();
-                  _emit();
-                });
-              },
-            ),
+            chip('Other', _otherSelected, () {
+              setState(() {
+                _otherSelected = !_otherSelected;
+                if (!_otherSelected) _otherCtrl.clear();
+                _emit();
+              });
+            }),
           ],
         ),
         if (_otherSelected) ...[
@@ -155,11 +161,21 @@ class _AllergenSelectorFieldState extends State<AllergenSelectorField> {
             controller: _otherCtrl,
             onChanged: (_) => _emit(),
             maxLines: 2,
-            decoration: const InputDecoration(
-              labelText: 'Other allergens',
+            decoration: InputDecoration(
               hintText: 'Describe any allergens not listed above',
-              border: OutlineInputBorder(),
               isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: const BorderSide(color: AntdTokens.borderSubtle),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: const BorderSide(color: AntdTokens.borderSubtle),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: const BorderSide(color: AntdTokens.blue, width: 2),
+              ),
             ),
           ),
         ],

@@ -324,7 +324,10 @@ class _InquirePageState extends State<InquirePage> {
       // Contract: `POST /api/online-inquiries` (see server/src/index.js)
       final payload = <String, dynamic>{
         'orderType': _serviceType == 'catering' ? 'catering' : 'catering_event',
-        'eventTitle': _eventTitle.text.trim(),
+        'eventTitle':
+            _serviceType == 'catering'
+                ? _customer.text.trim()
+                : _eventTitle.text.trim(),
         'eventType': _eventType,
         'formalityLevel': _formality,
         'customerName': _customer.text.trim(),
@@ -377,7 +380,9 @@ class _InquirePageState extends State<InquirePage> {
     });
     void err(String k, String m) => _fieldErrors[k] = m;
 
-    if (_eventTitle.text.trim().isEmpty) err('eventTitle', 'Please enter an event title');
+    if (_serviceType != 'catering' && _eventTitle.text.trim().isEmpty) {
+      err('eventTitle', 'Please enter an event title');
+    }
     if (_customer.text.trim().isEmpty) err('customer', 'Please enter your name');
     if (_contactPerson.text.trim().isEmpty) err('contactPerson', 'Please enter a contact person');
     if (_phone.text.trim().isEmpty) err('phone', 'Please enter a phone number');
@@ -681,17 +686,65 @@ class _InquirePageState extends State<InquirePage> {
         _inquiryEventTypes.contains(_eventType) ? _eventType : _inquiryEventTypes.first;
 
     return [
+      _inquirySectionTitle('Service Type'),
+      const SizedBox(height: 12),
+      Row(
+        children: [
+          Expanded(
+            child: RadioListTile<String>(
+              title: const Text('Catering Only', style: TextStyle(fontSize: 14)),
+              value: 'catering',
+              groupValue: _serviceType,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() {
+                    _serviceType = value;
+                    _formPhase = 0;
+                    _eventDesignMode = null;
+                    _fieldErrors.remove('eventTitle');
+                  });
+                }
+              },
+              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+            ),
+          ),
+          Expanded(
+            child: RadioListTile<String>(
+              title: const Text(
+                'Catering + Event Design',
+                style: TextStyle(fontSize: 14),
+              ),
+              value: 'catering+event',
+              groupValue: _serviceType,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() {
+                    _serviceType = value;
+                    _selectedEventType = _mapInquiryEventTypeToDesign(_eventType);
+                  });
+                }
+              },
+              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 32),
       _inquirySectionTitle('Event Information'),
       const SizedBox(height: 16),
       _responsiveTwoCol(
         context,
         AntdFieldShell(
           label: 'Event Title',
-          required: true,
+          required: _serviceType != 'catering',
           errorText: _fieldErrors['eventTitle'],
           child: AntdOutlineInput(
             controller: _eventTitle,
-            hintText: 'Enter event title',
+            hintText:
+                _serviceType == 'catering'
+                    ? 'Not required for catering only'
+                    : 'Enter event title',
+            readOnly: _serviceType == 'catering',
             onChanged: (_) => onFieldChanged('eventTitle'),
           ),
         ),
@@ -920,49 +973,6 @@ class _InquirePageState extends State<InquirePage> {
           ),
         ),
       ),
-      const SizedBox(height: 32),
-      _inquirySectionTitle('Service Type'),
-      const SizedBox(height: 12),
-      Row(
-        children: [
-          Expanded(
-            child: RadioListTile<String>(
-              title: const Text('Catering Only', style: TextStyle(fontSize: 14)),
-              value: 'catering',
-              groupValue: _serviceType,
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() {
-                    _serviceType = value;
-                    _formPhase = 0;
-                    _eventDesignMode = null;
-                  });
-                }
-              },
-              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-            ),
-          ),
-          Expanded(
-            child: RadioListTile<String>(
-              title: const Text(
-                'Catering + Event Design',
-                style: TextStyle(fontSize: 14),
-              ),
-              value: 'catering+event',
-              groupValue: _serviceType,
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() {
-                    _serviceType = value;
-                    _selectedEventType = _mapInquiryEventTypeToDesign(_eventType);
-                  });
-                }
-              },
-              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-            ),
-          ),
-        ],
-      ),
       if (_serviceType == 'catering') ...[
         Builder(
           builder: (context) {
@@ -1127,9 +1137,12 @@ class _InquirePageState extends State<InquirePage> {
         },
       ),
       const SizedBox(height: 16),
-      AllergenSelectorField(
-        initialSerialized: _allergensSerialized,
-        onChanged: (s) => _allergensSerialized = s,
+      AntdFieldShell(
+        label: 'Allergens',
+        child: AllergenSelectorField(
+          initialSerialized: _allergensSerialized,
+          onChanged: (s) => _allergensSerialized = s,
+        ),
       ),
       const SizedBox(height: 24),
       ..._buildPhase0Footer(),
@@ -2226,7 +2239,16 @@ class _InquirePageState extends State<InquirePage> {
     }
   }
 
-  void _generateDesignPrompt() async {
+  String _normalizeVenueB64ForRunpod(String raw) {
+    var s = raw.trim();
+    if (s.startsWith('data:')) {
+      final comma = s.indexOf(',');
+      s = comma >= 0 ? s.substring(comma + 1) : s;
+    }
+    return s.replaceAll(RegExp(r'\s+'), '');
+  }
+
+  Future<void> _generateDesignPrompt() async {
     if (_selectedEventType == null &&
         _selectedStyle == null &&
         _selectedMood == null &&
@@ -2240,8 +2262,8 @@ class _InquirePageState extends State<InquirePage> {
       return;
     }
 
-    final venueB64 = _venuePhotoBase64?.trim();
-    if (venueB64 == null || venueB64.isEmpty) {
+    final venueRaw = _venuePhotoBase64?.trim();
+    if (venueRaw == null || venueRaw.isEmpty) {
       setState(
         () => _genAiError =
             'Upload a venue photo first — the AI uses it as the base image for your design.',
@@ -2260,6 +2282,7 @@ class _InquirePageState extends State<InquirePage> {
 
     try {
       final prompt = _composeEventDesignPrompt();
+      final venueB64 = _normalizeVenueB64ForRunpod(venueRaw);
       if (kDebugMode) {
         debugPrint(
           'RunPod: sending init_image_base64 (${venueB64.length} chars)',

@@ -125,6 +125,36 @@ class EventsApi {
     );
   }
 
+  Future<void> replaceChecklist({
+    required String orderId,
+    required List<Map<String, dynamic>> items,
+    bool deductInventory = false,
+  }) async {
+    final encoded = Uri.encodeComponent(orderId);
+    await ApiClient.instance.putJson(
+      '/api/events/orders/$encoded/checklist',
+      body: {
+        'checklist': items,
+        if (deductInventory) 'deductInventory': true,
+      },
+    );
+  }
+
+  Future<void> sendOrderSummaryEmail({
+    required String orderId,
+    required String pdfBase64,
+    required String paymentType,
+  }) async {
+    final encoded = Uri.encodeComponent(orderId);
+    await ApiClient.instance.postJson(
+      '/api/events/orders/$encoded/send-order-summary',
+      body: {
+        'pdfBase64': pdfBase64,
+        'paymentType': paymentType,
+      },
+    );
+  }
+
   // Checklist CRUD operations
   Future<void> addChecklistItem({
     required String orderId,

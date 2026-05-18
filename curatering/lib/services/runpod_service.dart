@@ -4,6 +4,9 @@ import 'package:http/http.dart' as http;
 
 import '../config.dart';
 
+const Duration _runPostTimeout = Duration(seconds: 120);
+const Duration _pollGetTimeout = Duration(seconds: 45);
+
 /// Calls the Curatering API RunPod proxy ([`/api/public/runpod/run`], status).
 /// `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` live only on the server (e.g. Railway).
 class RunPodService {
@@ -26,28 +29,70 @@ class RunPodService {
   static Uri _statusUri(String jobId) =>
       Uri.parse('$_proxyBase/api/public/runpod/status/${Uri.encodeComponent(jobId)}');
 
+  static String _normalizeB64(String raw) {
+    var s = raw.trim();
+    if (s.startsWith('data:')) {
+      final comma = s.indexOf(',');
+      s = comma >= 0 ? s.substring(comma + 1) : s;
+    }
+    return s.replaceAll(RegExp(r'\s+'), '');
+  }
+
+  static String? _normalizeStatus(dynamic status) {
+    if (status == null) return null;
+    return status.toString().trim().toUpperCase();
+  }
+
+  static bool _statusIsQueued(String? status) {
+    if (status == null) return false;
+    return status == 'IN_QUEUE' ||
+        status == 'IN_PROGRESS' ||
+        status == 'QUEUED' ||
+        status == 'RUNNING';
+  }
+
+  static bool _statusIsCompleted(String? status) => status == 'COMPLETED';
+
+  static bool _statusIsFailed(String? status) =>
+      status == 'FAILED' || status == 'CANCELLED';
+
+  static String? _extractJobId(Map<String, dynamic> data) {
+    final direct = data['id']?.toString();
+    if (direct != null && direct.isNotEmpty) return direct;
+    final alt = data['jobId']?.toString();
+    if (alt != null && alt.isNotEmpty) return alt;
+    final job = data['job'];
+    if (job is Map) {
+      final nested = job['id']?.toString();
+      if (nested != null && nested.isNotEmpty) return nested;
+    }
+    return null;
+  }
+
   static Future<String?> generateImage(String prompt) async {
     try {
       _ensureBase();
-      final response = await http.post(
-        _runUri(),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'input': {'prompt': prompt},
-        }),
-      );
+      final response = await http
+          .post(
+            _runUri(),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'input': {'prompt': prompt},
+            }),
+          )
+          .timeout(_runPostTimeout);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final status = _normalizeStatus(data['status']);
 
-        if (data['status'] == 'COMPLETED') {
+        if (_statusIsCompleted(status)) {
           final out = data['output'];
           if (out is Map<String, dynamic>) {
             return out['image'] as String?;
           }
           return null;
-        } else if (data['status'] == 'IN_PROGRESS' ||
-            data['status'] == 'IN_QUEUE') {
+        } else if (_statusIsQueued(status)) {
           return null;
         } else {
           throw Exception(
@@ -66,10 +111,18 @@ class RunPodService {
     String msg = response.reasonPhrase ?? 'Request failed';
     try {
       final j = jsonDecode(response.body);
-      if (j is Map && j['message'] != null) {
-        msg = '${j['message']}';
+      if (j is Map) {
+        if (j['code'] == 'runpod_not_configured') {
+          throw Exception(
+            'AI generation is not configured on the server. Set RUNPOD_API_KEY and RUNPOD_ENDPOINT_ID on Railway.',
+          );
+        }
+        if (j['message'] != null) {
+          msg = '${j['message']}';
+        }
       }
-    } catch (_) {
+    } catch (e) {
+      if (e is Exception) throw e;
       if (response.body.isNotEmpty) {
         msg = response.body.length > 500
             ? '${response.body.substring(0, 500)}…'
@@ -115,19 +168,22 @@ class RunPodService {
       // Must be set after designMeta so venue image is never overwritten.
       final init = initImageBase64?.trim();
       if (init != null && init.isNotEmpty) {
-        input['init_image_base64'] = init;
+        input['init_image_base64'] = _normalizeB64(init);
         input['strength'] = strength;
       }
-      final response = await http.post(
-        _runUri(),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'input': input}),
-      );
+      final response = await http
+          .post(
+            _runUri(),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'input': input}),
+          )
+          .timeout(_runPostTimeout);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final status = _normalizeStatus(data['status']);
 
-        if (data['status'] == 'COMPLETED') {
+        if (_statusIsCompleted(status)) {
           final out = data['output'] is Map<String, dynamic>
               ? data['output'] as Map<String, dynamic>
               : null;
@@ -139,16 +195,17 @@ class RunPodService {
             );
           }
           return null;
-        } else if (data['status'] == 'IN_PROGRESS' ||
-            data['status'] == 'IN_QUEUE') {
-          final jobId = data['id']?.toString();
+        } else if (_statusIsQueued(status)) {
+          final jobId = _extractJobId(data);
           if (jobId == null || jobId.isEmpty) {
             throw Exception('RunPod response missing job id');
           }
           return await _pollForCompletion(jobId);
+        } else if (_statusIsFailed(status)) {
+          throw Exception(_formatRunpodFailure(data));
         } else {
           throw Exception(
-            'Generation failed: ${data['error'] ?? 'Unknown error'}',
+            'Generation failed: ${data['error'] ?? data['message'] ?? 'Unknown error'}',
           );
         }
       } else {
@@ -183,12 +240,15 @@ class RunPodService {
       attempts++;
 
       try {
-        final response = await http.get(_statusUri(jobId));
+        final response = await http
+            .get(_statusUri(jobId))
+            .timeout(_pollGetTimeout);
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
+          final status = _normalizeStatus(data['status']);
 
-          if (data['status'] == 'COMPLETED') {
+          if (_statusIsCompleted(status)) {
             final out = data['output'] is Map<String, dynamic>
                 ? data['output'] as Map<String, dynamic>
                 : null;
@@ -201,7 +261,7 @@ class RunPodService {
             }
             return null;
           }
-          if (data['status'] == 'FAILED') {
+          if (_statusIsFailed(status)) {
             throw Exception(_formatRunpodFailure(data));
           }
         }

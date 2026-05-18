@@ -521,6 +521,17 @@ class _ContactEditorTab extends StatelessWidget {
                 style: TextStyle(color: AntdTokens.labelMuted),
               ),
               const SizedBox(height: 20),
+              _richTextField(
+                context: context,
+                label: 'Contact page intro',
+                value: w.contactPageIntro,
+                onChanged: (v) {
+                  w.contactPageIntro = v;
+                  onChanged();
+                  w.touch();
+                },
+              ),
+              const SizedBox(height: 12),
               _textField(
                 label: 'Facebook / social label',
                 value: w.contactFacebook,

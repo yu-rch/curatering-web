@@ -170,6 +170,11 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
 
   bool _isEditableInquiryStatus(String? status) => status == 'online_inquiries';
 
+  bool _canEditVenueAndGuests(String? status) =>
+      status == 'online_inquiries' ||
+      status == 'for_processing' ||
+      status == 'for_post_analysis';
+
   Color _getStatusColor(String? status) {
     switch (status) {
       case 'online_inquiries':
@@ -471,8 +476,9 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     required String orderId,
     required int guestCount,
     required String address,
-    required List<Map<String, dynamic>> scheduleSlots,
-    required List<Map<String, dynamic>> menu,
+    List<Map<String, dynamic>>? scheduleSlots,
+    List<Map<String, dynamic>>? menu,
+    bool venueOnly = false,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('customer_token');
@@ -487,8 +493,11 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       body: jsonEncode({
         'guestCount': guestCount,
         'address': address,
-        'scheduleSlots': scheduleSlots,
-        'menu': menu,
+        if (venueOnly) 'venueOnly': true,
+        if (!venueOnly) ...{
+          'scheduleSlots': scheduleSlots,
+          'menu': menu,
+        },
       }),
     );
 
@@ -515,13 +524,94 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
 
   Future<void> _showEditCateringDialog(Map<String, dynamic> catering) async {
     final status = (catering['status'] ?? '').toString();
-    if (!_isEditableInquiryStatus(status)) {
+    if (!_canEditVenueAndGuests(status)) {
       if (mounted) {
         showAppSnackBar(
           context,
-          'This catering is no longer editable because it is already finalized for processing.',
+          'This order can no longer be edited.',
         );
       }
+      return;
+    }
+
+    final venueGuestsOnly = !_isEditableInquiryStatus(status);
+
+    if (venueGuestsOnly) {
+      final guestCtrl = TextEditingController(
+        text: '${catering['guest_count'] ?? catering['guestCount'] ?? ''}',
+      );
+      final venueCtrl = TextEditingController(
+        text: (catering['address'] ?? '').toString(),
+      );
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) {
+          return AlertDialog(
+            title: const Text('Update venue & guests'),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: guestCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Number of guests',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: venueCtrl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Event venue / address',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final guestCount = int.tryParse(guestCtrl.text.trim()) ?? 0;
+                  final venue = venueCtrl.text.trim();
+                  if (guestCount <= 0 || venue.isEmpty) return;
+                  try {
+                    await _editInquiry(
+                      orderId: catering['id'].toString(),
+                      guestCount: guestCount,
+                      address: venue,
+                      venueOnly: true,
+                    );
+                    if (!mounted) return;
+                    Navigator.of(ctx).pop();
+                    await _loadCaterings(force: true);
+                    if (!mounted) return;
+                    showAppSnackBar(
+                      context,
+                      'Event details updated.',
+                      icon: Icons.check_circle_outline,
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    showAppSnackBar(context, 'Update failed: $e', error: true);
+                  }
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
+      );
+      guestCtrl.dispose();
+      venueCtrl.dispose();
       return;
     }
 
@@ -1028,13 +1118,14 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
         return StatefulBuilder(
           builder: (context, setSt) {
             return AlertDialog(
-              title: const Text('Edit seating layout'),
+              title: const Text('Edit seat labels'),
               content: SizedBox(
                 width: 760,
                 child: SingleChildScrollView(
                   child: SeatingPlanInteractive(
                     plan: plan,
                     editable: true,
+                    layoutEditable: false,
                     onChanged: (p) => setSt(() => plan = p),
                   ),
                 ),

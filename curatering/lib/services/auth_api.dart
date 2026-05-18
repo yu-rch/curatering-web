@@ -66,7 +66,8 @@ class AuthApi {
     return UserProfile(
       id: userMap['id'].toString(),
       email: userMap['email'] as String,
-      fullName: userMap['full_name'] as String,
+      fullName:
+          (userMap['fullName'] ?? userMap['full_name'] ?? '') as String,
       role: roleFromString(userMap['role'] as String),
       isVerified: (userMap['isVerified'] ?? userMap['is_verified'] ?? false) as bool,
       pagePermissions: permRaw is Map<String, dynamic>

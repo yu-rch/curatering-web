@@ -11,7 +11,7 @@ export function isEmailConfigured() {
  * Send via Resend REST API (HTTPS). Avoids SMTP — Railway often blocks or times out on smtp.resend.com:465.
  * @param {{ to: string | string[]; subject: string; text?: string; html?: string }} opts
  */
-export async function sendEmail({ to, subject, text, html }) {
+export async function sendEmail({ to, subject, text, html, attachments }) {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = process.env.RESEND_FROM?.trim();
   if (!apiKey) throw new Error("RESEND_API_KEY is not set");
@@ -22,6 +22,12 @@ export async function sendEmail({ to, subject, text, html }) {
   if (html) body.html = html;
   if (text) body.text = text;
   if (!html && !text) body.text = "";
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    body.attachments = attachments.map((a) => ({
+      filename: a.filename || "attachment.pdf",
+      content: a.content,
+    }));
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);

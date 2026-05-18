@@ -1,8 +1,11 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/site_open_tab_stub.dart'
+    if (dart.library.html) '../config/site_open_tab_web.dart';
 import '../config/site_routes.dart';
 import '../pages/checkout_page.dart';
 import '../pages/customer_login.dart';
@@ -343,11 +346,35 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
     );
   }
 
-  void _go(BuildContext context, String route) {
+  void _go(BuildContext context, String route, {bool newTab = false}) {
     final target = customerRoute(route);
+    if (newTab && kIsWeb) {
+      openAppRouteInNewTab(customerSiteOrigin, route);
+      return;
+    }
     if (_currentRoute(context) != target) {
       Navigator.pushReplacementNamed(context, target);
     }
+  }
+
+  Widget _navLink(
+    BuildContext context, {
+    required String label,
+    required String route,
+    required bool active,
+  }) {
+    return GestureDetector(
+      onSecondaryTap: kIsWeb ? () => _go(context, route, newTab: true) : null,
+      onTap: () => _go(context, route),
+      child: Listener(
+        onPointerDown: (e) {
+          if (kIsWeb && e.buttons == 4) {
+            _go(context, route, newTab: true);
+          }
+        },
+        child: _navLabel(label, active: active),
+      ),
+    );
   }
 
   @override
@@ -378,47 +405,41 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                   runSpacing: 4,
                   alignment: WrapAlignment.center,
                   children: [
-                    InkWell(
-                      onTap: () => _goHome(context),
-                      child: _navLabel(
-                        'Home',
-                        active: route == customerRoute('/'),
-                      ),
+                    _navLink(
+                      context,
+                      label: 'Home',
+                      route: '/',
+                      active: route == customerRoute('/'),
                     ),
-                    InkWell(
-                      onTap: () => _go(context, '/gallery'),
-                      child: _navLabel(
-                        'Gallery',
-                        active: route == customerRoute('/gallery'),
-                      ),
+                    _navLink(
+                      context,
+                      label: 'Gallery',
+                      route: '/gallery',
+                      active: route == customerRoute('/gallery'),
                     ),
-                    InkWell(
-                      onTap: () => _go(context, '/catering-menu'),
-                      child: _navLabel(
-                        'Catering Menu',
-                        active: route == customerRoute('/catering-menu'),
-                      ),
+                    _navLink(
+                      context,
+                      label: 'Catering Menu',
+                      route: '/catering-menu',
+                      active: route == customerRoute('/catering-menu'),
                     ),
-                    InkWell(
-                      onTap: () => _go(context, '/restaurant'),
-                      child: _navLabel(
-                        'Restaurant',
-                        active: route == customerRoute('/restaurant'),
-                      ),
+                    _navLink(
+                      context,
+                      label: 'Restaurant',
+                      route: '/restaurant',
+                      active: route == customerRoute('/restaurant'),
                     ),
-                    InkWell(
-                      onTap: () => _go(context, '/inquire'),
-                      child: _navLabel(
-                        'Inquire Now',
-                        active: route == customerRoute('/inquire'),
-                      ),
+                    _navLink(
+                      context,
+                      label: 'Inquire Now',
+                      route: '/inquire',
+                      active: route == customerRoute('/inquire'),
                     ),
-                    InkWell(
-                      onTap: () => _go(context, '/contact-us'),
-                      child: _navLabel(
-                        'Contact Us',
-                        active: route == customerRoute('/contact-us'),
-                      ),
+                    _navLink(
+                      context,
+                      label: 'Contact Us',
+                      route: '/contact-us',
+                      active: route == customerRoute('/contact-us'),
                     ),
                   ],
                 ),

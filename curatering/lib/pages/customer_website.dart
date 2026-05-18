@@ -18,6 +18,7 @@ import '../models/menu_dish.dart';
 import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
 import '../services/public_events_api.dart';
+import '../services/customer_design_board_store.dart';
 import '../services/website_content_store.dart';
 import '../services/cart_store.dart';
 import '../services/loyalty_rewards_store.dart';
@@ -1134,14 +1135,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Widget _footer(WebsiteContentStore w) {
     return Container(
       color: const Color(0xFFFFC107),
-      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 24),
-      child: Wrap(
-        spacing: 32,
-        runSpacing: 16,
-        crossAxisAlignment: WrapCrossAlignment.start,
-        children: [
-          SizedBox(
-            width: 220,
+      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth > 900;
+          final cols = [
+            SizedBox(
+            width: wide ? null : 220,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1188,7 +1188,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               TextButton(
                 onPressed: () => setState(() => _navIndex = 2),
                 child: const Text(
-                  'CATERING MENU',
+                  'MENU',
                   style: TextStyle(color: Colors.black),
                 ),
               ),
@@ -1235,7 +1235,31 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               _footerRow(Icons.email, w.contactEmail),
             ],
           ),
-        ],
+          ];
+          if (wide) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < cols.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 28),
+                  Expanded(child: cols[i]),
+                ],
+                const SizedBox(width: 16),
+                Image.asset(
+                  'lib/assets/main-2.png',
+                  height: 72,
+                  fit: BoxFit.contain,
+                ),
+              ],
+            );
+          }
+          return Wrap(
+            spacing: 24,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.start,
+            children: cols,
+          );
+        },
       ),
     );
   }
@@ -1372,583 +1396,585 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
-  Widget _buildHome(WebsiteContentStore w) {
-    return ListenableBuilder(
-      listenable: w,
-      builder: (context, _) {
-        return SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Stack(
-                children: [
-                  SizedBox(
-                    height: 360,
-                    width: double.infinity,
-                    child:
-                        w.homeHeroImageBase64.isEmpty
-                            ? Container(
-                              color: Colors.grey.shade700,
-                              alignment: Alignment.center,
-                              child: Text(
-                                'Macrina\'s Kitchen and Catering',
-                                style: GoogleFonts.playfairDisplay(
-                                  fontSize: 28,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            )
-                            : _b64Image(
-                              w.homeHeroImageBase64,
-                              height: 360,
-                              alignment: _imageAlignmentFor(
-                                w,
-                                w.homeHeroImageBase64,
-                              ),
-                            ),
-                  ),
-                  Positioned.fill(
-                    child: Container(
-                      color: Colors.black.withValues(alpha: 0.35),
-                    ),
-                  ),
-                  Positioned.fill(
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 26,
-                          vertical: 18,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.25),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.6),
-                          ),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'MACRINA\'S',
-                              style: GoogleFonts.playfairDisplay(
-                                fontSize: isMobile(context) ? 34 : 54,
-                                color: Colors.white,
-                                letterSpacing: 1.6,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'KITCHEN AND CATERING',
-                              style: GoogleFonts.cormorantGaramond(
-                                fontSize: isMobile(context) ? 16 : 24,
-                                color: const Color(0xFFFFC024),
-                                letterSpacing: 2.4,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
+  Widget _homeSectionTag(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      color: const Color(0xFFFFC024),
+      child: Text(
+        label,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+      ),
+    );
+  }
+
+  Widget _buildHomeHero(WebsiteContentStore w) {
+    return Stack(
+      children: [
+        SizedBox(
+          height: isMobile(context) ? 280 : 380,
+          width: double.infinity,
+          child:
+              w.homeHeroImageBase64.isEmpty
+                  ? Container(
+                    color: Colors.grey.shade700,
+                    alignment: Alignment.center,
+                    child: Text(
+                      'Macrina\'s Kitchen and Catering',
+                      style: GoogleFonts.playfairDisplay(
+                        fontSize: 28,
+                        color: Colors.white,
                       ),
                     ),
+                  )
+                  : _b64Image(
+                    w.homeHeroImageBase64,
+                    height: isMobile(context) ? 280 : 380,
+                    alignment: _imageAlignmentFor(w, w.homeHeroImageBase64),
+                  ),
+        ),
+        Positioned.fill(
+          child: Container(color: Colors.black.withValues(alpha: 0.35)),
+        ),
+        Positioned.fill(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'MACRINA\'S',
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: isMobile(context) ? 36 : 58,
+                    color: Colors.white,
+                    letterSpacing: 1.6,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: 'KITCHEN AND ',
+                        style: GoogleFonts.cormorantGaramond(
+                          fontSize: isMobile(context) ? 18 : 26,
+                          color: const Color(0xFFFFC024),
+                          letterSpacing: 2.2,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      TextSpan(
+                        text: 'CATERING',
+                        style: GoogleFonts.cormorantGaramond(
+                          fontSize: isMobile(context) ? 18 : 26,
+                          color: const Color(0xFFE53935),
+                          letterSpacing: 2.2,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        _editChip(() async {
+          final b64 = await _pickImageB64();
+          if (b64 == null) return;
+          w.homeHeroImageBase64 = b64;
+          await w.save();
+          setState(() {});
+        }),
+        if (widget.contentEditable && w.homeHeroImageBase64.isNotEmpty)
+          Positioned(
+            right: 8,
+            bottom: 8,
+            child: FilledButton.tonalIcon(
+              onPressed:
+                  () => _editImagePosition(w: w, b64: w.homeHeroImageBase64),
+              icon: const Icon(Icons.open_with, size: 16),
+              label: const Text('Position'),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildHomeInlineNav() {
+    return Material(
+      color: const Color(0xFF1E1E1E),
+      child: SafeArea(
+        bottom: false,
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 2,
+                  runSpacing: 4,
+                  children: [
+                    _navLink('Home', 0),
+                    _navLink('Gallery', 1),
+                    _navLink('Catering Menu', 2),
+                    _navLink('Restaurant', 3),
+                    _navLink('Inquire Now', 4),
+                    _navLink('Contact Us', 5),
+                  ],
+                ),
+              ),
+              if (!widget.contentEditable) ...[
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.shopping_cart, color: Colors.white),
+                      onPressed: _openCartSidebar,
+                    ),
+                    if (CartStore.instance.itemCount > 0)
+                      Positioned(
+                        right: 6,
+                        top: 6,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 16,
+                          ),
+                          child: Text(
+                            '${CartStore.instance.itemCount}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                if (_isCustomerLoggedIn)
+                  AntdProfileMenu(
+                    triggerLabel: _customerData?['fullName'] ?? 'Account',
+                    leading: const Icon(
+                      Icons.person_outline,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                    items: [
+                      AntdProfileMenuItem.action(
+                        id: 'my_profile',
+                        icon: Icons.person_outline,
+                        label: 'My Profile',
+                        onSelected: _navigateToMyProfile,
+                      ),
+                      AntdProfileMenuItem.action(
+                        id: 'logout',
+                        icon: Icons.logout,
+                        label: 'Logout',
+                        destructive: true,
+                        dividerBefore: true,
+                        onSelected: _handleLogout,
+                      ),
+                    ],
+                  )
+                else
+                  TextButton(
+                    onPressed: _handleLogin,
+                    child: const Text(
+                      'Login',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRedBannerStrip(WebsiteContentStore w) {
+    return Container(
+      width: double.infinity,
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
+          child: Column(
+            children: [
+              WebsiteRichText(
+                value: w.redBannerText,
+                style: websiteHeaderStyle(
+                  fontSize: 22,
+                  color: Colors.red.shade700,
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              if (widget.contentEditable)
+                TextButton.icon(
+                  onPressed: () async {
+                    final value = await showWebsiteRichTextEditor(
+                      context: context,
+                      title: 'Edit red banner text',
+                      initialValue: w.redBannerText,
+                    );
+                    if (value == null || value.isEmpty) return;
+                    w.redBannerText = value;
+                    await w.save();
+                    setState(() {});
+                  },
+                  icon: const Icon(Icons.edit, size: 16),
+                  label: const Text('Edit banner'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveLatestEventToDesignBoard(WebsiteContentStore w) async {
+    if (w.latestEventCollageBase64.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No event photos to save yet.')),
+      );
+      return;
+    }
+    await CustomerDesignBoardStore.instance.addPhotos(
+      w.latestEventCollageBase64,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Saved to your design board.'),
+        backgroundColor: Color(0xFF1DB954),
+      ),
+    );
+  }
+
+  Widget _buildLatestEventSection(WebsiteContentStore w) {
+    return Stack(
+      children: [
+        Flex(
+          direction: isMobile(context) ? Axis.vertical : Axis.horizontal,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _homeSectionTag('LATEST EVENT'),
+                  const SizedBox(height: 12),
+                  WebsiteRichText(
+                    value: w.latestEventTitle,
+                    style: GoogleFonts.pacifico(
+                      fontSize: isMobile(context) ? 32 : 48,
+                      color: const Color(0xFFB0305A),
+                      height: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  WebsiteRichText(
+                    value: w.latestEventSubtitle,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      letterSpacing: 1.4,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F0F0),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: WebsiteRichText(
+                      value: w.latestEventBody,
+                      style: const TextStyle(fontSize: 14, height: 1.45),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              width: isMobile(context) ? 0 : 24,
+              height: isMobile(context) ? 20 : 0,
+            ),
+            Expanded(
+              flex: 5,
+              child: Stack(
+                children: [
+                  Column(
+                    children: [
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final totalW = constraints.maxWidth;
+                          final gap = 10.0;
+                          final halfW = (totalW - gap) / 2;
+                          final list = w.latestEventCollageBase64;
+                          String? at(int i) =>
+                              i < list.length ? list[i] : null;
+                          return Column(
+                            children: [
+                              Row(
+                                children: [
+                                  _collageTile(
+                                    at(0),
+                                    width: halfW,
+                                    height: 170,
+                                  ),
+                                  SizedBox(width: gap),
+                                  _collageTile(
+                                    at(1),
+                                    width: halfW,
+                                    height: 170,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  _collageTile(
+                                    at(2),
+                                    width: halfW,
+                                    height: 170,
+                                  ),
+                                  SizedBox(width: gap),
+                                  _collageTile(
+                                    at(3),
+                                    width: halfW,
+                                    height: 170,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      if (!widget.contentEditable)
+                        FilledButton(
+                          onPressed: () => _saveLatestEventToDesignBoard(w),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFFFC024),
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                          ),
+                          child: const Text(
+                            'save this to your design board',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                    ],
                   ),
                   _editChip(() async {
                     final b64 = await _pickImageB64();
                     if (b64 == null) return;
-                    w.homeHeroImageBase64 = b64;
+                    if (w.latestEventCollageBase64.length < 4) {
+                      w.latestEventCollageBase64.add(b64);
+                    } else {
+                      w.latestEventCollageBase64[
+                              w.latestEventCollageBase64.length - 1] =
+                          b64;
+                    }
                     await w.save();
                     setState(() {});
                   }),
-                  if (widget.contentEditable &&
-                      w.homeHeroImageBase64.isNotEmpty)
-                    Positioned(
-                      right: 8,
-                      bottom: 8,
-                      child: FilledButton.tonalIcon(
-                        onPressed:
-                            () => _editImagePosition(
-                              w: w,
-                              b64: w.homeHeroImageBase64,
-                            ),
-                        icon: const Icon(Icons.open_with, size: 16),
-                        label: const Text('Position'),
-                      ),
-                    ),
                 ],
               ),
-              Container(
-                color: const Color(0xFFF5F5F5),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 32,
-                ),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: websiteContentMaxWidth(context),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Text(
-                          'WELCOME',
-                          textAlign: TextAlign.center,
-                          style: websiteHeaderStyle(
-                            fontSize: 42,
-                            fontWeight: FontWeight.bold,
-                            color: const Color(0xFF1E1E1E),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFC024),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text(
-                            'Macrina\'s Kitchen and Catering',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1E1E1E),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 32),
-                        if (_isCustomerLoggedIn) ...[
-                          _buildOrderAgainStrip(),
-                          const SizedBox(height: 24),
-                        ],
-                        Card(
-                          elevation: 4,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Column(
-                              children: [
-                                WebsiteRichText(
-                                  value: w.redBannerText,
-                                  style: websiteHeaderStyle(
-                                    fontSize: 24,
-                                    color: Colors.red.shade700,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                if (widget.contentEditable)
-                                  TextButton.icon(
-                                    onPressed: () async {
-                                      final value =
-                                          await showWebsiteRichTextEditor(
-                                            context: context,
-                                            title: 'Edit red banner text',
-                                            initialValue: w.redBannerText,
-                                          );
-                                      if (value == null || value.isEmpty)
-                                        return;
-                                      w.redBannerText = value;
-                                      await w.save();
-                                      setState(() {});
-                                    },
-                                    icon: const Icon(Icons.edit, size: 16),
-                                    label: const Text('Edit banner text'),
-                                  ),
-                                const SizedBox(height: 18),
-                                Flex(
-                                  direction:
-                                      isMobile(context)
-                                          ? Axis.vertical
-                                          : Axis.horizontal,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      flex: 5,
-                                      child: Stack(
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.all(18),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white,
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              border: Border.all(
-                                                color: Colors.grey.shade300,
-                                              ),
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 12,
-                                                        vertical: 6,
-                                                      ),
-                                                  color: const Color(
-                                                    0xFFFFC024,
-                                                  ),
-                                                  child: const Text(
-                                                    'LATEST EVENT',
-                                                    style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 10),
-                                                WebsiteRichText(
-                                                  value: w.latestEventTitle,
-                                                  style:
-                                                      websiteHeaderStyle(
-                                                        fontSize: 42,
-                                                        color: const Color(
-                                                          0xFFB0305A,
-                                                        ),
-                                                      ),
-                                                ),
-                                                WebsiteRichText(
-                                                  value: w.latestEventSubtitle,
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                    letterSpacing: 1.2,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 14),
-                                                Container(
-                                                  padding: const EdgeInsets.all(
-                                                    12,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: const Color(
-                                                      0xFFF7F7F7,
-                                                    ),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
-                                                    border: Border.all(
-                                                      color:
-                                                          Colors.grey.shade300,
-                                                    ),
-                                                  ),
-                                                  child: WebsiteRichText(
-                                                    value: w.latestEventBody,
-                                                    style: const TextStyle(
-                                                      height: 1.35,
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 12),
-                                                Align(
-                                                  alignment: Alignment.center,
-                                                  child: FilledButton(
-                                                    style:
-                                                        FilledButton.styleFrom(
-                                                          backgroundColor:
-                                                              const Color(
-                                                                0xFFFFC024,
-                                                              ),
-                                                          foregroundColor:
-                                                              Colors.black,
-                                                          textStyle:
-                                                              const TextStyle(
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w700,
-                                                                letterSpacing:
-                                                                    0.4,
-                                                              ),
-                                                        ),
-                                                    onPressed:
-                                                        widget.contentEditable
-                                                            ? null
-                                                            : () => setState(
-                                                              () =>
-                                                                  _navIndex = 4,
-                                                            ),
-                                                    child: const Text(
-                                                      'INQUIRE NOW!',
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          _editChip(() async {
-                                            final nextTitle =
-                                                await showWebsiteRichTextEditor(
-                                                  context: context,
-                                                  title:
-                                                      'Edit latest event title',
-                                                  initialValue:
-                                                      w.latestEventTitle,
-                                                );
-                                            if (nextTitle == null) return;
-                                            final nextSubtitle =
-                                                await showWebsiteRichTextEditor(
-                                                  context: context,
-                                                  title:
-                                                      'Edit latest event subtitle',
-                                                  initialValue:
-                                                      w.latestEventSubtitle,
-                                                );
-                                            if (nextSubtitle == null) return;
-                                            final nextBody =
-                                                await showWebsiteRichTextEditor(
-                                                  context: context,
-                                                  title:
-                                                      'Edit latest event body',
-                                                  initialValue:
-                                                      w.latestEventBody,
-                                                );
-                                            if (nextBody == null) return;
-                                            w.latestEventTitle = nextTitle;
-                                            w.latestEventSubtitle =
-                                                nextSubtitle;
-                                            w.latestEventBody = nextBody;
-                                            await w.save();
-                                            setState(() {});
-                                          }),
-                                        ],
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      width: isMobile(context) ? 0 : 20,
-                                      height: isMobile(context) ? 16 : 0,
-                                    ),
-                                    Expanded(
-                                      flex: 5,
-                                      child: Stack(
-                                        children: [
-                                          LayoutBuilder(
-                                            builder: (context, constraints) {
-                                              final totalW =
-                                                  constraints.maxWidth;
-                                              final gap = 10.0;
-                                              final halfW = (totalW - gap) / 2;
-                                              final list =
-                                                  w.latestEventCollageBase64;
-                                              String? at(int i) =>
-                                                  i < list.length
-                                                      ? list[i]
-                                                      : null;
-                                              return Column(
-                                                children: [
-                                                  Row(
-                                                    children: [
-                                                      _collageTile(
-                                                        at(0),
-                                                        width: halfW,
-                                                        height: 170,
-                                                      ),
-                                                      SizedBox(width: gap),
-                                                      _collageTile(
-                                                        at(1),
-                                                        width: halfW,
-                                                        height: 170,
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(height: 10),
-                                                  Row(
-                                                    children: [
-                                                      _collageTile(
-                                                        at(2),
-                                                        width: halfW,
-                                                        height: 170,
-                                                      ),
-                                                      SizedBox(width: gap),
-                                                      _collageTile(
-                                                        at(3),
-                                                        width: halfW,
-                                                        height: 170,
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ],
-                                              );
-                                            },
-                                          ),
-                                          _editChip(() async {
-                                            final b64 = await _pickImageB64();
-                                            if (b64 == null) return;
-                                            if (w
-                                                    .latestEventCollageBase64
-                                                    .length <
-                                                4) {
-                                              w.latestEventCollageBase64.add(
-                                                b64,
-                                              );
-                                            } else {
-                                              w.latestEventCollageBase64[w
-                                                          .latestEventCollageBase64
-                                                          .length -
-                                                      1] =
-                                                  b64;
-                                            }
-                                            await w.save();
-                                            setState(() {});
-                                          }),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 32),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 32),
-                        _popularAndDesigns(w),
+            ),
+          ],
+        ),
+        _editChip(() async {
+          final nextTitle = await showWebsiteRichTextEditor(
+            context: context,
+            title: 'Edit latest event title',
+            initialValue: w.latestEventTitle,
+          );
+          if (nextTitle == null) return;
+          final nextSubtitle = await showWebsiteRichTextEditor(
+            context: context,
+            title: 'Edit latest event subtitle',
+            initialValue: w.latestEventSubtitle,
+          );
+          if (nextSubtitle == null) return;
+          final nextBody = await showWebsiteRichTextEditor(
+            context: context,
+            title: 'Edit latest event body',
+            initialValue: w.latestEventBody,
+          );
+          if (nextBody == null) return;
+          w.latestEventTitle = nextTitle;
+          w.latestEventSubtitle = nextSubtitle;
+          w.latestEventBody = nextBody;
+          await w.save();
+          setState(() {});
+        }),
+      ],
+    );
+  }
+
+  Widget _buildHome(WebsiteContentStore w) {
+    return ListenableBuilder(
+      listenable: w,
+      builder: (context, _) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildHomeHero(w),
+            _buildHomeInlineNav(),
+            _buildRedBannerStrip(w),
+            Container(
+              color: const Color(0xFFF5F5F5),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: websiteContentMaxWidth(context),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_isCustomerLoggedIn) ...[
+                        _buildOrderAgainStrip(),
+                        const SizedBox(height: 28),
                       ],
-                    ),
+                      _buildLatestEventSection(w),
+                      const SizedBox(height: 40),
+                      _popularAndDesigns(w),
+                    ],
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+            _buildRedBannerStrip(w),
+          ],
         );
       },
     );
   }
 
+  Widget _popularDishCarouselTile({
+    required String? imageB64,
+    required String label,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 10),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: SizedBox(
+          width: 200,
+          height: 200,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (imageB64 != null && imageB64.isNotEmpty)
+                _b64Image(imageB64, fit: BoxFit.cover)
+              else
+                Container(
+                  color: Colors.grey.shade300,
+                  child: const Icon(Icons.fastfood, size: 48),
+                ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  color: Colors.black.withValues(alpha: 0.45),
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _popularAndDesigns(WebsiteContentStore w) {
+    final cmsCount = w.popularDishImageBase64.length;
     final dishes = MenuStore.instance.activeDishes.take(5).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              color: const Color(0xFFFFC024),
-              child: const Text(
-                'POPULAR DISHES',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
+        _homeSectionTag('POPULAR DISHES'),
+        const SizedBox(height: 8),
         Text(
           'Our all-time most requested dishes!',
           style: websiteHeaderStyle(fontSize: 18),
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: 226,
+          height: 200,
           child: ListView(
             scrollDirection: Axis.horizontal,
             children:
-                dishes.map((d) {
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 10),
-                    child: SizedBox(
-                      width: 178,
-                      child: Column(
-                        children: [
-                          SizedBox(
-                            height: 120,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child:
-                                  d.imageBase64 != null &&
-                                          d.imageBase64!.isNotEmpty
-                                      ? _b64Image(
-                                        d.imageBase64,
-                                        fit: BoxFit.cover,
-                                      )
-                                      : Container(
-                                        color: Colors.grey.shade200,
-                                        child: const Icon(
-                                          Icons.fastfood,
-                                          size: 40,
-                                        ),
-                                      ),
-                            ),
+                cmsCount > 0
+                    ? List.generate(cmsCount, (i) {
+                      final label =
+                          i < w.popularDishLabels.length &&
+                                  w.popularDishLabels[i].trim().isNotEmpty
+                              ? w.popularDishLabels[i]
+                              : 'Dish ${i + 1}';
+                      return _popularDishCarouselTile(
+                        imageB64: w.popularDishImageBase64[i],
+                        label: label,
+                      );
+                    })
+                    : dishes
+                        .map(
+                          (d) => _popularDishCarouselTile(
+                            imageB64: d.imageBase64,
+                            label: d.name,
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            d.name.toUpperCase(),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '₱${d.price}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.amber.shade800,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          SizedBox(
-                            height: 28,
-                            child: ElevatedButton.icon(
-                              onPressed:
-                                  (widget.contentEditable || !d.available)
-                                      ? null
-                                      : () => _addToCart(d),
-                              icon: Icon(
-                                d.available ? Icons.add : Icons.block,
-                                size: 14,
-                              ),
-                              label: Text(
-                                d.available ? 'Add' : 'N/A',
-                                style: const TextStyle(fontSize: 10),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    d.available
-                                        ? const Color(0xFF1E1E1E)
-                                        : Colors.grey.shade500,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
+                        )
+                        .toList(),
           ),
         ),
         const SizedBox(height: 28),
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              color: const Color(0xFFFFC024),
-              child: const Text(
-                'EVENT DESIGNS',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
+        _homeSectionTag('EVENT DESIGNS'),
+        const SizedBox(height: 8),
         Text(
           'From decorations to dinnerware!',
           style: websiteHeaderStyle(fontSize: 18),
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: 140,
+          height: 160,
           child: ListView(
             scrollDirection: Axis.horizontal,
             children: List.generate(
@@ -1956,9 +1982,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               (i) => Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                   child: SizedBox(
-                    width: 180,
+                    width: 200,
                     child:
                         i < w.eventDesignImageBase64.length
                             ? _b64Image(
@@ -3361,8 +3387,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         ),
                       ),
 
-                    /// ✅ Sticky public header
-                    _publicHeader(),
+                    /// Nav below hero on homepage; sticky header on other tabs.
+                    if (_navIndex != 0) _publicHeader(),
                   ],
                 ),
               ),
@@ -5195,6 +5221,7 @@ class _InquireFormState extends State<_InquireForm> {
             _buildDropdown('EVENT TYPE', _eventType, [
               'Wedding',
               'Birthday',
+              'Anniversary',
               'Corporate',
               'Private Party',
               'Sports',

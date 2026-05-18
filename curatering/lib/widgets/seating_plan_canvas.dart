@@ -40,12 +40,15 @@ double perimeterTFromNormPoint(SeatingTableSpec t, double nx, double ny) {
 class SeatingPlanInteractive extends StatefulWidget {
   final SeatingPlanData plan;
   final bool editable;
+  /// When false, customers can only edit seat labels (no tables/floor changes).
+  final bool layoutEditable;
   final ValueChanged<SeatingPlanData>? onChanged;
 
   const SeatingPlanInteractive({
     super.key,
     required this.plan,
     this.editable = false,
+    this.layoutEditable = true,
     this.onChanged,
   });
 
@@ -54,6 +57,8 @@ class SeatingPlanInteractive extends StatefulWidget {
 }
 
 class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
+  bool get _layoutEditable => widget.editable && widget.layoutEditable;
+
   String? _selectedTableId;
   String? _selectedSeatId;
   final Map<String, TextEditingController> _labelCtrls = {};
@@ -544,7 +549,7 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.editable) ...[
+        if (_layoutEditable) ...[
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -641,7 +646,7 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (_selectedTableId != null)
+                  if (_selectedTableId != null && _layoutEditable)
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -801,7 +806,7 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                                   _selectedTableId = null;
                                 });
                               },
-                              onPanUpdate: widget.editable
+                              onPanUpdate: _layoutEditable
                                   ? (d) {
                                       final nx = ((s.xNorm ?? 0.5) * w + d.delta.dx) / w;
                                       final ny = ((s.yNorm ?? 0.5) * h + d.delta.dy) / h;
@@ -885,7 +890,7 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                                 _selectedTableId = s.tableId;
                               });
                             },
-                            onPanUpdate: widget.editable
+                            onPanUpdate: _layoutEditable
                                 ? (d) => _onPanSeat(s.id, d, tbl, w, h)
                                 : null,
                             child: Column(

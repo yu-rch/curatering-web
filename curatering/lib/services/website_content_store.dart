@@ -42,7 +42,8 @@ class WebsiteContentStore extends ChangeNotifier {
   String latestEventTitle = 'Maria Shiloh @ 1';
   String latestEventSubtitle = 'BY MACRINA\'S KITCHEN AND CATERING';
   String latestEventBody =
-      'Macrina\'s Kitchen and Catering has been servicing celebrations across Luzon for over two decades.';
+      '<p>Macrina\'s Kitchen and Catering has been around servicing different types of events from birthday to company celebrations for more than 2 decades!</p>'
+      '<p>Have an upcoming celebration? <strong>INQUIRE NOW!</strong> or checkout our event design works menu first.</p>';
   final List<String> latestEventCollageBase64 = <String>[];
 
   String redBannerText = '!!! WE CATER LUZON-WIDE !!!';
@@ -67,6 +68,8 @@ class WebsiteContentStore extends ChangeNotifier {
   String contactHours = '7:00 AM TO 10:00 PM';
   String contactPhone = '0917 138 7514';
   String contactEmail = 'MACRINA_CATERING@YAHOO.COM';
+  String contactPageIntro =
+      '<p>We\'d love to hear from you. Send us a message and we\'ll respond as soon as possible.</p>';
   String footerCopyright = 'COPYRIGHT © 2026 MACRINA\'S KITCHEN AND CATERING. POWERED BY CURATERING.';
 
   bool _loaded = false;
@@ -147,6 +150,7 @@ class WebsiteContentStore extends ChangeNotifier {
     contactHours = map['contactHours'] as String? ?? contactHours;
     contactPhone = map['contactPhone'] as String? ?? contactPhone;
     contactEmail = map['contactEmail'] as String? ?? contactEmail;
+    contactPageIntro = map['contactPageIntro'] as String? ?? contactPageIntro;
     footerCopyright = map['footerCopyright'] as String? ?? footerCopyright;
 
     void replaceList(String key, List<String> target) {
@@ -206,6 +210,7 @@ class WebsiteContentStore extends ChangeNotifier {
         'contactHours': contactHours,
         'contactPhone': contactPhone,
         'contactEmail': contactEmail,
+        'contactPageIntro': contactPageIntro,
         'footerCopyright': footerCopyright,
       };
 }

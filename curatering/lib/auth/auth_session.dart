@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+
+import '../services/auth_api.dart';
 import 'roles.dart';
 
 class UserProfile {
@@ -49,6 +51,40 @@ class AuthSession {
 
   void clearSession() {
     clear();
+  }
+
+  /// Reload profile + page permissions from the API (staff/supervisor/manager).
+  Future<void> refreshFromServer() async {
+    if (!hasToken) return;
+    final profile = await AuthApi.instance.me();
+    final existing = currentUser.value;
+    if (existing == null) {
+      currentUser.value = profile;
+      return;
+    }
+    currentUser.value = UserProfile(
+      id: profile.id,
+      email: profile.email,
+      fullName: profile.fullName,
+      role: profile.role,
+      isVerified: profile.isVerified,
+      pagePermissions: profile.pagePermissions,
+    );
+  }
+
+  void updatePagePermissions(Map<String, dynamic>? permissions) {
+    final u = currentUser.value;
+    if (u == null) return;
+    currentUser.value = UserProfile(
+      id: u.id,
+      email: u.email,
+      fullName: u.fullName,
+      role: u.role,
+      isVerified: u.isVerified,
+      pagePermissions: permissions == null
+          ? null
+          : Map<String, dynamic>.from(permissions),
+    );
   }
 
   Role? get currentRole => currentUser.value?.role;

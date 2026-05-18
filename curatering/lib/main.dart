@@ -27,6 +27,7 @@ import 'pages/catering_menu_page.dart';
 import 'auth/page_permissions.dart';
 import 'auth/role_guard.dart';
 import 'auth/roles.dart';
+import 'auth/staff_permission_refresh.dart';
 import 'widgets/page_permission_guard.dart';
 import 'pages/help_requests.dart';
 import 'pages/action_logs.dart';
@@ -117,18 +118,6 @@ Route<dynamic>? _buildRouteForPath(String path) {
           ),
           '/catering-menu',
         ),
-    kLegacyCustomerPathPrefix:
-        (context) => const LegacyPathRedirect(target: '/'),
-    '$kLegacyCustomerPathPrefix/gallery':
-        (context) => const LegacyPathRedirect(target: '/gallery'),
-    '$kLegacyCustomerPathPrefix/contact-us':
-        (context) => const LegacyPathRedirect(target: '/contact-us'),
-    '$kLegacyCustomerPathPrefix/inquire':
-        (context) => const LegacyPathRedirect(target: '/inquire'),
-    '$kLegacyCustomerPathPrefix/restaurant':
-        (context) => const LegacyPathRedirect(target: '/restaurant'),
-    '$kLegacyCustomerPathPrefix/catering-menu':
-        (context) => const LegacyPathRedirect(target: '/catering-menu'),
     '/dashboard':
         (context) => _staffPage(
           RoleGuard(
@@ -225,7 +214,7 @@ Route<dynamic>? _buildRouteForPath(String path) {
         (context) => _staffPage(
           RoleGuard(
             requiredRole: Role.manager,
-            allowedRoles: {Role.manager, Role.supervisor},
+            allowedRoles: {Role.manager, Role.supervisor, Role.cashier},
             child: PagePermissionGuard(
               route: PagePermissionRoutes.restaurantOrders,
               child: const AppScaffold(child: RestaurantTransactionsPage()),
@@ -338,6 +327,7 @@ class MyApp extends StatelessWidget {
       builder: (context, dark, _) {
         return MaterialApp(
           title: 'Curatering',
+          navigatorObservers: [StaffPermissionRefreshObserver.instance],
           theme: ThemeData(
             colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
             useMaterial3: true,
@@ -489,18 +479,6 @@ class MyApp extends StatelessWidget {
                   ),
                   '/catering-menu',
                 ),
-            kLegacyCustomerPathPrefix:
-                (context) => const LegacyPathRedirect(target: '/'),
-            '$kLegacyCustomerPathPrefix/gallery':
-                (context) => const LegacyPathRedirect(target: '/gallery'),
-            '$kLegacyCustomerPathPrefix/contact-us':
-                (context) => const LegacyPathRedirect(target: '/contact-us'),
-            '$kLegacyCustomerPathPrefix/inquire':
-                (context) => const LegacyPathRedirect(target: '/inquire'),
-            '$kLegacyCustomerPathPrefix/restaurant':
-                (context) => const LegacyPathRedirect(target: '/restaurant'),
-            '$kLegacyCustomerPathPrefix/catering-menu':
-                (context) => const LegacyPathRedirect(target: '/catering-menu'),
             '/dashboard':
                 (context) => _staffPage(
                   RoleGuard(
@@ -597,16 +575,16 @@ class MyApp extends StatelessWidget {
                 (context) => _staffPage(
                   RoleGuard(
                     requiredRole: Role.manager,
-                    allowedRoles: {Role.manager, Role.supervisor},
-                    child: PagePermissionGuard(
-                      route: PagePermissionRoutes.restaurantOrders,
-                      child: const AppScaffold(
-                        child: RestaurantTransactionsPage(),
-                      ),
-                    ),
-                  ),
-                  '/restaurant-orders',
-                ),
+            allowedRoles: {Role.manager, Role.supervisor, Role.cashier},
+            child: PagePermissionGuard(
+              route: PagePermissionRoutes.restaurantOrders,
+              child: const AppScaffold(
+                child: RestaurantTransactionsPage(),
+              ),
+            ),
+          ),
+          '/restaurant-orders',
+        ),
             '/reports':
                 (context) => _staffPage(
                   RoleGuard(

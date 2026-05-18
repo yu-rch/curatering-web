@@ -1,4 +1,5 @@
 import "dotenv/config";
+import crypto from "node:crypto";
 import dns from "node:dns";
 import express from "express";
 import cors from "cors";
@@ -1562,7 +1563,7 @@ async function sendPasswordChangedEmail(email, fullName) {
   });
 }
 
-async function sendCustomerNotificationEmail({ to, subject, text }) {
+async function sendCustomerNotificationEmail({ to, subject, text, html, attachments }) {
   if (!to) return;
   if (!isEmailConfigured()) {
     console.warn(
@@ -1571,7 +1572,7 @@ async function sendCustomerNotificationEmail({ to, subject, text }) {
     return;
   }
   try {
-    await sendEmail({ to, subject, text });
+    await sendEmail({ to, subject, text, html, attachments });
   } catch (error) {
     console.error(
       "Failed to send customer notification email:",
@@ -1942,7 +1943,7 @@ function managerAuthRequired(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const adminRoles = ['admin', 'manager', 'supervisor', 'super_admin'];
+    const adminRoles = ['admin', 'manager', 'supervisor', 'super_admin', 'cashier'];
     if (!adminRoles.includes(decoded.role)) {
       return res.status(403).json({ error: 'Manager access required' });
     }
@@ -2505,10 +2506,14 @@ app.post(
           .json({ message: "pagePermissions object is required" });
       }
 
-      await pool.query(
-        `UPDATE users SET page_permissions = $1::jsonb WHERE id = $2;`,
+      const result = await pool.query(
+        `UPDATE users SET page_permissions = $1::jsonb WHERE id = $2 RETURNING page_permissions;`,
         [JSON.stringify(pagePermissions), userId],
       );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({ message: "User not found" });
+      }
 
       await logAction({
         userId: req.user.id,
@@ -2517,7 +2522,10 @@ app.post(
         other: { userId },
       });
 
-      return res.json({ ok: true });
+      return res.json({
+        ok: true,
+        pagePermissions: result.rows[0].page_permissions || {},
+      });
     } catch (e) {
       return res
         .status(500)
@@ -4959,6 +4967,139 @@ async function registerRoutesAfterDbInit() {
     return;
   }
 
+    // Replace entire checklist (bulk save from staff UI)
+    app.put('/api/events/orders/:orderId/checklist', authRequired, async (req, res) => {
+      try {
+        const { orderId } = req.params;
+        const { checklist, deductInventory } = req.body || {};
+        if (!Array.isArray(checklist)) {
+          return res.status(400).json({ error: 'checklist array is required' });
+        }
+
+        const orderResult = await pool.query(
+          `SELECT 'event_orders' as table_name FROM event_orders WHERE id = $1
+           UNION ALL
+           SELECT 'catering_orders' FROM catering_orders WHERE id = $1
+           LIMIT 1`,
+          [orderId],
+        );
+        if (orderResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Order not found' });
+        }
+        const tableName = orderResult.rows[0].table_name;
+
+        const normalized = checklist.map((raw) => {
+          const row = raw && typeof raw === 'object' ? raw : {};
+          const title = (row.title ?? row.item ?? '').toString().trim();
+          const description = (row.description ?? '').toString();
+          const qty = Math.max(1, Number(row.quantity) || 1);
+          const price =
+            row.price != null
+              ? Number(row.price)
+              : row.cost != null
+                ? Number(row.cost)
+                : 0;
+          return {
+            id:
+              row.id && String(row.id).trim()
+                ? String(row.id).trim()
+                : crypto.randomUUID(),
+            title: title || 'Item',
+            description,
+            price: Number.isFinite(price) ? price : 0,
+            quantity: qty,
+            assignedTo: (row.assignedTo ?? '').toString(),
+            isCompleted: row.isCompleted === true,
+            inventoryId: row.inventoryId ? String(row.inventoryId) : null,
+          };
+        });
+
+        const result = await pool.query(
+          `UPDATE ${tableName} SET checklist = $1::jsonb WHERE id = $2 RETURNING checklist`,
+          [JSON.stringify(normalized), orderId],
+        );
+
+        if (deductInventory === true) {
+          for (const item of normalized) {
+            if (!item.inventoryId) continue;
+            const qty = Math.max(0, Number(item.quantity) || 0);
+            if (qty <= 0) continue;
+            await pool.query(
+              `UPDATE inventory
+               SET quantity = GREATEST(0, quantity - $1), updated_at = now()
+               WHERE id = $2::uuid AND archived = FALSE`,
+              [qty, item.inventoryId],
+            );
+          }
+        }
+
+        res.json({ checklist: result.rows[0].checklist });
+      } catch (error) {
+        console.error('Error replacing checklist:', error);
+        res.status(500).json({ error: 'Failed to save checklist' });
+      }
+    });
+
+    app.post(
+      '/api/events/orders/:orderId/send-order-summary',
+      authRequired,
+      async (req, res) => {
+        try {
+          const { orderId } = req.params;
+          const { pdfBase64, paymentType } = req.body || {};
+          if (!pdfBase64 || typeof pdfBase64 !== 'string') {
+            return res.status(400).json({ error: 'pdfBase64 is required' });
+          }
+
+          const orderResult = await pool.query(
+            `SELECT email_address, event_title, customer_name FROM event_orders WHERE id = $1
+             UNION ALL
+             SELECT email_address, NULL::text AS event_title, customer_name FROM catering_orders WHERE id = $1
+             LIMIT 1`,
+            [orderId],
+          );
+          if (orderResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+          }
+          const row = orderResult.rows[0];
+          const to = (row.email_address || '').toString().trim();
+          if (!to) {
+            return res.status(400).json({ error: 'Order has no customer email' });
+          }
+
+          const isDown = paymentType === 'down_payment';
+          const eventLabel =
+            (row.event_title || row.customer_name || 'your event').toString();
+          const subject = isDown
+            ? `Order summary (down payment) — ${eventLabel}`
+            : `Order summary — ${eventLabel}`;
+          const text =
+            `Hello,\n\n` +
+            `Please find your order summary attached for ${eventLabel}.\n\n` +
+            `Thank you,\nMacrina's Kitchen and Catering`;
+
+          await sendCustomerNotificationEmail({
+            to,
+            subject,
+            text,
+            attachments: [
+              {
+                filename: isDown
+                  ? 'order-summary-down-payment.pdf'
+                  : 'order-summary.pdf',
+                content: pdfBase64.replace(/^data:application\/pdf;base64,/, ''),
+              },
+            ],
+          });
+
+          res.json({ ok: true });
+        } catch (error) {
+          console.error('Error emailing order summary:', error);
+          res.status(500).json({ error: 'Failed to email order summary' });
+        }
+      },
+    );
+
     // Checklist CRUD operations
     app.put('/api/events/orders/:orderId/checklist/:itemId', authRequired, async (req, res) => {
       try {
@@ -5147,7 +5288,7 @@ async function registerRoutesAfterDbInit() {
       '/api/events/orders/:orderId/seating',
       authRequired,
       (req, res, next) =>
-        requireRoles(req, res, next, new Set(['manager', 'supervisor', 'admin'])),
+        requireRoles(req, res, next, new Set(['manager', 'super_admin', 'admin'])),
       async (req, res) => {
         try {
           const { orderId } = req.params;
@@ -5513,7 +5654,7 @@ async function registerRoutesAfterDbInit() {
       try {
         const result = await pool.query(
           `SELECT id, name, price, category, pax_options, sauces, ingredients,
-                  image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus,
+                  image_base64, archived, available, archived_at, created_at, updated_at, type, meal_type, set_menus,
                   public_description, allergens
            FROM menu_dishes
            ORDER BY category, name`
@@ -7026,14 +7167,14 @@ async function registerRoutesAfterDbInit() {
              SET seating_plan = $1::jsonb, updated_at = now()
              WHERE id::text = $2
                AND lower(email_address) = lower($3)
-               AND status = 'for_processing'
+               AND status IN ('for_processing', 'for_post_analysis')
              RETURNING id`,
           [JSON.stringify(n.plan), orderId, email],
         );
         if (result.rowCount === 0) {
           return res.status(404).json({
             error:
-              'Order not found, not owned by customer, not in for_processing, or not an event order.',
+              'Order not found, not owned by customer, not in an editable status, or not an event order.',
           });
         }
         return res.json({ ok: true, seatingPlan: n.plan });
@@ -7141,19 +7282,13 @@ async function registerRoutesAfterDbInit() {
       try {
         const customerId = req.customer.id;
         const { orderId } = req.params;
-        const { guestCount, address, scheduleSlots, menu } = req.body || {};
+        const { guestCount, address, scheduleSlots, menu, venueOnly } = req.body || {};
 
         if (!Number.isFinite(Number(guestCount)) || Number(guestCount) <= 0) {
           return res.status(400).json({ error: 'guestCount must be a positive number' });
         }
         if (typeof address !== 'string' || !address.trim()) {
           return res.status(400).json({ error: 'address is required' });
-        }
-        if (!Array.isArray(scheduleSlots) || scheduleSlots.length === 0) {
-          return res.status(400).json({ error: 'At least one schedule slot is required' });
-        }
-        if (!Array.isArray(menu) || menu.length === 0) {
-          return res.status(400).json({ error: 'At least one dish is required' });
         }
 
         const customerResult = await pool.query(
@@ -7164,6 +7299,46 @@ async function registerRoutesAfterDbInit() {
           return res.status(404).json({ error: 'Customer not found' });
         }
         const customerEmail = customerResult.rows[0].email;
+
+        if (venueOnly === true) {
+          const tryVenueOnly = async (tableName) => {
+            const result = await pool.query(
+              `UPDATE ${tableName}
+               SET guest_count = $1, address = $2, updated_at = now()
+               WHERE id::text = $3
+                 AND lower(email_address) = lower($4)
+                 AND status IN ('for_processing', 'for_post_analysis')
+               RETURNING
+                 id,
+                 inquiry_id as "inquiryId",
+                 guest_count as "guestCount",
+                 address,
+                 status,
+                 updated_at as "updatedAt"`,
+              [Number(guestCount), address.trim(), orderId, customerEmail],
+            );
+            return result.rows[0] || null;
+          };
+          let updatedOrder = await tryVenueOnly('event_orders');
+          let orderType = 'event';
+          if (!updatedOrder) {
+            updatedOrder = await tryVenueOnly('catering_orders');
+            orderType = 'catering';
+          }
+          if (!updatedOrder) {
+            return res.status(404).json({
+              error: 'Order not found, not owned by customer, or not editable in this status.',
+            });
+          }
+          return res.json({ success: true, orderType, order: updatedOrder });
+        }
+
+        if (!Array.isArray(scheduleSlots) || scheduleSlots.length === 0) {
+          return res.status(400).json({ error: 'At least one schedule slot is required' });
+        }
+        if (!Array.isArray(menu) || menu.length === 0) {
+          return res.status(400).json({ error: 'At least one dish is required' });
+        }
 
         const sanitizedSlots = scheduleSlots
           .filter((slot) => slot && typeof slot === 'object')
@@ -7205,7 +7380,7 @@ async function registerRoutesAfterDbInit() {
                updated_at = now()
              WHERE id::text = $5
                AND lower(email_address) = lower($6)
-               AND status = 'online_inquiries'
+               AND status IN ('online_inquiries', 'for_processing', 'for_post_analysis')
              RETURNING
                id,
                inquiry_id as "inquiryId",

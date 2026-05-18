@@ -865,11 +865,35 @@ class _ManageAccountsState extends State<ManageAccounts> {
     if (u == null || u.role == Role.superAdmin) return;
     setState(() => _savingPermissions = true);
     try {
+      final saved = Map<String, dynamic>.from(_pagePermissionDraft);
       await SuperAdminApi.instance.updateUserPagePermissions(
         userId: u.id,
-        pagePermissions: Map<String, dynamic>.from(_pagePermissionDraft),
+        pagePermissions: saved,
       );
       if (!mounted) return;
+      setState(() {
+        final idx = _users.indexWhere((x) => x.id == u.id);
+        if (idx >= 0) {
+          final prev = _users[idx];
+          _users[idx] = UserDto(
+            id: prev.id,
+            email: prev.email,
+            fullName: prev.fullName,
+            role: prev.role,
+            archived: prev.archived,
+            isVerified: prev.isVerified,
+            pagePermissions: saved,
+            birthday: prev.birthday,
+            contactNumber: prev.contactNumber,
+            employmentType: prev.employmentType,
+          );
+        }
+        _selectedUser = _users.firstWhere(
+          (x) => x.id == u.id,
+          orElse: () => u,
+        );
+        _pagePermissionDraft = Map<String, dynamic>.from(saved);
+      });
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Page access updated.')));
@@ -1009,7 +1033,8 @@ class _ManageAccountsState extends State<ManageAccounts> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Turn pages on or off for this user. They must sign out and back in for changes to apply everywhere.',
+              'Turn pages on or off for this user. Changes apply here immediately. '
+              'The affected account will see updated access on their next page navigation, or after they sign out and back in.',
               style: TextStyle(fontSize: 12),
             ),
             const SizedBox(height: 12),

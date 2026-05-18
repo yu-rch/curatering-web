@@ -20,6 +20,7 @@ class PagePermissionRoutes {
     ('Manage Events', manageEvents),
     ('Loyalty Rewards', loyalty),
     ('Menu', menu),
+    ('Restaurant Orders', restaurantOrders),
     ('Reports', reports),
     ('Order History', orderHistory),
     ('Archive', archive),
