@@ -15,11 +15,6 @@ const String _apiBaseUrl = String.fromEnvironment(
   defaultValue: 'https://curatering.up.railway.app',
 );
 
-const String _googleMapsApiKey = String.fromEnvironment(
-  'GOOGLE_MAPS_API_KEY',
-  defaultValue: '',
-);
-
 /// Supabase project URL (root, not `/rest/v1/`).
 String get supabaseUrl {
   if (_supabaseUrl.isNotEmpty) return _supabaseUrl;
@@ -43,15 +38,3 @@ String get supabaseAnonKey {
 
 String get apiBaseUrl =>
     _apiBaseUrl.isEmpty ? 'https://curatering.up.railway.app' : _apiBaseUrl;
-
-/// Google Maps key — required for map picker / geocoding on web.
-/// Pass via `--dart-define=GOOGLE_MAPS_API_KEY=...` and enable the script in web/index.html.
-String get googleMapsApiKey {
-  if (_googleMapsApiKey.isNotEmpty) return _googleMapsApiKey;
-  if (kDebugMode) {
-    debugPrint(
-      'GOOGLE_MAPS_API_KEY not set — pass --dart-define=GOOGLE_MAPS_API_KEY=...',
-    );
-  }
-  return '';
-}

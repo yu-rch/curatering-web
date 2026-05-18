@@ -42,11 +42,9 @@
       overscroll-behavior-x: none;
     }
   </style>
-  
-  <!-- Google Maps: uncomment and set key=YOUR_KEY, or inject at CI build time.
-       Must match --dart-define=GOOGLE_MAPS_API_KEY=... -->
-  <!-- <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_KEY&libraries=places"></script> -->
-  
+
+  <!-- Maps: flutter_map + OpenStreetMap tiles (no Google Maps script required). -->
+
   <!-- Flutter Web Configuration - Use HTML renderer to prevent CanvasKit issues -->
   <script>
     window.flutterWebRenderer = "html";

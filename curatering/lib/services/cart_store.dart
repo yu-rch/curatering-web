@@ -18,6 +18,7 @@ class CartItem {
       'price': dish.price,
       'category': dish.category,
       'type': dish.type,
+      'mealType': dish.mealType,
     },
     'quantity': quantity,
     'selectedSauce': selectedSauce,
@@ -32,6 +33,9 @@ class CartItem {
         category: json['dish']['category'] ?? 'restaurant',
         paxOptions: [],
         type: json['dish']['type'] ?? '',
+        mealType:
+            (json['dish']['mealType'] ?? json['dish']['meal_type'] ?? '')
+                .toString(),
       ),
       quantity: json['quantity'] ?? 1,
       selectedSauce: json['selectedSauce'],

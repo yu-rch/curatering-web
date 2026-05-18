@@ -5976,10 +5976,10 @@ async function registerRoutesAfterDbInit() {
         }
 
         const dishCategory = category || 'catering';
-        const mealTypeSaved =
-          dishCategory === 'catering'
-            ? await upsertMenuMealType(mealType || type || '')
-            : '';
+        const resolvedMealType = String(mealType ?? '').trim() || String(type ?? '').trim();
+        const mealTypeSaved = resolvedMealType
+          ? await upsertMenuMealType(resolvedMealType)
+          : '';
 
         const result = await pool.query(
           `INSERT INTO menu_dishes (name, price, category, pax_options, sauces, ingredients, image_base64, type, set_menus, available, public_description, allergens, meal_type)
@@ -5993,7 +5993,7 @@ async function registerRoutesAfterDbInit() {
             JSON.stringify(sauces || []),
             JSON.stringify(ingredients || []),
             imageBase64 || null,
-            type || '',
+            dishCategory === 'restaurant' ? '' : (type || ''),
             JSON.stringify([]),
             available !== false,
             String(publicDescription ?? '').trim(),
@@ -6032,10 +6032,10 @@ async function registerRoutesAfterDbInit() {
         } = req.body || {};
         
         const dishCategory = category || 'catering';
-        const mealTypeSaved =
-          dishCategory === 'catering'
-            ? await upsertMenuMealType(mealType || type || '')
-            : '';
+        const resolvedMealType = String(mealType ?? '').trim() || String(type ?? '').trim();
+        const mealTypeSaved = resolvedMealType
+          ? await upsertMenuMealType(resolvedMealType)
+          : '';
 
         const result = await pool.query(
           `UPDATE menu_dishes
@@ -6052,7 +6052,7 @@ async function registerRoutesAfterDbInit() {
             JSON.stringify(sauces),
             JSON.stringify(ingredients),
             imageBase64,
-            type,
+            dishCategory === 'restaurant' ? '' : type,
             JSON.stringify(req.body.setMenus || []),
             available !== false,
             String(publicDescription ?? '').trim(),
@@ -8191,11 +8191,12 @@ async function registerRoutesAfterDbInit() {
                 paxOptions = ['10-20 pax', '25-40 pax', '50-70 pax', '80-100 pax', '100+ pax'];
               }
 
+              const mealTypeSaved = type ? await upsertMenuMealType(type) : '';
               await pool.query(
-                `INSERT INTO menu_dishes (name, price, category, pax_options, sauces, ingredients, type)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)
+                `INSERT INTO menu_dishes (name, price, category, pax_options, sauces, ingredients, type, meal_type)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                  ON CONFLICT DO NOTHING`,
-                [name, price, category, JSON.stringify(paxOptions), JSON.stringify(sauces), JSON.stringify([tag]), type]
+                [name, price, category, JSON.stringify(paxOptions), JSON.stringify(sauces), JSON.stringify([tag]), '', mealTypeSaved]
               );
               imported++;
             } else if (csvType === 'catering') {

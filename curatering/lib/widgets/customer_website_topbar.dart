@@ -316,15 +316,17 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
 
   Widget _navLabel(String label, {required bool active}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
             label,
             style: TextStyle(
-              color: active ? Colors.black : Colors.white,
-              fontWeight: active ? FontWeight.bold : FontWeight.normal,
+              color: active ? Colors.white : Colors.white70,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
             ),
           ),
           if (active)
@@ -388,7 +390,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
         child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           InkWell(
                 onTap: () => _goHome(context),

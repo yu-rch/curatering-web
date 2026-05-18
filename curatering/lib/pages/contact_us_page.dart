@@ -133,7 +133,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
   }
 
   Future<void> _launchMap(String address) async {
-    await openGoogleMaps(address);
+    await openOsmMap(address);
   }
 
   @override

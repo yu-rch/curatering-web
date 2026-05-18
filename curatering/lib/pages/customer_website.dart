@@ -36,6 +36,7 @@ import '../widgets/catering_dish_info_dialog.dart';
 import '../widgets/website_rich_text.dart';
 import '../widgets/customer_footer_feedback.dart';
 import '../theme/website_header_font.dart';
+import '../constants/catering_meal_types.dart';
 import '../utils/gallery_search.dart';
 import '../utils/inquiry_pricing.dart';
 import 'customer_login.dart';
@@ -303,6 +304,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   int _restaurantLoyaltyPoints = 0;
   int _cateringLoyaltyPoints = 0;
   String _selectedRestaurantType = 'RICE MEALS'; // Default selected category
+  String _selectedCateringMealType = ''; // Empty = all catering dishes
   List<Map<String, dynamic>> _reorderDishes = [];
   bool _loadingReorder = false;
 
@@ -2521,10 +2523,47 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
+  Widget _buildCateringMealTypeChip(String label, String value) {
+    final selected =
+        value.isEmpty
+            ? _selectedCateringMealType.isEmpty
+            : cateringMealTypeMatches(_selectedCateringMealType, value);
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) {
+        setState(() => _selectedCateringMealType = value);
+      },
+      selectedColor: const Color(0xFFFFC024),
+      checkmarkColor: const Color(0xFF1E1E1E),
+    );
+  }
+
+  Widget _buildCateringMealTypeFilters() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      alignment: WrapAlignment.center,
+      children: [
+        _buildCateringMealTypeChip('All', ''),
+        for (final t in kCateringMealTypes)
+          _buildCateringMealTypeChip(mealTypeDisplayLabel(t), t),
+      ],
+    );
+  }
+
   Widget _buildCateringMenu() {
     final allDishes = MenuStore.instance.activeDishes;
     final cateringDishes =
-        allDishes.where((d) => d.category == 'catering').toList();
+        allDishes
+            .where((d) => d.category == 'catering')
+            .where(
+              (d) => cateringMealTypeMatches(
+                d.effectiveMealType,
+                _selectedCateringMealType,
+              ),
+            )
+            .toList();
 
     // Show loading state if dishes are empty or currently loading
     if (MenuStore.instance.isLoading || allDishes.isEmpty) {
@@ -2687,7 +2726,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
+              _buildCateringMealTypeFilters(),
+              const SizedBox(height: 24),
               Card(
                 elevation: 4,
                 shape: RoundedRectangleBorder(
@@ -2699,11 +2740,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (cateringDishes.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.all(32),
+                        Padding(
+                          padding: const EdgeInsets.all(32),
                           child: Text(
-                            'No dishes available',
-                            style: TextStyle(color: Colors.grey, fontSize: 16),
+                            _selectedCateringMealType.isEmpty
+                                ? 'No dishes available'
+                                : 'No ${mealTypeDisplayLabel(_selectedCateringMealType)} dishes',
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 16,
+                            ),
                           ),
                         )
                       else
@@ -2846,13 +2892,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               category == 'dessert' ||
               category == 'drinks' ||
               category == 'drink';
-          return isRestaurantCategory || d.type.trim().isNotEmpty;
+          return isRestaurantCategory || d.effectiveMealType.isNotEmpty;
         }).toList();
     final cartItems = CartStore.instance.items;
     final totalAmount = CartStore.instance.totalAmount;
-    // Filter restaurant dishes by selected type
+    // Filter restaurant dishes by selected meal type (menu_dishes.meal_type)
     String restaurantTypeForDish(MenuDish dish) {
-      final rawType = dish.type.trim().toLowerCase();
+      final rawType = dish.effectiveMealType.toLowerCase();
       if (rawType.isNotEmpty) return rawType;
       final category = dish.category.trim().toLowerCase();
       switch (category) {

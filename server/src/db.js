@@ -667,6 +667,18 @@ export async function initDb() {
     ADD COLUMN IF NOT EXISTS meal_type TEXT NOT NULL DEFAULT '';
   `);
 
+  // Backfill meal_type from legacy type column for restaurant-style categories.
+  await pool.query(`
+    UPDATE menu_dishes
+    SET meal_type = type
+    WHERE trim(coalesce(meal_type, '')) = ''
+      AND trim(coalesce(type, '')) <> ''
+      AND lower(trim(category)) IN (
+        'restaurant', 'main_course', 'noodles', 'appetizer',
+        'rice', 'dessert', 'drinks', 'drink'
+      )
+  `);
+
   // List queries filter by status and sort by created_at (manager/supervisor order APIs).
   try {
     await pool.query(

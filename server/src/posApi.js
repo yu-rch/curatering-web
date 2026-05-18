@@ -614,7 +614,7 @@ export function registerPosRoutes(app, {
   app.get("/api/mobile/menu", async (_req, res) => {
     try {
       const r = await pool.query(
-        `SELECT id, name, price, category, pax_options, sauces, ingredients, image_base64, type, available
+        `SELECT id, name, price, category, pax_options, sauces, ingredients, image_base64, type, meal_type, available
          FROM menu_dishes
          WHERE available = TRUE
          ORDER BY category, name`,

@@ -10,9 +10,17 @@ class MenuDish {
   final bool available;
   final DateTime? archivedAt;
   final List<String> ingredients;
-  final String type; // Restaurant meal category (rice meals, pasta, …)
-  /// Catering meal type (appetizer, main course, …) from [menu_dishes_meal_types].
+  /// Legacy column; prefer [mealType] from `menu_dishes.meal_type`.
+  final String type;
+  /// Meal type (restaurant section or catering course) from `menu_dishes.meal_type`.
   final String mealType;
+
+  /// [mealType] when set, otherwise legacy [type].
+  String get effectiveMealType {
+    final mt = mealType.trim();
+    if (mt.isNotEmpty) return mt;
+    return type.trim();
+  }
   final List<String> setMenus; // Array of set names this dish belongs to
   /// Short description for the dish on the public catering menu (tap for details).
   final String publicDescription;

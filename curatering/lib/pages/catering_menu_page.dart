@@ -6,7 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/website_header_font.dart';
 
 import '../models/menu_dish.dart';
-import '../services/meal_types_store.dart';
+import '../constants/catering_meal_types.dart';
 import '../services/menu_store.dart';
 import '../widgets/catering_dish_info_dialog.dart';
 import '../widgets/customer_website_topbar.dart';
@@ -50,13 +50,11 @@ class CateringMenuPage extends StatefulWidget {
 
 class _CateringMenuPageState extends State<CateringMenuPage> {
   String _mealTypeFilter = '';
-  List<String> _mealTypes = const [];
 
   @override
   void initState() {
     super.initState();
     MenuStore.instance.addListener(_onMenuChanged);
-    _loadMealTypes();
     if (MenuStore.instance.activeDishes.isEmpty && !MenuStore.instance.isLoading) {
       MenuStore.instance.loadDishes();
     }
@@ -70,12 +68,6 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
 
   void _onMenuChanged() {
     if (mounted) setState(() {});
-  }
-
-  Future<void> _loadMealTypes() async {
-    final types = await MealTypesStore.instance.load();
-    if (!mounted) return;
-    setState(() => _mealTypes = types);
   }
 
   Widget _withHomepageTopBar(BuildContext context, {required Widget child}) {
@@ -96,26 +88,11 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
   List<MenuDish> _filteredCateringDishes(List<MenuDish> dishes) {
     if (_mealTypeFilter.isEmpty) return dishes;
     return dishes
-        .where(
-          (d) =>
-              d.mealType.trim().toLowerCase() ==
-              _mealTypeFilter.toLowerCase(),
-        )
+        .where((d) => cateringMealTypeMatches(d.effectiveMealType, _mealTypeFilter))
         .toList();
   }
 
   Widget _mealTypeChips() {
-    final types = <String>{
-      ..._mealTypes,
-      for (final d in MenuStore.instance.activeDishes.where(
-        (x) => x.category == 'catering' && x.mealType.trim().isNotEmpty,
-      ))
-        d.mealType.trim(),
-    }.toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-
-    if (types.isEmpty) return const SizedBox.shrink();
-
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -123,14 +100,15 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
       children: [
         FilterChip(
           label: const Text('All'),
-          selected: _mealTypeFilter.isEmpty,
+          selected: _mealTypeFilter.trim().isEmpty,
           onSelected: (_) => setState(() => _mealTypeFilter = ''),
           selectedColor: const Color(0xFFFFC024),
         ),
-        for (final t in types)
+        for (final t in kCateringMealTypes)
           FilterChip(
-            label: Text(t),
-            selected: _mealTypeFilter == t,
+            label: Text(mealTypeDisplayLabel(t)),
+            selected: cateringMealTypeMatches(_mealTypeFilter, t) &&
+                _mealTypeFilter.trim().isNotEmpty,
             onSelected: (_) => setState(() => _mealTypeFilter = t),
             selectedColor: const Color(0xFFFFC024),
           ),

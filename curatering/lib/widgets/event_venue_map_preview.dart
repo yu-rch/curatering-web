@@ -6,7 +6,7 @@ import '../services/nominatim_service.dart';
 import '../utils/geo_utils.dart';
 import '../utils/maps_launcher.dart';
 
-/// Read-only venue map + external Google Maps link.
+/// Read-only venue map (flutter_map / OpenStreetMap) + external OSM link.
 class EventVenueMapPreview extends StatefulWidget {
   final String address;
 
@@ -96,12 +96,12 @@ class _EventVenueMapPreviewState extends State<EventVenueMapPreview> {
           ),
         const SizedBox(height: 8),
         OutlinedButton.icon(
-          onPressed: () => openGoogleMaps(
+          onPressed: () => openOsmMap(
             widget.address,
             pin: GeoPin(lat: _pin.latitude, lng: _pin.longitude),
           ),
           icon: const Icon(Icons.map_outlined),
-          label: const Text('Open in Google Maps'),
+          label: const Text('Open in OpenStreetMap'),
         ),
       ],
     );

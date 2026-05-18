@@ -120,7 +120,8 @@ class MenuStore extends ChangeNotifier {
           ? DateTime.tryParse(json['archived_at'] as String)
           : null,
       type: json['type'] as String? ?? '',
-      mealType: (json['meal_type'] ?? json['mealType'] ?? '').toString(),
+      mealType: (json['meal_type'] ?? json['mealType'] ?? json['type'] ?? '')
+          .toString(),
       setMenus: (json['set_menus'] as List<dynamic>?)?.cast<String>() ?? [],
       publicDescription: json['public_description'] as String? ?? '',
       allergens: json['allergens'] as String? ?? '',
@@ -237,6 +238,7 @@ class MenuStore extends ChangeNotifier {
       ingredients: ingredients,
       imageBase64: dish.imageBase64,
       type: dish.type,
+      mealType: dish.mealType,
       available: dish.available,
       publicDescription: dish.publicDescription,
       allergens: dish.allergens,

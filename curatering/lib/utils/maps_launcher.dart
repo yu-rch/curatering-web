@@ -2,18 +2,20 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'geo_utils.dart';
 
-/// Opens Google Maps in the browser (no Maps SDK / API key).
-Future<bool> openGoogleMaps(String address, {GeoPin? pin}) async {
+/// Opens the location on OpenStreetMap in the browser (no API key).
+Future<bool> openOsmMap(String address, {GeoPin? pin}) async {
   final q = address.trim();
-  if (q.isEmpty) return false;
+  if (q.isEmpty && pin == null) return false;
 
   final urls = <Uri>[
     if (pin != null)
       Uri.parse(
-        'https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}',
+        'https://www.openstreetmap.org/?mlat=${pin.lat}&mlon=${pin.lng}#map=16/${pin.lat}/${pin.lng}',
       ),
-    Uri.parse('https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(q)}'),
-    Uri.parse('https://maps.google.com/maps?q=${Uri.encodeComponent(q)}'),
+    if (q.isNotEmpty)
+      Uri.parse(
+        'https://www.openstreetmap.org/search?query=${Uri.encodeComponent(q)}',
+      ),
   ];
 
   for (final uri in urls) {

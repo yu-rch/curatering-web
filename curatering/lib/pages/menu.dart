@@ -6,7 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/paginated_data_table.dart';
 import '../models/menu_dish.dart';
-import '../services/meal_types_store.dart';
+import '../constants/catering_meal_types.dart';
 import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
 import '../utils/debouncer.dart';
@@ -187,8 +187,7 @@ class _MenuState extends State<Menu> {
 
   String? _editingImageBase64;
   String _editingType = ''; // For restaurant dish type grouping
-  String _editingMealType = ''; // Catering meal type (menu_dishes_meal_types)
-  List<String> _cateringMealTypes = const [];
+  String _editingMealType = ''; // Catering meal type (menu_dishes.meal_type)
   Map<String, String> _editingPaxPrices = {};
   Map<String, TextEditingController> _paxPriceControllers = {};
   int _activeTabIndex = 0;
@@ -234,9 +233,6 @@ class _MenuState extends State<Menu> {
     super.initState();
     MenuStore.instance.addListener(_onMenuChanged);
     SetMenuStore.instance.addListener(_onSetMenusChanged);
-    MealTypesStore.instance.load().then((types) {
-      if (mounted) setState(() => _cateringMealTypes = types);
-    });
   }
 
   void _onMenuChanged() {
@@ -290,7 +286,7 @@ class _MenuState extends State<Menu> {
     _editingAvailable = true;
     _editingImageBase64 = null;
     _editingType = '';
-    _editingMealType = '';
+    _editingMealType = category == 'catering' ? 'main' : '';
     _typeController.clear();
     _nameController.clear();
     _priceController.clear();
@@ -311,7 +307,7 @@ class _MenuState extends State<Menu> {
   void _startEditingDish(MenuDish dish) {
     _editingAvailable = dish.available;
     _editingImageBase64 = dish.imageBase64;
-    _editingType = _normalizeRestaurantMealType(dish.type);
+    _editingType = _normalizeRestaurantMealType(dish.effectiveMealType);
     if (dish.category == 'restaurant' &&
         (_editingType.isEmpty || !_restaurantMealTypes.contains(_editingType))) {
       _editingType = 'others';
@@ -333,7 +329,15 @@ class _MenuState extends State<Menu> {
     _newSauceController.clear();
     _publicDescriptionController.text = dish.publicDescription;
     _allergensController.text = dish.allergens;
-    _editingMealType = dish.category == 'catering' ? dish.mealType.trim() : '';
+    if (dish.category == 'catering') {
+      _editingMealType = normalizeCateringMealType(dish.effectiveMealType);
+      if (_editingMealType.isEmpty ||
+          !kCateringMealTypes.contains(_editingMealType)) {
+        _editingMealType = 'main';
+      }
+    } else {
+      _editingMealType = '';
+    }
   }
 
   void _addPaxOption() {
@@ -521,26 +525,29 @@ class _MenuState extends State<Menu> {
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
                           value:
-                              _editingMealType.isNotEmpty &&
-                                      _cateringMealTypes.contains(_editingMealType)
+                              kCateringMealTypes.contains(_editingMealType)
                                   ? _editingMealType
-                                  : null,
+                                  : 'main',
                           decoration: const InputDecoration(
                             labelText: 'Meal type',
+                            helperText:
+                                'Appetizer, main, sides, pasta, or drinks',
                           ),
-                          items: [
-                            const DropdownMenuItem(
-                              value: '',
-                              child: Text('— None —'),
-                            ),
-                            ..._cateringMealTypes.map(
-                              (t) => DropdownMenuItem(value: t, child: Text(t)),
-                            ),
-                          ],
+                          items:
+                              kCateringMealTypes
+                                  .map(
+                                    (t) => DropdownMenuItem(
+                                      value: t,
+                                      child: Text(mealTypeDisplayLabel(t)),
+                                    ),
+                                  )
+                                  .toList(),
                           onChanged: (v) {
-                            dialogSetState(() {
-                              _editingMealType = v ?? '';
-                            });
+                            if (v != null) {
+                              dialogSetState(() {
+                                _editingMealType = v;
+                              });
+                            }
                           },
                         ),
                         const SizedBox(height: 12),
@@ -621,9 +628,11 @@ class _MenuState extends State<Menu> {
                               category == 'restaurant'
                                   ? _editingSauces
                                   : const [],
-                          type: _editingType,
+                          type: category == 'restaurant' ? '' : _editingType,
                           mealType:
-                              category == 'catering' ? _editingMealType : '',
+                              category == 'catering'
+                                  ? normalizeCateringMealType(_editingMealType)
+                                  : _editingType,
                           available: _editingAvailable,
                           publicDescription:
                               category == 'catering'
@@ -643,11 +652,11 @@ class _MenuState extends State<Menu> {
                               category == 'restaurant'
                                   ? _editingSauces
                                   : const [],
-                          type: _editingType,
+                          type: category == 'restaurant' ? '' : _editingType,
                           mealType:
                               category == 'catering'
-                                  ? _editingMealType
-                                  : dish.mealType,
+                                  ? normalizeCateringMealType(_editingMealType)
+                                  : _editingType,
                           available: _editingAvailable,
                           publicDescription:
                               category == 'catering'
@@ -689,6 +698,7 @@ class _MenuState extends State<Menu> {
         sauces: dish.sauces,
         ingredients: dish.ingredients,
         type: dish.type,
+        mealType: dish.mealType,
         available: !dish.available,
         publicDescription: dish.publicDescription,
         allergens: dish.allergens,
@@ -1206,6 +1216,7 @@ class _MenuState extends State<Menu> {
                         sauces: dish.sauces,
                         ingredients: dish.ingredients,
                         type: dish.type,
+                        mealType: dish.mealType,
                         available: !dish.available,
                         publicDescription: dish.publicDescription,
                         allergens: dish.allergens,
@@ -1847,13 +1858,13 @@ class _MenuState extends State<Menu> {
       groupedDishes[mealType] = [];
     }
 
-    // Group dishes by their type
+    // Group dishes by meal_type (legacy: type column)
     for (final dish in restaurantDishes) {
-      if (dish.type.isEmpty || !mealTypes.contains(dish.type)) {
-        // Add dishes with no type or unrecognized type to 'others'
+      final slot = _normalizeRestaurantMealType(dish.effectiveMealType);
+      if (slot.isEmpty || !mealTypes.contains(slot)) {
         groupedDishes['others']!.add(dish);
       } else {
-        groupedDishes[dish.type]!.add(dish);
+        groupedDishes[slot]!.add(dish);
       }
     }
 
@@ -2519,18 +2530,6 @@ class _MenuState extends State<Menu> {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                const Text(
-                  'Catering and Restaurant Menu',
-                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
-                ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Manage catering, restaurant, and set menu content.',
-                    style: TextStyle(color: Colors.grey.shade700),
-                  ),
-                ),
-                const SizedBox(height: 12),
                 // Tab buttons
                 Container(
                   padding: const EdgeInsets.all(4),

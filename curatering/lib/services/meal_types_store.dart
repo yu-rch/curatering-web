@@ -20,12 +20,11 @@ class MealTypesStore {
       _loaded = true;
     } catch (_) {
       _types = const [
-        'Appetizer',
-        'Main Course',
-        'Dessert',
-        'Beverage',
-        'Salad',
-        'Soup',
+        'appetizer',
+        'main',
+        'sides',
+        'pasta',
+        'drinks',
       ];
     }
     return _types;

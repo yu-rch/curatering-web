@@ -117,12 +117,12 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
               category == 'dessert' ||
               category == 'drinks' ||
               category == 'drink';
-          return isRestaurantCategory || d.type.trim().isNotEmpty;
+          return isRestaurantCategory || d.effectiveMealType.isNotEmpty;
         }).toList();
 
-    // Filter restaurant dishes by selected type
+    // Filter restaurant dishes by selected meal type (menu_dishes.meal_type)
     String restaurantTypeForDish(MenuDish dish) {
-      final rawType = dish.type.trim().toLowerCase();
+      final rawType = dish.effectiveMealType.toLowerCase();
       if (rawType.isNotEmpty) return rawType;
       final category = dish.category.trim().toLowerCase();
       switch (category) {
@@ -315,7 +315,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   Widget _buildCategoryTabs(List<MenuDish> restaurantDishes) {
     final types = <String>{};
     for (final dish in restaurantDishes) {
-      final rawType = dish.type.trim().toLowerCase();
+      final rawType = dish.effectiveMealType.toLowerCase();
       if (rawType.isNotEmpty) {
         types.add(rawType.toUpperCase());
       } else {

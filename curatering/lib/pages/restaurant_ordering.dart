@@ -134,7 +134,8 @@ class _RestaurantOrderingPageState extends State<RestaurantOrderingPage> {
     // Group dishes by type
     Map<String, List<MenuDish>> dishesByType = {};
     for (var dish in restaurantDishes) {
-      final type = dish.type.isEmpty ? 'OTHERS' : dish.type;
+      final mt = dish.effectiveMealType;
+      final type = mt.isEmpty ? 'OTHERS' : mt;
       if (!dishesByType.containsKey(type)) {
         dishesByType[type] = [];
       }
