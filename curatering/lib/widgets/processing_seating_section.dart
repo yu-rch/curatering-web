@@ -53,25 +53,27 @@ class _ProcessingSeatingSectionState extends State<ProcessingSeatingSection> {
     );
     if (!ok || !mounted) return;
 
-    await showBlockingLoadingDialog(
-      context,
-      message: 'Saving seating layout…',
-    );
     setState(() => _saving = true);
     try {
-      await EventsApi.instance.putStaffSeatingPlan(
-        orderId: widget.order.id,
-        seatingPlan: _plan.toJson(),
+      await runWithBlockingLoadingDialog<void>(
+        context,
+        message: 'Saving seating layout…',
+        task: () async {
+          await EventsApi.instance.putStaffSeatingPlan(
+            orderId: widget.order.id,
+            seatingPlan: _plan.toJson(),
+          );
+          if (!mounted) return;
+          _initialPlan = _plan;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Seating layout saved.'),
+              backgroundColor: Color(0xFF1DB954),
+            ),
+          );
+          await widget.onSaved();
+        },
       );
-      if (!mounted) return;
-      _initialPlan = _plan;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Seating layout saved.'),
-          backgroundColor: Color(0xFF1DB954),
-        ),
-      );
-      await widget.onSaved();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -83,7 +85,6 @@ class _ProcessingSeatingSectionState extends State<ProcessingSeatingSection> {
     } finally {
       if (mounted) {
         setState(() => _saving = false);
-        hideBlockingLoadingDialog(context);
       }
     }
   }

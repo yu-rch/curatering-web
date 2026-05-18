@@ -12,6 +12,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config.dart';
 import '../models/menu_dish.dart';
 import '../services/menu_store.dart';
 import '../services/public_events_api.dart';
@@ -86,6 +87,7 @@ class _InquirePageState extends State<InquirePage> {
   String _eventType = 'Birthday';
   String _formality = 'casual';
   bool _submitting = false;
+  bool _generatingDesign = false;
   String? _generatedImageUrl;
   final List<String> _generatedImageHistory = [];
 
@@ -296,11 +298,15 @@ class _InquirePageState extends State<InquirePage> {
 
   Future<void> _submitInquiry() async {
     if (!_validateAllForSubmit()) return;
+    if (!mounted) return;
 
-    await showBlockingLoadingDialog(context, message: 'Submitting inquiry…');
     setState(() => _submitting = true);
 
     try {
+      await runWithBlockingLoadingDialog<void>(
+        context,
+        message: 'Submitting inquiry…',
+        task: () async {
       final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
       final scheduleSlots = <Map<String, dynamic>>[
         {
@@ -346,6 +352,8 @@ class _InquirePageState extends State<InquirePage> {
         );
         _clearForm();
       }
+        },
+      );
     } catch (e) {
       if (mounted) {
         showAntdMessage(
@@ -357,7 +365,6 @@ class _InquirePageState extends State<InquirePage> {
     } finally {
       if (mounted) {
         setState(() => _submitting = false);
-        hideBlockingLoadingDialog(context);
       }
     }
   }
@@ -1764,8 +1771,8 @@ class _InquirePageState extends State<InquirePage> {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: _submitting ? null : _generateDesignPrompt,
-            icon: _submitting
+            onPressed: (_submitting || _generatingDesign) ? null : _generateDesignPrompt,
+            icon: _generatingDesign
                 ? const SizedBox(
                     width: 20,
                     height: 20,
@@ -1773,7 +1780,7 @@ class _InquirePageState extends State<InquirePage> {
                   )
                 : const Icon(Icons.auto_fix_high),
             label: Text(
-              _submitting ? 'GENERATING…' : 'GENERATE EVENT DESIGN',
+              _generatingDesign ? 'GENERATING…' : 'GENERATE EVENT DESIGN',
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -2158,10 +2165,6 @@ class _InquirePageState extends State<InquirePage> {
     }
   }
 
-  static final RegExp _uuidPattern = RegExp(
-    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
-  );
-
   Future<String?> _resolveRunpodUserId() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString('customer_data');
@@ -2169,9 +2172,7 @@ class _InquirePageState extends State<InquirePage> {
     try {
       final data = jsonDecode(raw) as Map<String, dynamic>;
       final id = data['id']?.toString().trim();
-      if (id != null && id.isNotEmpty && _uuidPattern.hasMatch(id)) {
-        return id;
-      }
+      if (id != null && id.isNotEmpty) return id;
     } catch (_) {}
     return null;
   }
@@ -2269,28 +2270,21 @@ class _InquirePageState extends State<InquirePage> {
     }
 
     setState(() {
-      _submitting = true;
+      _generatingDesign = true;
       _genAiError = null;
     });
-    await showBlockingLoadingDialog(
-      context,
-      message: 'Generating event design…',
-    );
 
     try {
       final prompt = _composeEventDesignPrompt();
       final venueB64 = _normalizeVenueB64ForRunpod(venueRaw);
       if (kDebugMode) {
         debugPrint(
-          'RunPod: sending init_image_base64 (${venueB64.length} chars)',
+          'RunPod: POST ${apiBaseUrl}/api/public/runpod/run '
+          '(venue b64 ${venueB64.length} chars, prompt ${prompt.length} chars)',
         );
       }
 
       final runpodUserId = await _resolveRunpodUserId();
-
-      if (kDebugMode) {
-        debugPrint('RunPod: submitting job (prompt ${prompt.length} chars)');
-      }
 
       final imageUrl = await RunPodService.generateImageWithPolling(
         prompt,
@@ -2333,8 +2327,7 @@ class _InquirePageState extends State<InquirePage> {
       setState(() => _genAiError = msg);
     } finally {
       if (mounted) {
-        setState(() => _submitting = false);
-        hideBlockingLoadingDialog(context);
+        setState(() => _generatingDesign = false);
       }
     }
   }
