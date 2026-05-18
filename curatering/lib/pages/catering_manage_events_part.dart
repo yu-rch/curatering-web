@@ -1,6 +1,30 @@
 part of 'catering.dart';
 
 extension _ManageEventsTableExt on _ManageEventsState {
+  bool _canEventAction(String permissionKey) {
+    final user = AuthSession.instance.currentUser.value;
+    return actionAllowed(
+      permissionKey,
+      user?.pagePermissions,
+      role: user?.role,
+    );
+  }
+
+  Widget _eventIconAction({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+    required String permissionKey,
+    Color? color,
+  }) {
+    if (!_canEventAction(permissionKey)) return const SizedBox.shrink();
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      icon: Icon(icon, size: 20, color: color),
+      visualDensity: VisualDensity.compact,
+    );
+  }
   List<EventOrderDto> get _downpaymentOrders => _processingOrdersDto
       .where((o) => o.downPaymentStatus != 'paid')
       .toList();
@@ -77,6 +101,11 @@ extension _ManageEventsTableExt on _ManageEventsState {
       ),
       AntdDescriptionItem(label: 'Guests', value: '${dto.guestCount}'),
       AntdDescriptionItem(
+        label: 'Allergens',
+        value: dto.allergens.trim().isEmpty ? '—' : dto.allergens,
+        span: cols >= 2 ? 2 : 1,
+      ),
+      AntdDescriptionItem(
         label: 'Schedule',
         value: dto.scheduleSlots.isEmpty
             ? '—'
@@ -148,8 +177,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
           return SingleChildScrollView(
             child: AntdDescriptions(
               column: w < 700 ? 1 : 3,
-              labelColor: AntdTokens.labelMuted,
-              valueColor: AntdTokens.valueDark,
+              labelColor: Colors.grey.shade600,
+              valueColor: Colors.black87,
               items: _orderDetailDescriptionItems(full, screenWidth: w),
             ),
           );
@@ -378,8 +407,6 @@ extension _ManageEventsTableExt on _ManageEventsState {
                       DataColumn(label: Text('Customer')),
                       DataColumn(label: Text('Contact')),
                       DataColumn(label: Text('Event type')),
-                      DataColumn(label: Text('Date')),
-                      DataColumn(label: Text('Guests')),
                       DataColumn(label: Text('Actions')),
                     ],
                     rows:
@@ -394,13 +421,15 @@ extension _ManageEventsTableExt on _ManageEventsState {
                                   dto.eventType.isEmpty ? '—' : dto.eventType,
                                 ),
                               ),
-                              DataCell(Text(_formatOrderSchedule(dto))),
-                              DataCell(Text('${dto.guestCount}')),
                               DataCell(
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    TextButton(
+                                    _eventIconAction(
+                                      icon: Icons.visibility_outlined,
+                                      tooltip: 'View details',
+                                      permissionKey:
+                                          ActionPermissionKeys.manageEventsViewDetails,
                                       onPressed: () async {
                                         try {
                                           final full =
@@ -424,9 +453,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
                                           );
                                         }
                                       },
-                                      child: const Text('View details'),
                                     ),
-                                    TextButton(
+                                    _eventIconAction(
+                                      icon: Icons.check_circle_outline,
+                                      tooltip: 'Finalize inquiry',
+                                      permissionKey:
+                                          ActionPermissionKeys.manageEventsFinalize,
                                       onPressed: () async {
                                         try {
                                           final full =
@@ -450,7 +482,6 @@ extension _ManageEventsTableExt on _ManageEventsState {
                                           );
                                         }
                                       },
-                                      child: const Text('Finalize'),
                                     ),
                                   ],
                                 ),
@@ -475,13 +506,17 @@ extension _ManageEventsTableExt on _ManageEventsState {
         emptyMessage: 'No confirmed orders awaiting downpayment.',
         actionCells:
             (dto) => [
-              TextButton(
+              _eventIconAction(
+                icon: Icons.visibility_outlined,
+                tooltip: 'View details',
+                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
                 onPressed: () => _showEventOrderDetailModal(dto),
-                child: const Text('View details'),
               ),
-              TextButton(
+              _eventIconAction(
+                icon: Icons.payments_outlined,
+                tooltip: 'Confirm downpayment',
+                permissionKey: ActionPermissionKeys.manageEventsConfirmDownpayment,
                 onPressed: () => _showConfirmDownpaymentDialog(dto),
-                child: const Text('Confirm downpayment'),
               ),
             ],
       ),
@@ -496,9 +531,17 @@ extension _ManageEventsTableExt on _ManageEventsState {
         emptyMessage: 'No ongoing events.',
         actionCells:
             (dto) => [
-              TextButton(
+              _eventIconAction(
+                icon: Icons.visibility_outlined,
+                tooltip: 'View details',
+                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
                 onPressed: () => _showEventOrderDetailModal(dto),
-                child: const Text('View details'),
+              ),
+              _eventIconAction(
+                icon: Icons.checklist_rtl_outlined,
+                tooltip: 'Checklist',
+                permissionKey: ActionPermissionKeys.manageEventsChecklist,
+                onPressed: () => _showChecklistDialog(dto),
               ),
             ],
       ),
@@ -513,17 +556,24 @@ extension _ManageEventsTableExt on _ManageEventsState {
         emptyMessage: 'No orders awaiting full payment.',
         actionCells:
             (dto) => [
-              TextButton(
+              _eventIconAction(
+                icon: Icons.visibility_outlined,
+                tooltip: 'View details',
+                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
                 onPressed: () => _showEventOrderDetailModal(dto),
-                child: const Text('View details'),
               ),
-              TextButton(
+              _eventIconAction(
+                icon: Icons.receipt_long_outlined,
+                tooltip: 'Finalize payment',
+                permissionKey: ActionPermissionKeys.manageEventsFinalize,
                 onPressed: () => _showFinalizeFullPaymentDialog(dto),
-                child: const Text('Finalize'),
               ),
-              TextButton(
+              _eventIconAction(
+                icon: Icons.task_alt_outlined,
+                tooltip: 'Complete event',
+                permissionKey: ActionPermissionKeys.manageEventsComplete,
                 onPressed: () => _openFullPaymentCompleteModal(dto),
-                child: const Text('Complete event'),
+                color: Colors.green.shade700,
               ),
             ],
       ),

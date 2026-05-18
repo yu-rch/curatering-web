@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config/site_routes.dart';
 import '../services/website_content_store.dart';
 import '../utils/website_image_utils.dart';
 import '../widgets/antd_buttons.dart';
@@ -101,7 +102,8 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage>
                   ),
                 ),
                 OutlinedButton.icon(
-                  onPressed: () => Navigator.of(context).pushNamed('/'),
+                  onPressed: () =>
+                      Navigator.of(context).pushNamed(customerRoute('/')),
                   icon: const Icon(Icons.open_in_new, size: 18),
                   label: const Text('Preview site'),
                 ),

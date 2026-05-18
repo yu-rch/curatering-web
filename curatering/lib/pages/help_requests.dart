@@ -116,7 +116,7 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Help Requests',
+              'Help Requests Management',
               style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),

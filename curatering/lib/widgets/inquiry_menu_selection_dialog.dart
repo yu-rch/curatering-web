@@ -24,7 +24,7 @@ Future<List<Map<String, dynamic>>?> showInquiryMenuSelectionDialog(
   required List<SetMenu> setMenus,
   List<Map<String, dynamic>> initialSelections = const [],
   InquiryMenuPickerMode mode = InquiryMenuPickerMode.inquiryExclusive,
-  int minCustomDishes = 5,
+  int minCustomDishes = 4,
   int maxCustomDishes = 8,
 }) {
   return showAntdModal<List<Map<String, dynamic>>>(
@@ -62,7 +62,7 @@ class InquiryMenuPicker extends StatefulWidget {
     required this.setMenus,
     this.initialSelections = const [],
     this.mode = InquiryMenuPickerMode.inquiryExclusive,
-    this.minCustomDishes = 5,
+    this.minCustomDishes = 4,
     this.maxCustomDishes = 8,
     this.embedded = false,
     this.tabIndex = 0,

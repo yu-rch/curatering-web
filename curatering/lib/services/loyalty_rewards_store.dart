@@ -47,6 +47,7 @@ class RewardsCondition {
   String reward;
   String size;
   bool isActive;
+  String orderType; // 'restaurant' or 'catering'
 
   RewardsCondition({
     required this.id,
@@ -55,6 +56,7 @@ class RewardsCondition {
     required this.reward,
     required this.size,
     this.isActive = true,
+    this.orderType = 'restaurant',
   });
 
   Map<String, dynamic> toJson() => {
@@ -64,6 +66,7 @@ class RewardsCondition {
     'reward': reward,
     'size': size,
     'isActive': isActive,
+    'orderType': orderType,
   };
 
   factory RewardsCondition.fromJson(Map<String, dynamic> json) =>
@@ -74,6 +77,7 @@ class RewardsCondition {
         reward: json['reward'] as String? ?? '',
         size: json['size'] as String? ?? '',
         isActive: json['isActive'] as bool? ?? true,
+        orderType: json['orderType'] as String? ?? 'restaurant',
       );
 
   /// Get description for display
@@ -251,6 +255,7 @@ class LoyaltyRewardsStore extends ChangeNotifier {
     required int maximumPoints,
     required String reward,
     required String size,
+    String orderType = 'restaurant',
   }) {
     final id = DateTime.now().millisecondsSinceEpoch.toString();
     _rewardsConditions.add(
@@ -260,6 +265,7 @@ class LoyaltyRewardsStore extends ChangeNotifier {
         maximumPoints: maximumPoints,
         reward: reward,
         size: size,
+        orderType: orderType,
       ),
     );
     _persist();

@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../widgets/app_scaffold.dart';
 import '../models/menu_dish.dart';
+import '../services/meal_types_store.dart';
 import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
 import '../utils/debouncer.dart';
@@ -185,6 +186,8 @@ class _MenuState extends State<Menu> {
 
   String? _editingImageBase64;
   String _editingType = ''; // For restaurant dish type grouping
+  String _editingMealType = ''; // Catering meal type (menu_dishes_meal_types)
+  List<String> _cateringMealTypes = const [];
   Map<String, String> _editingPaxPrices = {};
   Map<String, TextEditingController> _paxPriceControllers = {};
   int _activeTabIndex = 0;
@@ -230,6 +233,9 @@ class _MenuState extends State<Menu> {
     super.initState();
     MenuStore.instance.addListener(_onMenuChanged);
     SetMenuStore.instance.addListener(_onSetMenusChanged);
+    MealTypesStore.instance.load().then((types) {
+      if (mounted) setState(() => _cateringMealTypes = types);
+    });
   }
 
   void _onMenuChanged() {
@@ -283,6 +289,7 @@ class _MenuState extends State<Menu> {
     _editingAvailable = true;
     _editingImageBase64 = null;
     _editingType = '';
+    _editingMealType = '';
     _typeController.clear();
     _nameController.clear();
     _priceController.clear();
@@ -325,6 +332,7 @@ class _MenuState extends State<Menu> {
     _newSauceController.clear();
     _publicDescriptionController.text = dish.publicDescription;
     _allergensController.text = dish.allergens;
+    _editingMealType = dish.category == 'catering' ? dish.mealType.trim() : '';
   }
 
   void _addPaxOption() {
@@ -510,6 +518,31 @@ class _MenuState extends State<Menu> {
                       ),
                       if (category == 'catering') ...[
                         const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          value:
+                              _editingMealType.isNotEmpty &&
+                                      _cateringMealTypes.contains(_editingMealType)
+                                  ? _editingMealType
+                                  : null,
+                          decoration: const InputDecoration(
+                            labelText: 'Meal type',
+                          ),
+                          items: [
+                            const DropdownMenuItem(
+                              value: '',
+                              child: Text('— None —'),
+                            ),
+                            ..._cateringMealTypes.map(
+                              (t) => DropdownMenuItem(value: t, child: Text(t)),
+                            ),
+                          ],
+                          onChanged: (v) {
+                            dialogSetState(() {
+                              _editingMealType = v ?? '';
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 12),
                         TextField(
                           controller: _publicDescriptionController,
                           decoration: const InputDecoration(
@@ -520,13 +553,13 @@ class _MenuState extends State<Menu> {
                           ),
                           maxLines: 3,
                         ),
-                        const SizedBox(height: 12),
-                        AllergenSelectorField(
-                          key: ValueKey('allergens_${dish?.id ?? 'new'}'),
-                          initialSerialized: _allergensController.text,
-                          onChanged: (s) => _allergensController.text = s,
-                        ),
                       ],
+                      const SizedBox(height: 12),
+                      AllergenSelectorField(
+                        key: ValueKey('allergens_${dish?.id ?? 'new'}_$category'),
+                        initialSerialized: _allergensController.text,
+                        onChanged: (s) => _allergensController.text = s,
+                      ),
                       const SizedBox(height: 8),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
@@ -588,15 +621,14 @@ class _MenuState extends State<Menu> {
                                   ? _editingSauces
                                   : const [],
                           type: _editingType,
+                          mealType:
+                              category == 'catering' ? _editingMealType : '',
                           available: _editingAvailable,
                           publicDescription:
                               category == 'catering'
                                   ? _publicDescriptionController.text
                                   : '',
-                          allergens:
-                              category == 'catering'
-                                  ? _allergensController.text
-                                  : '',
+                          allergens: _allergensController.text,
                         );
                       } else {
                         await MenuStore.instance.updateDish(
@@ -611,15 +643,16 @@ class _MenuState extends State<Menu> {
                                   ? _editingSauces
                                   : const [],
                           type: _editingType,
+                          mealType:
+                              category == 'catering'
+                                  ? _editingMealType
+                                  : dish.mealType,
                           available: _editingAvailable,
                           publicDescription:
                               category == 'catering'
                                   ? _publicDescriptionController.text
                                   : dish.publicDescription,
-                          allergens:
-                              category == 'catering'
-                                  ? _allergensController.text
-                                  : dish.allergens,
+                          allergens: _allergensController.text,
                         );
                       }
                       if (context.mounted) {

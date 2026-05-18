@@ -91,9 +91,8 @@ class _InventoryState extends State<Inventory> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
-  final TextEditingController _unitCostController = TextEditingController();
   final TextEditingController _unitController = TextEditingController();
-  final TextEditingController _notesController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _categoryController = TextEditingController();
   final TextEditingController _minStockController =
       TextEditingController(text: '10');
@@ -158,9 +157,8 @@ class _InventoryState extends State<Inventory> {
     _searchController.dispose();
     _nameController.dispose();
     _quantityController.dispose();
-    _unitCostController.dispose();
     _unitController.dispose();
-    _notesController.dispose();
+    _descriptionController.dispose();
     _categoryController.dispose();
     _minStockController.dispose();
     _searchDebouncer.dispose();
@@ -258,10 +256,8 @@ class _InventoryState extends State<Inventory> {
     _editingItemId = item?.id;
     _nameController.text = item?.name ?? '';
     _quantityController.text = item?.quantity.toString() ?? '';
-    _unitCostController.text =
-        item == null ? '' : item.unitCost.toStringAsFixed(2);
     _unitController.text = item?.unit ?? 'pcs';
-    _notesController.text = item?.notes ?? '';
+    _descriptionController.text = item?.notes ?? '';
     _categoryController.text = item?.category ?? 'Non-Perishable Ingredients';
     if (!_categories.contains(_categoryController.text)) {
       _categoryController.text = 'Other';
@@ -285,7 +281,7 @@ class _InventoryState extends State<Inventory> {
                   TextField(
                     controller: _nameController,
                     decoration: const InputDecoration(
-                      labelText: 'Item Name',
+                      labelText: 'Item',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -342,17 +338,6 @@ class _InventoryState extends State<Inventory> {
                   ),
                   const SizedBox(height: 12),
                   TextField(
-                    controller: _unitCostController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: const InputDecoration(
-                      labelText: 'Unit Cost (₱)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
                     controller: _minStockController,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -363,10 +348,10 @@ class _InventoryState extends State<Inventory> {
                   ),
                   const SizedBox(height: 12),
                   TextField(
-                    controller: _notesController,
+                    controller: _descriptionController,
                     maxLines: 3,
                     decoration: const InputDecoration(
-                      labelText: 'Notes (Optional)',
+                      labelText: 'Description',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -392,7 +377,6 @@ class _InventoryState extends State<Inventory> {
   Future<void> _saveInventoryItem(BuildContext dialogContext) async {
     if (_nameController.text.trim().isEmpty ||
         _quantityController.text.trim().isEmpty ||
-        _unitCostController.text.trim().isEmpty ||
         _unitController.text.trim().isEmpty ||
         _categoryController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -417,12 +401,12 @@ class _InventoryState extends State<Inventory> {
         'name': _nameController.text.trim(),
         'category': _categoryController.text.trim(),
         'quantity': q,
-        'unitCost': double.tryParse(_unitCostController.text.trim()) ?? 0,
+        'unitCost': 0,
         'unit': _unitController.text.trim(),
         'notes':
-            _notesController.text.trim().isEmpty
+            _descriptionController.text.trim().isEmpty
                 ? null
-                : _notesController.text.trim(),
+                : _descriptionController.text.trim(),
         'minStockLevel': int.tryParse(_minStockController.text.trim()) ?? 0,
       };
 
@@ -501,9 +485,8 @@ class _InventoryState extends State<Inventory> {
   void _clearControllers() {
     _nameController.clear();
     _quantityController.clear();
-    _unitCostController.clear();
     _unitController.text = 'pcs';
-    _notesController.clear();
+    _descriptionController.clear();
     _categoryController.clear();
     _minStockController.text = '10';
     _editingItemId = null;
@@ -548,12 +531,13 @@ class _InventoryState extends State<Inventory> {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: DataTable(
         headingRowColor: const WidgetStatePropertyAll(Color(0xFFF5F7F9)),
+        columnSpacing: 20,
         columns: const [
-          DataColumn(label: Text('Name')),
+          DataColumn(label: SizedBox(width: 120, child: Text('Item'))),
           DataColumn(label: Text('Category')),
+          DataColumn(label: Text('Description')),
           DataColumn(label: Text('Qty')),
           DataColumn(label: Text('Unit')),
-          DataColumn(label: Text('Unit cost')),
           DataColumn(label: Text('Updated')),
           DataColumn(label: Text('Stock')),
           DataColumn(label: Text('Actions')),
@@ -562,11 +546,31 @@ class _InventoryState extends State<Inventory> {
             items.map((item) {
               return DataRow(
                 cells: [
-                  DataCell(Text(item.name)),
+                  DataCell(
+                    SizedBox(
+                      width: 120,
+                      child: Text(
+                        item.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
                   DataCell(Text(item.category)),
+                  DataCell(
+                    SizedBox(
+                      width: 160,
+                      child: Text(
+                        item.notes?.trim().isNotEmpty == true
+                            ? item.notes!
+                            : '—',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
                   DataCell(Text('${item.quantity}')),
                   DataCell(Text(item.unit)),
-                  DataCell(Text('₱${item.unitCost.toStringAsFixed(2)}')),
                   DataCell(Text(_formatDate(item.lastUpdated))),
                   DataCell(
                     Container(
@@ -647,8 +651,6 @@ class _InventoryState extends State<Inventory> {
             Text(item.category, style: TextStyle(color: Colors.grey.shade600)),
             const SizedBox(height: 12),
             Text('Qty: ${item.quantity} ${item.unit}'),
-            Text('Unit: ₱${item.unitCost.toStringAsFixed(2)}'),
-            Text('Total: ₱${item.totalValue.toStringAsFixed(2)}'),
             if (item.notes != null && item.notes!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -695,7 +697,6 @@ class _InventoryState extends State<Inventory> {
   Widget _buildStatsRow(List<InventoryItem> items, int totalActiveInSystem) {
     final total = items.length;
     final low = items.where((e) => e.lowStock).length;
-    final value = items.fold<double>(0, (s, e) => s + e.totalValue);
     final showTotalHint = totalActiveInSystem > 0 && total != totalActiveInSystem;
     return Row(
       children: [
@@ -747,27 +748,6 @@ class _InventoryState extends State<Inventory> {
                     ),
                   ),
                   const Text('Low stock'),
-                ],
-              ),
-            ),
-          ),
-        ),
-        Expanded(
-          child: Card(
-            color: Colors.green.shade50,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  Text(
-                    '₱${value.toStringAsFixed(0)}',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
-                    ),
-                  ),
-                  const Text('Value'),
                 ],
               ),
             ),

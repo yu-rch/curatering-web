@@ -10,7 +10,9 @@ class MenuDish {
   final bool available;
   final DateTime? archivedAt;
   final List<String> ingredients;
-  final String type; // For restaurant dish grouping (RICE MEALS, PASTA, etc.)
+  final String type; // Restaurant meal category (rice meals, pasta, …)
+  /// Catering meal type (appetizer, main course, …) from [menu_dishes_meal_types].
+  final String mealType;
   final List<String> setMenus; // Array of set names this dish belongs to
   /// Short description for the dish on the public catering menu (tap for details).
   final String publicDescription;
@@ -29,6 +31,7 @@ class MenuDish {
     this.archivedAt,
     this.ingredients = const [],
     this.type = '',
+    this.mealType = '',
     this.setMenus = const [],
     this.publicDescription = '',
     this.allergens = '',
@@ -47,6 +50,7 @@ class MenuDish {
     DateTime? archivedAt,
     List<String>? ingredients,
     String? type,
+    String? mealType,
     List<String>? setMenus,
     String? publicDescription,
     String? allergens,
@@ -64,6 +68,7 @@ class MenuDish {
       archivedAt: archivedAt ?? this.archivedAt,
       ingredients: ingredients ?? this.ingredients,
       type: type ?? this.type,
+      mealType: mealType ?? this.mealType,
       setMenus: setMenus ?? this.setMenus,
       publicDescription: publicDescription ?? this.publicDescription,
       allergens: allergens ?? this.allergens,

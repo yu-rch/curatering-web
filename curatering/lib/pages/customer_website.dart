@@ -13,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
 import '../config.dart';
+import '../config/site_routes.dart';
 import '../models/menu_dish.dart';
 import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
@@ -302,7 +303,19 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     _initialize();
   }
 
+  void _recordPageView() {
+  final path = ModalRoute.of(context)?.settings.name ?? kCustomerSitePrefix;
+    unawaited(
+      http.post(
+        Uri.parse('$apiBaseUrl/api/public/analytics/page-view'),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode({'platform': 'web', 'path': path}),
+      ),
+    );
+  }
+
   Future<void> _initialize() async {
+    _recordPageView();
     await WebsiteContentStore.instance.ensureLoaded();
     if (mounted) setState(() {});
     MenuStore.instance.addListener(_onMenuChanged);
@@ -1139,7 +1152,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     // Handle special navigation for gallery, restaurant, inquire, and contact us
     if (index == 1 && label == 'Gallery') {
       return InkWell(
-        onTap: () => Navigator.pushNamed(context, '/gallery'),
+        onTap: () =>
+            Navigator.pushReplacementNamed(context, customerRoute('/gallery')),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Text(
@@ -1155,7 +1169,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
     if (index == 3 && label == 'Restaurant') {
       return InkWell(
-        onTap: () => Navigator.pushNamed(context, '/restaurant'),
+        onTap: () => Navigator.pushReplacementNamed(
+          context,
+          customerRoute('/restaurant'),
+        ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Text(
@@ -1171,7 +1188,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
     if (index == 4 && label == 'Inquire Now') {
       return InkWell(
-        onTap: () => Navigator.pushNamed(context, '/inquire'),
+        onTap: () =>
+            Navigator.pushReplacementNamed(context, customerRoute('/inquire')),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Text(
@@ -1187,7 +1205,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
     if (index == 5 && label == 'Contact Us') {
       return InkWell(
-        onTap: () => Navigator.pushNamed(context, '/contact-us'),
+        onTap: () => Navigator.pushReplacementNamed(
+          context,
+          customerRoute('/contact-us'),
+        ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Text(
@@ -1313,16 +1334,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 child: const Text(
                   'CONTACT US',
                   style: TextStyle(color: Colors.black),
-                ),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pushNamed('/login'),
-                child: const Text(
-                  'STAFF LOGIN',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
                 ),
               ),
             ],
@@ -3480,6 +3491,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         ),
       ),
       endDrawer: _buildCartSidebar(),
+      endDrawerEnableOpenDragGesture: false,
     );
   }
 

@@ -113,7 +113,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
 
     try {
       final response = await http.get(
-        Uri.parse('$_apiBaseUrl/api/admin/customers'),
+        Uri.parse('$_apiBaseUrl/api/loyalty/customers'),
         headers: {'Authorization': 'Bearer ${AuthSession.instance.token}'},
       );
 
@@ -241,45 +241,6 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
       return '${date.day}/${date.month}/${date.year}';
     } catch (e) {
       return '';
-    }
-  }
-
-  Future<void> _recalculateLoyaltyPoints() async {
-    try {
-      final response = await http.post(
-        Uri.parse('$_apiBaseUrl/api/admin/recalculate-loyalty-points'),
-        headers: {'Authorization': 'Bearer ${AuthSession.instance.token}'},
-      );
-
-      print('Response status: ${response.statusCode}');
-      print('Response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Recalculated points for ${data['updatedCount']} customers',
-            ),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _loadCustomers(); // Reload customers with updated points
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Failed to recalculate points: ${response.statusCode}',
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
-      print('Error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-      );
     }
   }
 
@@ -436,16 +397,37 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // REWARDS Section (now includes order type dropdown)
+          _buildLoyaltyAnalyticsCard(),
+          const SizedBox(height: 24),
           _buildSectionHeader(
-            'REWARDS',
-            () => _showAddRewardsConditionDialog(),
-            showRecalculate: true,
+            'POINTS EARNING',
+            () => _showAddPointsConditionDialog(),
           ),
           const SizedBox(height: 16),
-          _buildRewardsTable(),
+          _buildPointsTable(),
+          const SizedBox(height: 32),
+          _buildSectionHeader(
+            'RESTAURANT REWARDS',
+            () => _showAddRewardsConditionDialog(orderType: 'restaurant'),
+          ),
+          const SizedBox(height: 16),
+          _buildRewardsTable(orderType: 'restaurant'),
+          const SizedBox(height: 32),
+          _buildSectionHeader(
+            'CATERING REWARDS',
+            () => _showAddRewardsConditionDialog(orderType: 'catering'),
+          ),
+          const SizedBox(height: 16),
+          _buildRewardsTable(orderType: 'catering'),
         ],
       ),
+    );
+  }
+
+  Widget _buildLoyaltyAnalyticsCard() {
+    return _LoyaltyRewardCalculatorCard(
+      pointsConditions: _pointsConditions,
+      rewardsConditions: _rewardsConditions,
     );
   }
 
@@ -570,11 +552,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
     );
   }
 
-  Widget _buildSectionHeader(
-    String title,
-    VoidCallback onAddPressed, {
-    bool showRecalculate = false,
-  }) {
+  Widget _buildSectionHeader(String title, VoidCallback onAddPressed) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -597,17 +575,6 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
           ),
         ),
         const SizedBox(width: 16),
-        if (showRecalculate)
-          ElevatedButton.icon(
-            onPressed: _recalculateLoyaltyPoints,
-            icon: const Icon(Icons.refresh, size: 16),
-            label: const Text('Recalculate Points'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2196F3),
-              foregroundColor: Colors.white,
-            ),
-          ),
-        if (showRecalculate) const SizedBox(width: 8),
         ElevatedButton.icon(
           onPressed: onAddPressed,
           icon: const Icon(Icons.add, size: 16),
@@ -720,7 +687,21 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
     );
   }
 
-  Widget _buildRewardsTable() {
+  Widget _buildRewardsTable({required String orderType}) {
+    final conditions = _rewardsConditions
+        .where((c) => c.orderType == orderType)
+        .toList();
+    if (conditions.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'No ${orderType == 'catering' ? 'catering' : 'restaurant'} rewards configured yet.',
+            style: TextStyle(color: Colors.grey.shade600),
+          ),
+        ),
+      );
+    }
     return Card(
       elevation: 2,
       child: Column(
@@ -773,7 +754,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
             ),
           ),
           // Rows
-          ..._rewardsConditions.map((condition) {
+          ...conditions.map((condition) {
             return Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
@@ -1492,12 +1473,12 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
     );
   }
 
-  void _showAddRewardsConditionDialog() {
+  void _showAddRewardsConditionDialog({String orderType = 'restaurant'}) {
     final minPointsController = TextEditingController(text: '1000');
     final maxPointsController = TextEditingController(text: '1500');
     final rewardController = TextEditingController(text: 'Shrimp Tempura');
     final sizeController = TextEditingController(text: '50 pcs');
-    String selectedOrderType = 'restaurant';
+    final selectedOrderType = orderType;
     String? errorMessage;
 
     showDialog(
@@ -1705,6 +1686,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                               maximumPoints: maxPoints,
                               reward: rewardController.text,
                               size: sizeController.text,
+                              orderType: selectedOrderType,
                             );
                             Navigator.pop(context);
                           },
@@ -2144,6 +2126,210 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
               ),
             ),
           ),
+    );
+  }
+}
+
+/// Built-in calculator to estimate whether loyalty rewards are sustainable.
+class _LoyaltyRewardCalculatorCard extends StatefulWidget {
+  const _LoyaltyRewardCalculatorCard({
+    required this.pointsConditions,
+    required this.rewardsConditions,
+  });
+
+  final List<PointsCondition> pointsConditions;
+  final List<RewardsCondition> rewardsConditions;
+
+  @override
+  State<_LoyaltyRewardCalculatorCard> createState() =>
+      _LoyaltyRewardCalculatorCardState();
+}
+
+class _LoyaltyRewardCalculatorCardState
+    extends State<_LoyaltyRewardCalculatorCard> {
+  final _avgOrderController = TextEditingController(text: '2500');
+  final _ordersPerMonthController = TextEditingController(text: '40');
+  final _rewardCostController = TextEditingController(text: '800');
+  final _pointsToRedeemController = TextEditingController(text: '1000');
+  String _channel = 'restaurant';
+
+  @override
+  void dispose() {
+    _avgOrderController.dispose();
+    _ordersPerMonthController.dispose();
+    _rewardCostController.dispose();
+    _pointsToRedeemController.dispose();
+    super.dispose();
+  }
+
+  PointsCondition? _pointsRule() {
+    for (final c in widget.pointsConditions) {
+      if (!c.isActive) continue;
+      if (c.orderType == _channel) return c;
+    }
+    return null;
+  }
+
+  RewardsCondition? _rewardRule() {
+    final pts = int.tryParse(_pointsToRedeemController.text) ?? 0;
+    for (final r in widget.rewardsConditions) {
+      if (!r.isActive || r.orderType != _channel) continue;
+      if (pts >= r.minimumPoints && pts <= r.maximumPoints) return r;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final avgOrder = double.tryParse(_avgOrderController.text) ?? 0;
+    final ordersPerMonth = int.tryParse(_ordersPerMonthController.text) ?? 0;
+    final rewardCost = double.tryParse(_rewardCostController.text) ?? 0;
+    final pointsToRedeem = int.tryParse(_pointsToRedeemController.text) ?? 0;
+
+    final rule = _pointsRule();
+    final ptsPerOrder =
+        rule != null && avgOrder >= rule.minimumCost ? rule.pointsApplication : 0;
+    final monthlyPoints = ptsPerOrder * ordersPerMonth;
+    final ordersToRedeem =
+        ptsPerOrder > 0 ? (pointsToRedeem / ptsPerOrder).ceil() : 0;
+    final revenueToRedeem = ordersToRedeem * avgOrder;
+    final marginAtRisk = revenueToRedeem > 0 ? rewardCost / revenueToRedeem : 0;
+    final reward = _rewardRule();
+
+    final riskColor = marginAtRisk > 0.15
+        ? Colors.red.shade700
+        : marginAtRisk > 0.08
+        ? Colors.orange.shade800
+        : Colors.green.shade700;
+    final riskLabel = marginAtRisk > 0.15
+        ? 'High risk — reward may be too easy to earn'
+        : marginAtRisk > 0.08
+        ? 'Moderate — review reward cost or points required'
+        : 'Looks sustainable at these assumptions';
+
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'LOYALTY ANALYTICS',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Estimate whether customers can redeem rewards faster than you earn margin.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 16),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'restaurant', label: Text('Restaurant')),
+                ButtonSegment(value: 'catering', label: Text('Catering')),
+              ],
+              selected: {_channel},
+              onSelectionChanged: (s) => setState(() => _channel = s.first),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 16,
+              runSpacing: 12,
+              children: [
+                SizedBox(
+                  width: 160,
+                  child: TextField(
+                    controller: _avgOrderController,
+                    decoration: const InputDecoration(
+                      labelText: 'Avg order (PHP)',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                SizedBox(
+                  width: 160,
+                  child: TextField(
+                    controller: _ordersPerMonthController,
+                    decoration: const InputDecoration(
+                      labelText: 'Orders / month',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                SizedBox(
+                  width: 160,
+                  child: TextField(
+                    controller: _rewardCostController,
+                    decoration: const InputDecoration(
+                      labelText: 'Reward cost (PHP)',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                SizedBox(
+                  width: 160,
+                  child: TextField(
+                    controller: _pointsToRedeemController,
+                    decoration: const InputDecoration(
+                      labelText: 'Points to redeem',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (rule == null)
+              Text(
+                'No active points rule for $_channel — add one under Points Earning.',
+                style: TextStyle(color: Colors.orange.shade800, fontSize: 12),
+              )
+            else ...[
+              Text(
+                'Earns $ptsPerOrder pts per order (min PHP ${rule.minimumCost.toStringAsFixed(0)})',
+                style: const TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '~$monthlyPoints pts/month at $ordersPerMonth orders',
+                style: const TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Redeem $pointsToRedeem pts ≈ $ordersToRedeem orders (PHP ${revenueToRedeem.toStringAsFixed(0)} revenue) for PHP ${rewardCost.toStringAsFixed(0)} reward',
+                style: const TextStyle(fontSize: 12),
+              ),
+              if (reward != null)
+                Text(
+                  'Matches tier: ${reward.reward} (${reward.size})',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+              const SizedBox(height: 8),
+              Text(
+                'Reward cost ≈ ${(marginAtRisk * 100).toStringAsFixed(1)}% of revenue to redeem — $riskLabel',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: riskColor,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

@@ -70,6 +70,11 @@ class AppScaffold extends StatelessWidget {
 
   static const _superAdminSidebarItems = <_SidebarItemData>[
     _SidebarItemData(
+      icon: Icons.help_outline,
+      label: 'Help Requests Management',
+      route: '/help-requests',
+    ),
+    _SidebarItemData(
       icon: Icons.web_asset,
       label: 'Website CMS',
       route: '/website-admin',
@@ -169,7 +174,7 @@ class AppScaffold extends StatelessWidget {
         AntdProfileMenuItem.action(
           id: 'help_requests',
           icon: Icons.help_outline,
-          label: 'Help requests',
+          label: 'Help Requests Management',
           onSelected: () {
             Navigator.of(context).pushReplacementNamed('/help-requests');
           },

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
 import '../models/event_order.dart';
@@ -34,6 +35,7 @@ class Transactions extends StatefulWidget {
 class _TransactionsState extends State<Transactions> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String _eventTypeFilter = '';
 
   bool _isLoading = false;
   String? _errorMessage;
@@ -58,6 +60,12 @@ class _TransactionsState extends State<Transactions> {
     super.dispose();
   }
 
+  String _displayOrderNo(EventOrderDto o) {
+    final id = o.inquiryId.trim();
+    if (id.isNotEmpty) return id;
+    return o.id.length > 8 ? o.id.substring(o.id.length - 8) : o.id;
+  }
+
   Future<void> _loadCompletedOrders() async {
     final role = AuthSession.instance.currentRole;
     final roleType = role == Role.supervisor ? 'supervisor' : 'manager';
@@ -73,9 +81,12 @@ class _TransactionsState extends State<Transactions> {
         roleType: roleType,
         compact: true,
       );
+      final completedOnly = orders
+          .where((o) => o.status == 'completed' && o.finalStatus != 'cancelled')
+          .toList();
 
       final dates = <DateTime>{};
-      for (final o in orders) {
+      for (final o in completedOnly) {
         if (o.scheduleSlots.isEmpty) continue;
         final d = DateTime.tryParse(o.scheduleSlots.first.date);
         if (d == null) continue;
@@ -84,16 +95,14 @@ class _TransactionsState extends State<Transactions> {
       final sortedDates = dates.toList()..sort((a, b) => b.compareTo(a));
 
       setState(() {
-        _completedOrders = orders;
+        _completedOrders = completedOnly;
         _availableDates = sortedDates;
         if (sortedDates.isNotEmpty) {
           _selectedDate = sortedDates.first;
-        } else {
-          _selectedDate = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
         }
       });
     } catch (e) {
-      setState(() => _errorMessage = 'Failed to load orders.');
+      setState(() => _errorMessage = 'Failed to load orders: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -102,11 +111,7 @@ class _TransactionsState extends State<Transactions> {
   Widget _dateTile(DateTime date) {
     final isSelected = date == _selectedDate;
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedDate = date;
-        });
-      },
+      onTap: () => setState(() => _selectedDate = date),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         decoration: BoxDecoration(
@@ -126,7 +131,15 @@ class _TransactionsState extends State<Transactions> {
             ),
             const SizedBox(height: 6),
             Text(
-              ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][date.weekday % 7],
+              [
+                'Sunday',
+                'Monday',
+                'Tuesday',
+                'Wednesday',
+                'Thursday',
+                'Friday',
+                'Saturday',
+              ][date.weekday % 7],
               style: TextStyle(
                 color: isSelected ? Colors.white70 : Colors.grey.shade600,
               ),
@@ -149,23 +162,33 @@ class _TransactionsState extends State<Transactions> {
       if (o.scheduleSlots.isEmpty) return false;
       final d = DateTime.tryParse(o.scheduleSlots.first.date);
       if (d == null) return false;
-      final key = DateTime(d.year, d.month, d.day);
-      return key == selectedKey;
+      return DateTime(d.year, d.month, d.day) == selectedKey;
     }).toList();
 
-    final filteredOrders = _searchQuery.isEmpty
-        ? ordersForSelectedDate
-        : ordersForSelectedDate.where((o) {
-            final haystack =
-                '${o.eventTitle} ${o.customerName} ${o.eventType}'.toLowerCase();
-            return haystack.contains(_searchQuery);
-          }).toList();
+    var filteredOrders = ordersForSelectedDate;
+    if (_eventTypeFilter.isNotEmpty) {
+      filteredOrders = filteredOrders
+          .where(
+            (o) =>
+                o.eventType.trim().toLowerCase() ==
+                _eventTypeFilter.toLowerCase(),
+          )
+          .toList();
+    }
+    if (_searchQuery.isNotEmpty) {
+      filteredOrders = filteredOrders.where((o) {
+        final haystack =
+            '${_displayOrderNo(o)} ${o.eventTitle} ${o.customerName} ${o.eventType}'
+                .toLowerCase();
+        return haystack.contains(_searchQuery);
+      }).toList();
+    }
 
     final orders = filteredOrders.map((o) {
       final totalCost = computeOrderTotalCost(o);
       final points = computeLoyaltyPointsFromCost(totalCost);
       return TransactionItem(
-        orderNo: o.id,
+        orderNo: _displayOrderNo(o),
         customerName: o.customerName,
         eventTitle: o.eventTitle,
         eventType: o.eventType,
@@ -185,14 +208,14 @@ class _TransactionsState extends State<Transactions> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Orders',
+              'Order History',
               style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 6),
             Row(
               children: [
                 Text(
-                  'Daily completed orders and loyalty rewards summary.',
+                  'Completed catering and event orders.',
                   style: TextStyle(color: Colors.grey.shade700),
                 ),
                 const Spacer(),
@@ -205,6 +228,51 @@ class _TransactionsState extends State<Transactions> {
                     foregroundColor: Colors.white,
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(
+                  width: 220,
+                  child: DropdownButtonFormField<String>(
+                    value: _eventTypeFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Event type',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('All types'),
+                      ),
+                      ...{
+                        for (final o in _completedOrders)
+                          if (o.eventType.trim().isNotEmpty) o.eventType.trim(),
+                      }.map(
+                        (t) => DropdownMenuItem(value: t, child: Text(t)),
+                      ),
+                    ],
+                    onChanged: (v) =>
+                        setState(() => _eventTypeFilter = v ?? ''),
+                  ),
+                ),
+                if (_eventTypeFilter.isNotEmpty || _searchQuery.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _eventTypeFilter = '';
+                        _searchQuery = '';
+                        _searchController.clear();
+                      });
+                    },
+                    icon: const Icon(Icons.filter_alt_off, size: 18),
+                    label: const Text('Clear filters'),
+                  ),
               ],
             ),
             const SizedBox(height: 16),
@@ -229,7 +297,7 @@ class _TransactionsState extends State<Transactions> {
                             ),
                           )
                         else
-                          for (final d in _availableDates.take(4))
+                          for (final d in _availableDates.take(8))
                             Padding(
                               padding: const EdgeInsets.only(bottom: 12),
                               child: _dateTile(d),
@@ -244,16 +312,21 @@ class _TransactionsState extends State<Transactions> {
                       elevation: 0,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                        side: BorderSide(
+                          color: Colors.black.withValues(alpha: 0.08),
+                        ),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(16.0),
+                        padding: const EdgeInsets.all(16),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
                               'Orders',
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                             const SizedBox(height: 16),
                             if (_isLoading)
@@ -265,36 +338,44 @@ class _TransactionsState extends State<Transactions> {
                               )
                             else if (orders.isEmpty)
                               Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 40),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 40,
+                                ),
                                 child: Center(
                                   child: Text(
-                                    'No orders available for this date.',
-                                    style: TextStyle(color: Colors.grey.shade600),
+                                    'No orders for this date.',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                    ),
                                   ),
                                 ),
                               )
                             else
-                              SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: DataTable(
-                                  columns: const [
-                                    DataColumn(label: Text('Order No.')),
-                                    DataColumn(label: Text('Customer Name')),
-                                    DataColumn(label: Text('Event Title')),
-                                    DataColumn(label: Text('Event Type')),
-                                    DataColumn(label: Text('Total Cost')),
-                                    DataColumn(label: Text('Loyalty Rewards')),
-                                  ],
-                                  rows: orders.map((tx) {
-                                    return DataRow(cells: [
-                                      DataCell(Text(tx.orderNo)),
-                                      DataCell(Text(tx.customerName)),
-                                      DataCell(Text(tx.eventTitle)),
-                                      DataCell(Text(tx.eventType)),
-                                      DataCell(Text(tx.totalCost)),
-                                      DataCell(Text(tx.loyaltyRewards)),
-                                    ]);
-                                  }).toList(),
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: DataTable(
+                                    columns: const [
+                                      DataColumn(label: Text('Order No.')),
+                                      DataColumn(label: Text('Customer')),
+                                      DataColumn(label: Text('Event')),
+                                      DataColumn(label: Text('Type')),
+                                      DataColumn(label: Text('Total')),
+                                      DataColumn(label: Text('Loyalty')),
+                                    ],
+                                    rows: orders.map((tx) {
+                                      return DataRow(
+                                        cells: [
+                                          DataCell(Text(tx.orderNo)),
+                                          DataCell(Text(tx.customerName)),
+                                          DataCell(Text(tx.eventTitle)),
+                                          DataCell(Text(tx.eventType)),
+                                          DataCell(Text(tx.totalCost)),
+                                          DataCell(Text(tx.loyaltyRewards)),
+                                        ],
+                                      );
+                                    }).toList(),
+                                  ),
                                 ),
                               ),
                           ],

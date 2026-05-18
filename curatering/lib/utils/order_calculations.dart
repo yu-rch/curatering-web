@@ -49,3 +49,8 @@ String formatPesos(double amount) {
   return '₱${amount.toStringAsFixed(2)}';
 }
 
+/// Reports and PDFs use PHP prefix per business requirement.
+String formatPhp(double amount) {
+  return 'PHP ${amount.toStringAsFixed(2)}';
+}
+

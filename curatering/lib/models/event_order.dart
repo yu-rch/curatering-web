@@ -62,6 +62,7 @@ class PostAnalysisDto {
 
 class EventOrderDto {
   final String id;
+  final String inquiryId;
   final String source;
   final String status;
 
@@ -78,6 +79,7 @@ class EventOrderDto {
   final List<EventScheduleSlotDto> scheduleSlots;
   final String address;
   final int guestCount;
+  final String allergens;
 
   final List<EventMenuItemDto> menu;
   final EventThemeDesignDto themeDesign;
@@ -103,6 +105,7 @@ class EventOrderDto {
 
   const EventOrderDto({
     required this.id,
+    this.inquiryId = '',
     required this.source,
     required this.status,
     required this.eventTitle,
@@ -116,6 +119,7 @@ class EventOrderDto {
     required this.scheduleSlots,
     required this.address,
     required this.guestCount,
+    this.allergens = '',
     required this.menu,
     required this.themeDesign,
     this.seatingPlan = const SeatingPlanData(),

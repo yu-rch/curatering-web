@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../auth/auth_session.dart';
+import '../auth/action_permissions.dart';
 import '../auth/page_permissions.dart';
 import '../auth/roles.dart';
 import '../models/user.dart';
@@ -61,7 +62,57 @@ class _ManageAccountsState extends State<ManageAccounts> {
         m[route] = true;
       }
     }
+    for (final entry in ActionPermissionKeys.togglesForStaff) {
+      final key = entry.$2;
+      if (existing != null && existing.containsKey(key)) {
+        m[key] = existing[key] == true;
+      } else {
+        m[key] = true;
+      }
+    }
+    if (AuthSession.instance.currentRole == Role.superAdmin) {
+      for (final entry in ActionPermissionKeys.togglesForSuperAdmin) {
+        final key = entry.$2;
+        if (existing != null && existing.containsKey(key)) {
+          m[key] = existing[key] == true;
+        } else {
+          m[key] = true;
+        }
+      }
+    }
     _pagePermissionDraft = m;
+  }
+
+  Widget _permissionToggleRow(String label, String key, bool allowed) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Expanded(child: Text(label)),
+          Text(
+            allowed ? 'Allowed' : 'Blocked',
+            style: TextStyle(
+              color:
+                  allowed ? Colors.green.shade800 : Colors.red.shade700,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed:
+                _savingPermissions
+                    ? null
+                    : () {
+                      setState(() {
+                        _pagePermissionDraft[key] = !allowed;
+                      });
+                      _persistPagePermissions();
+                    },
+            child: Text(allowed ? 'Don\'t allow' : 'Allow'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _fetch() async {
@@ -966,38 +1017,39 @@ class _ManageAccountsState extends State<ManageAccounts> {
               final label = e.$1;
               final route = e.$2;
               final allowed = (_pagePermissionDraft[route] as bool?) ?? true;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    Expanded(child: Text(label)),
-                    Text(
-                      allowed ? 'Allowed' : 'Blocked',
-                      style: TextStyle(
-                        color:
-                            allowed
-                                ? Colors.green.shade800
-                                : Colors.red.shade700,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    TextButton(
-                      onPressed:
-                          _savingPermissions
-                              ? null
-                              : () {
-                                setState(() {
-                                  _pagePermissionDraft[route] = !allowed;
-                                });
-                                _persistPagePermissions();
-                              },
-                      child: Text(allowed ? 'Don\'t allow' : 'Allow'),
-                    ),
-                  ],
-                ),
-              );
+              return _permissionToggleRow(label, route, allowed);
             }),
+            const SizedBox(height: 16),
+            const Text(
+              'ACTION ACCESS',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Control which buttons and actions this user can use on each page.',
+              style: TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            ...ActionPermissionKeys.togglesForStaff.map((e) {
+              final label = e.$1;
+              final key = e.$2;
+              final allowed = (_pagePermissionDraft[key] as bool?) ?? true;
+              return _permissionToggleRow(label, key, allowed);
+            }),
+            if (isCurrentUserSuperAdmin) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'SUPER ADMIN ACTIONS',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              ...ActionPermissionKeys.togglesForSuperAdmin.map((e) {
+                final label = e.$1;
+                final key = e.$2;
+                final allowed = (_pagePermissionDraft[key] as bool?) ?? true;
+                return _permissionToggleRow(label, key, allowed);
+              }),
+            ],
           ],
         ),
       ),

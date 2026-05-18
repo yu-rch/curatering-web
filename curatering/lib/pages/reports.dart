@@ -2,14 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
-import '../models/event_order.dart';
-import '../services/events_api.dart';
+import '../services/reports_api.dart';
 import '../services/reports_pdf_service.dart';
 import '../utils/order_calculations.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_tokens.dart';
 import '../widgets/app_scaffold.dart';
+
+enum _ReportScope { catering, restaurant, combined }
 
 class Reports extends StatefulWidget {
   const Reports({super.key});
@@ -21,15 +22,17 @@ class Reports extends StatefulWidget {
 class _ReportsState extends State<Reports> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  _ReportScope _scope = _ReportScope.combined;
+  bool _annualMode = false;
 
   DateTime _selectedMonth = DateTime(
     DateTime.now().year,
     DateTime.now().month,
     1,
   );
-  List<EventOrderDto> _completedOrders = const <EventOrderDto>[];
-  List<DateTime> _availableMonths = const <DateTime>[];
+  int _selectedYear = DateTime.now().year;
 
+  ReportsSummaryData? _data;
   bool _isLoading = false;
   bool _exportingPdf = false;
   String? _errorMessage;
@@ -37,7 +40,7 @@ class _ReportsState extends State<Reports> {
   @override
   void initState() {
     super.initState();
-    _loadCompletedOrders();
+    _load();
   }
 
   @override
@@ -46,9 +49,11 @@ class _ReportsState extends State<Reports> {
     super.dispose();
   }
 
-  Future<void> _loadCompletedOrders() async {
-    final role = AuthSession.instance.currentRole;
-    final roleType = role == Role.supervisor ? 'supervisor' : 'manager';
+  Future<void> _load() async {
+    if (AuthSession.instance.currentRole != Role.manager &&
+        AuthSession.instance.currentRole != Role.superAdmin) {
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -56,80 +61,44 @@ class _ReportsState extends State<Reports> {
     });
 
     try {
-      final orders = await EventsApi.instance.listOrders(
-        status: 'completed',
-        roleType: roleType,
-        compact: true,
+      final data = await ReportsApi.instance.loadSummary(
+        year: _annualMode ? _selectedYear : _selectedMonth.year,
+        month: _annualMode ? null : _selectedMonth.month,
+        annual: _annualMode,
       );
-      final months = <DateTime>{};
-      for (final o in orders) {
-        if (o.scheduleSlots.isEmpty) continue;
-        final d = DateTime.tryParse(o.scheduleSlots.first.date);
-        if (d == null) continue;
-        months.add(DateTime(d.year, d.month, 1));
-      }
-
-      final sortedMonths = months.toList()..sort((a, b) => b.compareTo(a));
-
-      final fallback = List<DateTime>.generate(6, (i) {
-        final m = DateTime(DateTime.now().year, DateTime.now().month - i, 1);
-        return DateTime(m.year, m.month, 1);
-      });
-
-      setState(() {
-        _completedOrders = orders;
-        _availableMonths = sortedMonths.isEmpty ? fallback : sortedMonths;
-        if (!_availableMonths.contains(_selectedMonth) &&
-            _availableMonths.isNotEmpty) {
-          _selectedMonth = _availableMonths.first;
-        }
-      });
+      setState(() => _data = data);
     } catch (e) {
-      setState(() => _errorMessage = 'Failed to load reports.');
+      setState(() => _errorMessage = 'Failed to load reports: $e');
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  List<EventOrderDto> _ordersForSelectedMonth() {
-    return _completedOrders.where((o) {
-      if (o.scheduleSlots.isEmpty) return false;
-      final d = DateTime.tryParse(o.scheduleSlots.first.date);
-      if (d == null) return false;
-      return d.year == _selectedMonth.year && d.month == _selectedMonth.month;
-    }).toList();
-  }
-
-  List<EventOrderDto> _filteredOrders(List<EventOrderDto> monthOrders) {
-    if (_searchQuery.isEmpty) return monthOrders;
-    return monthOrders.where((o) {
-      final haystack =
-          '${o.eventTitle} ${o.customerName} ${o.eventType} ${o.orderType}'
-              .toLowerCase();
-      return haystack.contains(_searchQuery);
-    }).toList();
-  }
-
-  MonthlyReportSnapshot _snapshotFor(List<EventOrderDto> orders) {
-    return buildMonthlyReportSnapshot(month: _selectedMonth, orders: orders);
+  List<ReportRankItem> _filteredRank(List<ReportRankItem> items) {
+    if (_searchQuery.isEmpty) return items;
+    return items
+        .where((e) => e.name.toLowerCase().contains(_searchQuery))
+        .toList();
   }
 
   Future<void> _downloadPdf() async {
-    final orders = _filteredOrders(_ordersForSelectedMonth());
-    if (orders.isEmpty) {
-      showAntdMessage(
-        context,
-        'No completed orders for this month to export.',
-        type: AntdMessageType.warning,
-      );
-      return;
-    }
+    final data = _data;
+    if (data == null) return;
 
     setState(() => _exportingPdf = true);
     try {
-      await downloadMonthlyReportPdf(_snapshotFor(orders));
+      final scopeLabel = switch (_scope) {
+        _ReportScope.catering => 'catering',
+        _ReportScope.restaurant => 'restaurant',
+        _ => 'combined',
+      };
+      await downloadOperationsReportPdf(
+        data: data,
+        scope: scopeLabel,
+        annual: _annualMode,
+        year: _annualMode ? _selectedYear : _selectedMonth.year,
+        month: _annualMode ? null : _selectedMonth.month,
+      );
       if (!mounted) return;
       showAntdMessage(
         context,
@@ -148,76 +117,21 @@ class _ReportsState extends State<Reports> {
     }
   }
 
-  Future<void> _previewPdf() async {
-    final orders = _filteredOrders(_ordersForSelectedMonth());
-    if (orders.isEmpty) {
-      showAntdMessage(
-        context,
-        'No completed orders for this month to preview.',
-        type: AntdMessageType.warning,
+  Widget _rankTable(String title, List<ReportRankItem> items) {
+    final filtered = _filteredRank(items);
+    if (filtered.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Text(
+          '$title: no data for this period.',
+          style: TextStyle(color: Colors.grey.shade600),
+        ),
       );
-      return;
     }
 
-    setState(() => _exportingPdf = true);
-    try {
-      await previewMonthlyReportPdf(_snapshotFor(orders));
-    } catch (e) {
-      if (!mounted) return;
-      showAntdMessage(
-        context,
-        'Could not open PDF preview: $e',
-        type: AntdMessageType.error,
-      );
-    } finally {
-      if (mounted) setState(() => _exportingPdf = false);
-    }
-  }
-
-  Widget _monthTile(DateTime month) {
-    final isSelected =
-        month.year == _selectedMonth.year &&
-        month.month == _selectedMonth.month;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedMonth = month),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-        decoration: BoxDecoration(
-          color: isSelected ? AntdTokens.brandPrimary : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? AntdTokens.brandPrimary : AntdTokens.borderSubtle,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${month.month.toString().padLeft(2, '0')} / ${month.year}',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: isSelected ? AntdTokens.brandOnPrimary : AntdTokens.valueDark,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Completed events',
-              style: TextStyle(
-                fontSize: 12,
-                color: isSelected
-                    ? AntdTokens.brandOnPrimary.withValues(alpha: 0.75)
-                    : AntdTokens.labelMuted,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatCard(String title, String value) {
     return Card(
       elevation: 0,
+      margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
         side: const BorderSide(color: AntdTokens.borderSubtle),
@@ -227,14 +141,24 @@ class _ReportsState extends State<Reports> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(color: AntdTokens.labelMuted)),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: AntdTokens.valueDark,
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: const [
+                  DataColumn(label: Text('Name')),
+                  DataColumn(label: Text('Count')),
+                ],
+                rows: [
+                  for (final e in filtered)
+                    DataRow(
+                      cells: [
+                        DataCell(Text(e.name)),
+                        DataCell(Text('${e.count}')),
+                      ],
+                    ),
+                ],
               ),
             ),
           ],
@@ -243,78 +167,39 @@ class _ReportsState extends State<Reports> {
     );
   }
 
-  Widget _buildOrdersTable(List<EventOrderDto> orders) {
-    if (orders.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Center(
-          child: Text(
-            'No completed orders match this month or search.',
-            style: TextStyle(color: Colors.grey.shade600),
+  Widget _summaryLine(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(label, style: const TextStyle(color: AntdTokens.labelMuted)),
           ),
-        ),
-      );
-    }
-
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: AntdTokens.borderSubtle),
-      ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
-          columns: const [
-            DataColumn(label: Text('Date')),
-            DataColumn(label: Text('Customer')),
-            DataColumn(label: Text('Event')),
-            DataColumn(label: Text('Type')),
-            DataColumn(label: Text('Guests')),
-            DataColumn(label: Text('Sales')),
-          ],
-          rows: [
-            for (final o in orders)
-              DataRow(
-                cells: [
-                  DataCell(Text(_formatOrderDate(o))),
-                  DataCell(Text(o.customerName)),
-                  DataCell(
-                    Text(
-                      o.eventTitle.isEmpty ? '—' : o.eventTitle,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  DataCell(Text(o.eventType.isEmpty ? o.orderType : o.eventType)),
-                  DataCell(Text('${o.guestCount}')),
-                  DataCell(Text(formatPesos(orderRevenue(o)))),
-                ],
-              ),
-          ],
-        ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  String _formatOrderDate(EventOrderDto order) {
-    if (order.scheduleSlots.isEmpty) return '—';
-    final d = DateTime.tryParse(order.scheduleSlots.first.date);
-    if (d == null) return order.scheduleSlots.first.date;
-    return '${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}/${d.year}';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final monthOrders = _ordersForSelectedMonth();
-    final filteredOrders = _filteredOrders(monthOrders);
-    final snapshot = _snapshotFor(filteredOrders);
+    final data = _data;
+    final periodLabel = _annualMode
+        ? 'Year $_selectedYear'
+        : '${_selectedMonth.month.toString().padLeft(2, '0')} / ${_selectedMonth.year}';
 
     return AppScaffold(
       showSearch: true,
       searchController: _searchController,
-      onSearchChanged:
-          (v) => setState(() => _searchQuery = v.trim().toLowerCase()),
+      onSearchChanged: (v) =>
+          setState(() => _searchQuery = v.trim().toLowerCase()),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -335,27 +220,100 @@ class _ReportsState extends State<Reports> {
                       ),
                       SizedBox(height: 4),
                       Text(
-                        'Monthly sales and completed catering / event orders.',
+                        "Macrina's Kitchen and Catering — operations reports.",
                         style: TextStyle(color: AntdTokens.labelMuted),
                       ),
                     ],
                   ),
                 ),
-                AntdCancelButton(
-                  label: 'Preview PDF',
-                  onPressed: _exportingPdf ? null : _previewPdf,
-                ),
-                const SizedBox(width: 8),
                 AntdPrimaryButton(
                   label: 'Download PDF',
                   loading: _exportingPdf,
-                  onPressed: _exportingPdf ? null : _downloadPdf,
+                  onPressed: _exportingPdf || data == null ? null : _downloadPdf,
                 ),
                 const SizedBox(width: 8),
                 IconButton(
                   tooltip: 'Refresh',
-                  onPressed: _isLoading ? null : _loadCompletedOrders,
+                  onPressed: _isLoading ? null : _load,
                   icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                FilterChip(
+                  label: const Text('Monthly'),
+                  selected: !_annualMode,
+                  onSelected: (_) => setState(() => _annualMode = false),
+                ),
+                FilterChip(
+                  label: const Text('Annual'),
+                  selected: _annualMode,
+                  onSelected: (_) => setState(() => _annualMode = true),
+                ),
+                if (_annualMode)
+                  DropdownButton<int>(
+                    value: _selectedYear,
+                    items: List.generate(6, (i) {
+                      final y = DateTime.now().year - i;
+                      return DropdownMenuItem(value: y, child: Text('$y'));
+                    }),
+                    onChanged: (y) {
+                      if (y == null) return;
+                      setState(() => _selectedYear = y);
+                      _load();
+                    },
+                  )
+                else
+                  DropdownButton<int>(
+                    value: _selectedMonth.month,
+                    items: List.generate(12, (i) {
+                      final m = i + 1;
+                      return DropdownMenuItem(
+                        value: m,
+                        child: Text(m.toString().padLeft(2, '0')),
+                      );
+                    }),
+                    onChanged: (m) {
+                      if (m == null) return;
+                      setState(() {
+                        _selectedMonth = DateTime(
+                          _selectedMonth.year,
+                          m,
+                          1,
+                        );
+                      });
+                      _load();
+                    },
+                  ),
+                DropdownButton<_ReportScope>(
+                  value: _scope,
+                  items: const [
+                    DropdownMenuItem(
+                      value: _ReportScope.combined,
+                      child: Text('All'),
+                    ),
+                    DropdownMenuItem(
+                      value: _ReportScope.catering,
+                      child: Text('Catering / Events'),
+                    ),
+                    DropdownMenuItem(
+                      value: _ReportScope.restaurant,
+                      child: Text('Restaurant'),
+                    ),
+                  ],
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() => _scope = v);
+                  },
+                ),
+                Text(
+                  periodLabel,
+                  style: TextStyle(color: Colors.grey.shade700),
                 ),
               ],
             ),
@@ -368,85 +326,123 @@ class _ReportsState extends State<Reports> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        _errorMessage!,
-                        style: TextStyle(color: Colors.grey.shade600),
-                      ),
+                      Text(_errorMessage!),
                       const SizedBox(height: 12),
-                      AntdPrimaryButton(
-                        label: 'Retry',
-                        onPressed: _loadCompletedOrders,
-                      ),
+                      AntdPrimaryButton(label: 'Retry', onPressed: _load),
                     ],
                   ),
                 ),
               )
+            else if (data == null)
+              const Expanded(child: Center(child: Text('No report data.')))
             else
               Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: ListView(
                   children: [
-                    SizedBox(
-                      width: 160,
-                      child: ListView(
-                        children: [
-                          for (final m in _availableMonths)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: _monthTile(m),
-                            ),
-                        ],
+                    if (_scope != _ReportScope.restaurant) ...[
+                      const Text(
+                        'Catering / Events',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 20),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
+                      const SizedBox(height: 8),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: _buildStatCard(
-                                  'Completed orders',
-                                  '${filteredOrders.length}',
-                                ),
+                              const Text(
+                                'Summary',
+                                style: TextStyle(fontWeight: FontWeight.w700),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildStatCard(
-                                  'Total sales',
-                                  formatPesos(snapshot.totalSales),
-                                ),
+                              const SizedBox(height: 8),
+                              _summaryLine(
+                                'Completed orders',
+                                '${data.catering.orderCount}',
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildStatCard(
-                                  'Popular dish',
-                                  snapshot.popularDish,
-                                ),
+                              _summaryLine(
+                                'Total sales',
+                                formatPhp(data.catering.totalSales),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildStatCard(
-                                  'Top event type',
-                                  snapshot.mostFrequentEventType,
-                                ),
+                              _summaryLine(
+                                'Average guest count',
+                                data.catering.averageGuestCount
+                                    .toStringAsFixed(1),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Orders — ${filteredOrders.length} record(s)',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Expanded(child: _buildOrdersTable(filteredOrders)),
-                        ],
+                        ),
                       ),
-                    ),
+                      _rankTable(
+                        'Top requested dishes',
+                        data.catering.topDishes,
+                      ),
+                      _rankTable(
+                        'Most frequent event type',
+                        data.catering.topEventTypes,
+                      ),
+                    ],
+                    if (_scope != _ReportScope.catering) ...[
+                      const Text(
+                        'Restaurant',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Summary',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 8),
+                              _summaryLine(
+                                'Orders',
+                                '${data.restaurant.orderCount}',
+                              ),
+                              _summaryLine(
+                                'Total sales',
+                                formatPhp(data.restaurant.totalSales),
+                              ),
+                              _summaryLine(
+                                'Avg. orders per day',
+                                data.restaurant.averageOrdersPerDay
+                                    .toStringAsFixed(2),
+                              ),
+                              _summaryLine(
+                                'Web page views',
+                                '${data.restaurant.webPageViews}',
+                              ),
+                              _summaryLine(
+                                'Mobile page views',
+                                '${data.restaurant.mobilePageViews}',
+                              ),
+                              _summaryLine(
+                                'Customer accounts (web)',
+                                '${data.restaurant.customerAccountsWeb}',
+                              ),
+                              _summaryLine(
+                                'Customer accounts (mobile)',
+                                '${data.restaurant.customerAccountsMobile}',
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      _rankTable(
+                        'Most ordered dishes',
+                        data.restaurant.topDishes,
+                      ),
+                    ],
                   ],
                 ),
               ),

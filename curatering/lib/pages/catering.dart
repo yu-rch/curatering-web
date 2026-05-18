@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
+import '../auth/action_permissions.dart';
 import '../auth/auth_session.dart';
 import '../config/api_config.dart';
 import '../auth/roles.dart';
@@ -14,6 +15,7 @@ import '../models/menu_dish.dart';
 import '../services/events_api.dart';
 import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
+import '../widgets/allergen_selector_field.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_descriptions.dart';
 import '../widgets/antd_dialog.dart';
@@ -518,6 +520,7 @@ class _ManageEventsState extends State<ManageEvents>
   bool _isDetecting = false;
 
   final List<MenuItem> _menuItems = [];
+  String _allergensSerialized = '';
   final Map<String, String> _selectedPaxPerDish = {};
   List<MenuDish> _allDishes = MenuStore.instance.activeDishes;
 
@@ -592,6 +595,7 @@ class _ManageEventsState extends State<ManageEvents>
       return;
     }
     if (_menuItems.length >= 8) {
+      // max 8 dishes
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Maximum 8 dishes per menu.')),
       );
@@ -962,6 +966,7 @@ class _ManageEventsState extends State<ManageEvents>
 
       _eventAddressController.text = order.address;
       _guestCountController.text = order.guestCount.toString();
+      _allergensSerialized = order.allergens;
 
       _menuItems
         ..clear()
@@ -1024,6 +1029,7 @@ class _ManageEventsState extends State<ManageEvents>
           }).toList(),
       'address': _eventAddressController.text.trim(),
       'guestCount': guestCount,
+      'allergens': _allergensSerialized.trim(),
       'menu':
           _menuItems.map((i) {
             return {
@@ -6561,7 +6567,18 @@ class _ManageEventsState extends State<ManageEvents>
                           return;
                         }
 
-                        if (_menuItems.isEmpty) missing.add('Menu');
+                        if (_menuItems.isEmpty) {
+                          missing.add('Menu');
+                        } else if (_menuItems.length < 4) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Select at least 4 dishes for the menu.',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
 
                         // Only validate theme picks for catering + event orders
                         if (!isCateringOnly && _themePicks.isEmpty)
@@ -7083,6 +7100,11 @@ class _ManageEventsState extends State<ManageEvents>
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
+              AllergenSelectorField(
+                initialSerialized: _allergensSerialized,
+                onChanged: (s) => _allergensSerialized = s,
+              ),
             ],
           ),
         ),
@@ -7442,7 +7464,7 @@ class _ManageEventsState extends State<ManageEvents>
                 ),
                           const SizedBox(height: 8),
                           Text(
-                            '${_menuItems.length}/8 dishes selected (min 5)',
+                            '${_menuItems.length}/8 dishes selected (min 4)',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.grey.shade600,

@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'config.dart';
+import 'config/site_routes.dart';
+import 'widgets/customer_route_redirect.dart';
 import 'pages/login.dart';
 import 'pages/dashboard.dart';
 import 'pages/manage_accounts.dart';
@@ -101,39 +103,51 @@ class MyApp extends StatelessWidget {
               }),
             ),
           ),
-          initialRoute: '/',
+          initialRoute: kCustomerSitePrefix,
           routes: {
             '/login': (context) => const Login(),
-            '/':
+            '/': (context) => const CustomerRouteRedirect(target: '/'),
+            kCustomerSitePrefix:
                 (context) => const CustomerWebsiteScreen(
                   contentEditable: false,
                   showStaffChrome: false,
                 ),
-            '/gallery':
+            '$kCustomerSitePrefix/gallery':
                 (context) => const GalleryPage(
                   contentEditable: false,
                   showStaffChrome: false,
                 ),
-            '/contact-us':
+            '$kCustomerSitePrefix/contact-us':
                 (context) => const ContactUsPage(
                   contentEditable: false,
                   showStaffChrome: false,
                 ),
-            '/inquire':
+            '$kCustomerSitePrefix/inquire':
                 (context) => const InquirePage(
                   contentEditable: false,
                   showStaffChrome: false,
                 ),
-            '/restaurant':
+            '$kCustomerSitePrefix/restaurant':
                 (context) => const RestaurantOrderPage(
                   contentEditable: false,
                   showStaffChrome: false,
                 ),
-            '/catering-menu':
+            '$kCustomerSitePrefix/catering-menu':
                 (context) => const CateringMenuPage(
                   contentEditable: false,
                   showStaffChrome: false,
                 ),
+            '/gallery':
+                (context) => const CustomerRouteRedirect(target: '/gallery'),
+            '/contact-us':
+                (context) => const CustomerRouteRedirect(target: '/contact-us'),
+            '/inquire':
+                (context) => const CustomerRouteRedirect(target: '/inquire'),
+            '/restaurant':
+                (context) => const CustomerRouteRedirect(target: '/restaurant'),
+            '/catering-menu':
+                (context) =>
+                    const CustomerRouteRedirect(target: '/catering-menu'),
             '/dashboard':
                 (context) => RoleGuard(
                   requiredRole: Role.manager,

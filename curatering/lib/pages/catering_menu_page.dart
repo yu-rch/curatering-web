@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../models/menu_dish.dart';
+import '../services/meal_types_store.dart';
 import '../services/menu_store.dart';
 import '../widgets/catering_dish_info_dialog.dart';
 import '../widgets/customer_website_topbar.dart';
@@ -30,7 +32,7 @@ EdgeInsets websitePagePadding(BuildContext context, {double vertical = 24}) {
   return EdgeInsets.symmetric(horizontal: horizontal, vertical: vertical);
 }
 
-class CateringMenuPage extends StatelessWidget {
+class CateringMenuPage extends StatefulWidget {
   const CateringMenuPage({
     super.key,
     this.contentEditable = false,
@@ -40,6 +42,40 @@ class CateringMenuPage extends StatelessWidget {
   final bool contentEditable;
   final bool showStaffChrome;
 
+  @override
+  State<CateringMenuPage> createState() => _CateringMenuPageState();
+}
+
+class _CateringMenuPageState extends State<CateringMenuPage> {
+  String _mealTypeFilter = '';
+  List<String> _mealTypes = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    MenuStore.instance.addListener(_onMenuChanged);
+    _loadMealTypes();
+    if (MenuStore.instance.activeDishes.isEmpty && !MenuStore.instance.isLoading) {
+      MenuStore.instance.loadDishes();
+    }
+  }
+
+  @override
+  void dispose() {
+    MenuStore.instance.removeListener(_onMenuChanged);
+    super.dispose();
+  }
+
+  void _onMenuChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadMealTypes() async {
+    final types = await MealTypesStore.instance.load();
+    if (!mounted) return;
+    setState(() => _mealTypes = types);
+  }
+
   Widget _withHomepageTopBar(BuildContext context, {required Widget child}) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -47,11 +83,56 @@ class CateringMenuPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           CustomerWebsiteTopBar(
-            showCartAndCustomerAuth: !contentEditable,
+            showCartAndCustomerAuth: !widget.contentEditable,
           ),
           Expanded(child: child),
         ],
       ),
+    );
+  }
+
+  List<MenuDish> _filteredCateringDishes(List<MenuDish> dishes) {
+    if (_mealTypeFilter.isEmpty) return dishes;
+    return dishes
+        .where(
+          (d) =>
+              d.mealType.trim().toLowerCase() ==
+              _mealTypeFilter.toLowerCase(),
+        )
+        .toList();
+  }
+
+  Widget _mealTypeChips() {
+    final types = <String>{
+      ..._mealTypes,
+      for (final d in MenuStore.instance.activeDishes.where(
+        (x) => x.category == 'catering' && x.mealType.trim().isNotEmpty,
+      ))
+        d.mealType.trim(),
+    }.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    if (types.isEmpty) return const SizedBox.shrink();
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      alignment: WrapAlignment.center,
+      children: [
+        FilterChip(
+          label: const Text('All'),
+          selected: _mealTypeFilter.isEmpty,
+          onSelected: (_) => setState(() => _mealTypeFilter = ''),
+          selectedColor: const Color(0xFFFFC024),
+        ),
+        for (final t in types)
+          FilterChip(
+            label: Text(t),
+            selected: _mealTypeFilter == t,
+            onSelected: (_) => setState(() => _mealTypeFilter = t),
+            selectedColor: const Color(0xFFFFC024),
+          ),
+      ],
     );
   }
 
@@ -60,6 +141,7 @@ class CateringMenuPage extends StatelessWidget {
     final allDishes = MenuStore.instance.activeDishes;
     final cateringDishes =
         allDishes.where((d) => d.category == 'catering').toList();
+    final visibleDishes = _filteredCateringDishes(cateringDishes);
 
     // Show loading state if dishes are empty or currently loading
     if (MenuStore.instance.isLoading || allDishes.isEmpty) {
@@ -115,7 +197,7 @@ class CateringMenuPage extends StatelessWidget {
                     color: Colors.red.shade400,
                   ),
                 ),
-                SizedBox(height: 24),
+                const SizedBox(height: 24),
                 Text(
                   'Oops, there was an error loading the website.',
                   textAlign: TextAlign.center,
@@ -126,7 +208,7 @@ class CateringMenuPage extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 Text(
                   'Try reloading the page.',
                   textAlign: TextAlign.center,
@@ -136,7 +218,7 @@ class CateringMenuPage extends StatelessWidget {
                     color: Colors.grey.shade600,
                   ),
                 ),
-                SizedBox(height: 32),
+                const SizedBox(height: 32),
                 Container(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -153,7 +235,7 @@ class CateringMenuPage extends StatelessWidget {
                   ),
                   child: ElevatedButton.icon(
                     onPressed: () => MenuStore.instance.loadDishes(),
-                    icon: Icon(Icons.refresh_rounded, color: Colors.white),
+                    icon: const Icon(Icons.refresh_rounded, color: Colors.white),
                     label: Text(
                       'Reload Page',
                       style: GoogleFonts.inter(
@@ -164,7 +246,7 @@ class CateringMenuPage extends StatelessWidget {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.transparent,
                       shadowColor: Colors.transparent,
-                      padding: EdgeInsets.symmetric(
+                      padding: const EdgeInsets.symmetric(
                         horizontal: 32,
                         vertical: 16,
                       ),
@@ -187,11 +269,11 @@ class CateringMenuPage extends StatelessWidget {
         padding: websitePagePadding(context),
         child: Center(
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: 1200),
+            constraints: const BoxConstraints(maxWidth: 1200),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                SizedBox(height: 24),
+                const SizedBox(height: 24),
                 Text(
                   'CATERING MENU',
                   textAlign: TextAlign.center,
@@ -201,14 +283,17 @@ class CateringMenuPage extends StatelessWidget {
                     color: Color(0xFF1E1E1E),
                   ),
                 ),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: Color(0xFFFFC024),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text(
+                  child: const Text(
                     'Explore Our Catering Offerings',
                     textAlign: TextAlign.center,
                     style: TextStyle(
@@ -217,32 +302,38 @@ class CateringMenuPage extends StatelessWidget {
                     ),
                   ),
                 ),
-                SizedBox(height: 32),
+                const SizedBox(height: 20),
+                _mealTypeChips(),
+                const SizedBox(height: 24),
                 Card(
                   elevation: 4,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Padding(
-                    padding: EdgeInsets.all(32),
+                    padding: const EdgeInsets.all(32),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (cateringDishes.isEmpty)
+                        if (visibleDishes.isEmpty)
                           Padding(
                             padding: const EdgeInsets.all(32),
-                            child: Text(
-                              'No dishes available',
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 16,
+                            child: Center(
+                              child: Text(
+                                _mealTypeFilter.isEmpty
+                                    ? 'No dishes available'
+                                    : 'No dishes in "$_mealTypeFilter"',
+                                style: const TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 16,
+                                ),
                               ),
                             ),
                           )
                         else
                           GridView.builder(
                             shrinkWrap: true,
-                            physics: NeverScrollableScrollPhysics(),
+                            physics: const NeverScrollableScrollPhysics(),
                             gridDelegate:
                                 SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount:
@@ -255,9 +346,9 @@ class CateringMenuPage extends StatelessWidget {
                                   mainAxisSpacing: 12,
                                   childAspectRatio: 0.8,
                                 ),
-                            itemCount: cateringDishes.length,
+                            itemCount: visibleDishes.length,
                             itemBuilder: (ctx, i) {
-                              final d = cateringDishes[i];
+                              final d = visibleDishes[i];
                               return Card(
                                 clipBehavior: Clip.antiAlias,
                                 elevation: 2,
@@ -274,9 +365,10 @@ class CateringMenuPage extends StatelessWidget {
                                     children: [
                                       Expanded(
                                         child: ClipRRect(
-                                          borderRadius: BorderRadius.vertical(
-                                            top: Radius.circular(8),
-                                          ),
+                                          borderRadius:
+                                              const BorderRadius.vertical(
+                                                top: Radius.circular(8),
+                                              ),
                                           child:
                                               d.imageBase64 != null &&
                                                       d.imageBase64!.isNotEmpty
@@ -285,10 +377,12 @@ class CateringMenuPage extends StatelessWidget {
                                                       d.imageBase64!,
                                                     ),
                                                     fit: BoxFit.cover,
+                                                    width: double.infinity,
                                                   )
                                                   : Container(
-                                                    color: Colors.grey.shade200,
-                                                    child: Icon(
+                                                    color:
+                                                        Colors.grey.shade200,
+                                                    child: const Icon(
                                                       Icons.fastfood,
                                                       size: 48,
                                                     ),
@@ -308,6 +402,20 @@ class CateringMenuPage extends StatelessWidget {
                                                 fontSize: 12,
                                               ),
                                             ),
+                                            if (d.mealType.trim().isNotEmpty)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                  top: 4,
+                                                ),
+                                                child: Text(
+                                                  d.mealType,
+                                                  textAlign: TextAlign.center,
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: Colors.grey.shade600,
+                                                  ),
+                                                ),
+                                              ),
                                           ],
                                         ),
                                       ),

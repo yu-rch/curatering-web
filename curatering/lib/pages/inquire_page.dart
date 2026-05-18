@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -21,8 +23,12 @@ import '../widgets/antd_message.dart';
 import '../widgets/antd_tokens.dart';
 import '../widgets/centered_viewport_scroll.dart';
 import '../widgets/customer_website_topbar.dart';
+import '../widgets/allergen_selector_field.dart';
 import '../widgets/inquiry_menu_selection_dialog.dart';
 import '../widgets/map_picker.dart';
+import '../widgets/async_dialogs.dart';
+import '../widgets/antd_dialog.dart';
+import '../utils/image_download.dart';
 
 const String _primaryFont = 'Inter';
 bool isMobile(BuildContext context) => MediaQuery.of(context).size.width < 700;
@@ -77,6 +83,7 @@ class _InquirePageState extends State<InquirePage> {
   String _formality = 'casual';
   bool _submitting = false;
   String? _generatedImageUrl;
+  final List<String> _generatedImageHistory = [];
 
   // Service Type Selection
   String _serviceType = 'catering'; // 'catering' or 'catering+event'
@@ -86,6 +93,7 @@ class _InquirePageState extends State<InquirePage> {
   bool? _includeCateringService; // catering-only, guests < 50
   final List<String> _selectedDishIds = [];
   final List<Map<String, dynamic>> _menuSelections = [];
+  String _allergensSerialized = '';
 
   /// Phase 0 = main inquiry form; 1 = event design path choice; 2 = macrina fields OR customer AI.
   int _formPhase = 0;
@@ -104,6 +112,9 @@ class _InquirePageState extends State<InquirePage> {
   final List<String> _selectedColors = [];
   final List<String> _selectedDecor = [];
   final _designPromptController = TextEditingController();
+  final _eventTypeOtherController = TextEditingController();
+  final _styleOtherController = TextEditingController();
+  final _moodOtherController = TextEditingController();
   String? _venuePhotoBase64;
 
   final _eventTypes = [
@@ -129,8 +140,17 @@ class _InquirePageState extends State<InquirePage> {
     "Minimalist",
     "Vintage",
     "Bohemian",
+    "Other",
   ];
-  final _moods = ["Romantic", "Bright", "Dramatic", "Cozy", "Luxurious", "Fun"];
+  final _moods = [
+    "Romantic",
+    "Bright",
+    "Dramatic",
+    "Cozy",
+    "Luxurious",
+    "Fun",
+    "Other",
+  ];
   final _colorPalettes = [
     "White & Gold",
     "Pastel Pink",
@@ -199,12 +219,96 @@ class _InquirePageState extends State<InquirePage> {
     _designPromptController.dispose();
     _macrinaPalette.dispose();
     _macrinaTheme.dispose();
+    _eventTypeOtherController.dispose();
+    _styleOtherController.dispose();
+    _moodOtherController.dispose();
     super.dispose();
+  }
+
+  String? _resolvedCategory(String? selected, TextEditingController other) {
+    if (selected == null || selected.isEmpty) return null;
+    if (selected == 'Other') {
+      final t = other.text.trim();
+      return t.isEmpty ? 'Other' : t;
+    }
+    return selected;
+  }
+
+  double _estimateMenuCost() {
+    var total = 0.0;
+    final dishes = MenuStore.instance.activeDishes;
+    for (final block in _menuSelections) {
+      final names =
+          (block['dishNames'] as List<dynamic>?)
+              ?.map((e) => e.toString().trim())
+              .where((n) => n.isNotEmpty) ??
+          const [];
+      for (final name in names) {
+        for (final d in dishes) {
+          if (d.name == name) {
+            total += double.tryParse(d.price) ?? 0;
+            break;
+          }
+        }
+      }
+    }
+    return total;
+  }
+
+  Future<void> _showOrderSummaryAndConfirm() async {
+    final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
+    final estimated = _estimateMenuCost();
+    final perGuest = guestCount > 0 ? estimated / guestCount : 0.0;
+
+    final confirmed = await showAntdModal<bool>(
+      context: context,
+      title: 'Confirm your inquiry',
+      maxWidth: 520,
+      barrierDismissible: false,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Event: ${_eventTitle.text.trim()}'),
+          Text('Customer: ${_customer.text.trim()}'),
+          Text('Guests: $guestCount'),
+          Text('Service: $_serviceType'),
+          const SizedBox(height: 12),
+          const Text(
+            'Initial menu estimate (dishes only — final quote may differ):',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Text('Estimated subtotal: ₱${estimated.toStringAsFixed(2)}'),
+          if (guestCount > 0)
+            Text('≈ ₱${perGuest.toStringAsFixed(2)} per guest (food only)'),
+          const SizedBox(height: 12),
+          Text(
+            'By confirming, you submit this inquiry to our team for review.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+        ],
+      ),
+      actions: [
+        AntdCancelButton(
+          label: 'Go back',
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+        AntdPrimaryButton(
+          label: 'Confirm & submit',
+          onPressed: () => Navigator.of(context).pop(true),
+        ),
+      ],
+    );
+
+    if (confirmed == true) {
+      await _submitInquiry();
+    }
   }
 
   Future<void> _submitInquiry() async {
     if (!_validateAllForSubmit()) return;
 
+    await showBlockingLoadingDialog(context, message: 'Submitting inquiry…');
     setState(() => _submitting = true);
 
     try {
@@ -234,6 +338,7 @@ class _InquirePageState extends State<InquirePage> {
         'scheduleSlots': scheduleSlots,
         'menu': _buildMenuForApi(),
         'themeDesign': _buildThemeDesignForApi(),
+        'allergens': _allergensSerialized.trim(),
         'source': 'web',
       };
 
@@ -257,6 +362,7 @@ class _InquirePageState extends State<InquirePage> {
     } finally {
       if (mounted) {
         setState(() => _submitting = false);
+        hideBlockingLoadingDialog(context);
       }
     }
   }
@@ -291,8 +397,8 @@ class _InquirePageState extends State<InquirePage> {
       final kind = block['kind'] as String? ?? 'custom';
       if (kind == 'custom') {
         final n = (block['dishIds'] as List<dynamic>?)?.length ?? 0;
-        if (n < 5 || n > 8) {
-          err('menu', 'Select between 5 and 8 dishes for your custom menu');
+        if (n < 4 || n > 8) {
+          err('menu', 'Select between 4 and 8 dishes for your custom menu');
         }
       }
     }
@@ -339,7 +445,7 @@ class _InquirePageState extends State<InquirePage> {
     if (_serviceType == 'catering+event') {
       setState(() => _formPhase = 1);
     } else {
-      _submitInquiry();
+      _showOrderSummaryAndConfirm();
     }
   }
 
@@ -1022,10 +1128,17 @@ class _InquirePageState extends State<InquirePage> {
             setMenus: SetMenuStore.instance.activeSetMenus,
             initialSelections: List<Map<String, dynamic>>.from(_menuSelections),
             mode: InquiryMenuPickerMode.inquiryExclusive,
+            minCustomDishes: 4,
+            maxCustomDishes: 8,
             externalError: _fieldErrors['menu'],
             onSelectionChanged: _onInlineMenuSelectionChanged,
           );
         },
+      ),
+      const SizedBox(height: 16),
+      AllergenSelectorField(
+        initialSerialized: _allergensSerialized,
+        onChanged: (s) => _allergensSerialized = s,
       ),
       const SizedBox(height: 24),
       ..._buildPhase0Footer(),
@@ -1346,7 +1459,7 @@ class _InquirePageState extends State<InquirePage> {
           ),
         ),
         const SizedBox(height: 8),
-        if (hasGenerated)
+        if (hasGenerated) ...[
           previewBox(
             height: minHeight,
             onTap: () => _openZoomableImage(
@@ -1367,7 +1480,63 @@ class _InquirePageState extends State<InquirePage> {
                 );
               },
             ),
-          )
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _downloadGeneratedImage(_generatedImageUrl!),
+                icon: const Icon(Icons.download, size: 18),
+                label: const Text('Download design'),
+              ),
+              if (hasVenue)
+                OutlinedButton.icon(
+                  onPressed: _downloadVenuePhoto,
+                  icon: const Icon(Icons.download, size: 18),
+                  label: const Text('Download venue photo'),
+                ),
+            ],
+          ),
+          if (_generatedImageHistory.length > 1) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Other generated images',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 72,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _generatedImageHistory.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, i) {
+                  final url = _generatedImageHistory[i];
+                  final selected = url == _generatedImageUrl;
+                  return GestureDetector(
+                    onTap: () => setState(() => _generatedImageUrl = url),
+                    child: Container(
+                      width: 72,
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: selected
+                              ? const Color(0xFFFFC024)
+                              : Colors.grey.shade300,
+                          width: selected ? 2 : 1,
+                        ),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Image.network(url, fit: BoxFit.cover),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ]
         else
           Container(
             height: minHeight,
@@ -1460,6 +1629,13 @@ class _InquirePageState extends State<InquirePage> {
                 _selectedEventType,
                 (val) => setState(() => _selectedEventType = val),
               ),
+              if (_selectedEventType == 'Other') ...[
+                const SizedBox(height: 8),
+                AntdOutlineInput(
+                  controller: _eventTypeOtherController,
+                  hintText: 'Describe your event type',
+                ),
+              ],
             ],
           ),
           Column(
@@ -1471,6 +1647,13 @@ class _InquirePageState extends State<InquirePage> {
                 _selectedStyle,
                 (val) => setState(() => _selectedStyle = val),
               ),
+              if (_selectedStyle == 'Other') ...[
+                const SizedBox(height: 8),
+                AntdOutlineInput(
+                  controller: _styleOtherController,
+                  hintText: 'Describe your style',
+                ),
+              ],
             ],
           ),
         ),
@@ -1481,6 +1664,13 @@ class _InquirePageState extends State<InquirePage> {
           _selectedMood,
           (val) => setState(() => _selectedMood = val),
         ),
+        if (_selectedMood == 'Other') ...[
+          const SizedBox(height: 8),
+          AntdOutlineInput(
+            controller: _moodOtherController,
+            hintText: 'Describe mood / lighting',
+          ),
+        ],
         const SizedBox(height: 16),
         _responsiveTwoCol(
           context,
@@ -1524,8 +1714,8 @@ class _InquirePageState extends State<InquirePage> {
             icon: const Icon(Icons.upload_file),
             label: Text(
               _venuePhotoBase64 != null
-                  ? 'Photo uploaded'
-                  : 'Upload venue photo',
+                  ? 'Change venue reference photo'
+                  : 'Upload venue reference photo',
             ),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(double.infinity, 48),
@@ -1715,7 +1905,7 @@ class _InquirePageState extends State<InquirePage> {
           SizedBox(
             width: 200,
             child: ElevatedButton(
-              onPressed: _submitting ? null : _submitInquiry,
+              onPressed: _submitting ? null : _showOrderSummaryAndConfirm,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF1E1E1E),
                 foregroundColor: Colors.white,
@@ -1987,14 +2177,20 @@ class _InquirePageState extends State<InquirePage> {
 
   String _composeEventDesignPrompt() {
     final parts = <String>[];
-    if (_selectedEventType != null && _selectedEventType!.isNotEmpty) {
-      parts.add('Event type: $_selectedEventType');
+    final eventType = _resolvedCategory(
+      _selectedEventType,
+      _eventTypeOtherController,
+    );
+    final style = _resolvedCategory(_selectedStyle, _styleOtherController);
+    final mood = _resolvedCategory(_selectedMood, _moodOtherController);
+    if (eventType != null && eventType.isNotEmpty) {
+      parts.add('Event type: $eventType');
     }
-    if (_selectedStyle != null && _selectedStyle!.isNotEmpty) {
-      parts.add('Style: $_selectedStyle');
+    if (style != null && style.isNotEmpty) {
+      parts.add('Style: $style');
     }
-    if (_selectedMood != null && _selectedMood!.isNotEmpty) {
-      parts.add('Mood: $_selectedMood');
+    if (mood != null && mood.isNotEmpty) {
+      parts.add('Mood: $mood');
     }
     if (_selectedColors.isNotEmpty) {
       parts.add('Colors: ${_selectedColors.join(', ')}');
@@ -2009,6 +2205,34 @@ class _InquirePageState extends State<InquirePage> {
     }
     return '${parts.join('. ')}. Decorate the existing venue in the reference photo, '
         'preserve room layout and architecture, high quality realistic lighting';
+  }
+
+  Future<void> _downloadVenuePhoto() async {
+    final b64 = _venuePhotoBase64;
+    if (b64 == null) return;
+    try {
+      await downloadImageBytes(base64Decode(b64), 'venue-reference.png');
+    } catch (e) {
+      if (mounted) {
+        showAntdMessage(context, 'Download failed: $e', type: AntdMessageType.error);
+      }
+    }
+  }
+
+  Future<void> _downloadGeneratedImage(String url) async {
+    try {
+      final res = await http.get(Uri.parse(url));
+      if (res.statusCode == 200) {
+        await downloadImageBytes(
+          Uint8List.fromList(res.bodyBytes),
+          'event-design.png',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showAntdMessage(context, 'Download failed: $e', type: AntdMessageType.error);
+      }
+    }
   }
 
   void _generateDesignPrompt() async {
@@ -2038,6 +2262,10 @@ class _InquirePageState extends State<InquirePage> {
       _submitting = true;
       _genAiError = null;
     });
+    await showBlockingLoadingDialog(
+      context,
+      message: 'Generating event design…',
+    );
 
     try {
       final prompt = _composeEventDesignPrompt();
@@ -2072,6 +2300,9 @@ class _InquirePageState extends State<InquirePage> {
         setState(() {
           _wantsCustomDesign = true;
           _generatedImageUrl = imageUrl;
+          if (!_generatedImageHistory.contains(imageUrl)) {
+            _generatedImageHistory.add(imageUrl);
+          }
           _genAiError = null;
         });
       } else {
@@ -2088,6 +2319,7 @@ class _InquirePageState extends State<InquirePage> {
     } finally {
       if (mounted) {
         setState(() => _submitting = false);
+        hideBlockingLoadingDialog(context);
       }
     }
   }

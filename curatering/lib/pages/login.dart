@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../config/site_routes.dart';
 import 'forgot_password.dart';
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
@@ -240,7 +241,9 @@ class _LoginState extends State<Login> {
                       ),
                       TextButton(
                         onPressed: () =>
-                            Navigator.of(context).pushNamed('/'),
+                            Navigator.of(context).pushNamed(
+                              customerRoute('/'),
+                            ),
                         child: const Text(
                           'View customer website',
                           style: TextStyle(

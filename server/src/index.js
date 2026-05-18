@@ -22,11 +22,17 @@ import {
   generateUserId,
   generateSequentialId,
   allocateRestaurantOrderNo,
+  allocateCateringTransactionId,
   allocateStaffUserId,
   getRoleAccountLimits,
   setRoleAccountLimits,
   getLoyaltyProgramConfig,
   setLoyaltyProgramConfig,
+  getCustomAllergenPresets,
+  getMenuAllergenCatalog,
+  upsertMenuAllergensFromSerialized,
+  getMenuMealTypeCatalog,
+  upsertMenuMealType,
 } from "./db.js";
 import CartAPI from './cart_api.js';
 import {
@@ -516,6 +522,7 @@ async function fetchEventOrderRowById(orderId) {
   const catering = await pool.query(
     `SELECT
         id,
+        inquiry_id AS "inquiryId",
         source,
         status,
         null AS "eventTitle",
@@ -529,6 +536,7 @@ async function fetchEventOrderRowById(orderId) {
         address,
         order_type AS "orderType",
         guest_count AS "guestCount",
+        COALESCE(allergens, '') AS allergens,
         menu,
         theme_design AS "themeDesign",
         '{}'::jsonb AS "seatingPlan",
@@ -557,6 +565,7 @@ async function fetchEventOrderRowById(orderId) {
         address,
         order_type AS "orderType",
         guest_count AS "guestCount",
+        COALESCE(allergens, '') AS allergens,
         menu,
         theme_design AS "themeDesign",
         COALESCE(seating_plan, '{}'::jsonb) AS "seatingPlan",
@@ -644,8 +653,8 @@ function normalizeSeatingPlan(raw) {
     const shapeRaw = String(t.shape || "rect").toLowerCase();
     const shape = shapeRaw === "round" ? "round" : "rect";
     const seatCount = Math.max(
-      1,
-      Math.min(100, Math.floor(Number(t.seatCount) || 1)),
+      0,
+      Math.min(100, Math.floor(Number(t.seatCount) || 0)),
     );
     const label = String(t.label != null ? t.label : `Table ${i + 1}`).slice(
       0,
@@ -672,7 +681,8 @@ function normalizeSeatingPlan(raw) {
     const s = seatsIn[j];
     if (!s || typeof s !== "object") continue;
     const tableId = String(s.tableId || "").trim();
-    if (!tableIds.has(tableId)) {
+    const isStandalone = !tableId;
+    if (!isStandalone && !tableIds.has(tableId)) {
       return { ok: false, error: `Seat references unknown table: ${tableId}` };
     }
     let sid = String(s.id || "").trim();
@@ -685,6 +695,22 @@ function normalizeSeatingPlan(raw) {
       s.guestId != null && String(s.guestId).trim()
         ? String(s.guestId).trim().slice(0, 64)
         : null;
+    if (isStandalone) {
+      const xNorm = clamp01(s.xNorm != null ? s.xNorm : 0.5);
+      const yNorm = clamp01(s.yNorm != null ? s.yNorm : 0.5);
+      seats.push({
+        id: sid,
+        tableId: "",
+        index,
+        label,
+        perimeterT: 0,
+        xNorm,
+        yNorm,
+        standalone: true,
+        ...(guestId ? { guestId } : {}),
+      });
+      continue;
+    }
     seats.push({
       id: sid,
       tableId,
@@ -1534,7 +1560,9 @@ function registerCustomerAuthRoutes(app, dbGate) {
 
   app.post("/api/customer/signup", gate, async (req, res) => {
     try {
-      const { email, password, fullName, phone } = req.body || {};
+      const { email, password, fullName, phone, platform } = req.body || {};
+      const registrationPlatform =
+        String(platform || 'web').toLowerCase() === 'mobile' ? 'mobile' : 'web';
 
       if (!email || !password || !fullName) {
         return res.status(400).json({ error: "Email, password, and full name are required" });
@@ -1595,10 +1623,10 @@ function registerCustomerAuthRoutes(app, dbGate) {
       const customerId = await generateSequentialId("CUS", 4);
 
       const result = await pool.query(
-        `INSERT INTO customer_accounts (id, email, password_hash, full_name, phone, otp_code, otp_expiry)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO customer_accounts (id, email, password_hash, full_name, phone, otp_code, otp_expiry, registration_platform)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id, email, full_name, is_verified`,
-        [customerId, emailNorm, passwordHash, fullName, phone || null, otpCode, otpExpiry],
+        [customerId, emailNorm, passwordHash, fullName, phone || null, otpCode, otpExpiry, registrationPlatform],
       );
 
       await pool.query(
@@ -2743,7 +2771,9 @@ app.post(
         guestCount,
         menu,
         themeDesign,
+        allergens,
       } = req.body || {};
+      const allergensText = String(allergens ?? '').trim();
 
       // For catering-only orders, event-specific fields are optional
       const isCateringOnly = orderType === 'catering';
@@ -2768,18 +2798,20 @@ app.post(
         return res.status(400).json({ message: "Missing required event fields" });
       }
 
+      const transactionId = await allocateCateringTransactionId();
       let result;
       
       if (isCateringOnly) {
         // Use separate catering_orders table for catering-only orders
         result = await pool.query(
           `INSERT INTO catering_orders
-            (source, status, order_type, customer_name, contact_person, contact_number, email_address,
-             schedule_slots, address, guest_count, menu, theme_design, created_by, updated_by)
+            (source, status, order_type, inquiry_id, customer_name, contact_person, contact_number, email_address,
+             schedule_slots, address, guest_count, menu, theme_design, allergens, created_by, updated_by)
           VALUES
-            ('new_event', 'for_processing', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-           RETURNING id;`,
+            ('new_event', 'for_processing', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           RETURNING id, inquiry_id;`,
           [
+            transactionId,
             customerName,
             contactPerson,
             contactNumber,
@@ -2789,6 +2821,7 @@ app.post(
             Number(guestCount),
             JSON.stringify(menu),
             JSON.stringify(themeDesign),
+            allergensText,
             req.user.id,
             req.user.id,
           ]
@@ -2797,18 +2830,19 @@ app.post(
         // Use event_orders table for catering+event orders
         result = await pool.query(
           `INSERT INTO event_orders
-            (source, status, event_title, order_type, event_type, formality_level,
+            (source, status, event_title, order_type, event_type, formality_level, inquiry_id,
              customer_name, contact_person, contact_number, email_address,
-             schedule_slots, address, guest_count, menu, theme_design,
+             schedule_slots, address, guest_count, menu, theme_design, allergens,
              created_by, updated_by)
            VALUES
-            ('new_event', 'for_processing', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-           RETURNING id;`,
+            ('new_event', 'for_processing', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+           RETURNING id, inquiry_id;`,
           [
             eventTitle,
             orderType,
             eventType,
             formalityLevel,
+            transactionId,
             customerName,
             contactPerson,
             contactNumber,
@@ -2818,6 +2852,7 @@ app.post(
             Number(guestCount),
             JSON.stringify(menu),
             JSON.stringify(themeDesign),
+            allergensText,
             req.user.id,
             req.user.id,
           ]
@@ -2828,10 +2863,14 @@ app.post(
         userId: req.user.id,
         feature: "Events",
         action: "submitted new event",
-        other: { orderId: result.rows[0].id },
+        other: { orderId: result.rows[0].id, inquiryId: result.rows[0].inquiry_id },
       });
 
-      return res.json({ ok: true, id: result.rows[0].id });
+      return res.json({
+        ok: true,
+        id: result.rows[0].id,
+        inquiryId: result.rows[0].inquiry_id,
+      });
     } catch (e) {
       console.error(e);
       return res.status(500).json({ message: "Failed to create order" });
@@ -3661,6 +3700,7 @@ app.get(
     const result = await pool.query(
       `SELECT
         id,
+        inquiry_id AS "inquiryId",
         source,
         status,
         null AS "eventTitle",
@@ -3674,6 +3714,7 @@ app.get(
         address,
         order_type AS "orderType",
         guest_count AS "guestCount",
+        COALESCE(allergens, '') AS allergens,
         menu,
         ${themeCol},
         '{}'::jsonb AS "seatingPlan",
@@ -3685,10 +3726,10 @@ app.get(
        WHERE
          status = $1
          OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')
-         OR (status = 'cancelled' AND $1 = 'completed')
        UNION ALL
        SELECT
         id,
+        inquiry_id AS "inquiryId",
         source,
         status,
         event_title AS "eventTitle",
@@ -3702,6 +3743,7 @@ app.get(
         address,
         order_type AS "orderType",
         guest_count AS "guestCount",
+        COALESCE(allergens, '') AS allergens,
         menu,
         ${themeCol},
         COALESCE(seating_plan, '{}'::jsonb) AS "seatingPlan",
@@ -3713,7 +3755,6 @@ app.get(
        WHERE
          status = $1
          OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')
-         OR (status = 'cancelled' AND $1 = 'completed')
        ORDER BY created_at DESC
        LIMIT 500;`,
       [status],
@@ -4068,6 +4109,7 @@ app.get(
     const result = await pool.query(
       `SELECT
         id,
+        inquiry_id AS "inquiryId",
         source,
         status,
         null AS "eventTitle",
@@ -4081,6 +4123,7 @@ app.get(
         address,
         order_type AS "orderType",
         guest_count AS "guestCount",
+        COALESCE(allergens, '') AS allergens,
         menu,
         ${themeCol},
         '{}'::jsonb AS "seatingPlan",
@@ -4092,10 +4135,10 @@ app.get(
        WHERE
          status = $1
          OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')
-         OR (status = 'cancelled' AND $1 = 'completed')
        UNION ALL
        SELECT
         id,
+        inquiry_id AS "inquiryId",
         source,
         status,
         event_title AS "eventTitle",
@@ -4109,6 +4152,7 @@ app.get(
         address,
         order_type AS "orderType",
         guest_count AS "guestCount",
+        COALESCE(allergens, '') AS allergens,
         menu,
         ${themeCol},
         COALESCE(seating_plan, '{}'::jsonb) AS "seatingPlan",
@@ -4120,7 +4164,6 @@ app.get(
        WHERE
          status = $1
          OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')
-         OR (status = 'cancelled' AND $1 = 'completed')
        ORDER BY created_at DESC
        LIMIT 500;`,
       [status],
@@ -4309,8 +4352,10 @@ app.post("/api/online-inquiries", async (req, res) => {
       guestCount,
       menu,
       themeDesign,
+      allergens,
       source = 'web', // 'web' or 'mobile'
     } = req.body || {};
+    const allergensText = String(allergens ?? '').trim();
 
     const parseCoord = (v) => {
       if (v === undefined || v === null || v === "") return null;
@@ -4344,9 +4389,7 @@ app.post("/api/online-inquiries", async (req, res) => {
       }
     }
 
-    // Generate inquiry ID based on source: INQ-000000 (web) or MINQ-000000 (mobile)
-    const idPrefix = source === 'mobile' ? 'MINQ' : 'INQ';
-    const inquiryId = await generateSequentialId(idPrefix, 6);
+    const inquiryId = await allocateCateringTransactionId();
 
     let result;
     if (isCateringOnly) {
@@ -4354,9 +4397,9 @@ app.post("/api/online-inquiries", async (req, res) => {
       result = await pool.query(
         `INSERT INTO catering_orders
           (source, status, order_type, inquiry_id, customer_name, contact_person, contact_number, email_address,
-           schedule_slots, address, address_lat, address_lng, guest_count, menu, theme_design)
+           schedule_slots, address, address_lat, address_lng, guest_count, menu, theme_design, allergens)
         VALUES
-          ('online_inquiry', 'online_inquiries', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          ('online_inquiry', 'online_inquiries', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING id, inquiry_id;`,
         [
           inquiryId,
@@ -4371,6 +4414,7 @@ app.post("/api/online-inquiries", async (req, res) => {
           Number(guestCount),
           JSON.stringify(menu),
           JSON.stringify(themeDesign),
+          allergensText,
         ]
       );
     } else {
@@ -4379,10 +4423,10 @@ app.post("/api/online-inquiries", async (req, res) => {
         `INSERT INTO event_orders
           (source, status, event_title, order_type, event_type, formality_level, inquiry_id,
            customer_name, contact_person, contact_number, email_address,
-           schedule_slots, address, address_lat, address_lng, guest_count, menu, theme_design)
+           schedule_slots, address, address_lat, address_lng, guest_count, menu, theme_design, allergens)
          VALUES
           ('online_inquiry', 'online_inquiries',
-           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
          RETURNING id, inquiry_id;`,
         [
           eventTitle,
@@ -4401,6 +4445,7 @@ app.post("/api/online-inquiries", async (req, res) => {
           Number(guestCount),
           JSON.stringify(menu),
           JSON.stringify(themeDesign),
+          allergensText,
         ]
       );
     }
@@ -5215,6 +5260,44 @@ const dbInitPromise = authSchemaPromise
 
     // Menu Dishes API endpoints
     // Public endpoint - only returns active (non-archived) dishes without images for faster loading
+    app.get('/api/menu/allergen-presets', async (_req, res) => {
+      try {
+        const presets = await getMenuAllergenCatalog();
+        res.json({ presets });
+      } catch (e) {
+        console.error('allergen-presets get', e);
+        res.status(500).json({ error: 'Failed to load allergen presets' });
+      }
+    });
+
+    app.get('/api/menu/meal-types', async (_req, res) => {
+      try {
+        const mealTypes = await getMenuMealTypeCatalog();
+        res.json({ mealTypes });
+      } catch (e) {
+        console.error('meal-types get', e);
+        res.status(500).json({ error: 'Failed to load meal types' });
+      }
+    });
+
+    app.post('/api/public/analytics/page-view', async (req, res) => {
+      try {
+        const platform =
+          String(req.body?.platform || 'web').toLowerCase() === 'mobile'
+            ? 'mobile'
+            : 'web';
+        const path = String(req.body?.path || '/').slice(0, 500);
+        await pool.query(
+          `INSERT INTO site_page_views (platform, path) VALUES ($1, $2)`,
+          [platform, path],
+        );
+        res.json({ ok: true });
+      } catch (e) {
+        console.error('page-view', e);
+        res.status(500).json({ error: 'Failed to record page view' });
+      }
+    });
+
     app.get('/api/menu/dishes', async (req, res) => {
       let retryCount = 0;
       const maxRetries = 3;
@@ -5224,7 +5307,7 @@ const dbInitPromise = authSchemaPromise
           const result = await pool.query(
             `SELECT id, name, price, category, pax_options, sauces, ingredients,
                     image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus,
-                    public_description, allergens
+                    public_description, allergens, meal_type
              FROM menu_dishes
              WHERE archived = false
              ORDER BY category, name`
@@ -5256,7 +5339,7 @@ const dbInitPromise = authSchemaPromise
           const result = await pool.query(
             `SELECT id, name, price, category, pax_options, sauces, ingredients,
                     image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus,
-                    public_description, allergens
+                    public_description, allergens, meal_type
              FROM menu_dishes
              WHERE archived = false
              ORDER BY category, name`
@@ -5289,7 +5372,7 @@ const dbInitPromise = authSchemaPromise
           const result = await pool.query(
             `SELECT id, name, price, category, pax_options, sauces, ingredients,
                     image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus,
-                    public_description, allergens
+                    public_description, allergens, meal_type
              FROM menu_dishes
              WHERE id = $1 AND archived = false`,
             [id]
@@ -5345,6 +5428,7 @@ const dbInitPromise = authSchemaPromise
           ingredients,
           imageBase64,
           type,
+          mealType,
           available,
           publicDescription,
           allergens,
@@ -5354,14 +5438,20 @@ const dbInitPromise = authSchemaPromise
           return res.status(400).json({ error: 'Name and price are required' });
         }
 
+        const dishCategory = category || 'catering';
+        const mealTypeSaved =
+          dishCategory === 'catering'
+            ? await upsertMenuMealType(mealType || type || '')
+            : '';
+
         const result = await pool.query(
-          `INSERT INTO menu_dishes (name, price, category, pax_options, sauces, ingredients, image_base64, type, set_menus, available, public_description, allergens)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          `INSERT INTO menu_dishes (name, price, category, pax_options, sauces, ingredients, image_base64, type, set_menus, available, public_description, allergens, meal_type)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
            RETURNING *`,
           [
             name,
             price,
-            category || 'catering',
+            dishCategory,
             JSON.stringify(paxOptions || []),
             JSON.stringify(sauces || []),
             JSON.stringify(ingredients || []),
@@ -5371,9 +5461,14 @@ const dbInitPromise = authSchemaPromise
             available !== false,
             String(publicDescription ?? '').trim(),
             String(allergens ?? '').trim(),
+            mealTypeSaved,
           ]
         );
         
+        const allergenStr = String(allergens ?? '').trim();
+        if (allergenStr) {
+          await upsertMenuAllergensFromSerialized(allergenStr, await getMenuAllergenCatalog());
+        }
         res.status(201).json({ dish: result.rows[0] });
       } catch (error) {
         console.error('Error creating menu dish:', error);
@@ -5393,22 +5488,29 @@ const dbInitPromise = authSchemaPromise
           ingredients,
           imageBase64,
           type,
+          mealType,
           available,
           publicDescription,
           allergens,
         } = req.body || {};
         
+        const dishCategory = category || 'catering';
+        const mealTypeSaved =
+          dishCategory === 'catering'
+            ? await upsertMenuMealType(mealType || type || '')
+            : '';
+
         const result = await pool.query(
           `UPDATE menu_dishes
            SET name = $1, price = $2, category = $3, pax_options = $4, 
                sauces = $5, ingredients = $6, image_base64 = $7, type = $8, set_menus = $9,
-               available = $10, public_description = $11, allergens = $12, updated_at = now()
-           WHERE id = $13
+               available = $10, public_description = $11, allergens = $12, meal_type = $13, updated_at = now()
+           WHERE id = $14
            RETURNING *`,
           [
             name,
             price,
-            category,
+            dishCategory,
             JSON.stringify(paxOptions),
             JSON.stringify(sauces),
             JSON.stringify(ingredients),
@@ -5418,12 +5520,18 @@ const dbInitPromise = authSchemaPromise
             available !== false,
             String(publicDescription ?? '').trim(),
             String(allergens ?? '').trim(),
+            mealTypeSaved,
             dishId,
           ]
         );
         
         if (result.rows.length === 0) {
           return res.status(404).json({ error: 'Dish not found' });
+        }
+
+        const allergenStr = String(allergens ?? '').trim();
+        if (allergenStr) {
+          await upsertMenuAllergensFromSerialized(allergenStr, await getMenuAllergenCatalog());
         }
         
         res.json({ dish: result.rows[0] });
@@ -5944,6 +6052,267 @@ const dbInitPromise = authSchemaPromise
         return res.status(401).json({ error: 'Invalid token' });
       }
     };
+
+    app.get('/api/manager/dashboard/summary', managerAuthRequired, async (_req, res) => {
+      try {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth() + 1;
+        const monthStart = new Date(year, month - 1, 1);
+        const nextMonth = new Date(year, month, 1);
+        const yearStart = new Date(year, 0, 1);
+        const nextYear = new Date(year + 1, 0, 1);
+
+        const restToday = await pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE status IN ('pending_cashier','pending'))::int AS pending_confirmations,
+             COUNT(*) FILTER (WHERE status = 'delivered')::int AS delivered,
+             COUNT(*) FILTER (WHERE status = 'cancelled')::int AS cancelled,
+             COALESCE(SUM(total_amount) FILTER (
+               WHERE status NOT IN ('cancelled')
+                 AND created_at >= date_trunc('day', now())
+             ), 0)::float AS sales_today,
+             COALESCE(SUM(total_amount) FILTER (
+               WHERE status NOT IN ('cancelled')
+                 AND created_at >= $1 AND created_at < $2
+             ), 0)::float AS sales_year
+           FROM restaurant_orders`,
+          [yearStart, nextYear],
+        );
+        const r = restToday.rows[0] || {};
+
+        const cateringMetrics = await pool.query(
+          `SELECT
+             COUNT(*) FILTER (
+               WHERE status = 'online_inquiries'
+                 AND created_at >= $1 AND created_at < $2
+             )::int AS inquiries_this_month,
+             COUNT(*) FILTER (WHERE status = 'for_processing')::int AS accepted_transactions,
+             COUNT(*) FILTER (
+               WHERE status = 'for_processing' AND COALESCE(down_payment_status, 'pending') != 'paid'
+             )::int AS for_down_payment,
+             COUNT(*) FILTER (
+               WHERE status = 'for_processing'
+                 AND COALESCE(down_payment_status, 'pending') = 'paid'
+                 AND COALESCE(full_payment_status, 'pending') != 'paid'
+             )::int AS ongoing,
+             COUNT(*) FILTER (
+               WHERE status IN ('for_processing', 'for_post_analysis')
+                 AND COALESCE(down_payment_status, 'pending') = 'paid'
+                 AND COALESCE(full_payment_status, 'pending') != 'paid'
+             )::int AS for_full_payment,
+             COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+             COUNT(*) FILTER (WHERE status = 'cancelled')::int AS cancelled,
+             COALESCE(SUM(total_cost) FILTER (
+               WHERE status = 'completed'
+                 AND created_at >= date_trunc('day', now())
+             ), 0)::float AS sales_today,
+             COALESCE(SUM(total_cost) FILTER (
+               WHERE status = 'completed'
+                 AND created_at >= $3 AND created_at < $4
+             ), 0)::float AS sales_year
+           FROM (
+             SELECT status, down_payment_status, full_payment_status, total_cost, created_at
+             FROM catering_orders
+             UNION ALL
+             SELECT status, down_payment_status, full_payment_status, total_cost, created_at
+             FROM event_orders
+           ) combined`,
+          [monthStart, nextMonth, yearStart, nextYear],
+        );
+        const c = cateringMetrics.rows[0] || {};
+
+        const restaurantSalesYear = Number(r.sales_year) || 0;
+        const cateringSalesYear = Number(c.sales_year) || 0;
+
+        res.json({
+          restaurant: {
+            pendingConfirmations: Number(r.pending_confirmations) || 0,
+            delivered: Number(r.delivered) || 0,
+            cancelled: Number(r.cancelled) || 0,
+            salesToday: Number(r.sales_today) || 0,
+            salesThisYear: restaurantSalesYear,
+          },
+          catering: {
+            inquiriesThisMonth: Number(c.inquiries_this_month) || 0,
+            acceptedTransactions: Number(c.accepted_transactions) || 0,
+            forDownPayment: Number(c.for_down_payment) || 0,
+            ongoing: Number(c.ongoing) || 0,
+            forFullPayment: Number(c.for_full_payment) || 0,
+            completed: Number(c.completed) || 0,
+            cancelled: Number(c.cancelled) || 0,
+            salesToday: Number(c.sales_today) || 0,
+            salesThisYear: cateringSalesYear,
+          },
+          salesThisYear: {
+            restaurant: restaurantSalesYear,
+            catering: cateringSalesYear,
+            all: restaurantSalesYear + cateringSalesYear,
+          },
+        });
+      } catch (e) {
+        console.error('dashboard summary', e);
+        res.status(500).json({ error: 'Failed to load dashboard summary' });
+      }
+    });
+
+    app.get('/api/manager/reports/summary', managerAuthRequired, async (req, res) => {
+      try {
+        const now = new Date();
+        const year = Number(req.query.year) || now.getFullYear();
+        const month = Number(req.query.month) || now.getMonth() + 1;
+        const periodStart = new Date(year, month - 1, 1);
+        const periodEnd = new Date(year, month, 1);
+        const annual = String(req.query.annual || '') === '1';
+        const rangeStart = annual ? new Date(year, 0, 1) : periodStart;
+        const rangeEnd = annual ? new Date(year + 1, 0, 1) : periodEnd;
+
+        const eventOrders = await pool.query(
+          `SELECT event_type, guest_count, menu, total_cost, schedule_slots, status, customer_name, event_title, created_at
+           FROM (
+             SELECT event_type, guest_count, menu, total_cost, schedule_slots, status, customer_name,
+                    COALESCE(event_title, '') AS event_title, created_at
+             FROM event_orders
+             WHERE status = 'completed' AND created_at >= $1 AND created_at < $2
+             UNION ALL
+             SELECT 'Catering' AS event_type, guest_count, menu, total_cost, schedule_slots, status, customer_name,
+                    '' AS event_title, created_at
+             FROM catering_orders
+             WHERE status = 'completed' AND created_at >= $1 AND created_at < $2
+           ) x`,
+          [rangeStart, rangeEnd],
+        );
+
+        let totalSales = 0;
+        let guestTotal = 0;
+        let guestCountN = 0;
+        const dishCounts = {};
+        const eventTypeCounts = {};
+        for (const row of eventOrders.rows) {
+          totalSales += Number(row.total_cost) || 0;
+          const gc = Number(row.guest_count) || 0;
+          if (gc > 0) {
+            guestTotal += gc;
+            guestCountN += 1;
+          }
+          const et = String(row.event_type || 'Unspecified').trim() || 'Unspecified';
+          eventTypeCounts[et] = (eventTypeCounts[et] || 0) + 1;
+          let menu = row.menu;
+          if (typeof menu === 'string') {
+            try { menu = JSON.parse(menu); } catch { menu = []; }
+          }
+          if (Array.isArray(menu)) {
+            for (const item of menu) {
+              const name = String(item?.dishName || item?.dish_name || 'Unknown').trim() || 'Unknown';
+              dishCounts[name] = (dishCounts[name] || 0) + 1;
+            }
+          }
+        }
+
+        const restaurantOrders = await pool.query(
+          `SELECT items, total_amount, created_at, status
+           FROM restaurant_orders
+           WHERE status NOT IN ('cancelled')
+             AND created_at >= $1 AND created_at < $2`,
+          [rangeStart, rangeEnd],
+        );
+
+        const dishCountsRest = {};
+        let restaurantSales = 0;
+        const daysWithOrders = new Set();
+        for (const row of restaurantOrders.rows) {
+          restaurantSales += Number(row.total_amount) || 0;
+          const day = row.created_at?.toISOString?.()?.slice(0, 10);
+          if (day) daysWithOrders.add(day);
+          let items = row.items;
+          if (typeof items === 'string') {
+            try { items = JSON.parse(items); } catch { items = []; }
+          }
+          if (Array.isArray(items)) {
+            for (const item of items) {
+              const name = String(item?.name || item?.dishName || 'Unknown').trim() || 'Unknown';
+              const qty = Number(item?.quantity) || 1;
+              dishCountsRest[name] = (dishCountsRest[name] || 0) + qty;
+            }
+          }
+        }
+
+        const daySpan = Math.max(
+          1,
+          Math.ceil((rangeEnd - rangeStart) / (24 * 60 * 60 * 1000)),
+        );
+        const avgOrdersPerDay = restaurantOrders.rowCount / daySpan;
+
+        const traffic = await pool.query(
+          `SELECT platform, COUNT(*)::int AS views
+           FROM site_page_views
+           WHERE created_at >= $1 AND created_at < $2
+           GROUP BY platform`,
+          [rangeStart, rangeEnd],
+        );
+        let webViews = 0;
+        let mobileViews = 0;
+        for (const t of traffic.rows) {
+          if (t.platform === 'mobile') mobileViews = Number(t.views) || 0;
+          else webViews += Number(t.views) || 0;
+        }
+
+        const accounts = await pool.query(
+          `SELECT registration_platform, COUNT(*)::int AS n
+           FROM customer_accounts
+           WHERE is_verified = TRUE AND archived = FALSE
+             AND created_at >= $1 AND created_at < $2
+           GROUP BY registration_platform`,
+          [rangeStart, rangeEnd],
+        );
+        let accountsWeb = 0;
+        let accountsMobile = 0;
+        for (const a of accounts.rows) {
+          if (a.registration_platform === 'mobile') {
+            accountsMobile = Number(a.n) || 0;
+          } else {
+            accountsWeb += Number(a.n) || 0;
+          }
+        }
+
+        const topDishes = Object.entries(dishCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 15)
+          .map(([name, count]) => ({ name, count }));
+        const topEventTypes = Object.entries(eventTypeCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 15)
+          .map(([name, count]) => ({ name, count }));
+        const topRestaurantDishes = Object.entries(dishCountsRest)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 15)
+          .map(([name, count]) => ({ name, count }));
+
+        res.json({
+          period: { year, month: annual ? null : month, annual },
+          catering: {
+            orderCount: eventOrders.rowCount,
+            totalSales,
+            averageGuestCount: guestCountN > 0 ? guestTotal / guestCountN : 0,
+            topDishes,
+            topEventTypes,
+          },
+          restaurant: {
+            orderCount: restaurantOrders.rowCount,
+            totalSales: restaurantSales,
+            averageOrdersPerDay: avgOrdersPerDay,
+            webPageViews: webViews,
+            mobilePageViews: mobileViews,
+            customerAccountsWeb: accountsWeb,
+            customerAccountsMobile: accountsMobile,
+            topDishes: topRestaurantDishes,
+          },
+        });
+      } catch (e) {
+        console.error('reports summary', e);
+        res.status(500).json({ error: 'Failed to load report summary' });
+      }
+    });
 
     // Get all restaurant orders for managers
     app.get('/api/manager/restaurant/orders', managerAuthRequired, async (req, res) => {
@@ -7015,6 +7384,32 @@ const dbInitPromise = authSchemaPromise
       } catch (error) {
         console.error('Error changing password:', error);
         res.status(500).json({ error: 'Failed to change password' });
+      }
+    });
+
+    // Loyalty: customer points (manager + super admin)
+    app.get('/api/loyalty/customers', authRequired, async (req, res) => {
+      try {
+        const userResult = await pool.query('SELECT role FROM users WHERE id = $1', [req.user.id]);
+        const role = userResult.rows[0]?.role;
+        if (!userResult.rows.length || !['manager', 'super_admin', 'admin'].includes(role)) {
+          return res.status(403).json({ error: 'Manager access required' });
+        }
+
+        const result = await pool.query(
+          `SELECT id, email, full_name, phone, is_verified, archived, created_at,
+             COALESCE(restaurant_loyalty_points, 0) as restaurant_loyalty_points,
+             COALESCE(catering_loyalty_points, 0) as catering_loyalty_points,
+             (COALESCE(restaurant_loyalty_points, 0) + COALESCE(catering_loyalty_points, 0)) as loyalty_points
+           FROM customer_accounts
+           WHERE archived = FALSE
+           ORDER BY created_at DESC`
+        );
+
+        res.json({ customers: result.rows });
+      } catch (error) {
+        console.error('Error fetching loyalty customers:', error);
+        res.status(500).json({ error: 'Failed to fetch customers' });
       }
     });
 

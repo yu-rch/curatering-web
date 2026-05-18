@@ -327,6 +327,33 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
     _emit(next);
   }
 
+  /// Adds a standalone chair on the floor (no table required).
+  void _addStandaloneChair() {
+    final standalone = widget.plan.seats.where((s) => s.isStandalone).toList();
+    final n = standalone.length;
+    final x = 0.35 + (n % 5) * 0.08;
+    final y = 0.35 + (n ~/ 5) * 0.08;
+    final newId = 'chair-${DateTime.now().millisecondsSinceEpoch}';
+    final newSeat = SeatingSeatSpec(
+      id: newId,
+      tableId: '',
+      index: n,
+      label: 'Chair ${n + 1}',
+      perimeterT: 0,
+      xNorm: x.clamp(0.05, 0.92),
+      yNorm: y.clamp(0.05, 0.92),
+    );
+    setState(() {
+      _selectedSeatId = newId;
+      _selectedTableId = null;
+    });
+    _emit(
+      widget.plan.copyWith(
+        seats: [...widget.plan.seats, newSeat],
+      ),
+    );
+  }
+
   void _duplicateSelectedSeat() {
     final sid = _selectedSeatId;
     if (sid == null) return;
@@ -429,10 +456,11 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
     final found = widget.plan.seats.where((e) => e.id == seatId).toList();
     if (found.isEmpty) return;
     final s = found.first;
-    final pos = seatNormOnEllipse(table, s);
-    final nx = (pos.dx * cw + d.delta.dx) / cw;
-    final ny = (pos.dy * ch + d.delta.dy) / ch;
-    final pt = perimeterTFromNormPoint(table, nx, ny);
+    const dragScale = 0.4;
+    final atTable = widget.plan.seats.where((e) => e.tableId == table.id).length;
+    final step = 1 / math.max(atTable, 1);
+    final tangent = (d.delta.dx - d.delta.dy) * 0.0015 * dragScale;
+    final pt = (s.perimeterT + tangent * step) % 1.0;
     final seats = widget.plan.seats
         .map((e) => e.id == seatId ? e.copyWith(perimeterT: pt) : e)
         .toList();
@@ -444,7 +472,7 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
     if (id == null) return;
     final tables = widget.plan.tables.map((t) {
       if (t.id != id) return t;
-      final n = math.max(1, math.min(100, t.seatCount + delta));
+      final n = math.max(0, math.min(100, t.seatCount + delta));
       return t.copyWith(seatCount: n);
     }).toList();
     final t = tables.firstWhere((e) => e.id == id);
@@ -540,6 +568,11 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                 onPressed: _pickFloorImage,
                 icon: const Icon(Icons.image, size: 18),
                 label: const Text('Floor image'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: widget.editable ? _addStandaloneChair : null,
+                icon: const Icon(Icons.event_seat, size: 18),
+                label: const Text('Add chair'),
               ),
               TextButton.icon(
                 onPressed:
@@ -750,6 +783,83 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                         );
                       }),
                       ...p.seats.map((s) {
+                        if (s.isStandalone) {
+                          final x = (s.xNorm ?? 0.5) * w;
+                          final y = (s.yNorm ?? 0.5) * h;
+                          final selSeat = s.id == _selectedSeatId;
+                          var chip = s.label.trim();
+                          if (chip.isEmpty) chip = 'Chair';
+                          return Positioned(
+                            left: x - 16,
+                            top: y - 30,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                if (!widget.editable) return;
+                                setState(() {
+                                  _selectedSeatId = s.id;
+                                  _selectedTableId = null;
+                                });
+                              },
+                              onPanUpdate: widget.editable
+                                  ? (d) {
+                                      final nx = ((s.xNorm ?? 0.5) * w + d.delta.dx) / w;
+                                      final ny = ((s.yNorm ?? 0.5) * h + d.delta.dy) / h;
+                                      final seats = widget.plan.seats.map((e) {
+                                        if (e.id != s.id) return e;
+                                        return e.copyWith(
+                                          xNorm: nx.clamp(0.02, 0.98),
+                                          yNorm: ny.clamp(0.02, 0.98),
+                                        );
+                                      }).toList();
+                                      _emit(widget.plan.copyWith(seats: seats));
+                                    }
+                                  : null,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 1,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.92),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: Colors.black26),
+                                    ),
+                                    child: Text(
+                                      chip,
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w700,
+                                        color: selSeat
+                                            ? const Color(0xFFF4511E)
+                                            : Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: selSeat
+                                          ? const Color(0xFF0D7A3A)
+                                          : const Color(0xFF1DB954),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: selSeat
+                                            ? const Color(0xFFFFF3D0)
+                                            : Colors.white,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: const SizedBox(width: 22, height: 22),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
                         SeatingTableSpec? table;
                         for (final t in p.tables) {
                           if (t.id == s.tableId) {
@@ -763,12 +873,9 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                         final selSeat = s.id == _selectedSeatId;
                         var chip = s.label.trim();
                         if (chip.isEmpty) chip = '${s.index + 1}';
-                        if (chip.length > 5) chip = '${chip.substring(0, 4)}…';
                         return Positioned(
-                          left: pos.dx * w - 12,
-                          top: pos.dy * h - 12,
-                          width: 24,
-                          height: 24,
+                          left: pos.dx * w - 16,
+                          top: pos.dy * h - 30,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
@@ -781,28 +888,47 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                             onPanUpdate: widget.editable
                                 ? (d) => _onPanSeat(s.id, d, tbl, w, h)
                                 : null,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: selSeat ? const Color(0xFF0D7A3A) : const Color(0xFF1DB954),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: selSeat ? const Color(0xFFFFF3D0) : Colors.white,
-                                  width: selSeat ? 2 : 1,
-                                ),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  chip,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.fade,
-                                  softWrap: false,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 8,
-                                    fontWeight: FontWeight.w700,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.92),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: Colors.black26),
+                                  ),
+                                  child: Text(
+                                    chip,
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      color: selSeat
+                                          ? const Color(0xFFF4511E)
+                                          : Colors.black87,
+                                    ),
                                   ),
                                 ),
-                              ),
+                                const SizedBox(height: 2),
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: selSeat
+                                        ? const Color(0xFF0D7A3A)
+                                        : const Color(0xFF1DB954),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: selSeat
+                                          ? const Color(0xFFFFF3D0)
+                                          : Colors.white,
+                                      width: selSeat ? 2 : 1,
+                                    ),
+                                  ),
+                                  child: const SizedBox(width: 22, height: 22),
+                                ),
+                              ],
                             ),
                           ),
                         );

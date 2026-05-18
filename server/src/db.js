@@ -552,6 +552,75 @@ export async function initDb() {
     ADD COLUMN IF NOT EXISTS address_lng DOUBLE PRECISION;
   `);
 
+  await pool.query(`
+    ALTER TABLE catering_orders
+    ADD COLUMN IF NOT EXISTS allergens TEXT NOT NULL DEFAULT '';
+  `);
+
+  await pool.query(`
+    ALTER TABLE event_orders
+    ADD COLUMN IF NOT EXISTS allergens TEXT NOT NULL DEFAULT '';
+  `);
+
+  await pool.query(`
+    ALTER TABLE customer_accounts
+    ADD COLUMN IF NOT EXISTS registration_platform TEXT NOT NULL DEFAULT 'web';
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS site_page_views (
+      id SERIAL PRIMARY KEY,
+      platform TEXT NOT NULL DEFAULT 'web',
+      path TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  try {
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_site_page_views_created ON site_page_views (created_at DESC)`,
+    );
+  } catch (err) {
+    console.log('Index create (site_page_views):', err.message);
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS menu_dishes_allergens (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  try {
+    await pool.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_dishes_allergens_name_lower
+       ON menu_dishes_allergens (lower(trim(name)))`,
+    );
+  } catch (err) {
+    console.log('Index create (menu_dishes_allergens):', err.message);
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS menu_dishes_meal_types (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  try {
+    await pool.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_dishes_meal_types_name_lower
+       ON menu_dishes_meal_types (lower(trim(name)))`,
+    );
+  } catch (err) {
+    console.log('Index create (menu_dishes_meal_types):', err.message);
+  }
+
+  await pool.query(`
+    ALTER TABLE menu_dishes
+    ADD COLUMN IF NOT EXISTS meal_type TEXT NOT NULL DEFAULT '';
+  `);
+
   // List queries filter by status and sort by created_at (manager/supervisor order APIs).
   try {
     await pool.query(
@@ -987,8 +1056,12 @@ export async function initDb() {
       INSERT INTO id_counters (prefix, last_number) VALUES ('ORD', 0)
       ON CONFLICT (prefix) DO NOTHING
     `);
+    await pool.query(`
+      INSERT INTO id_counters (prefix, last_number) VALUES ('TR', 0)
+      ON CONFLICT (prefix) DO NOTHING
+    `);
   } catch (err) {
-    console.log('Migration id_counters USR/ORD:', err.message);
+    console.log('Migration id_counters USR/ORD/TR:', err.message);
   }
 
   // Migration: Add non-perishable catering business fields to inventory table
@@ -1088,7 +1161,7 @@ export async function allocateRestaurantOrderNo() {
       SELECT COALESCE(MAX(
         CASE
           WHEN order_no ~ '^ORD-[0-9]+$'
-          THEN (regexp_match(order_no, '^ORD-([0-9]+)$'))[1]::integer
+          THEN NULLIF((regexp_match(order_no, '^ORD-([0-9]+)$'))[1], '')::integer
           ELSE NULL
         END
       ), 0)::int AS mx
@@ -1110,7 +1183,7 @@ export async function allocateRestaurantOrderNo() {
       [next],
     );
     await client.query("COMMIT");
-    return `ORD-${String(next).padStart(4, "0")}`;
+    return `ORD-${String(next).padStart(6, "0")}`;
   } catch (e) {
     await client.query("ROLLBACK");
     throw e;
@@ -1154,9 +1227,146 @@ export async function setLoyaltyProgramConfig(config) {
   );
 }
 
+/** @returns {string[]} */
+export async function getMenuAllergenCatalog() {
+  try {
+    const r = await pool.query(
+      `SELECT name FROM menu_dishes_allergens ORDER BY lower(name) ASC`,
+    );
+    return r.rows.map((row) => String(row.name).trim()).filter(Boolean);
+  } catch (e) {
+    console.log('getMenuAllergenCatalog:', e.message);
+    return [];
+  }
+}
+
+/** @returns {string[]} */
+export async function getCustomAllergenPresets() {
+  return getMenuAllergenCatalog();
+}
+
+/** Upsert custom allergen labels from dish form into menu_dishes_allergens. */
+export async function upsertMenuAllergensFromSerialized(serialized, basePresetList) {
+  const known = new Set(
+    (basePresetList || []).map((s) => String(s).trim().toLowerCase()).filter(Boolean),
+  );
+  const parts = String(serialized || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const p of parts) {
+    if (known.has(p.toLowerCase())) continue;
+    known.add(p.toLowerCase());
+    try {
+      await pool.query(
+        `INSERT INTO menu_dishes_allergens (name)
+         SELECT $1 WHERE NOT EXISTS (
+           SELECT 1 FROM menu_dishes_allergens WHERE lower(trim(name)) = lower(trim($1))
+         )`,
+        [p],
+      );
+    } catch (e) {
+      console.log('upsertMenuAllergensFromSerialized:', e.message);
+    }
+  }
+  return getMenuAllergenCatalog();
+}
+
+/** @returns {string[]} */
+export async function getMenuMealTypeCatalog() {
+  try {
+    const r = await pool.query(
+      `SELECT name FROM menu_dishes_meal_types ORDER BY lower(name) ASC`,
+    );
+    return r.rows.map((row) => String(row.name).trim()).filter(Boolean);
+  } catch (e) {
+    console.log('getMenuMealTypeCatalog:', e.message);
+    return [];
+  }
+}
+
+/** Ensure meal type exists in catalog; returns canonical name. */
+export async function upsertMenuMealType(name) {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return '';
+  try {
+    await pool.query(
+      `INSERT INTO menu_dishes_meal_types (name)
+       SELECT $1 WHERE NOT EXISTS (
+         SELECT 1 FROM menu_dishes_meal_types WHERE lower(trim(name)) = lower(trim($1))
+       )`,
+      [trimmed],
+    );
+  } catch (e) {
+    console.log('upsertMenuMealType:', e.message);
+  }
+  return trimmed;
+}
+
+/** @deprecated use upsertMenuAllergensFromSerialized */
+export async function mergeCustomAllergensFromSerialized(serialized, presetList) {
+  return upsertMenuAllergensFromSerialized(serialized, presetList);
+}
+
 /** Serial staff account id: USR-0001, USR-0002, … */
 export async function allocateStaffUserId() {
   return generateSequentialId('USR', 4);
+}
+
+/**
+ * Catering / event order public id: TR-000001 (shared counter for catering_orders + event_orders).
+ */
+export async function allocateCateringTransactionId() {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(902103448)');
+
+    const maxFromTables = await client.query(`
+      SELECT GREATEST(
+        COALESCE((
+          SELECT MAX(
+            CASE
+              WHEN inquiry_id ~ '^TR-[0-9]+$'
+              THEN NULLIF((regexp_match(inquiry_id, '^TR-([0-9]+)$'))[1], '')::integer
+              ELSE NULL
+            END
+          ) FROM catering_orders
+        ), 0),
+        COALESCE((
+          SELECT MAX(
+            CASE
+              WHEN inquiry_id ~ '^TR-[0-9]+$'
+              THEN NULLIF((regexp_match(inquiry_id, '^TR-([0-9]+)$'))[1], '')::integer
+              ELSE NULL
+            END
+          ) FROM event_orders
+        ), 0)
+      )::int AS mx
+    `);
+    const tableMax = Number(maxFromTables.rows[0]?.mx ?? 0) || 0;
+    const ctr = await client.query(
+      `SELECT last_number FROM id_counters WHERE prefix = 'TR' FOR UPDATE`,
+    );
+    const counterVal =
+      ctr.rows.length > 0 ? Number(ctr.rows[0].last_number) || 0 : 0;
+    const next = Math.max(tableMax, counterVal) + 1;
+    await client.query(
+      `INSERT INTO id_counters (prefix, last_number, updated_at)
+       VALUES ('TR', $1, now())
+       ON CONFLICT (prefix) DO UPDATE SET
+         last_number = $1,
+         updated_at = now()`,
+      [next],
+    );
+    await client.query('COMMIT');
+    return `TR-${String(next).padStart(6, '0')}`;
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
 export { pool, generateUserId, generateSequentialId };

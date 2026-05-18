@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../services/allergen_presets_store.dart';
+
 /// Common allergens (top list) plus "Other" with free text — serialized as comma-separated [AllergenSelectorField.value].
 class AllergenSelectorField extends StatefulWidget {
   const AllergenSelectorField({
@@ -17,7 +19,7 @@ class AllergenSelectorField extends StatefulWidget {
 }
 
 class _AllergenSelectorFieldState extends State<AllergenSelectorField> {
-  static const List<String> _preset = [
+  static const List<String> _basePreset = [
     'Milk / Dairy',
     'Eggs',
     'Fish',
@@ -40,6 +42,7 @@ class _AllergenSelectorFieldState extends State<AllergenSelectorField> {
     'Caffeine',
   ];
 
+  List<String> _preset = List.from(_basePreset);
   late Set<String> _selected;
   late TextEditingController _otherCtrl;
   bool _otherSelected = false;
@@ -49,6 +52,16 @@ class _AllergenSelectorFieldState extends State<AllergenSelectorField> {
     super.initState();
     _otherCtrl = TextEditingController();
     _parseInitial();
+    _loadCustomPresets();
+  }
+
+  Future<void> _loadCustomPresets() async {
+    final custom = await AllergenPresetsStore.instance.load();
+    if (!mounted) return;
+    setState(() {
+      _preset = [..._basePreset, ...custom.where((c) => !_basePreset.contains(c))];
+      _parseInitial();
+    });
   }
 
   void _parseInitial() {

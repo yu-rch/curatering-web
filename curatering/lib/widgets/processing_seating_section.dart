@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/event_order.dart';
 import '../models/seating_plan.dart';
 import '../services/events_api.dart';
+import 'async_dialogs.dart';
 import 'seating_plan_canvas.dart';
 
 /// Seating editor for a processing event order (catering + event only).
@@ -22,12 +23,14 @@ class ProcessingSeatingSection extends StatefulWidget {
 
 class _ProcessingSeatingSectionState extends State<ProcessingSeatingSection> {
   late SeatingPlanData _plan;
+  late SeatingPlanData _initialPlan;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _plan = widget.order.seatingPlan;
+    _initialPlan = _plan;
   }
 
   @override
@@ -35,10 +38,25 @@ class _ProcessingSeatingSectionState extends State<ProcessingSeatingSection> {
     super.didUpdateWidget(oldWidget);
     if (widget.order.id != oldWidget.order.id) {
       _plan = widget.order.seatingPlan;
+      _initialPlan = _plan;
     }
   }
 
+  bool get _isDirty => _plan.toJson().toString() != _initialPlan.toJson().toString();
+
   Future<void> _save() async {
+    final ok = await showConfirmActionDialog(
+      context,
+      title: 'Save seating layout?',
+      message: 'This will update the seating plan for this event order.',
+      confirmLabel: 'Save',
+    );
+    if (!ok || !mounted) return;
+
+    await showBlockingLoadingDialog(
+      context,
+      message: 'Saving seating layout…',
+    );
     setState(() => _saving = true);
     try {
       await EventsApi.instance.putStaffSeatingPlan(
@@ -46,6 +64,7 @@ class _ProcessingSeatingSectionState extends State<ProcessingSeatingSection> {
         seatingPlan: _plan.toJson(),
       );
       if (!mounted) return;
+      _initialPlan = _plan;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Seating layout saved.'),
@@ -62,8 +81,24 @@ class _ProcessingSeatingSectionState extends State<ProcessingSeatingSection> {
         ),
       );
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+        hideBlockingLoadingDialog(context);
+      }
     }
+  }
+
+  Future<void> _discardChanges() async {
+    if (!_isDirty) return;
+    final ok = await showConfirmActionDialog(
+      context,
+      title: 'Discard changes?',
+      message: 'Unsaved seating edits will be lost.',
+      confirmLabel: 'Discard',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    setState(() => _plan = _initialPlan);
   }
 
   @override
@@ -93,19 +128,23 @@ class _ProcessingSeatingSectionState extends State<ProcessingSeatingSection> {
                   ),
                 ),
                 const Spacer(),
+                if (_isDirty)
+                  TextButton(
+                    onPressed: _saving ? null : _discardChanges,
+                    child: const Text('Discard'),
+                  ),
                 FilledButton.icon(
                   onPressed: _saving ? null : _save,
-                  icon:
-                      _saving
-                          ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                          : const Icon(Icons.save, size: 18),
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.save, size: 18),
                   label: const Text('Save seating'),
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF1DB954),

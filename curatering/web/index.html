@@ -31,6 +31,17 @@
 
   <title>Curatering</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Prevent trackpad/touch horizontal overscroll from triggering browser back (homepage). -->
+  <style>
+    html, body {
+      overscroll-behavior-x: none;
+      overscroll-behavior-y: auto;
+    }
+    flt-glass-pane, flutter-view {
+      overscroll-behavior-x: none;
+    }
+  </style>
   
   <!-- Google Maps API -->
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAfyCaQ7PYtpqGgJIX7MvoWfoTFp-6cY0M&amp;libraries=places"></script>

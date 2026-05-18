@@ -458,6 +458,7 @@ class EventsApi {
 
     return EventOrderDto(
       id: (map['id'] ?? '').toString(),
+      inquiryId: (map['inquiryId'] ?? map['inquiry_id'] ?? '').toString(),
       source: (map['source'] ?? '').toString(),
       status: (map['status'] ?? '').toString(),
       themeAssetsDeferred: _toBool(map['listSummaryOnly']),
@@ -476,6 +477,7 @@ class EventsApi {
       scheduleSlots: scheduleSlots,
       address: (map['address'] ?? '').toString(),
       guestCount: _toInt(map['guestCount'] ?? map['guest_count']),
+      allergens: (map['allergens'] ?? '').toString(),
       menu: menu,
       themeDesign: themeDesign,
       seatingPlan: seatingPlan,

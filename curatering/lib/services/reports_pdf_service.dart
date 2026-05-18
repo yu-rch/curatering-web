@@ -5,6 +5,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../models/event_order.dart';
+import 'reports_api.dart';
 import '../utils/order_calculations.dart';
 
 /// Aggregated metrics for one calendar month.
@@ -103,8 +104,8 @@ String _orderDateLabel(EventOrderDto order) {
 
 Future<Uint8List> buildMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
   final doc = pw.Document(
-    title: 'Curatering Report — ${_monthLabel(snapshot.month)}',
-    author: 'Curatering',
+    title: "Macrina's Kitchen and Catering Report — ${_monthLabel(snapshot.month)}",
+    author: "Macrina's Kitchen and Catering",
   );
 
   final generatedAt = DateTime.now();
@@ -150,7 +151,7 @@ Future<Uint8List> buildMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
       ),
       build: (context) {
         final blocks = <pw.Widget>[
-          pw.Text('Curatering', style: headerStyle),
+          pw.Text("Macrina's Kitchen and Catering", style: headerStyle),
           pw.SizedBox(height: 4),
           pw.Text('Monthly Operations Report', style: subStyle),
           pw.SizedBox(height: 4),
@@ -170,7 +171,7 @@ Future<Uint8List> buildMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
             'Completed orders',
             '${snapshot.orders.length}',
           ),
-          summaryRow('Total sales', formatPesos(snapshot.totalSales)),
+          summaryRow('Total sales', formatPhp(snapshot.totalSales)),
           summaryRow('Most popular dish', snapshot.popularDish),
           summaryRow(
             'Most frequent event type',
@@ -226,83 +227,6 @@ Future<Uint8List> buildMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
           );
         }
 
-        blocks.addAll([
-          pw.SizedBox(height: 20),
-          pw.Text(
-            'Completed orders',
-            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
-          ),
-          pw.SizedBox(height: 8),
-        ]);
-
-        if (snapshot.orders.isEmpty) {
-          blocks.add(
-            pw.Text('No completed orders in this month.', style: cellStyle),
-          );
-        } else {
-          blocks.add(
-            pw.Table(
-              border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
-              columnWidths: {
-                0: const pw.FlexColumnWidth(1.2),
-                1: const pw.FlexColumnWidth(2),
-                2: const pw.FlexColumnWidth(1.5),
-                3: const pw.FlexColumnWidth(1),
-                4: const pw.FlexColumnWidth(1),
-              },
-              children: [
-                pw.TableRow(
-                  decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-                  children: [
-                    for (final h in [
-                      'Date',
-                      'Customer',
-                      'Event',
-                      'Guests',
-                      'Sales',
-                    ])
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(6),
-                        child: pw.Text(h, style: headerCellStyle),
-                      ),
-                  ],
-                ),
-                for (final o in snapshot.orders)
-                  pw.TableRow(
-                    children: [
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(6),
-                        child: pw.Text(_orderDateLabel(o), style: cellStyle),
-                      ),
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(6),
-                        child: pw.Text(o.customerName, style: cellStyle),
-                      ),
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(6),
-                        child: pw.Text(
-                          o.eventTitle.isEmpty ? o.eventType : o.eventTitle,
-                          style: cellStyle,
-                        ),
-                      ),
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(6),
-                        child: pw.Text('${o.guestCount}', style: cellStyle),
-                      ),
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(6),
-                        child: pw.Text(
-                          formatPesos(orderRevenue(o)),
-                          style: cellStyle,
-                        ),
-                      ),
-                    ],
-                  ),
-              ],
-            ),
-          );
-        }
-
         return blocks;
       },
     ),
@@ -329,5 +253,188 @@ Future<void> downloadMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
 }
 
 String _reportFilename(DateTime month) {
-  return 'curatering-report-${month.year}-${month.month.toString().padLeft(2, '0')}.pdf';
+  return 'macrinas-report-${month.year}-${month.month.toString().padLeft(2, '0')}.pdf';
+}
+
+String _periodLabel({required bool annual, required int year, int? month}) {
+  if (annual) return 'Year $year';
+  const names = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  return '${names[(month ?? 1) - 1]} $year';
+}
+
+Future<Uint8List> buildOperationsReportPdf({
+  required ReportsSummaryData data,
+  required String scope,
+  required bool annual,
+  required int year,
+  int? month,
+}) async {
+  final doc = pw.Document(
+    title: "Macrina's Kitchen and Catering Report",
+    author: "Macrina's Kitchen and Catering",
+  );
+  final headerStyle = pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold);
+  final subStyle = pw.TextStyle(fontSize: 10, color: PdfColors.grey700);
+  final cellStyle = const pw.TextStyle(fontSize: 9);
+  final headerCellStyle = pw.TextStyle(
+    fontSize: 9,
+    fontWeight: pw.FontWeight.bold,
+  );
+
+  pw.Widget line(String label, String value) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 5),
+      child: pw.Row(
+        children: [
+          pw.Expanded(flex: 2, child: pw.Text(label, style: cellStyle)),
+          pw.Expanded(
+            flex: 3,
+            child: pw.Text(value, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget rankTable(String title, List<ReportRankItem> items) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.SizedBox(height: 12),
+        pw.Text(title, style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 6),
+        if (items.isEmpty)
+          pw.Text('No data.', style: cellStyle)
+        else
+          pw.Table(
+            border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+            columnWidths: {
+              0: const pw.FlexColumnWidth(3),
+              1: const pw.FlexColumnWidth(1),
+            },
+            children: [
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                children: [
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Text('Name', style: headerCellStyle),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Text('Count', style: headerCellStyle),
+                  ),
+                ],
+              ),
+              for (final e in items.take(15))
+                pw.TableRow(
+                  children: [
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(e.name, style: cellStyle),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text('${e.count}', style: cellStyle),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  final blocks = <pw.Widget>[
+    pw.Text("Macrina's Kitchen and Catering", style: headerStyle),
+    pw.SizedBox(height: 4),
+    pw.Text('Operations Report', style: subStyle),
+    pw.Text(
+      'Period: ${_periodLabel(annual: annual, year: year, month: month)}',
+      style: subStyle,
+    ),
+    pw.SizedBox(height: 16),
+  ];
+
+  if (scope != 'restaurant') {
+    blocks.add(pw.Text('Catering / Events — Summary', style: headerStyle));
+    blocks.add(line('Completed orders', '${data.catering.orderCount}'));
+    blocks.add(line('Total sales', formatPhp(data.catering.totalSales)));
+    blocks.add(
+      line(
+        'Average guest count',
+        data.catering.averageGuestCount.toStringAsFixed(1),
+      ),
+    );
+    blocks.add(rankTable('Top requested dishes', data.catering.topDishes));
+    blocks.add(rankTable('Most frequent event type', data.catering.topEventTypes));
+  }
+
+  if (scope != 'catering') {
+    blocks.add(pw.SizedBox(height: 8));
+    blocks.add(pw.Text('Restaurant — Summary', style: headerStyle));
+    blocks.add(line('Orders', '${data.restaurant.orderCount}'));
+    blocks.add(line('Total sales', formatPhp(data.restaurant.totalSales)));
+    blocks.add(
+      line(
+        'Average orders per day',
+        data.restaurant.averageOrdersPerDay.toStringAsFixed(2),
+      ),
+    );
+    blocks.add(line('Web page views', '${data.restaurant.webPageViews}'));
+    blocks.add(line('Mobile page views', '${data.restaurant.mobilePageViews}'));
+    blocks.add(
+      line('Customer accounts (web)', '${data.restaurant.customerAccountsWeb}'),
+    );
+    blocks.add(
+      line(
+        'Customer accounts (mobile)',
+        '${data.restaurant.customerAccountsMobile}',
+      ),
+    );
+    blocks.add(rankTable('Most ordered dishes', data.restaurant.topDishes));
+  }
+
+  doc.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(40),
+      build: (_) => blocks,
+    ),
+  );
+
+  return doc.save();
+}
+
+Future<void> downloadOperationsReportPdf({
+  required ReportsSummaryData data,
+  required String scope,
+  required bool annual,
+  required int year,
+  int? month,
+}) async {
+  final bytes = await buildOperationsReportPdf(
+    data: data,
+    scope: scope,
+    annual: annual,
+    year: year,
+    month: month,
+  );
+  final name = annual
+      ? 'macrinas-report-$year.pdf'
+      : 'macrinas-report-$year-${month.toString().padLeft(2, '0')}.pdf';
+  await Printing.sharePdf(bytes: bytes, filename: name);
 }

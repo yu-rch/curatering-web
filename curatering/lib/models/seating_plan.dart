@@ -71,7 +71,7 @@ class SeatingTableSpec {
       hNorm: _toDouble(m['hNorm'], 0.1),
       rotationDeg: _toDouble(m['rotationDeg'], 0),
       label: (m['label'] ?? 'Table').toString(),
-      seatCount: math.max(1, math.min(100, _toInt(m['seatCount'], 6))),
+      seatCount: math.max(0, math.min(100, _toInt(m['seatCount'], 6))),
     );
   }
 }
@@ -83,6 +83,11 @@ class SeatingSeatSpec {
   final String label;
   final double perimeterT;
   final String? guestId;
+  /// Standalone chair (no table) — position on floor plan.
+  final double? xNorm;
+  final double? yNorm;
+
+  bool get isStandalone => tableId.isEmpty;
 
   const SeatingSeatSpec({
     required this.id,
@@ -91,6 +96,8 @@ class SeatingSeatSpec {
     required this.label,
     required this.perimeterT,
     this.guestId,
+    this.xNorm,
+    this.yNorm,
   });
 
   SeatingSeatSpec copyWith({
@@ -100,6 +107,8 @@ class SeatingSeatSpec {
     String? label,
     double? perimeterT,
     String? guestId,
+    double? xNorm,
+    double? yNorm,
   }) {
     return SeatingSeatSpec(
       id: id ?? this.id,
@@ -108,6 +117,8 @@ class SeatingSeatSpec {
       label: label ?? this.label,
       perimeterT: perimeterT ?? this.perimeterT,
       guestId: guestId ?? this.guestId,
+      xNorm: xNorm ?? this.xNorm,
+      yNorm: yNorm ?? this.yNorm,
     );
   }
 
@@ -118,6 +129,9 @@ class SeatingSeatSpec {
         'label': label,
         'perimeterT': perimeterT,
         if (guestId != null && guestId!.isNotEmpty) 'guestId': guestId,
+        if (xNorm != null) 'xNorm': xNorm,
+        if (yNorm != null) 'yNorm': yNorm,
+        if (tableId.isEmpty) 'standalone': true,
       };
 
   static SeatingSeatSpec fromJson(Map<String, dynamic> m) {
@@ -128,6 +142,8 @@ class SeatingSeatSpec {
       label: (m['label'] ?? '').toString(),
       perimeterT: _toDouble(m['perimeterT'], 0),
       guestId: m['guestId']?.toString(),
+      xNorm: m['xNorm'] != null ? _toDouble(m['xNorm'], 0.5) : null,
+      yNorm: m['yNorm'] != null ? _toDouble(m['yNorm'], 0.5) : null,
     );
   }
 }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/site_routes.dart';
 import '../pages/checkout_page.dart';
 import '../pages/customer_login.dart';
 import '../pages/my_caterings_page.dart';
@@ -335,12 +336,17 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
   }
 
   void _goHome(BuildContext context) {
-    Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      customerRoute('/'),
+      (route) => false,
+    );
   }
 
   void _go(BuildContext context, String route) {
-    if (_currentRoute(context) != route) {
-      Navigator.pushNamed(context, route);
+    final target = customerRoute(route);
+    if (_currentRoute(context) != target) {
+      Navigator.pushReplacementNamed(context, target);
     }
   }
 
@@ -374,41 +380,44 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                   children: [
                     InkWell(
                       onTap: () => _goHome(context),
-                      child: _navLabel('Home', active: route == '/'),
+                      child: _navLabel(
+                        'Home',
+                        active: route == customerRoute('/'),
+                      ),
                     ),
                     InkWell(
                       onTap: () => _go(context, '/gallery'),
                       child: _navLabel(
                         'Gallery',
-                        active: route == '/gallery',
+                        active: route == customerRoute('/gallery'),
                       ),
                     ),
                     InkWell(
                       onTap: () => _go(context, '/catering-menu'),
                       child: _navLabel(
                         'Catering Menu',
-                        active: route == '/catering-menu',
+                        active: route == customerRoute('/catering-menu'),
                       ),
                     ),
                     InkWell(
                       onTap: () => _go(context, '/restaurant'),
                       child: _navLabel(
                         'Restaurant',
-                        active: route == '/restaurant',
+                        active: route == customerRoute('/restaurant'),
                       ),
                     ),
                     InkWell(
                       onTap: () => _go(context, '/inquire'),
                       child: _navLabel(
                         'Inquire Now',
-                        active: route == '/inquire',
+                        active: route == customerRoute('/inquire'),
                       ),
                     ),
                     InkWell(
                       onTap: () => _go(context, '/contact-us'),
                       child: _navLabel(
                         'Contact Us',
-                        active: route == '/contact-us',
+                        active: route == customerRoute('/contact-us'),
                       ),
                     ),
                   ],
