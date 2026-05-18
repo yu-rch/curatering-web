@@ -48,9 +48,23 @@ extension _ManageEventsTableExt on _ManageEventsState {
 
   String _formatMenuLines(EventOrderDto dto) {
     if (dto.menu.isEmpty) return '—';
-    return dto.menu
-        .map((m) => '${m.dishName} · ${m.paxOption} · ${m.price}')
-        .join('\n');
+    final lines = <String>[];
+    String? currentSet;
+    for (final m in dto.menu) {
+      final set = m.setMenuName.trim();
+      if (set.isNotEmpty && set != currentSet) {
+        currentSet = set;
+        lines.add('Set: $set');
+      }
+      final parts = <String>[m.dishName];
+      if (m.paxOption.trim().isNotEmpty) parts.add(m.paxOption);
+      if (m.price.trim().isNotEmpty && m.price != '0') parts.add(m.price);
+      if (m.dishAllergens.trim().isNotEmpty) {
+        parts.add('allergens: ${m.dishAllergens}');
+      }
+      lines.add('  • ${parts.join(' · ')}');
+    }
+    return lines.join('\n');
   }
 
   String _themeExtrasLine(EventOrderDto dto) {
@@ -267,12 +281,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
 
   Future<EventOrderDto> _loadOrderForDetail(EventOrderDto dto) async {
     try {
-      if (dto.source == 'online_inquiry' ||
-          dto.themeAssetsDeferred ||
-          _orderHasEventDesign(dto)) {
-        return await _resolveOrderForSelection(dto);
-      }
-      return dto;
+      final role = AuthSession.instance.currentRole;
+      final roleType = role == Role.supervisor ? 'supervisor' : 'manager';
+      return await EventsApi.instance.getEventOrder(
+        orderId: dto.id,
+        roleType: roleType,
+      );
     } catch (_) {
       return dto;
     }
@@ -291,8 +305,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         future: _loadOrderForDetail(dto),
         builder: (context, snap) {
           full = snap.data ?? dto;
-          if (snap.connectionState == ConnectionState.waiting &&
-              dto.menu.isEmpty) {
+          if (snap.connectionState == ConnectionState.waiting) {
             return const Padding(
               padding: EdgeInsets.all(24),
               child: Center(child: CircularProgressIndicator()),

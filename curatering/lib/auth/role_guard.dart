@@ -25,6 +25,8 @@ class RoleGuard extends StatelessWidget {
 
     if (!session.hasToken || user == null || role == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        final current = ModalRoute.of(context)?.settings.name;
+        if (current == '/login' || current == '/') return;
         Navigator.of(context).pushReplacementNamed('/login');
       });
       return const SizedBox.shrink();

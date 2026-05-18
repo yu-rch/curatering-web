@@ -479,6 +479,129 @@ function tryParseJson(s) {
   }
 }
 
+/** Normalize stored menu JSON (flat rows, inquiry blocks with dishNames, legacy keys). */
+export function parseEventOrderMenuItems(raw) {
+  let arr = raw;
+  if (raw == null) return [];
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return [];
+    try {
+      arr = JSON.parse(trimmed);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(arr)) return [];
+
+  const out = [];
+  for (const item of arr) {
+    if (item == null) continue;
+    if (typeof item !== 'object' || Array.isArray(item)) continue;
+
+    const setMenuName =
+      item.setMenuName != null
+        ? String(item.setMenuName).trim()
+        : item.set_menu_name != null
+          ? String(item.set_menu_name).trim()
+          : '';
+
+    const dishNameRaw = item.dishName ?? item.dish_name;
+    if (dishNameRaw != null && String(dishNameRaw).trim()) {
+      out.push({
+        dishName: String(dishNameRaw).trim(),
+        paxOption: String(item.paxOption ?? item.pax_option ?? '').trim(),
+        price: item.price != null ? String(item.price) : '0',
+        ...(setMenuName ? { setMenuName } : {}),
+      });
+      continue;
+    }
+
+    const names = item.dishNames ?? item.dish_names;
+    if (Array.isArray(names)) {
+      for (const n of names) {
+        const name = String(n ?? '').trim();
+        if (!name) continue;
+        out.push({
+          dishName: name,
+          paxOption: '',
+          price: '0',
+          ...(setMenuName ? { setMenuName } : {}),
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/** Staff/manager event order row: parsed menu, allergens string, optional dish catalog enrichment. */
+export async function normalizeStaffEventOrderRow(row, { enrichMenu = false } = {}) {
+  if (!row || typeof row !== 'object') return row;
+
+  const o = { ...row };
+  o.menu = parseEventOrderMenuItems(o.menu);
+  o.allergens = String(o.allergens ?? '').trim();
+
+  if (typeof o.themeDesign === 'string' && o.themeDesign.trim()) {
+    try {
+      o.themeDesign = JSON.parse(o.themeDesign);
+    } catch {
+      o.themeDesign = {};
+    }
+  }
+
+  if (enrichMenu && o.menu.length > 0) {
+    const names = [
+      ...new Set(
+        o.menu.map((m) => String(m.dishName ?? '').trim()).filter(Boolean),
+      ),
+    ];
+    if (names.length > 0) {
+      try {
+        const mdCols = await getTableColumnNames('menu_dishes');
+        if (mdCols.has('name')) {
+          const allergenCol = mdCols.has('allergens') ? 'allergens' : "''";
+          const ingredientCol = mdCols.has('ingredients')
+            ? 'ingredients'
+            : "'[]'::jsonb";
+          const priceCol = mdCols.has('price') ? 'price::text' : "''";
+          const r = await pool.query(
+            `SELECT name, ${allergenCol} AS allergens, ${ingredientCol} AS ingredients, ${priceCol} AS price
+             FROM menu_dishes
+             WHERE lower(trim(name::text)) = ANY($1::text[])`,
+            [names.map((n) => n.toLowerCase())],
+          );
+          const byName = new Map(
+            r.rows.map((d) => [
+              String(d.name ?? '')
+                .trim()
+                .toLowerCase(),
+              d,
+            ]),
+          );
+          o.menu = o.menu.map((item) => {
+            const key = String(item.dishName ?? '')
+              .trim()
+              .toLowerCase();
+            const dish = byName.get(key);
+            if (!dish) return item;
+            return {
+              ...item,
+              dishAllergens: String(dish.allergens ?? '').trim(),
+              ingredients: dish.ingredients,
+              catalogPrice: dish.price != null ? String(dish.price) : item.price,
+            };
+          });
+        }
+      } catch (err) {
+        console.warn('normalizeStaffEventOrderRow menu enrich:', err.message);
+      }
+    }
+  }
+
+  return o;
+}
+
 function cateringSelectField(cols, alias, candidates, defaultSql) {
   const col = pickCol(cols, candidates);
   if (col) return `${col} AS "${alias}"`;

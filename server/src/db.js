@@ -155,6 +155,20 @@ async function generateSequentialId(prefix, padding = 4) {
   }
 }
 
+/** Backfill columns on legacy customer_accounts tables (CREATE TABLE IF NOT EXISTS is not enough). */
+export async function ensureCustomerAccountsColumns() {
+  try {
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+    );
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+    );
+  } catch (err) {
+    console.warn('customer_accounts timestamp columns:', err.message);
+  }
+}
+
 /** Minimal tables for login/signup — runs in seconds so the API can accept auth before full initDb. */
 export async function ensureAuthSchemaQuick() {
   const cs = process.env.DATABASE_URL?.trim();
@@ -251,6 +265,8 @@ export async function ensureAuthSchemaQuick() {
   } catch (err) {
     console.warn('Auth schema customer_accounts delivery columns:', err.message);
   }
+
+  await ensureCustomerAccountsColumns();
 
   try {
     await pool.query(
@@ -926,6 +942,8 @@ export async function initDb() {
   } catch (err) {
     console.log('Migration check for customer_accounts delivery columns:', err.message);
   }
+
+  await ensureCustomerAccountsColumns();
 
   // Create restaurant_orders table for customer orders
   await pool.query(`

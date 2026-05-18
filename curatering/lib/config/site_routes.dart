@@ -67,11 +67,12 @@ String get customerSiteOrigin => 'https://$kCustomerWebHost';
 
 String get staffSiteOrigin => 'https://$kStaffWebHost';
 
-void redirectToSiteOrigin(String origin, String path) {
-  if (!kIsWeb) return;
+/// Returns `true` when a full cross-origin navigation was started.
+bool redirectToSiteOrigin(String origin, String path) {
+  if (!kIsWeb) return false;
   final target = Uri.parse(origin).replace(path: normalizeRoutePath(path));
-  if (browserLocationMatches(target)) return;
-  redirectBrowserTo(target);
+  if (browserLocationMatches(target)) return false;
+  return redirectBrowserTo(target);
 }
 
 /// Staff routes (e.g. `/login`) belong on the staff host only.
@@ -87,15 +88,15 @@ bool needsRedirectToCustomerSite(String? routeName) {
 }
 
 /// Send curatering.com / www traffic to the correct subdomain.
-void redirectApexHostToSubdomain(String path) {
-  if (!isApexCurateringHost) return;
+/// Returns `true` when a full page navigation was started.
+bool redirectApexHostToSubdomain(String path) {
+  if (!isApexCurateringHost) return false;
   final stripped = stripLegacyCustomerPrefix(path.isEmpty ? '/' : path);
   if (isStaffRoute(stripped)) {
     final staffPath = stripped == '/' ? '/login' : stripped;
-    redirectToSiteOrigin(staffSiteOrigin, staffPath);
-    return;
+    return redirectToSiteOrigin(staffSiteOrigin, staffPath);
   }
-  redirectToSiteOrigin(customerSiteOrigin, stripped);
+  return redirectToSiteOrigin(customerSiteOrigin, stripped);
 }
 
 String normalizeRoutePath(String path) {
@@ -132,8 +133,9 @@ String resolveAppInitialRoute() {
 }
 
 /// Run before [runApp] to fix www staff host, legacy bookmarks, and staff `/`.
-void bootstrapWebRouting() {
-  if (!kIsWeb) return;
+/// Returns `true` when a full page navigation was started (skip [runApp]).
+bool bootstrapWebRouting() {
+  if (!kIsWeb) return false;
 
   final host = _host.toLowerCase();
   final rawPath = rawWebPath();
@@ -143,26 +145,28 @@ void bootstrapWebRouting() {
   if (host == 'www.$staffCanonical') {
     var target = rawPath;
     if (target == '/' || isLegacyBookmarkPath(rawPath)) target = '/login';
-    redirectBrowserTo(Uri.parse('https://$staffCanonical$target'));
-    return;
+    final uri = Uri.parse('https://$staffCanonical$target');
+    if (browserLocationMatches(uri)) return false;
+    return redirectBrowserTo(uri);
   }
 
   if (host == 'www.$customerCanonical') {
-    redirectBrowserTo(Uri.parse('https://$customerCanonical$rawPath'));
-    return;
+    final uri = Uri.parse('https://$customerCanonical$rawPath');
+    if (browserLocationMatches(uri)) return false;
+    return redirectBrowserTo(uri);
   }
 
-  if (!isStaffSiteHost) return;
+  if (!isStaffSiteHost) return false;
 
   if (isLegacyBookmarkPath(rawPath)) {
-    redirectToSiteOrigin(staffSiteOrigin, '/login');
-    return;
+    return redirectToSiteOrigin(staffSiteOrigin, '/login');
   }
 
   if (rawPath == '/' && currentWebPath() == '/') {
-    redirectToSiteOrigin(staffSiteOrigin, '/login');
-    return;
+    return redirectToSiteOrigin(staffSiteOrigin, '/login');
   }
+
+  return false;
 }
 
 String stripLegacyCustomerPrefix(String path) {

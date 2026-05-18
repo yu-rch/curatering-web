@@ -507,25 +507,16 @@ class _InquirePageState extends State<InquirePage> {
     return null;
   }
 
-  /// API `/api/online-inquiries` expects `menu`: list of `{ dishName }`.
+  /// API `/api/online-inquiries` menu: inquiry blocks (set name + dish names) or flat rows.
   List<Map<String, dynamic>> _buildMenuForApi() {
-    final out = <Map<String, dynamic>>[];
-    for (final block in _menuSelections) {
-      final names = (block['dishNames'] as List<dynamic>?)
-              ?.map((e) => e.toString().trim())
-              .where((n) => n.isNotEmpty)
-              .toList() ??
-          const [];
-      for (final n in names) {
-        out.add({'dishName': n});
-      }
-    }
-    if (out.isEmpty) {
+    if (_menuSelections.isEmpty) {
       return [
         {'dishName': 'Customer will confirm menu details with coordinator'},
       ];
     }
-    return out;
+    return _menuSelections
+        .map((block) => Map<String, dynamic>.from(block))
+        .toList();
   }
 
   void _clearForm() {

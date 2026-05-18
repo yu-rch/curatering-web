@@ -397,13 +397,41 @@ class EventsApi {
     for (final m in _toList(menuRaw)) {
       final mm = _toMap(m);
       if (mm.isEmpty) continue;
-      menu.add(
-        EventMenuItemDto(
-          dishName: (mm['dishName'] ?? mm['dish_name'] ?? '').toString(),
-          paxOption: (mm['paxOption'] ?? mm['pax_option'] ?? '').toString(),
-          price: mm['price']?.toString() ?? '0',
-        ),
-      );
+
+      final setMenuName =
+          (mm['setMenuName'] ?? mm['set_menu_name'] ?? '').toString().trim();
+      final dishAllergens =
+          (mm['dishAllergens'] ?? mm['dish_allergens'] ?? '').toString().trim();
+
+      final dishNameRaw = mm['dishName'] ?? mm['dish_name'];
+      if (dishNameRaw != null && dishNameRaw.toString().trim().isNotEmpty) {
+        menu.add(
+          EventMenuItemDto(
+            dishName: dishNameRaw.toString().trim(),
+            paxOption: (mm['paxOption'] ?? mm['pax_option'] ?? '').toString(),
+            price: mm['price']?.toString() ?? '0',
+            setMenuName: setMenuName,
+            dishAllergens: dishAllergens,
+          ),
+        );
+        continue;
+      }
+
+      final names = mm['dishNames'] ?? mm['dish_names'];
+      if (names is List) {
+        for (final n in names) {
+          final name = n.toString().trim();
+          if (name.isEmpty) continue;
+          menu.add(
+            EventMenuItemDto(
+              dishName: name,
+              paxOption: '',
+              price: '0',
+              setMenuName: setMenuName,
+            ),
+          );
+        }
+      }
     }
 
     final rawTheme = map['themeDesign'] ?? map['theme_design'];

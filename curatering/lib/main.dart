@@ -58,12 +58,9 @@ Future<void> main() async {
     );
   }
 
-  if (isApexCurateringHost) {
-    redirectApexHostToSubdomain(currentWebPath());
-    return;
-  }
+  if (redirectApexHostToSubdomain(currentWebPath())) return;
 
-  bootstrapWebRouting();
+  if (bootstrapWebRouting()) return;
 
   runApp(const MyApp());
 }

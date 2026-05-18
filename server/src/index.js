@@ -55,6 +55,7 @@ import {
   restaurantOrderIdExpr,
   normalizeRestaurantOrderRow,
   normalizeCustomerCateringOrderRow,
+  normalizeStaffEventOrderRow,
 } from "./order_schema.js";
 import CartAPI from "./cart_api.js";
 import {
@@ -597,9 +598,12 @@ async function fetchEventOrderRowById(orderId) {
     eventCols,
   );
   const catering = await pool.query(cateringSql, [id]);
-  if (catering.rows.length > 0) return catering.rows[0];
+  if (catering.rows.length > 0) {
+    return normalizeStaffEventOrderRow(catering.rows[0], { enrichMenu: true });
+  }
   const ev = await pool.query(eventSql, [id]);
-  return ev.rows[0] || null;
+  if (ev.rows.length === 0) return null;
+  return normalizeStaffEventOrderRow(ev.rows[0], { enrichMenu: true });
 }
 
 const SEATING_MAX_TABLES = 40;
@@ -4062,7 +4066,9 @@ app.get(
 
       const result = await pool.query(listSql, [status]);
 
-      let orders = result.rows;
+      let orders = await Promise.all(
+        result.rows.map((row) => normalizeStaffEventOrderRow(row)),
+      );
       if (compact) {
         orders = orders.map(compactEventOrderRow);
       }
@@ -4490,7 +4496,9 @@ app.get(
 
     const result = await pool.query(listSql, [status]);
 
-    let orders = result.rows;
+    let orders = await Promise.all(
+      result.rows.map((row) => normalizeStaffEventOrderRow(row)),
+    );
     if (compact) {
       orders = orders.map(compactEventOrderRow);
     }

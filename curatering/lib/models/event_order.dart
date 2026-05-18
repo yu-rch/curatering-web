@@ -16,11 +16,15 @@ class EventMenuItemDto {
   final String dishName;
   final String paxOption;
   final String price;
+  final String setMenuName;
+  final String dishAllergens;
 
   const EventMenuItemDto({
     required this.dishName,
     required this.paxOption,
     required this.price,
+    this.setMenuName = '',
+    this.dishAllergens = '',
   });
 }
 

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../config/site_redirect_stub.dart'
+    if (dart.library.html) '../config/site_redirect_web.dart';
 import '../config/site_routes.dart';
 
 /// Sends the browser to another subdomain (e.g. staff → customer site).
@@ -18,10 +20,18 @@ class ExternalHostRedirect extends StatefulWidget {
 }
 
 class _ExternalHostRedirectState extends State<ExternalHostRedirect> {
+  bool _redirectAttempted = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_redirectAttempted) return;
+      _redirectAttempted = true;
+      final target = Uri.parse(widget.origin).replace(
+        path: normalizeRoutePath(widget.path),
+      );
+      if (browserLocationMatches(target)) return;
       redirectToSiteOrigin(widget.origin, widget.path);
     });
   }
