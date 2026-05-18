@@ -25,15 +25,20 @@ function buildPgPoolConfig() {
   const lower = cs.toLowerCase();
   const isSupabase =
     lower.includes("supabase.co") || lower.includes("pooler.supabase.com");
+  const usesPgBouncer =
+    lower.includes("pgbouncer=true") || lower.includes(":6543/");
 
   // Default 120s — Supabase default statement_timeout is often ~8s; heavy list queries need more.
   const statementTimeout =
     process.env.PG_STATEMENT_TIMEOUT?.trim() || "120s";
 
+  // Supabase pooler: keep a modest pool size (free tier has limited DB connections).
+  const defaultPoolMax = isSupabase ? 8 : 25;
+
   return {
     connectionString: cs,
-    max: Number(process.env.PG_POOL_MAX || 25),
-    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 10000), // Reduced from 30s to 10s
+    max: Number(process.env.PG_POOL_MAX || defaultPoolMax),
+    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 10000),
     connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 20000),
     keepAlive: true,
     options: `-c statement_timeout=${statementTimeout}`,
@@ -41,11 +46,26 @@ function buildPgPoolConfig() {
     ...(isSupabase || process.env.PG_SSL === "1"
       ? { ssl: { rejectUnauthorized: false } }
       : {}),
+    // Transaction pooler (port 6543) does not support prepared statements in node-pg.
+    ...(usesPgBouncer ? { allowExitOnIdle: true } : {}),
   };
 }
 
 const config = buildPgPoolConfig();
-console.log("PostgreSQL pool configuration:", { max: config.max, connectionString: config.connectionString ? "***" : "individual params" });
+const csHint = process.env.DATABASE_URL?.toLowerCase() || "";
+const isSupabaseHost =
+  csHint.includes("supabase.co") || csHint.includes("pooler.supabase.com");
+console.log("PostgreSQL pool configuration:", {
+  max: config.max,
+  supabase: isSupabaseHost,
+  ssl: Boolean(config.ssl),
+  connectionString: config.connectionString ? "***" : "individual params",
+});
+if (isSupabaseHost && !config.connectionString) {
+  console.warn(
+    "[db] Supabase detected in docs but DATABASE_URL is empty — set it on Railway.",
+  );
+}
 const pool = new Pool(config);
 
 pool.on("error", (err) => {
@@ -137,6 +157,17 @@ async function generateSequentialId(prefix, padding = 4) {
 
 /** Minimal tables for login/signup — runs in seconds so the API can accept auth before full initDb. */
 export async function ensureAuthSchemaQuick() {
+  const cs = process.env.DATABASE_URL?.trim();
+  if (
+    !cs &&
+    !(process.env.PGHOST || process.env.DB_HOST) &&
+    !(process.env.PGUSER || process.env.DB_USER)
+  ) {
+    throw new Error(
+      'DATABASE_URL is not set. On Railway, link your Postgres plugin to this service.',
+    );
+  }
+
   await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
 
   await pool.query(`
@@ -840,7 +871,7 @@ export async function initDb() {
       delivery_lng DECIMAL(10,8),
       delivery_time TIMESTAMPTZ,
       delivery_notes TEXT,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled')),
+      order_status TEXT NOT NULL DEFAULT 'pending_cashier',
       payment_reference TEXT,
       payment_status TEXT NOT NULL DEFAULT 'pending' CHECK (payment_status IN ('pending', 'paid', 'failed')),
       delivery_tracking_url TEXT,
@@ -941,30 +972,24 @@ export async function initDb() {
     console.log('Migration check for event_orders seating_plan:', err.message);
   }
 
-  // Migration: Fix invalid status values in existing restaurant_orders data
+  // Migration: order_status column (Supabase schema; legacy deployments may have `status`)
   try {
-    console.log('Migration: Fixing invalid status values in restaurant_orders...');
-    
-    // Check for and fix invalid status values
-    const invalidStatusResult = await pool.query(`
-      SELECT id, status FROM restaurant_orders 
-      WHERE status NOT IN ('pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled')
-    `);
-    
-    if (invalidStatusResult.rowCount > 0) {
-      console.log(`Found ${invalidStatusResult.rowCount} orders with invalid status values`);
-      
-      // Update invalid status values to valid ones
-      await pool.query(`UPDATE restaurant_orders SET status = 'confirmed' WHERE status = 'processing'`);
-      await pool.query(`UPDATE restaurant_orders SET status = 'out_for_delivery' WHERE status = 'for_delivery'`);
-      await pool.query(`UPDATE restaurant_orders SET status = 'delivered' WHERE status = 'completed'`);
-      
-      console.log('Migration: Fixed invalid status values in restaurant_orders');
-    } else {
-      console.log('Migration: No invalid status values found');
+    const roCols = await getTableColumnNames('restaurant_orders');
+    if (!roCols.has('order_status')) {
+      if (roCols.has('status')) {
+        await pool.query(
+          `ALTER TABLE restaurant_orders RENAME COLUMN status TO order_status`,
+        );
+        console.log('Migration: renamed restaurant_orders.status → order_status');
+      } else {
+        await pool.query(
+          `ALTER TABLE restaurant_orders ADD COLUMN order_status TEXT NOT NULL DEFAULT 'pending_cashier'`,
+        );
+        console.log('Migration: added restaurant_orders.order_status');
+      }
     }
   } catch (err) {
-    console.log('Migration check for invalid status values:', err.message);
+    console.log('Migration restaurant_orders order_status:', err.message);
   }
 
   // Restaurant order workflow columns + guest checkout
@@ -988,21 +1013,24 @@ export async function initDb() {
       ALTER TABLE restaurant_orders DROP CONSTRAINT IF EXISTS restaurant_orders_status_check
     `);
     await pool.query(`
-      UPDATE restaurant_orders SET status = 'pending_cashier' WHERE status = 'pending'
+      ALTER TABLE restaurant_orders DROP CONSTRAINT IF EXISTS restaurant_orders_order_status_check
     `);
     await pool.query(`
-      UPDATE restaurant_orders SET status = 'in_preparation'
-      WHERE status IN ('confirmed', 'preparing')
+      UPDATE restaurant_orders SET order_status = 'pending_cashier' WHERE order_status = 'pending'
     `);
     await pool.query(`
-      ALTER TABLE restaurant_orders ADD CONSTRAINT restaurant_orders_status_check
-      CHECK (status IN (
+      UPDATE restaurant_orders SET order_status = 'in_preparation'
+      WHERE order_status IN ('confirmed', 'preparing')
+    `);
+    await pool.query(`
+      ALTER TABLE restaurant_orders ADD CONSTRAINT restaurant_orders_order_status_check
+      CHECK (order_status IN (
         'pending_cashier', 'in_preparation', 'out_for_delivery', 'delivered', 'cancelled'
       ))
     `);
     await pool.query(`
       UPDATE restaurant_orders SET pending_cashier_at = created_at
-      WHERE status = 'pending_cashier' AND pending_cashier_at IS NULL
+      WHERE order_status = 'pending_cashier' AND pending_cashier_at IS NULL
     `);
     console.log('Migration: restaurant_orders workflow columns and statuses');
   } catch (err) {
@@ -1234,15 +1262,26 @@ async function ensureMenuCatalogTable(tableName) {
       legacyExists.size > 0
         ? `${tableName}_legacy_${Date.now()}`
         : legacy;
-    await pool.query(`ALTER TABLE ${tableName} RENAME TO ${renameTo}`);
-    console.log(`Migration: renamed legacy ${tableName} to ${renameTo}`);
-    await pool.query(`
-      CREATE TABLE ${tableName} (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      );
-    `);
+    try {
+      await pool.query(`ALTER TABLE ${tableName} RENAME TO ${renameTo}`);
+      console.log(`Migration: renamed legacy ${tableName} to ${renameTo}`);
+    } catch (err) {
+      const msg = String(err?.message || err);
+      if (!/already exists|duplicate/i.test(msg)) {
+        throw err;
+      }
+      console.log(`Migration: ${tableName} rename skipped (${msg})`);
+    }
+    const afterRename = await getTableColumnNames(tableName);
+    if (afterRename.size === 0) {
+      await pool.query(`
+        CREATE TABLE ${tableName} (
+          id SERIAL PRIMARY KEY,
+          name TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+      `);
+    }
   }
 
   try {

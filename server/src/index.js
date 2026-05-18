@@ -245,15 +245,23 @@ app.use(
 );
 app.use(express.json({ limit: "50mb" }));
 
-// Health check endpoint
+let dbReady = false;
+let routesRegistered = false;
+/** @type {'pending'|'ready'|'failed'} */
+let dbInitState = 'pending';
+
+// Health check endpoint (always 200 so Railway liveness does not kill the process during DB init)
 app.get('/health', (req, res) => {
-  console.log('Health check requested at:', new Date().toISOString());
-  res.status(200).json({ 
-    status: 'ok', 
+  res.status(200).json({
+    status: dbInitState === 'ready' ? 'ok' : dbInitState === 'failed' ? 'degraded' : 'starting',
+    database: dbInitState,
+    authReady: dbReady,
+    routesRegistered,
     timestamp: new Date().toISOString(),
     service: 'curatering-backend',
     port: PORT,
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    databaseConfigured: Boolean(process.env.DATABASE_URL?.trim()),
   });
 });
 
@@ -394,8 +402,22 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-change-me";
-const connectionString = process.env.DATABASE_URL;
-const sql = postgres(connectionString);
+const connectionString = process.env.DATABASE_URL?.trim() || "";
+const sql = connectionString
+  ? postgres(connectionString, {
+      ssl:
+        connectionString.toLowerCase().includes("supabase.co") ||
+        process.env.PG_SSL === "1"
+          ? { rejectUnauthorized: false }
+          : undefined,
+    })
+  : null;
+
+if (!connectionString) {
+  console.error(
+    "[startup] DATABASE_URL is not set — link Postgres on Railway or set DATABASE_URL in service variables.",
+  );
+}
 
 // Avoid exiting the API process on transient DB errors from async route handlers.
 process.on("unhandledRejection", (reason, p) => {
@@ -1876,6 +1898,27 @@ function requireRoles(req, res, next, allowed) {
     return res.status(403).json({ message: "Not allowed" });
   }
   return next();
+}
+
+/** Manager/supervisor/admin JWT guard for restaurant POS and loyalty config routes. */
+function managerAuthRequired(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const adminRoles = ['admin', 'manager', 'supervisor', 'super_admin'];
+    if (!adminRoles.includes(decoded.role)) {
+      return res.status(403).json({ error: 'Manager access required' });
+    }
+    req.manager = decoded;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
 }
 
 async function logAction({
@@ -4731,25 +4774,54 @@ async function runInitDbWithRetries() {
   throw lastErr;
 }
 
-let dbReady = false;
+let bootstrapRetryTimer = null;
 
-const authSchemaPromise = ensureAuthSchemaQuick()
-  .then(() => {
-    dbReady = true;
-    console.log("[startup] Auth schema ready — customer login enabled");
-  })
-  .catch((err) => {
-    console.error("[startup] Auth schema failed:", err?.message || err);
-  });
+let authSchemaPromise = Promise.resolve();
+
+function scheduleBootstrapRetry() {
+  if (process.env.DB_INIT_FATAL === '1') {
+    console.error('[startup] DB_INIT_FATAL=1 — not scheduling retry');
+    return;
+  }
+  if (bootstrapRetryTimer) return;
+  const delayMs = Number(process.env.DB_INIT_BACKGROUND_RETRY_MS || 30000);
+  console.log(`[startup] Scheduling database bootstrap retry in ${delayMs}ms`);
+  bootstrapRetryTimer = setTimeout(() => {
+    bootstrapRetryTimer = null;
+    runDatabaseBootstrap().catch(() => {});
+  }, delayMs);
+}
+
+function runDatabaseBootstrap() {
+  dbInitState = 'pending';
+  authSchemaPromise = ensureAuthSchemaQuick()
+    .then(() => {
+      dbReady = true;
+      console.log('[startup] Auth schema ready — customer login enabled');
+      return runInitDbWithRetries();
+    })
+    .then(() => seedSuperAdminIfNeeded())
+    .then(registerRoutesAfterDbInit)
+    .then(() => {
+      dbInitState = 'ready';
+    })
+    .catch((err) => {
+      dbInitState = 'failed';
+      dbReady = false;
+      console.error('[startup] Database bootstrap failed:', err?.message || err);
+      scheduleBootstrapRetry();
+    });
+  return authSchemaPromise;
+}
 
 function requireDbReady(req, res, next) {
   if (dbReady) return next();
   authSchemaPromise
     .then(() => next())
-    .catch((err) => {
-      console.error("[db] auth schema failed:", err?.message || err);
+    .catch(() => {
       res.status(503).json({
-        message: "Server is starting up. Please try again in a moment.",
+        message: 'Server is starting up. Please try again in a moment.',
+        database: dbInitState,
       });
     });
 }
@@ -4760,8 +4832,8 @@ async function autoCancelStalePendingCashierOrders() {
   try {
     const result = await pool.query(
       `UPDATE restaurant_orders
-       SET status = 'cancelled', updated_at = now()
-       WHERE status = 'pending_cashier'
+       SET order_status = 'cancelled', updated_at = now()
+       WHERE order_status = 'pending_cashier'
          AND pending_cashier_at IS NOT NULL
          AND pending_cashier_at < now() - interval '1 hour'
        RETURNING *`,
@@ -4833,10 +4905,12 @@ app.post("/api/health/email-test", async (req, res) => {
   }
 });
 
-const dbInitPromise = authSchemaPromise
-  .then(() => runInitDbWithRetries())
-  .then(() => seedSuperAdminIfNeeded())
-  .then(async () => {
+async function registerRoutesAfterDbInit() {
+  if (routesRegistered) {
+    console.log('[startup] API routes already registered');
+    return;
+  }
+
     // Checklist CRUD operations
     app.put('/api/events/orders/:orderId/checklist/:itemId', authRequired, async (req, res) => {
       try {
@@ -5735,6 +5809,9 @@ const dbInitPromise = authSchemaPromise
 
     function serializeRestaurantOrderRow(order, parsedItems) {
       const o = { ...order, items: parsedItems ?? [] };
+      if (o.order_status != null && o.status == null) {
+        o.status = o.order_status;
+      }
       if (o.id != null) o.id = String(o.id);
       if (o.order_no != null) o.order_no = String(o.order_no);
       for (const k of Object.keys(o)) {
@@ -5801,7 +5878,7 @@ const dbInitPromise = authSchemaPromise
           `INSERT INTO restaurant_orders (
              order_no, customer_id, guest_contact_email, full_name, phone, items,
              total_amount, delivery_address, delivery_lat, delivery_lng,
-             delivery_time, delivery_notes, status
+             delivery_time, delivery_notes, order_status
            )
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11::timestamptz, now()), $12, 'pending_cashier')
            RETURNING *`,
@@ -5903,7 +5980,7 @@ const dbInitPromise = authSchemaPromise
            SET payment_reference = COALESCE($1, payment_reference),
                payment_proof = COALESCE($2, payment_proof),
                payment_status = 'pending',
-               status = 'pending_cashier',
+               order_status = 'pending_cashier',
                pending_cashier_at = now(),
                updated_at = now()
            WHERE ${payLookup.sql}
@@ -6016,29 +6093,6 @@ const dbInitPromise = authSchemaPromise
     });
 
     // Manager Restaurant Orders endpoints
-    const managerAuthRequired = (req, res, next) => {
-      const token = req.headers.authorization?.replace('Bearer ', '');
-      
-      if (!token) {
-        return res.status(401).json({ error: 'No token provided' });
-      }
-      
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-change-me');
-        // Allow all admin-level roles to access restaurant orders
-        const adminRoles = ['admin', 'manager', 'supervisor', 'super_admin'];
-        if (!adminRoles.includes(decoded.role)) {
-          console.log(`Access denied for role: ${decoded.role}`);
-          return res.status(403).json({ error: 'Manager access required' });
-        }
-        req.manager = decoded;
-        next();
-      } catch (error) {
-        console.log('Token verification error:', error.message);
-        return res.status(401).json({ error: 'Invalid token' });
-      }
-    };
-
     app.get('/api/manager/dashboard/summary', managerAuthRequired, async (_req, res) => {
       try {
         const now = new Date();
@@ -6051,15 +6105,15 @@ const dbInitPromise = authSchemaPromise
 
         const restToday = await pool.query(
           `SELECT
-             COUNT(*) FILTER (WHERE status IN ('pending_cashier','pending'))::int AS pending_confirmations,
-             COUNT(*) FILTER (WHERE status = 'delivered')::int AS delivered,
-             COUNT(*) FILTER (WHERE status = 'cancelled')::int AS cancelled,
+             COUNT(*) FILTER (WHERE order_status IN ('pending_cashier','pending'))::int AS pending_confirmations,
+             COUNT(*) FILTER (WHERE order_status = 'delivered')::int AS delivered,
+             COUNT(*) FILTER (WHERE order_status = 'cancelled')::int AS cancelled,
              COALESCE(SUM(total_amount) FILTER (
-               WHERE status NOT IN ('cancelled')
+               WHERE order_status NOT IN ('cancelled')
                  AND created_at >= date_trunc('day', now())
              ), 0)::float AS sales_today,
              COALESCE(SUM(total_amount) FILTER (
-               WHERE status NOT IN ('cancelled')
+               WHERE order_status NOT IN ('cancelled')
                  AND created_at >= $1 AND created_at < $2
              ), 0)::float AS sales_year
            FROM restaurant_orders`,
@@ -6196,9 +6250,9 @@ const dbInitPromise = authSchemaPromise
         }
 
         const restaurantOrders = await pool.query(
-          `SELECT items, total_amount, created_at, status
+          `SELECT items, total_amount, created_at, order_status AS status
            FROM restaurant_orders
-           WHERE status NOT IN ('cancelled')
+           WHERE order_status NOT IN ('cancelled')
              AND created_at >= $1 AND created_at < $2`,
           [rangeStart, rangeEnd],
         );
@@ -6310,7 +6364,7 @@ const dbInitPromise = authSchemaPromise
         let query = `
           SELECT id, order_no, customer_id, guest_contact_email, full_name, phone, items,
                  total_amount, delivery_address, delivery_lat, delivery_lng, delivery_time,
-                 status, payment_status, payment_reference, payment_proof,
+                 order_status AS status, payment_status, payment_reference, payment_proof,
                  amount_paid, change_given, delivery_tracking_url,
                  created_at, updated_at, pending_cashier_at
           FROM restaurant_orders 
@@ -6325,11 +6379,11 @@ const dbInitPromise = authSchemaPromise
             query = `
               SELECT id, order_no, customer_id, guest_contact_email, full_name, phone, items,
                      total_amount, delivery_address, delivery_lat, delivery_lng, delivery_time,
-                     status, payment_status, payment_reference, payment_proof,
+                     order_status AS status, payment_status, payment_reference, payment_proof,
                      amount_paid, change_given, delivery_tracking_url,
                      created_at, updated_at, pending_cashier_at
               FROM restaurant_orders 
-              WHERE status = $1 
+              WHERE order_status = $1 
               ORDER BY created_at DESC 
               LIMIT $2
             `;
@@ -6338,11 +6392,11 @@ const dbInitPromise = authSchemaPromise
             query = `
               SELECT id, order_no, customer_id, guest_contact_email, full_name, phone, items,
                      total_amount, delivery_address, delivery_lat, delivery_lng, delivery_time,
-                     status, payment_status, payment_reference, payment_proof,
+                     order_status AS status, payment_status, payment_reference, payment_proof,
                      amount_paid, change_given, delivery_tracking_url,
                      created_at, updated_at, pending_cashier_at
               FROM restaurant_orders 
-              WHERE status IN (${statusValues.map((_, i) => `$${i + 1}`).join(', ')}) 
+              WHERE order_status IN (${statusValues.map((_, i) => `$${i + 1}`).join(', ')}) 
               ORDER BY created_at DESC 
               LIMIT $${statusValues.length + 1}
             `;
@@ -6420,14 +6474,14 @@ const dbInitPromise = authSchemaPromise
               error: `Invalid status: ${status}. Allowed: ${allowedStatuses.join(', ')}`,
             });
           }
-          updateFields.push(`status = $${paramIndex++}`);
+          updateFields.push(`order_status = $${paramIndex++}`);
           updateValues.push(status);
         }
 
         if (delivery_tracking_url) {
           updateFields.push(`delivery_tracking_url = $${paramIndex++}`);
           updateValues.push(delivery_tracking_url);
-          updateFields.push(`status = $${paramIndex++}`);
+          updateFields.push(`order_status = $${paramIndex++}`);
           updateValues.push('out_for_delivery');
         }
         
@@ -6518,7 +6572,9 @@ const dbInitPromise = authSchemaPromise
           });
         }
 
-        res.json({ order: result.rows[0] });
+        const out = result.rows[0];
+        if (out?.order_status != null) out.status = out.order_status;
+        res.json({ order: out });
       } catch (error) {
         console.error('Error updating restaurant order:', error);
         res.status(500).json({ error: 'Failed to update order' });
@@ -6563,7 +6619,7 @@ const dbInitPromise = authSchemaPromise
              SET amount_paid = $1,
                  change_given = $2,
                  payment_status = 'paid',
-                 status = 'in_preparation',
+                 order_status = 'in_preparation',
                  updated_at = now()
              WHERE ${confirmLookup.sql}
              RETURNING *`,
@@ -6583,6 +6639,7 @@ const dbInitPromise = authSchemaPromise
             });
           }
 
+          if (updated?.order_status != null) updated.status = updated.order_status;
           res.json({ order: updated, changeGiven });
         } catch (error) {
           console.error('confirm-payment:', error);
@@ -6641,7 +6698,7 @@ const dbInitPromise = authSchemaPromise
           const lookup = restaurantOrderWhereClause(orderId, 1);
           const result = await pool.query(
             `UPDATE restaurant_orders
-             SET status = 'cancelled', updated_at = now()
+             SET order_status = 'cancelled', updated_at = now()
              WHERE ${lookup.sql}
              RETURNING *`,
             [lookup.value],
@@ -6650,6 +6707,7 @@ const dbInitPromise = authSchemaPromise
             return res.status(404).json({ error: 'Order not found' });
           }
           const order = result.rows[0];
+          if (order.order_status != null) order.status = order.order_status;
           const email = await resolveRestaurantOrderEmail(order);
           if (email) {
             await sendCustomerNotificationEmail({
@@ -6660,7 +6718,7 @@ const dbInitPromise = authSchemaPromise
                 `- Curatering Team`,
             });
           }
-          res.json({ order: result.rows[0] });
+          res.json({ order });
         } catch (error) {
           console.error('cancel restaurant order:', error);
           res.status(500).json({ error: 'Failed to cancel order' });
@@ -7376,7 +7434,7 @@ const dbInitPromise = authSchemaPromise
           const customerId = customer.id;
 
           const restaurantPoints = await pool.query(
-            `SELECT COALESCE(SUM(points_earned), 0) as total FROM restaurant_orders WHERE customer_id::text = $1 AND status = 'delivered'`,
+            `SELECT COALESCE(SUM(points_earned), 0) as total FROM restaurant_orders WHERE customer_id::text = $1 AND order_status = 'delivered'`,
             [customerId]
           );
 
@@ -7447,7 +7505,7 @@ const dbInitPromise = authSchemaPromise
         // Get customer orders
         // TODO: Fix customer_id column issue - using id for testing
         const ordersResult = await pool.query(
-          `SELECT id, total_amount, status, payment_status, created_at
+          `SELECT id, total_amount, order_status AS status, payment_status, created_at
            FROM restaurant_orders
            WHERE id = $1
            ORDER BY created_at DESC`,
@@ -7826,11 +7884,10 @@ const dbInitPromise = authSchemaPromise
     app.put('/api/tray-draft', customerAuthRequired, saveTrayDraft);
     app.delete('/api/tray-draft', customerAuthRequired, clearTrayDraft);
 
-    console.log("[startup] All API routes registered after DB init");
-  })
-  .catch((err) => {
-    console.error("Failed to init DB / register routes:", err);
-    process.exit(1);
-  });
+    routesRegistered = true;
+    console.log('[startup] All API routes registered after DB init');
+}
+
+runDatabaseBootstrap();
 
 export default sql;
