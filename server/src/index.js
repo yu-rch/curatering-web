@@ -3041,27 +3041,84 @@ app.post(
 );
 
 // Manager: create/list/finalize event orders
-async function readWebsiteContent() {
+const WEBSITE_CONTENT_ROW_ID = "00000000-0000-0000-0000-000000000001";
+
+function isNonEmptyWebsiteContent(content) {
+  return (
+    content &&
+    typeof content === "object" &&
+    !Array.isArray(content) &&
+    Object.keys(content).length > 0
+  );
+}
+
+/** One-time / lazy migration: legacy rows and website-content.json → canonical row. */
+async function migrateWebsiteContentIfNeeded() {
   try {
-    const result = await pool.query(`
-      SELECT content FROM website_content 
-      ORDER BY created_at DESC 
+    const canonical = await pool.query(
+      `SELECT content FROM website_content WHERE id = $1::uuid LIMIT 1`,
+      [WEBSITE_CONTENT_ROW_ID],
+    );
+    if (
+      canonical.rows.length > 0 &&
+      isNonEmptyWebsiteContent(canonical.rows[0].content)
+    ) {
+      return;
+    }
+
+    const legacy = await pool.query(`
+      SELECT content FROM website_content
+      WHERE content IS NOT NULL
+        AND content::text NOT IN ('{}', 'null')
+      ORDER BY updated_at DESC NULLS LAST, created_at DESC
       LIMIT 1
     `);
-    
-    if (result.rows.length > 0) {
+
+    if (legacy.rows.length > 0 && isNonEmptyWebsiteContent(legacy.rows[0].content)) {
+      await writeWebsiteContent(legacy.rows[0].content);
+      console.log("[website-content] Migrated legacy DB row → canonical id");
+      return;
+    }
+
+    try {
+      const raw = await fs.readFile(websiteContentPath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (isNonEmptyWebsiteContent(parsed)) {
+        await writeWebsiteContent(parsed);
+        console.log("[website-content] Seeded canonical row from website-content.json");
+      }
+    } catch {
+      /* optional seed file */
+    }
+  } catch (error) {
+    console.warn("[website-content] migration skipped:", error.message);
+  }
+}
+
+async function readWebsiteContent() {
+  try {
+    await migrateWebsiteContentIfNeeded();
+
+    const result = await pool.query(
+      `SELECT content FROM website_content WHERE id = $1::uuid LIMIT 1`,
+      [WEBSITE_CONTENT_ROW_ID],
+    );
+
+    if (result.rows.length > 0 && isNonEmptyWebsiteContent(result.rows[0].content)) {
       return result.rows[0].content;
     }
+
     return {};
   } catch (error) {
-    console.error('Error reading website content from database:', error);
+    console.error("Error reading website content from database:", error);
     return {};
   }
 }
 
-const WEBSITE_CONTENT_ROW_ID = "00000000-0000-0000-0000-000000000001";
-
 async function writeWebsiteContent(content) {
+  if (!isNonEmptyWebsiteContent(content)) {
+    throw new Error("website content must be a non-empty object");
+  }
   try {
     await pool.query(
       `
@@ -3074,16 +3131,26 @@ async function writeWebsiteContent(content) {
     `,
       [WEBSITE_CONTENT_ROW_ID, content],
     );
+    try {
+      await fs.writeFile(
+        websiteContentPath,
+        JSON.stringify(content, null, 2),
+        "utf8",
+      );
+    } catch (fileErr) {
+      console.warn("[website-content] could not update JSON backup:", fileErr.message);
+    }
   } catch (error) {
-    console.error('Error writing website content to database:', error);
+    console.error("Error writing website content to database:", error);
     throw error;
   }
 }
 
 app.get("/api/website-content", async (req, res) => {
   try {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     const content = await readWebsiteContent();
-    return res.json({ content });
+    return res.json({ content, updatedAt: Date.now() });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ message: "Failed to load website content" });
@@ -3108,7 +3175,7 @@ app.put(
         feature: "Website Content",
         action: "updated website content",
       });
-      return res.json({ ok: true });
+      return res.json({ ok: true, content });
     } catch (e) {
       console.error(e);
       return res.status(500).json({ message: "Failed to save website content" });

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_client.dart';
+import '../utils/api_cache.dart';
 
 /// Single gallery photo with optional search tags.
 class GalleryImageData {
@@ -144,17 +145,20 @@ class WebsiteContentStore extends ChangeNotifier {
 
   bool _loaded = false;
 
-  Future<void> ensureLoaded() async {
-    if (_loaded) return;
+  Future<void> ensureLoaded({bool force = false}) async {
+    if (_loaded && !force) return;
     _loaded = true;
     try {
+      ApiCache().invalidate('/api/website-content');
       final decoded = await ApiClient.instance.getJson(
         '/api/website-content',
         useCache: false,
       );
       final content = decoded['content'];
-      if (content is Map<String, dynamic>) {
+      if (content is Map<String, dynamic> && content.isNotEmpty) {
         _applyMap(content);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_prefsKey, jsonEncode(_toMap()));
       } else {
         await _loadFromLocalCache();
       }
@@ -162,6 +166,12 @@ class WebsiteContentStore extends ChangeNotifier {
       await _loadFromLocalCache();
     }
     notifyListeners();
+  }
+
+  /// Pull latest published content from the server (e.g. after CMS save).
+  Future<void> reloadFromServer() async {
+    _loaded = false;
+    await ensureLoaded(force: true);
   }
 
   void _seedDefaultGallery() {
@@ -181,17 +191,21 @@ class WebsiteContentStore extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final map = _toMap();
 
-    // Always keep local cache as fallback.
     await prefs.setString(_prefsKey, jsonEncode(map));
-    
-    try {
-      await ApiClient.instance.putJson(
-        '/api/website-content',
-        body: {'content': map},
-      );
-    } catch (_) {
-      // Keep local cache behavior even when server sync fails.
+
+    final result = await ApiClient.instance.putJson(
+      '/api/website-content',
+      body: {'content': map},
+    );
+
+    ApiCache().invalidate('/api/website-content');
+
+    final saved = result['content'];
+    if (saved is Map<String, dynamic> && saved.isNotEmpty) {
+      _applyMap(saved);
+      await prefs.setString(_prefsKey, jsonEncode(_toMap()));
     }
+
     notifyListeners();
   }
 

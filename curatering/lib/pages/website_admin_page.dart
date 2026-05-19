@@ -53,11 +53,12 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage>
     setState(() => _saving = true);
     try {
       await WebsiteContentStore.instance.save();
+      await WebsiteContentStore.instance.reloadFromServer();
       if (!mounted) return;
       setState(() => _dirty = false);
       showAntdMessage(
         context,
-        'Website content published.',
+        'Website content published. Refresh the customer site to see updates.',
         type: AntdMessageType.success,
       );
     } catch (e) {
