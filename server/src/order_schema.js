@@ -134,6 +134,7 @@ async function ensureRestaurantOrdersCanonicalColumnsOnce() {
     ['guest_contact_email', 'TEXT'],
     ['payment_proof_initial', 'TEXT'],
     ['payment_reference_initial', 'TEXT'],
+    ['payment_references_initial', 'TEXT'],
     ['payment_reference_balance', 'TEXT'],
     ['order_status', "TEXT NOT NULL DEFAULT 'pending_cashier'"],
     ['payment_status', "TEXT NOT NULL DEFAULT 'pending'"],
@@ -209,6 +210,18 @@ async function ensureRestaurantOrdersCanonicalColumnsOnce() {
     ],
     ['payment_proof_initial', 'payment_proof', 'payment_proof'],
     ['payment_proof', 'payment_proof_initial', 'payment_proof_initial'],
+    [
+      'payment_reference_initial',
+      'payment_references_initial',
+      'payment_reference_initial',
+    ],
+    [
+      'payment_references_initial',
+      'payment_reference_initial',
+      'payment_reference_initial',
+    ],
+    ['payment_reference_initial', 'payment_reference', 'payment_reference'],
+    ['payment_reference', 'payment_reference_initial', 'payment_reference_initial'],
   ];
 
   for (const [target, source, expr] of syncPairs) {
@@ -383,8 +396,8 @@ export function buildRestaurantOrderSelectSql(cols) {
     `${sqlExpr(cols, ['full_name'], 'NULL::text')} AS full_name`,
     `${sqlExpr(cols, ['phone', 'contact_number'], 'NULL::text')} AS phone`,
     `${sqlExpr(cols, ['contact_number', 'phone'], 'NULL::text')} AS contact_number`,
+    `COALESCE(${sqlExpr(cols, ['tray_items'], 'NULL::jsonb')}, ${sqlExpr(cols, ['items'], "'[]'::jsonb")}) AS tray_items`,
     `COALESCE(${sqlExpr(cols, ['tray_items'], 'NULL::jsonb')}, ${sqlExpr(cols, ['items'], "'[]'::jsonb")}) AS items`,
-    `COALESCE(${sqlExpr(cols, ['items'], 'NULL::jsonb')}, ${sqlExpr(cols, ['tray_items'], "'[]'::jsonb")}) AS tray_items`,
     `COALESCE(${sqlExpr(cols, ['total_amount', 'total_cost'], '0')}, ${sqlExpr(cols, ['total_cost', 'total_amount'], '0')})::numeric AS total_amount`,
     `COALESCE(${sqlExpr(cols, ['total_cost', 'total_amount'], '0')}, ${sqlExpr(cols, ['total_amount', 'total_cost'], '0')})::numeric AS total_cost`,
     `${sqlExpr(cols, ['delivery_address'], 'NULL::text')} AS delivery_address`,
@@ -395,11 +408,12 @@ export function buildRestaurantOrderSelectSql(cols) {
     `${sqlExpr(cols, ['delivery_tracking_url'], 'NULL::text')} AS delivery_tracking_url`,
     `${sqlExpr(cols, ['order_status', 'status'], "'pending_cashier'")} AS order_status`,
     `${sqlExpr(cols, ['payment_status'], "'pending'")} AS payment_status`,
-    `${sqlExpr(cols, ['payment_reference', 'payment_reference_initial'], 'NULL::text')} AS payment_reference`,
-    `${sqlExpr(cols, ['payment_reference_initial'], 'NULL::text')} AS payment_reference_initial`,
+    `${sqlExpr(cols, ['payment_reference_initial', 'payment_references_initial', 'payment_reference'], 'NULL::text')} AS payment_reference_initial`,
+    `${sqlExpr(cols, ['payment_references_initial', 'payment_reference_initial'], 'NULL::text')} AS payment_references_initial`,
     `${sqlExpr(cols, ['payment_reference_balance'], 'NULL::text')} AS payment_reference_balance`,
-    `${sqlExpr(cols, ['payment_proof', 'payment_proof_initial'], 'NULL::text')} AS payment_proof`,
+    `${sqlExpr(cols, ['payment_reference_initial', 'payment_references_initial', 'payment_reference'], 'NULL::text')} AS payment_reference`,
     `${sqlExpr(cols, ['payment_proof_initial'], 'NULL::text')} AS payment_proof_initial`,
+    `${sqlExpr(cols, ['payment_proof_initial'], 'NULL::text')} AS payment_proof`,
     `${sqlExpr(cols, ['payment_proof_balance'], 'NULL::text')} AS payment_proof_balance`,
     `${sqlExpr(cols, ['payment_uploaded_initial'], 'FALSE')} AS payment_uploaded_initial`,
     `${sqlExpr(cols, ['payment_uploaded_balance'], 'FALSE')} AS payment_uploaded_balance`,
@@ -431,15 +445,87 @@ export function buildRestaurantOrderSelectSql(cols) {
   return parts.join(',\n  ');
 }
 
-export function normalizeRestaurantOrderRow(order, parsedItems) {
+/** Line items: prefer [tray_items] column over legacy [items]. */
+export function parseRestaurantOrderTrayItems(orderOrRaw) {
+  if (orderOrRaw == null) return [];
+  if (Array.isArray(orderOrRaw)) return orderOrRaw;
+  if (typeof orderOrRaw === 'string') {
+    const t = orderOrRaw.trim();
+    if (!t) return [];
+    try {
+      const parsed = JSON.parse(t);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  if (typeof orderOrRaw === 'object') {
+    const raw = orderOrRaw.tray_items ?? orderOrRaw.items;
+    return parseRestaurantOrderTrayItems(raw);
+  }
+  return [];
+}
+
+/** INSERT column list for dish JSON (writes tray_items + items when both exist). */
+export function restaurantOrderItemsInsertSql(cols) {
+  const json = '$ITEM$::jsonb';
+  if (cols.has('tray_items') && cols.has('items')) {
+    return { columns: 'tray_items, items', placeholders: `${json}, ${json}` };
+  }
+  if (cols.has('tray_items')) {
+    return { columns: 'tray_items', placeholders: json };
+  }
+  return { columns: 'items', placeholders: json };
+}
+
+/** SET clauses for web checkout payment (reference → *_reference_initial, proof → payment_proof_initial). */
+export function buildRestaurantOrderPaymentUpdateSets(cols) {
+  const sets = [
+    "payment_status = 'pending'",
+    "order_status = 'pending_cashier'",
+    'updated_at = now()',
+  ];
+  if (cols.has('payment_reference_initial')) {
+    sets.push('payment_reference_initial = COALESCE($1, payment_reference_initial)');
+  }
+  if (cols.has('payment_references_initial')) {
+    sets.push('payment_references_initial = COALESCE($1, payment_references_initial)');
+  }
+  if (cols.has('payment_reference')) {
+    sets.push('payment_reference = COALESCE($1, payment_reference)');
+  }
+  if (cols.has('payment_proof_initial')) {
+    sets.push('payment_proof_initial = COALESCE($2, payment_proof_initial)');
+  }
+  return sets.join(', ');
+}
+
+/**
+ * @param {'web'|'mobile'|'staff'} [channel]
+ */
+export function normalizeRestaurantOrderRow(order, parsedItems, { channel = 'web' } = {}) {
   const o = { ...order };
-  const items =
-    parsedItems ??
-    (typeof o.items === 'string' ? tryParseJson(o.items) : o.items) ??
-    (typeof o.tray_items === 'string' ? tryParseJson(o.tray_items) : o.tray_items) ??
-    [];
-  o.items = Array.isArray(items) ? items : [];
-  o.tray_items = o.items;
+  const items = parsedItems ?? parseRestaurantOrderTrayItems(o);
+  o.tray_items = Array.isArray(items) ? items : [];
+  o.items = o.tray_items;
+
+  const refInitial =
+    o.payment_reference_initial ??
+    o.payment_references_initial ??
+    o.payment_reference ??
+    null;
+  o.payment_reference_initial = refInitial;
+  o.payment_references_initial =
+    o.payment_references_initial ?? o.payment_reference_initial ?? null;
+  o.payment_reference = refInitial;
+
+  const proofInitial = o.payment_proof_initial ?? null;
+  o.payment_proof_initial = proofInitial;
+  if (channel === 'mobile' || channel === 'pos') {
+    o.payment_proof = proofInitial;
+  } else {
+    o.payment_proof = proofInitial ?? o.payment_proof ?? null;
+  }
 
   if (o.order_status != null && o.status == null) o.status = o.order_status;
   if (o.status != null && o.order_status == null) o.order_status = o.status;

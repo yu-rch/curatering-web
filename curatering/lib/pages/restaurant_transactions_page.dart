@@ -262,33 +262,6 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     }
   }
 
-  Future<void> _setPaymentStatus(String orderId, String paymentStatus) async {
-    try {
-      final token = await _getAuthToken();
-      final response = await http.put(
-        Uri.parse('$apiBaseUrl/api/manager/restaurant/orders/$orderId'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'payment_status': paymentStatus}),
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to update payment status');
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Payment marked $paymentStatus')),
-        );
-        await _loadOrders(forceRefresh: true);
-      }
-    } catch (_) {
-      // Payment update failed — no snackbar (staff can retry from the table).
-    }
-  }
-
   Map<String, dynamic>? _findOrderById(String orderId) {
     for (final orderList in [
       _confirmationOrders,
@@ -1014,63 +987,8 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Builder(
-                      builder: (context) {
-                        final ps =
-                            order['payment_status'] as String? ?? 'pending';
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildPaymentStatusBadge(ps),
-                            IconButton(
-                              tooltip: 'Mark paid',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 32,
-                                minHeight: 32,
-                              ),
-                              icon: Icon(
-                                Icons.payments_outlined,
-                                size: 20,
-                                color:
-                                    ps == 'paid'
-                                        ? Colors.grey
-                                        : Colors.green.shade700,
-                              ),
-                              onPressed:
-                                  ps == 'paid'
-                                      ? null
-                                      : () => _setPaymentStatus(
-                                        order['id'].toString(),
-                                        'paid',
-                                      ),
-                            ),
-                            IconButton(
-                              tooltip: 'Mark payment failed',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 32,
-                                minHeight: 32,
-                              ),
-                              icon: Icon(
-                                Icons.money_off_csred_outlined,
-                                size: 20,
-                                color:
-                                    ps == 'failed'
-                                        ? Colors.grey
-                                        : Colors.red.shade700,
-                              ),
-                              onPressed:
-                                  ps == 'failed'
-                                      ? null
-                                      : () => _setPaymentStatus(
-                                        order['id'].toString(),
-                                        'failed',
-                                      ),
-                            ),
-                          ],
-                        );
-                      },
+                    _buildPaymentStatusBadge(
+                      order['payment_status'] as String? ?? 'pending',
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
@@ -1261,63 +1179,8 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Builder(
-                      builder: (context) {
-                        final ps =
-                            order['payment_status'] as String? ?? 'pending';
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildPaymentStatusBadge(ps),
-                            IconButton(
-                              tooltip: 'Mark paid',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 32,
-                                minHeight: 32,
-                              ),
-                              icon: Icon(
-                                Icons.payments_outlined,
-                                size: 20,
-                                color:
-                                    ps == 'paid'
-                                        ? Colors.grey
-                                        : Colors.green.shade700,
-                              ),
-                              onPressed:
-                                  ps == 'paid'
-                                      ? null
-                                      : () => _setPaymentStatus(
-                                        order['id'].toString(),
-                                        'paid',
-                                      ),
-                            ),
-                            IconButton(
-                              tooltip: 'Mark payment failed',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 32,
-                                minHeight: 32,
-                              ),
-                              icon: Icon(
-                                Icons.money_off_csred_outlined,
-                                size: 20,
-                                color:
-                                    ps == 'failed'
-                                        ? Colors.grey
-                                        : Colors.red.shade700,
-                              ),
-                              onPressed:
-                                  ps == 'failed'
-                                      ? null
-                                      : () => _setPaymentStatus(
-                                        order['id'].toString(),
-                                        'failed',
-                                      ),
-                            ),
-                          ],
-                        );
-                      },
+                    _buildPaymentStatusBadge(
+                      order['payment_status'] as String? ?? 'pending',
                     ),
                     const SizedBox(width: 8),
                     if (status == 'in_preparation') ...[
@@ -1536,6 +1399,23 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     );
   }
 
+  bool _isMobileRestaurantOrder(Map<String, dynamic> order) {
+    final proof =
+        (order['payment_proof_initial'] ?? order['payment_proof'] ?? '')
+            .toString()
+            .trim();
+    return proof.isNotEmpty;
+  }
+
+  String _webPaymentReference(Map<String, dynamic> order) {
+    return (order['payment_reference_initial'] ??
+            order['payment_references_initial'] ??
+            order['payment_reference'] ??
+            '')
+        .toString()
+        .trim();
+  }
+
   String? _paymentProofImageUrl(dynamic proof) {
     if (proof == null) return null;
     final s = proof.toString().trim();
@@ -1544,14 +1424,23 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       return s;
     }
     if (s.startsWith('/')) return '$apiBaseUrl$s';
+    if (s.startsWith('/9j/') || s.startsWith('iVBORw0KGgo')) {
+      final mime = s.startsWith('iVBORw0KGgo') ? 'image/png' : 'image/jpeg';
+      return 'data:$mime;base64,$s';
+    }
     return '$apiBaseUrl/$s';
   }
 
   Future<void> _showConfirmPaymentDialog(Map<String, dynamic> order) async {
     final orderId = order['id']?.toString() ?? '';
     final total = _parseAmount(order['total_amount']);
-    final paymentRef = order['payment_reference']?.toString() ?? '';
-    final proofUrl = _paymentProofImageUrl(order['payment_proof']);
+    final isMobile = _isMobileRestaurantOrder(order);
+    final paymentRef = isMobile ? '' : _webPaymentReference(order);
+    final proofUrl = isMobile
+        ? _paymentProofImageUrl(
+            order['payment_proof_initial'] ?? order['payment_proof'],
+          )
+        : null;
     final amountController = TextEditingController(
       text: total > 0 ? total.toStringAsFixed(2) : '',
     );

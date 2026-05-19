@@ -4,6 +4,8 @@ import {
   buildRestaurantOrderSelectSql,
   restaurantOrderLookupWhereSql,
   restaurantOrderIdInsertColumn,
+  restaurantOrderItemsInsertSql,
+  parseRestaurantOrderTrayItems,
 } from "./order_schema.js";
 import { getTableColumnNames } from "./db.js";
 
@@ -35,6 +37,7 @@ export async function ensureRestaurantPosColumns(pool) {
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS pos_claimed_at TIMESTAMPTZ`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_proof_initial TEXT`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_reference_initial TEXT`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_references_initial TEXT`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_reference_balance TEXT`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS guest_contact_email TEXT`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS amount_paid DECIMAL(10,2)`,
@@ -89,7 +92,7 @@ function posStatusLabel(row) {
     return "BALANCE PAYMENT CONFIRMATION";
   }
   if (os === "pending_cashier") {
-    if (row.payment_proof || row.payment_proof_initial) {
+    if (row.payment_proof_initial) {
       return "WAITING FOR PAYMENT CONFIRMATION";
     }
     return "WAITING FOR ORDER CONFIRMATION";
@@ -132,9 +135,14 @@ function normalizeLineItems(items) {
 }
 
 export function mapRestaurantOrderRowForPosApi(row, customerName = null) {
-  const items = normalizeLineItems(row.items ?? row.tray_items);
+  const items = normalizeLineItems(parseRestaurantOrderTrayItems(row));
   const total = Number(row.total_amount ?? row.total_cost ?? 0);
-  const proof = row.payment_proof ?? row.payment_proof_initial ?? null;
+  const proof = row.payment_proof_initial ?? null;
+  const refInitial =
+    row.payment_reference_initial ??
+    row.payment_references_initial ??
+    row.payment_reference ??
+    "";
   return {
     id: row.id,
     order_no: row.order_no,
@@ -146,10 +154,12 @@ export function mapRestaurantOrderRowForPosApi(row, customerName = null) {
     payment_mode: (row.payment_method || "GCASH").toUpperCase(),
     payment_uploaded: Boolean(proof && String(proof).trim()),
     payment_proof: proof,
-    payment_proof_initial: row.payment_proof_initial ?? proof,
+    payment_proof_initial: proof,
     supplemental_payment_proof: row.supplemental_payment_proof ?? null,
     payment_proof_balance: row.supplemental_payment_proof ?? null,
-    payment_reference_initial: row.payment_reference_initial ?? row.payment_reference ?? "",
+    payment_reference_initial: refInitial,
+    payment_references_initial:
+      row.payment_references_initial ?? row.payment_reference_initial ?? refInitial,
     payment_reference_balance: row.payment_reference_balance ?? "",
     cashier_amount_received:
       row.cashier_amount_received != null
@@ -475,18 +485,24 @@ export function registerPosRoutes(app, {
       const orderNo = await allocateRestaurantOrderNo();
       const roCols = await ensureRestaurantOrdersCanonicalColumns();
       const orderIdCol = restaurantOrderIdInsertColumn(roCols);
+      const itemsInsert = restaurantOrderItemsInsertSql(roCols);
+      const itemsJson = JSON.stringify(items);
+      const itemsSql = itemsInsert.placeholders.replace(/\$ITEM\$/g, "$3::jsonb");
+      const proofCol = roCols.has("payment_proof_initial")
+        ? "payment_proof_initial"
+        : "payment_proof";
       const change =
         amountReceived > total ? Number((amountReceived - total).toFixed(2)) : 0;
 
       const r = await pool.query(
         `INSERT INTO restaurant_orders (
-           ${orderIdCol}, full_name, phone, items, total_amount,
+           ${orderIdCol}, full_name, phone, ${itemsInsert.columns}, total_amount,
            delivery_address, delivery_lat, delivery_lng,
            order_status, fulfillment_stage, payment_status, payment_method,
-           order_source, pos_customer_label, payment_proof,
+           order_source, pos_customer_label, ${proofCol},
            cashier_amount_received, amount_paid, change_given, pos_claimed_at
          ) VALUES (
-           $1, $2, '', $3::jsonb, $4,
+           $1, $2, '', ${itemsSql}, $4,
            'Walk-in', NULL, NULL,
            'in_preparation', 'IN_PREPARATION', 'paid', $5,
            'POS', $6, $7,
@@ -496,7 +512,7 @@ export function registerPosRoutes(app, {
         [
           orderNo,
           String(req.body?.pos_customer_label || "Walk-in").trim() || "Walk-in",
-          JSON.stringify(items),
+          itemsJson,
           total,
           paymentMethod,
           String(req.body?.pos_customer_label || "").trim(),

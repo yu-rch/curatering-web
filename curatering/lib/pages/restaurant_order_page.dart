@@ -3,14 +3,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
 import '../services/menu_store.dart';
 import '../services/cart_store.dart';
 import '../models/menu_dish.dart';
 import '../widgets/customer_website_topbar.dart';
 import 'checkout_page.dart';
-import 'customer_login.dart';
 
 // Font constants
 const String _primaryFont = 'Inter';
@@ -269,25 +266,6 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
         const SnackBar(content: Text('Your cart is empty')),
       );
       return;
-    }
-
-    var prefs = await SharedPreferences.getInstance();
-    var token = prefs.getString('customer_token');
-    if (token == null || token.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please log in to continue to checkout.')),
-      );
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) => const CustomerLoginPage(),
-      );
-      if (!mounted) return;
-      prefs = await SharedPreferences.getInstance();
-      token = prefs.getString('customer_token');
-      if (token == null || token.isEmpty) {
-        return;
-      }
     }
 
     closeOverlay?.call();

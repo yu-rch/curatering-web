@@ -56,12 +56,17 @@ import {
   normalizeRestaurantOrderRow,
   normalizeCustomerCateringOrderRow,
   normalizeStaffEventOrderRow,
+  parseRestaurantOrderTrayItems,
+  restaurantOrderItemsInsertSql,
+  buildRestaurantOrderPaymentUpdateSets,
 } from "./order_schema.js";
 import CartAPI from "./cart_api.js";
 import {
   getTrayDraft,
   saveTrayDraft,
   clearTrayDraft,
+  getTrayDraftItemsByCustomerId,
+  clearTrayDraftForCustomer,
 } from "./tray_drafts_api.js";
 import { createPublicRateLimiter } from "./public_rate_limit.js";
 import {
@@ -6274,20 +6279,8 @@ async function registerRoutesAfterDbInit() {
       next();
     };
 
-    function parseRestaurantOrderItems(items) {
-      if (items == null) return [];
-      if (typeof items === 'string') {
-        try {
-          return JSON.parse(items);
-        } catch {
-          return [];
-        }
-      }
-      return items;
-    }
-
-    function serializeRestaurantOrderRow(order, parsedItems) {
-      return normalizeRestaurantOrderRow(order, parsedItems);
+    function serializeRestaurantOrderRow(order, parsedItems, channel = 'web') {
+      return normalizeRestaurantOrderRow(order, parsedItems, { channel });
     }
 
     app.post('/api/restaurant/orders', optionalCustomerAuth, async (req, res) => {
@@ -6316,7 +6309,11 @@ async function registerRoutesAfterDbInit() {
           });
         }
 
-        if (!items || !Array.isArray(items) || items.length === 0) {
+        let orderItems = items;
+        if (customerId && (!Array.isArray(orderItems) || orderItems.length === 0)) {
+          orderItems = await getTrayDraftItemsByCustomerId(customerId);
+        }
+        if (!Array.isArray(orderItems) || orderItems.length === 0) {
           return res.status(400).json({ error: 'Items are required' });
         }
 
@@ -6329,14 +6326,20 @@ async function registerRoutesAfterDbInit() {
         const orderNo = await allocateRestaurantOrderNo();
         const roCols = await ensureRestaurantOrdersCanonicalColumns();
         const orderIdCol = restaurantOrderIdInsertColumn(roCols);
+        const itemsInsert = restaurantOrderItemsInsertSql(roCols);
+        const itemsJson = JSON.stringify(orderItems);
+        const itemsSql = itemsInsert.placeholders.replace(/\$ITEM\$/g, '$6');
+        const orderSourceCol = roCols.has('order_source') ? ', order_source' : '';
+        const orderSourceVal = roCols.has('order_source') ? ", 'ONLINE'" : '';
 
         const result = await pool.query(
           `INSERT INTO restaurant_orders (
-             ${orderIdCol}, customer_id, guest_contact_email, full_name, phone, items,
+             ${orderIdCol}, customer_id, guest_contact_email, full_name, phone,
+             ${itemsInsert.columns},
              total_amount, delivery_address, delivery_lat, delivery_lng,
-             delivery_time, delivery_notes, order_status
+             delivery_time, delivery_notes, order_status${orderSourceCol}
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11::timestamptz, now()), $12, 'pending_cashier')
+           VALUES ($1, $2, $3, $4, $5, ${itemsSql}, $7, $8, $9, $10, COALESCE($11::timestamptz, now()), $12, 'pending_cashier'${orderSourceVal})
            RETURNING *`,
           [
             orderNo,
@@ -6344,7 +6347,7 @@ async function registerRoutesAfterDbInit() {
             guestEmail,
             fullName || null,
             phone || null,
-            JSON.stringify(items),
+            itemsJson,
             totalAmount || 0,
             deliveryAddress,
             lat,
@@ -6377,7 +6380,17 @@ async function registerRoutesAfterDbInit() {
           });
         }
 
-        res.status(201).json({ order: serializeRestaurantOrderRow(result.rows[0], items) });
+        if (customerId) {
+          try {
+            await clearTrayDraftForCustomer(customerId);
+          } catch {
+            /* non-fatal */
+          }
+        }
+
+        res.status(201).json({
+          order: serializeRestaurantOrderRow(result.rows[0], orderItems),
+        });
       } catch (error) {
         console.error('Error creating restaurant order:', error);
         res.status(500).json({ error: 'Failed to create order', details: error.message });
@@ -6431,13 +6444,12 @@ async function registerRoutesAfterDbInit() {
           return res.status(400).json({ error: 'Invalid order id' });
         }
 
+        const roCols = await ensureRestaurantOrdersCanonicalColumns();
+        const paymentSets = buildRestaurantOrderPaymentUpdateSets(roCols);
+
         const result = await pool.query(
           `UPDATE restaurant_orders
-           SET payment_reference = COALESCE($1, payment_reference),
-               payment_proof = COALESCE($2, payment_proof),
-               payment_status = 'pending',
-               order_status = 'pending_cashier',
-               updated_at = now()
+           SET ${paymentSets}
            WHERE ${payLookup.sql}
            RETURNING *`,
           [paymentReference || null, paymentProof || null, payLookup.value],
@@ -6448,7 +6460,7 @@ async function registerRoutesAfterDbInit() {
         }
 
         const updated = result.rows[0];
-        const parsedItems = parseRestaurantOrderItems(updated.items);
+        const parsedItems = parseRestaurantOrderTrayItems(updated);
 
         try {
           const email = await resolveRestaurantOrderEmail(updated);
@@ -6493,20 +6505,7 @@ async function registerRoutesAfterDbInit() {
         }
 
         const order = result.rows[0];
-        let parsedItems = order.items;
-        if (typeof order.items === 'string') {
-          const trimmed = order.items.trim();
-          if (trimmed.length > 0) {
-            try {
-              parsedItems = JSON.parse(trimmed);
-            } catch (e) {
-              parsedItems = [];
-            }
-          } else {
-            parsedItems = [];
-          }
-        }
-        if (!Array.isArray(parsedItems)) parsedItems = [];
+        const parsedItems = parseRestaurantOrderTrayItems(order);
 
         res.json({ order: serializeRestaurantOrderRow(order, parsedItems) });
       } catch (error) {
@@ -6563,15 +6562,7 @@ async function registerRoutesAfterDbInit() {
             [order.id, Math.round(stars), remarks || null],
           );
 
-          let parsedItems = updated.rows[0].items;
-          if (typeof parsedItems === 'string') {
-            try {
-              parsedItems = JSON.parse(parsedItems);
-            } catch {
-              parsedItems = [];
-            }
-          }
-          if (!Array.isArray(parsedItems)) parsedItems = [];
+          const parsedItems = parseRestaurantOrderTrayItems(updated.rows[0]);
 
           res.json({
             ok: true,
@@ -6620,23 +6611,9 @@ async function registerRoutesAfterDbInit() {
             : [req.customer.id],
         );
 
-        const orders = result.rows.map((order) => {
-          let parsedItems = order.items ?? order.tray_items;
-          if (typeof parsedItems === 'string') {
-            const trimmed = parsedItems.trim();
-            if (trimmed.length > 0) {
-              try {
-                parsedItems = JSON.parse(trimmed);
-              } catch {
-                parsedItems = [];
-              }
-            } else {
-              parsedItems = [];
-            }
-          }
-          if (!Array.isArray(parsedItems)) parsedItems = [];
-          return serializeRestaurantOrderRow(order, parsedItems);
-        });
+        const orders = result.rows.map((order) =>
+          serializeRestaurantOrderRow(order, parseRestaurantOrderTrayItems(order)),
+        );
         res.json({ orders });
       } catch (error) {
         console.error('Error fetching orders:', error);
@@ -6771,10 +6748,10 @@ async function registerRoutesAfterDbInit() {
           : roCols.has('status')
             ? 'status'
             : null;
-        const roItemsCol = roCols.has('items')
-          ? 'items'
-          : roCols.has('tray_items')
-            ? 'tray_items'
+        const roItemsCol = roCols.has('tray_items')
+          ? 'tray_items'
+          : roCols.has('items')
+            ? 'items'
             : null;
         const roStatusFilter = roStatusCol
           ? `AND COALESCE(${roStatusCol}::text, '') NOT IN ('cancelled')`
@@ -7002,18 +6979,9 @@ async function registerRoutesAfterDbInit() {
           }
         }
         
-        const processedOrders = result.rows.map((order) => {
-          let parsedItems = order.items ?? order.tray_items;
-          if (typeof parsedItems === 'string') {
-            try {
-              parsedItems = JSON.parse(parsedItems);
-            } catch {
-              parsedItems = [];
-            }
-          }
-          if (!Array.isArray(parsedItems)) parsedItems = [];
-          return serializeRestaurantOrderRow(order, parsedItems);
-        });
+        const processedOrders = result.rows.map((order) =>
+          serializeRestaurantOrderRow(order, parseRestaurantOrderTrayItems(order), 'staff'),
+        );
         
         const endTime = Date.now();
         console.log(`Restaurant orders query took ${endTime - startTime}ms for ${processedOrders.length} orders`);

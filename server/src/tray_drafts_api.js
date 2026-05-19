@@ -4,6 +4,29 @@ function customerIdFromReq(req) {
   return req.customer?.id ? String(req.customer.id) : null;
 }
 
+/** Load tray line items from customer_tray_drafts keyed by customer_id. */
+export async function getTrayDraftItemsByCustomerId(customerId) {
+  if (!customerId) return [];
+  await ensureCustomerTrayDraftsSchema();
+  const id = String(customerId);
+  const result = await pool.query(
+    `SELECT items FROM customer_tray_drafts WHERE customer_id = $1`,
+    [id],
+  );
+  if (result.rowCount === 0) return [];
+  const items = result.rows[0].items;
+  if (Array.isArray(items)) return items;
+  if (typeof items === 'string' && items.trim()) {
+    try {
+      const parsed = JSON.parse(items);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export async function getTrayDraft(req, res) {
   try {
     await ensureCustomerTrayDraftsSchema();
@@ -54,6 +77,14 @@ export async function saveTrayDraft(req, res) {
     console.error('saveTrayDraft:', error);
     res.status(500).json({ error: 'Failed to save tray draft' });
   }
+}
+
+export async function clearTrayDraftForCustomer(customerId) {
+  if (!customerId) return;
+  await ensureCustomerTrayDraftsSchema();
+  await pool.query(`DELETE FROM customer_tray_drafts WHERE customer_id = $1`, [
+    String(customerId),
+  ]);
 }
 
 export async function clearTrayDraft(req, res) {

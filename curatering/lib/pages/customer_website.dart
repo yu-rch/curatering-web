@@ -654,27 +654,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       );
       return;
     }
-    var prefs = await SharedPreferences.getInstance();
-    var token = prefs.getString('customer_token');
-    if (token == null || token.isEmpty) {
-      showAppSnackBar(
-        context,
-        'Please log in to continue to checkout.',
-        icon: Icons.login,
-      );
-      await _handleLogin();
-      if (!mounted) return;
-      prefs = await SharedPreferences.getInstance();
-      token = prefs.getString('customer_token');
-      if (token == null || token.isEmpty) {
-        return;
-      }
-      await _checkCustomerAuth();
-    }
-    if (!mounted) return;
-    if (!_isCustomerLoggedIn) {
-      setState(() => _isCustomerLoggedIn = true);
-    }
     if (!mounted) return;
     final nav = navigator ?? Navigator.of(context, rootNavigator: true);
     if (!nav.mounted) {

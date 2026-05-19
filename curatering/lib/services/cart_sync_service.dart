@@ -109,20 +109,20 @@ class CartSyncService {
       if (token == null || token.isEmpty) return;
 
       ApiClient.instance.setCustomerBearer(token);
-      final response = await ApiClient.instance.getJson('/api/cart');
 
-      var cartItems = _itemsListFromCartPayload(response['cart']);
-
+      var cartItems = <dynamic>[];
       try {
         final trayResponse = await ApiClient.instance.getJson('/api/tray-draft');
         if (trayResponse['success'] == true) {
-          final trayItems = _itemsListFromTrayPayload(trayResponse['items']);
-          if (trayItems.isNotEmpty) {
-            cartItems = trayItems;
-          }
+          cartItems = _itemsListFromTrayPayload(trayResponse['items']);
         }
       } catch (_) {
-        /* cart endpoint may still have data */
+        /* tray draft may be empty */
+      }
+
+      final response = await ApiClient.instance.getJson('/api/cart');
+      if (cartItems.isEmpty) {
+        cartItems = _itemsListFromCartPayload(response['cart']);
       }
 
       if (cartItems.isNotEmpty || response['success'] == true) {
