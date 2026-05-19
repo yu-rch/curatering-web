@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../config/site_redirect_stub.dart'
-    if (dart.library.html) '../config/site_redirect_web.dart';
 import '../config/site_routes.dart';
 
 /// Rewrites old `/macrinas-kitchen-and-catering/...` bookmarks to root paths.
@@ -14,10 +12,7 @@ class LegacyPathRedirect extends StatelessWidget {
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (isStaffSiteHost) {
-        final target = Uri.parse(staffSiteOrigin).replace(path: '/login');
-        if (!browserLocationMatches(target)) {
-          redirectToSiteOrigin(staffSiteOrigin, '/login');
-        }
+        redirectOnCurrentHost('/login');
         return;
       }
       final route = customerRoute(target);

@@ -75,6 +75,19 @@ bool redirectToSiteOrigin(String origin, String path) {
   return redirectBrowserTo(target);
 }
 
+/// Same host as the browser (preserves `www.` vs apex). Updates the path only.
+void redirectOnCurrentHost(String path) {
+  if (!kIsWeb) return;
+  final scheme = Uri.base.scheme.isEmpty ? 'https' : Uri.base.scheme;
+  final target = Uri(
+    scheme: scheme,
+    host: getWebHostname(),
+    path: normalizeRoutePath(path),
+  );
+  if (browserLocationMatches(target)) return;
+  replaceBrowserPath(target);
+}
+
 /// Staff routes (e.g. `/login`) belong on the staff host only.
 bool needsRedirectToStaffSite(String? routeName) {
   if (!isStaffRoute(routeName)) return false;
@@ -132,38 +145,24 @@ String resolveAppInitialRoute() {
   return path;
 }
 
-/// Run before [runApp] to fix www staff host, legacy bookmarks, and staff `/`.
-/// Returns `true` when a full page navigation was started (skip [runApp]).
+/// Run before [runApp] for legacy bookmarks and staff `/` → `/login`.
+/// Does not strip `www.` — Vercel often redirects apex ↔ www; cross-host
+/// redirects here caused ERR_TOO_MANY_REDIRECTS on www.staff.curatering.com.
 bool bootstrapWebRouting() {
   if (!kIsWeb) return false;
 
-  final host = _host.toLowerCase();
   final rawPath = rawWebPath();
-  final staffCanonical = kStaffWebHost.toLowerCase();
-  final customerCanonical = kCustomerWebHost.toLowerCase();
-
-  if (host == 'www.$staffCanonical') {
-    var target = rawPath;
-    if (target == '/' || isLegacyBookmarkPath(rawPath)) target = '/login';
-    final uri = Uri.parse('https://$staffCanonical$target');
-    if (browserLocationMatches(uri)) return false;
-    return redirectBrowserTo(uri);
-  }
-
-  if (host == 'www.$customerCanonical') {
-    final uri = Uri.parse('https://$customerCanonical$rawPath');
-    if (browserLocationMatches(uri)) return false;
-    return redirectBrowserTo(uri);
-  }
 
   if (!isStaffSiteHost) return false;
 
   if (isLegacyBookmarkPath(rawPath)) {
-    return redirectToSiteOrigin(staffSiteOrigin, '/login');
+    redirectOnCurrentHost('/login');
+    return false;
   }
 
   if (rawPath == '/' && currentWebPath() == '/') {
-    return redirectToSiteOrigin(staffSiteOrigin, '/login');
+    redirectOnCurrentHost('/login');
+    return false;
   }
 
   return false;
