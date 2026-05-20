@@ -1,7 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../config.dart';
 import '../services/website_content_store.dart';
 import '../widgets/centered_viewport_scroll.dart';
 import '../widgets/website_rich_text.dart';
@@ -48,11 +52,17 @@ class ContactUsPage extends StatefulWidget {
 
 class _ContactUsPageState extends State<ContactUsPage> {
   final _formKey = GlobalKey<FormState>();
+  final _feedbackFormKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _messageController = TextEditingController();
+  final _feedbackNameController = TextEditingController();
+  final _feedbackEmailController = TextEditingController();
+  final _feedbackMessageController = TextEditingController();
   bool _isSubmitting = false;
+  bool _isSubmittingFeedback = false;
+  int _feedbackRating = 5;
 
   @override
   void initState() {
@@ -74,6 +84,9 @@ class _ContactUsPageState extends State<ContactUsPage> {
     _emailController.dispose();
     _phoneController.dispose();
     _messageController.dispose();
+    _feedbackNameController.dispose();
+    _feedbackEmailController.dispose();
+    _feedbackMessageController.dispose();
     super.dispose();
   }
 
@@ -118,6 +131,50 @@ class _ContactUsPageState extends State<ContactUsPage> {
     _messageController.clear();
   }
 
+  Future<void> _submitFeedback() async {
+    if (!_feedbackFormKey.currentState!.validate()) return;
+
+    setState(() => _isSubmittingFeedback = true);
+    try {
+      final response = await http.post(
+        Uri.parse('$apiBaseUrl/api/contact-feedback'),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': _feedbackNameController.text.trim(),
+          'email': _feedbackEmailController.text.trim(),
+          'rating': _feedbackRating,
+          'message': _feedbackMessageController.text.trim(),
+        }),
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final decoded = jsonDecode(response.body);
+        throw Exception(decoded['error'] ?? 'Failed to submit feedback.');
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Feedback submitted. Thank you!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      _feedbackNameController.clear();
+      _feedbackEmailController.clear();
+      _feedbackMessageController.clear();
+      setState(() => _feedbackRating = 5);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to submit feedback. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmittingFeedback = false);
+    }
+  }
+
   Future<void> _launchPhone(String phone) async {
     final uri = Uri.parse('tel:$phone');
     if (await canLaunchUrl(uri)) {
@@ -154,44 +211,55 @@ class _ContactUsPageState extends State<ContactUsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-            const SizedBox(height: 24),
-            Text(
-              'GET IN TOUCH',
-              style: GoogleFonts.getFont(
-                _primaryFont,
-                fontSize: 36,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF1E1E1E),
-              ),
-            ),
-            const SizedBox(height: 16),
-            WebsiteRichText(
-              value: w.contactPageIntro,
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey.shade600,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 48),
-
-            if (isDesktop(context))
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(flex: 2, child: _buildContactForm(w)),
-                  const SizedBox(width: 48),
-                  Expanded(child: _buildContactInfo(w)),
-                ],
-              )
-            else
-              Column(
-                children: [
-                  _buildContactForm(w),
+                  const SizedBox(height: 24),
+                  Text(
+                    'GET IN TOUCH',
+                    style: GoogleFonts.getFont(
+                      _primaryFont,
+                      fontSize: 36,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF1E1E1E),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  WebsiteRichText(
+                    value: w.contactPageIntro,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey.shade600,
+                      height: 1.5,
+                    ),
+                  ),
                   const SizedBox(height: 48),
-                  _buildContactInfo(w),
-                ],
-              ),
+
+                  if (isDesktop(context))
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: Column(
+                            children: [
+                              _buildContactForm(w),
+                              const SizedBox(height: 24),
+                              _buildFeedbackModule(),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 48),
+                        Expanded(child: _buildContactInfo(w)),
+                      ],
+                    )
+                  else
+                    Column(
+                      children: [
+                        _buildContactForm(w),
+                        const SizedBox(height: 24),
+                        _buildFeedbackModule(),
+                        const SizedBox(height: 48),
+                        _buildContactInfo(w),
+                      ],
+                    ),
                 ],
               ),
             ),
@@ -328,6 +396,134 @@ class _ContactUsPageState extends State<ContactUsPage> {
     );
   }
 
+  Widget _buildFeedbackModule() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Form(
+          key: _feedbackFormKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Share your feedback',
+                style: GoogleFonts.getFont(
+                  _primaryFont,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF1E1E1E),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Tell us what worked well or what we can improve. Your feedback is reviewed by our team.',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 20),
+              TextFormField(
+                controller: _feedbackNameController,
+                decoration: const InputDecoration(
+                  labelText: 'Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _feedbackEmailController,
+                decoration: const InputDecoration(
+                  labelText: 'Email Address',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.emailAddress,
+                validator: (value) {
+                  final text = value?.trim() ?? '';
+                  if (text.isNotEmpty && !text.contains('@')) {
+                    return 'Please enter a valid email';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Rating',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: List.generate(5, (index) {
+                  final star = index + 1;
+                  return IconButton(
+                    tooltip: '$star star${star == 1 ? '' : 's'}',
+                    onPressed:
+                        _isSubmittingFeedback
+                            ? null
+                            : () => setState(() => _feedbackRating = star),
+                    icon: Icon(
+                      star <= _feedbackRating ? Icons.star : Icons.star_border,
+                      color: Colors.amber.shade700,
+                      size: 28,
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _feedbackMessageController,
+                decoration: const InputDecoration(
+                  labelText: 'Feedback',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 4,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter your feedback';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _isSubmittingFeedback ? null : _submitFeedback,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1E1E1E),
+                    side: const BorderSide(color: Color(0xFF1E1E1E)),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  icon:
+                      _isSubmittingFeedback
+                          ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                          : const Icon(Icons.rate_review_outlined),
+                  label: Text(
+                    _isSubmittingFeedback ? 'SUBMITTING...' : 'SUBMIT FEEDBACK',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildContactInfo(WebsiteContentStore w) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,7 +576,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
           icon: Icons.facebook,
           title: 'Facebook',
           subtitle: w.contactFacebook,
-          onTap: null,
+          onTap: () => launchUrl(Uri.parse('https://www.facebook.com/3tavs')),
         ),
       ],
     );
@@ -416,7 +612,7 @@ class _ContactCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E1E1E).withOpacity(0.1),
+                  color: const Color(0xFF1E1E1E).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: Icon(icon, color: const Color(0xFF1E1E1E), size: 24),

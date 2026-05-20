@@ -1,13 +1,12 @@
 import 'dart:math' as math;
 
 /// OpenStreetMap / Nominatim user agent (required by usage policy).
-const String nominatimUserAgent =
-    'CurateringWeb/1.0 (support@macrina.local)';
+const String nominatimUserAgent = 'CurateringWeb/1.0 (support@macrina.local)';
 
 /// Restaurant anchor — Taguig (delivery radius).
 const double restaurantLat = 14.513436;
 const double restaurantLng = 121.059198;
-const double deliveryMaxDistanceKm = 5;
+const double deliveryMaxDistanceKm = 50;
 
 const double defaultMapLat = 14.5995;
 const double defaultMapLng = 120.9842;
@@ -51,14 +50,5 @@ bool isWithinDeliveryRadius(GeoPin pin) {
 bool isAllowedCateringAddress(String address) {
   final t = address.trim().toLowerCase();
   if (t.isEmpty) return false;
-  const regions = [
-    'ncr',
-    'national capital region',
-    'metro manila',
-    'bulacan',
-    'cavite',
-    'rizal',
-    'laguna',
-  ];
-  return regions.any((p) => t.contains(p));
+  return true;
 }

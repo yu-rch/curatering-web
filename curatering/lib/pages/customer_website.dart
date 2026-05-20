@@ -731,14 +731,21 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Future<String?> _pickImageB64() async {
-    final x = await ImagePicker().pickImage(source: ImageSource.gallery);
+    final x = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1800,
+      imageQuality: 82,
+    );
     if (x == null) return null;
     final bytes = await x.readAsBytes();
     return base64Encode(bytes);
   }
 
   Future<List<String>> _pickMultipleImageB64() async {
-    final picked = await ImagePicker().pickMultiImage();
+    final picked = await ImagePicker().pickMultiImage(
+      maxWidth: 1800,
+      imageQuality: 82,
+    );
     if (picked.isEmpty) return const [];
     final out = <String>[];
     for (final x in picked) {
@@ -2710,7 +2717,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               Text(
                 'CATERING MENU',
                 textAlign: TextAlign.center,
-                style: websiteHeaderStyle(
+                style: GoogleFonts.inter(
                   fontSize: 42,
                   fontWeight: FontWeight.bold,
                   color: const Color(0xFF1E1E1E),
@@ -6727,6 +6734,26 @@ class _InquireFormState extends State<_InquireForm> {
     _showDesignMyEventEditorPage();
   }
 
+  Map<String, dynamic> _staffThemeStudioResult() {
+    final photos =
+        _designBoardPhotos().where((src) => src.trim().isNotEmpty).toList();
+    return {
+      'confirmedCompositeBase64':
+          (_confirmedCompositeBase64 ?? '').trim().isEmpty
+              ? null
+              : _confirmedCompositeBase64!.trim(),
+      'picksBase64': photos,
+    };
+  }
+
+  void _finishStaffThemeStudio(BuildContext dialogContext) {
+    final result = _staffThemeStudioResult();
+    Navigator.of(dialogContext).pop();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop(result);
+    });
+  }
+
   Widget _buildPlacementEditor({
     required String baseImage,
     required List<Map<String, dynamic>> placedObjects,
@@ -8423,12 +8450,17 @@ class _InquireFormState extends State<_InquireForm> {
                   SizedBox(
                     width: 140,
                     child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
+                      onPressed:
+                          widget.staffThemeStudioMode
+                              ? () => _finishStaffThemeStudio(context)
+                              : () => Navigator.pop(context),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF1DB954),
                         foregroundColor: Colors.white,
                       ),
-                      child: const Text('DONE'),
+                      child: Text(
+                        widget.staffThemeStudioMode ? 'USE DESIGN' : 'DONE',
+                      ),
                     ),
                   ),
                   SizedBox(

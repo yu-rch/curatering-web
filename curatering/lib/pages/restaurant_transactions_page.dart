@@ -366,70 +366,66 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E1E1E),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        title: const Text('Restaurant Orders'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refreshOrders,
-            tooltip: 'Refresh Orders',
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(60),
-          child: Container(
+    return Container(
+      color: Colors.grey.shade50,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Material(
             color: Colors.white,
-            child: TabBar(
-              controller: _tabController,
-              indicatorColor: const Color(0xFFFFC024),
-              labelColor: const Color(0xFFFFC024),
-              unselectedLabelColor: Colors.grey.shade600,
-              labelStyle: const TextStyle(fontWeight: FontWeight.w600),
-              tabs: [
-                Tab(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.pending_actions, size: 20),
-                      const SizedBox(width: 8),
-                      Text('Pending (${_confirmationOrders.length})'),
+            elevation: 1,
+            child: Row(
+              children: [
+                Expanded(
+                  child: TabBar(
+                    controller: _tabController,
+                    indicatorColor: const Color(0xFFFFC024),
+                    labelColor: const Color(0xFFFFC024),
+                    unselectedLabelColor: Colors.grey.shade600,
+                    labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+                    tabs: [
+                      Tab(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.pending_actions, size: 20),
+                            const SizedBox(width: 8),
+                            Text('Pending (${_confirmationOrders.length})'),
+                          ],
+                        ),
+                      ),
+                      Tab(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.local_shipping, size: 20),
+                            const SizedBox(width: 8),
+                            Text('Processing (${_processingOrders.length})'),
+                          ],
+                        ),
+                      ),
+                      Tab(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.check_circle, size: 20),
+                            const SizedBox(width: 8),
+                            Text('Completed (${_completedOrders.length})'),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                Tab(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.local_shipping, size: 20),
-                      const SizedBox(width: 8),
-                      Text('Processing (${_processingOrders.length})'),
-                    ],
-                  ),
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _refreshOrders,
+                  tooltip: 'Refresh Orders',
                 ),
-                Tab(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.check_circle, size: 20),
-                      const SizedBox(width: 8),
-                      Text('Completed (${_completedOrders.length})'),
-                    ],
-                  ),
-                ),
+                const SizedBox(width: 8),
               ],
             ),
           ),
-        ),
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
             child: Text(
@@ -764,8 +760,90 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     );
   }
 
+  List<Map<String, dynamic>> _itemsForDialog(Map<String, dynamic> order) {
+    final directItems = order['items'] ?? order['tray_items'];
+    final items = _coerceOrderItems(directItems);
+    if (items.isNotEmpty) return items;
+
+    final fallbackNames = _extractDishNames(order);
+    if (fallbackNames.isEmpty) return const [];
+
+    final total =
+        order['total_cost'] ?? order['total_amount'] ?? order['price'];
+    return fallbackNames
+        .map(
+          (name) => <String, dynamic>{
+            'name': name,
+            'quantity': 1,
+            if (fallbackNames.length == 1 && total != null) 'price': total,
+          },
+        )
+        .toList();
+  }
+
+  List<Map<String, dynamic>> _coerceOrderItems(dynamic raw) {
+    if (raw is List) {
+      return raw
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+    }
+    if (raw is String && raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        return _coerceOrderItems(decoded);
+      } catch (_) {
+        return const [];
+      }
+    }
+    return const [];
+  }
+
+  List<String> _extractDishNames(Map<String, dynamic> order) {
+    final names = <String>[];
+    void addName(dynamic value) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isEmpty) return;
+      if (!names.any(
+        (existing) => existing.toLowerCase() == text.toLowerCase(),
+      )) {
+        names.add(text);
+      }
+    }
+
+    for (final key in const [
+      'dishName',
+      'dish_name',
+      'dishNames',
+      'dish_names',
+      'itemName',
+      'item_name',
+      'itemNames',
+      'item_names',
+      'menu_item',
+      'menu_items',
+    ]) {
+      final value = order[key];
+      if (value is List) {
+        for (final item in value) addName(item);
+      } else if (value is String && value.contains(',')) {
+        for (final item in value.split(',')) addName(item);
+      } else {
+        addName(value);
+      }
+    }
+
+    final menu = order['menu'];
+    if (menu is List) {
+      for (final item in menu.whereType<Map>()) {
+        addName(item['dishName'] ?? item['dish_name'] ?? item['name']);
+      }
+    }
+    return names;
+  }
+
   void _showOrderItemsDialog(Map<String, dynamic> order) {
-    final items = (order['items'] as List<dynamic>? ?? []);
+    final items = _itemsForDialog(order);
     showDialog(
       context: context,
       builder:
@@ -783,10 +861,13 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                         itemCount: items.length,
                         separatorBuilder: (_, __) => const Divider(height: 12),
                         itemBuilder: (context, i) {
-                          final item = items[i] as Map<String, dynamic>;
+                          final item = items[i];
                           final name =
                               item['name'] ??
                               item['dishName'] ??
+                              item['dish_name'] ??
+                              item['itemName'] ??
+                              item['item_name'] ??
                               'Unknown dish';
                           final desc =
                               (item['description'] ??

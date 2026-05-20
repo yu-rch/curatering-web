@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../widgets/app_scaffold.dart';
+import '../widgets/antd_staff.dart';
 import '../widgets/paginated_data_table.dart';
 import '../models/menu_dish.dart';
 import '../constants/catering_meal_types.dart';
@@ -184,6 +185,9 @@ class _MenuState extends State<Menu> {
   final TextEditingController _publicDescriptionController =
       TextEditingController();
   final TextEditingController _allergensController = TextEditingController();
+  String _ingredientFilter = 'all';
+  String _allergenFilter = 'all';
+  String _mealTypeFilter = 'all';
 
   String? _editingImageBase64;
   String _editingType = ''; // For restaurant dish type grouping
@@ -199,11 +203,72 @@ class _MenuState extends State<Menu> {
   String? _selectedSetMenuId;
   bool _isModifyingSet = false;
   bool _isGridView = true; // Default to grid view
+  bool _isSavingSetMenu = false;
 
   bool _matchesSearch(MenuDish dish) {
     final query = _searchController.text.trim().toLowerCase();
     if (query.isEmpty) return true;
     return dish.name.toLowerCase().contains(query);
+  }
+
+  List<String> _splitFilterTokens(String raw) {
+    return raw
+        .split(RegExp(r'[,;|]'))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  String _dishMealTypeFilterValue(MenuDish dish) {
+    if (dish.category == 'restaurant') {
+      return _normalizeRestaurantMealType(dish.effectiveMealType);
+    }
+    return normalizeCateringMealType(dish.effectiveMealType);
+  }
+
+  bool _matchesMenuFilters(MenuDish dish) {
+    if (_ingredientFilter != 'all' &&
+        !dish.ingredients.any(
+          (item) => item.toLowerCase() == _ingredientFilter,
+        )) {
+      return false;
+    }
+    if (_allergenFilter != 'all' &&
+        !_splitFilterTokens(
+          dish.allergens,
+        ).any((item) => item.toLowerCase() == _allergenFilter)) {
+      return false;
+    }
+    if (_mealTypeFilter != 'all' &&
+        _dishMealTypeFilterValue(dish).toLowerCase() != _mealTypeFilter) {
+      return false;
+    }
+    return true;
+  }
+
+  List<String> _distinctIngredients(String category) {
+    final values = <String>{};
+    for (final dish in MenuStore.instance.activeDishes.where(
+      (d) => d.category == category,
+    )) {
+      for (final ingredient in dish.ingredients) {
+        final value = ingredient.trim();
+        if (value.isNotEmpty) values.add(value);
+      }
+    }
+    return values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  }
+
+  List<String> _distinctAllergens(String category) {
+    final values = <String>{};
+    for (final dish in MenuStore.instance.activeDishes.where(
+      (d) => d.category == category,
+    )) {
+      values.addAll(_splitFilterTokens(dish.allergens));
+    }
+    return values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   }
 
   String _normalizeRestaurantMealType(String raw) {
@@ -377,8 +442,9 @@ class _MenuState extends State<Menu> {
 
   Future<void> _saveSetMenu() async {
     final name = _setMenuNameController.text.trim();
-    if (name.isEmpty || _selectedSetDishIds.isEmpty) return;
+    if (name.isEmpty || _selectedSetDishIds.isEmpty || _isSavingSetMenu) return;
 
+    setState(() => _isSavingSetMenu = true);
     try {
       if (_selectedSetMenuId == null) {
         // Create new set menu
@@ -407,6 +473,8 @@ class _MenuState extends State<Menu> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      if (mounted) setState(() => _isSavingSetMenu = false);
     }
   }
 
@@ -414,6 +482,7 @@ class _MenuState extends State<Menu> {
     MenuDish? dish,
     required String category,
   }) async {
+    var isSaving = false;
     if (dish == null) {
       _resetEditorState(category: category);
     } else {
@@ -454,11 +523,16 @@ class _MenuState extends State<Menu> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       OutlinedButton.icon(
-                        onPressed: () async {
-                          final b64 = await _pickImageBase64();
-                          if (b64 == null) return;
-                          dialogSetState(() => _editingImageBase64 = b64);
-                        },
+                        onPressed:
+                            isSaving
+                                ? null
+                                : () async {
+                                  final b64 = await _pickImageBase64();
+                                  if (b64 == null) return;
+                                  dialogSetState(
+                                    () => _editingImageBase64 = b64,
+                                  );
+                                },
                         icon: const Icon(Icons.photo_camera_outlined),
                         label: Text(
                           dish == null ? 'Upload photo' : 'Change photo',
@@ -593,89 +667,117 @@ class _MenuState extends State<Menu> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed:
+                      isSaving ? null : () => Navigator.of(context).pop(),
                   child: const Text('CANCEL'),
                 ),
                 ElevatedButton(
-                  onPressed: () async {
-                    final name = _nameController.text.trim();
-                    final price = _priceController.text.trim();
-                    final needsPax = category == 'restaurant';
-                    final paxToSave =
-                        category == 'catering'
-                            ? const <String>[]
-                            : _editingPaxOptions;
-                    if (name.isEmpty ||
-                        price.isEmpty ||
-                        (needsPax && paxToSave.isEmpty)) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              name.isEmpty || price.isEmpty
-                                  ? 'Please enter name and price.'
-                                  : 'Add at least one PAX / size option for this dish.',
-                            ),
-                          ),
-                        );
-                      }
-                      return;
-                    }
-                    try {
-                      if (dish == null) {
-                        await MenuStore.instance.addDish(
-                          name: name,
-                          price: price,
-                          paxOptions: paxToSave,
-                          imageBase64: _editingImageBase64,
-                          category: category,
-                          sauces:
-                              category == 'restaurant'
-                                  ? _editingSauces
-                                  : const [],
-                          type: category == 'restaurant' ? '' : _editingType,
-                          mealType:
-                              category == 'catering'
-                                  ? normalizeCateringMealType(_editingMealType)
-                                  : _editingType,
-                          available: _editingAvailable,
-                          publicDescription: _publicDescriptionController.text,
-                          allergens: _allergensController.text,
-                        );
-                      } else {
-                        await MenuStore.instance.updateDish(
-                          id: dish.id,
-                          name: name,
-                          price: price,
-                          paxOptions: paxToSave,
-                          imageBase64: _editingImageBase64,
-                          category: category,
-                          sauces:
-                              category == 'restaurant'
-                                  ? _editingSauces
-                                  : const [],
-                          type: category == 'restaurant' ? '' : _editingType,
-                          mealType:
-                              category == 'catering'
-                                  ? normalizeCateringMealType(_editingMealType)
-                                  : _editingType,
-                          available: _editingAvailable,
-                          publicDescription: _publicDescriptionController.text,
-                          allergens: _allergensController.text,
-                        );
-                      }
-                      if (context.mounted) {
-                        Navigator.of(context).pop();
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(SnackBar(content: Text('Error: $e')));
-                      }
-                    }
-                  },
-                  child: Text(dish == null ? 'ADD' : 'SAVE'),
+                  onPressed:
+                      isSaving
+                          ? null
+                          : () async {
+                            final name = _nameController.text.trim();
+                            final price = _priceController.text.trim();
+                            final needsPax = category == 'restaurant';
+                            final paxToSave =
+                                category == 'catering'
+                                    ? const <String>[]
+                                    : _editingPaxOptions;
+                            if (name.isEmpty ||
+                                price.isEmpty ||
+                                (needsPax && paxToSave.isEmpty)) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      name.isEmpty || price.isEmpty
+                                          ? 'Please enter name and price.'
+                                          : 'Add at least one PAX / size option for this dish.',
+                                    ),
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+                            dialogSetState(() => isSaving = true);
+                            try {
+                              if (dish == null) {
+                                await MenuStore.instance.addDish(
+                                  name: name,
+                                  price: price,
+                                  paxOptions: paxToSave,
+                                  imageBase64: _editingImageBase64,
+                                  category: category,
+                                  sauces:
+                                      category == 'restaurant'
+                                          ? _editingSauces
+                                          : const [],
+                                  type:
+                                      category == 'restaurant'
+                                          ? ''
+                                          : _editingType,
+                                  mealType:
+                                      category == 'catering'
+                                          ? normalizeCateringMealType(
+                                            _editingMealType,
+                                          )
+                                          : _editingType,
+                                  available: _editingAvailable,
+                                  publicDescription:
+                                      _publicDescriptionController.text,
+                                  allergens: _allergensController.text,
+                                );
+                              } else {
+                                await MenuStore.instance.updateDish(
+                                  id: dish.id,
+                                  name: name,
+                                  price: price,
+                                  paxOptions: paxToSave,
+                                  imageBase64: _editingImageBase64,
+                                  category: category,
+                                  sauces:
+                                      category == 'restaurant'
+                                          ? _editingSauces
+                                          : const [],
+                                  type:
+                                      category == 'restaurant'
+                                          ? ''
+                                          : _editingType,
+                                  mealType:
+                                      category == 'catering'
+                                          ? normalizeCateringMealType(
+                                            _editingMealType,
+                                          )
+                                          : _editingType,
+                                  available: _editingAvailable,
+                                  publicDescription:
+                                      _publicDescriptionController.text,
+                                  allergens: _allergensController.text,
+                                );
+                              }
+                              if (context.mounted) {
+                                Navigator.of(context).pop();
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Error: $e')),
+                                );
+                              }
+                            } finally {
+                              if (context.mounted) {
+                                dialogSetState(() => isSaving = false);
+                              }
+                            }
+                          },
+                  child:
+                      isSaving
+                          ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                          : Text(dish == null ? 'ADD' : 'SAVE'),
                 ),
               ],
             );
@@ -1326,8 +1428,15 @@ class _MenuState extends State<Menu> {
     );
   }
 
-  Widget _viewToggleButton(String label, bool isGrid, VoidCallback onTap) {
-    final isSelected = (_isGridView && isGrid) || (!_isGridView && !isGrid);
+  Widget _viewToggleButton(
+    String label,
+    bool isGrid,
+    VoidCallback onTap, {
+    bool? selectedGridView,
+  }) {
+    final currentGridView = selectedGridView ?? _isGridView;
+    final isSelected =
+        (currentGridView && isGrid) || (!currentGridView && !isGrid);
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -1363,13 +1472,20 @@ class _MenuState extends State<Menu> {
     final selected = _activeTabIndex == index;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _activeTabIndex = index),
+        onTap:
+            () => setState(() {
+              _activeTabIndex = index;
+              _ingredientFilter = 'all';
+              _allergenFilter = 'all';
+              _mealTypeFilter = 'all';
+              _searchController.clear();
+            }),
         child: Container(
-          height: 44,
-          margin: const EdgeInsets.symmetric(horizontal: 2),
+          height: 36,
+          margin: const EdgeInsets.symmetric(horizontal: 1),
           decoration: BoxDecoration(
             color: selected ? const Color(0xFFFFC024) : Colors.white,
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(
               color: selected ? const Color(0xFFFFC024) : Colors.grey.shade300,
               width: 1,
@@ -1394,8 +1510,8 @@ class _MenuState extends State<Menu> {
               title,
               style: TextStyle(
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                fontSize: 12,
-                letterSpacing: 0.4,
+                fontSize: 11,
+                letterSpacing: 0.2,
                 color: selected ? Colors.white : Colors.grey.shade700,
               ),
             ),
@@ -1444,9 +1560,17 @@ class _MenuState extends State<Menu> {
         dishes.isNotEmpty && dishes.every((d) => d.category == 'catering');
 
     return Card(
-      margin: const EdgeInsets.all(16),
+      margin: EdgeInsets.zero,
       child: PagedDataTable(
         title: isCatering ? 'Catering Menu Dishes' : 'Restaurant Menu Dishes',
+        enableSearch: false,
+        fullWidth: true,
+        maxTableHeight: MediaQuery.sizeOf(context).height,
+        dataRowMinHeight: 54,
+        dataRowMaxHeight: 72,
+        headingRowHeight: 44,
+        horizontalMargin: 12,
+        columnSpacing: 18,
         columns: [
           const DataColumn(label: Text('Name')),
           const DataColumn(label: Text('Price')),
@@ -1642,95 +1766,189 @@ class _MenuState extends State<Menu> {
     );
   }
 
+  Widget _buildMenuToolbar({
+    required String category,
+    required bool isGridView,
+    required ValueChanged<bool> onViewChanged,
+    required VoidCallback onAddDish,
+    required String searchHint,
+    bool showBulkPrice = false,
+    bool showViewToggle = true,
+  }) {
+    final ingredients = _distinctIngredients(category);
+    final allergens = _distinctAllergens(category);
+    final mealTypes =
+        category == 'restaurant' ? _restaurantMealTypes : kCateringMealTypes;
+    final ingredientValues = ingredients.map((v) => v.toLowerCase()).toSet();
+    final allergenValues = allergens.map((v) => v.toLowerCase()).toSet();
+    final mealTypeValues = mealTypes.map((v) => v.toLowerCase()).toSet();
+    final ingredientValue =
+        ingredientValues.contains(_ingredientFilter)
+            ? _ingredientFilter
+            : 'all';
+    final allergenValue =
+        allergenValues.contains(_allergenFilter) ? _allergenFilter : 'all';
+    final mealTypeValue =
+        mealTypeValues.contains(_mealTypeFilter) ? _mealTypeFilter : 'all';
+
+    return AntdToolbar(
+      padding: const EdgeInsets.all(10),
+      children: [
+        AntdSearchInput(
+          controller: _searchController,
+          hintText: searchHint,
+          width: 220,
+          onChanged: (_) => _debouncer.debounce(() => setState(() {})),
+          onClear: () {
+            _searchController.clear();
+            setState(() {});
+          },
+        ),
+        AntdSelect<String>(
+          label: 'Ingredients',
+          width: 180,
+          value: ingredientValue,
+          items: [
+            const DropdownMenuItem(
+              value: 'all',
+              child: Text('All ingredients'),
+            ),
+            ...ingredients.map(
+              (value) => DropdownMenuItem(
+                value: value.toLowerCase(),
+                child: Text(value),
+              ),
+            ),
+          ],
+          onChanged:
+              (value) => setState(() => _ingredientFilter = value ?? 'all'),
+        ),
+        AntdSelect<String>(
+          label: 'Allergens',
+          width: 170,
+          value: allergenValue,
+          items: [
+            const DropdownMenuItem(value: 'all', child: Text('All allergens')),
+            ...allergens.map(
+              (value) => DropdownMenuItem(
+                value: value.toLowerCase(),
+                child: Text(value),
+              ),
+            ),
+          ],
+          onChanged:
+              (value) => setState(() => _allergenFilter = value ?? 'all'),
+        ),
+        AntdSelect<String>(
+          label: 'Meal type',
+          width: 170,
+          value: mealTypeValue,
+          items: [
+            const DropdownMenuItem(value: 'all', child: Text('All meal types')),
+            ...mealTypes.map(
+              (value) => DropdownMenuItem(
+                value: value.toLowerCase(),
+                child: Text(
+                  category == 'restaurant'
+                      ? value
+                          .split(' ')
+                          .map(
+                            (word) =>
+                                word.isEmpty
+                                    ? word
+                                    : '${word[0].toUpperCase()}${word.substring(1)}',
+                          )
+                          .join(' ')
+                      : mealTypeDisplayLabel(value),
+                ),
+              ),
+            ),
+          ],
+          onChanged:
+              (value) => setState(() => _mealTypeFilter = value ?? 'all'),
+        ),
+        if (showViewToggle)
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _viewToggleButton(
+                  'Grid',
+                  true,
+                  () => onViewChanged(true),
+                  selectedGridView: isGridView,
+                ),
+                _viewToggleButton(
+                  'Table',
+                  false,
+                  () => onViewChanged(false),
+                  selectedGridView: isGridView,
+                ),
+              ],
+            ),
+          ),
+        if (showBulkPrice)
+          IconButton.filledTonal(
+            tooltip: 'Apply one price to all catering dishes',
+            onPressed: _showBulkCateringPriceDialog,
+            icon: const Icon(Icons.price_change_outlined),
+          ),
+        ElevatedButton.icon(
+          onPressed: onAddDish,
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Add Dish'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFFFC024),
+            foregroundColor: Colors.black,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        ),
+        if (_ingredientFilter != 'all' ||
+            _allergenFilter != 'all' ||
+            _mealTypeFilter != 'all' ||
+            _searchController.text.trim().isNotEmpty)
+          TextButton.icon(
+            onPressed:
+                () => setState(() {
+                  _ingredientFilter = 'all';
+                  _allergenFilter = 'all';
+                  _mealTypeFilter = 'all';
+                  _searchController.clear();
+                }),
+            icon: const Icon(Icons.filter_alt_off, size: 18),
+            label: const Text('Clear'),
+          ),
+      ],
+    );
+  }
+
   Widget _buildCateringTab() {
     final cateringDishes =
         MenuStore.instance.activeDishes
             .where((d) => d.category == 'catering')
             .where(_matchesSearch)
+            .where(_matchesMenuFilters)
             .toList();
 
     return Column(
       children: [
-        Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.black.withOpacity(0.08)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Search catering dishes...',
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey.shade100,
-                  ),
-                  onChanged: (_) => _debouncer.debounce(() => setState(() {})),
-                ),
-              ),
-              const SizedBox(width: 12),
-              // View toggle buttons
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _viewToggleButton(
-                      'Grid',
-                      true,
-                      () => setState(() => _isGridView = true),
-                    ),
-                    _viewToggleButton(
-                      'Table',
-                      false,
-                      () => setState(() => _isGridView = false),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              IconButton.filledTonal(
-                tooltip: 'Apply one price to all catering dishes',
-                onPressed: _showBulkCateringPriceDialog,
-                icon: const Icon(Icons.price_change_outlined),
-              ),
-              const SizedBox(width: 4),
-              ElevatedButton.icon(
-                onPressed: () => _openDishDialog(category: 'catering'),
-                icon: const Icon(Icons.add),
-                label: const Text('Add Dish'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFC024),
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ],
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: _buildMenuToolbar(
+            category: 'catering',
+            isGridView: _isGridView,
+            onViewChanged: (value) => setState(() => _isGridView = value),
+            onAddDish: () => _openDishDialog(category: 'catering'),
+            searchHint: 'Search catering dishes',
+            showBulkPrice: true,
           ),
         ),
         Expanded(
@@ -1750,85 +1968,20 @@ class _MenuState extends State<Menu> {
         MenuStore.instance.activeDishes
             .where((d) => d.category == 'restaurant')
             .where(_matchesSearch)
+            .where(_matchesMenuFilters)
             .toList();
 
     return Column(
       children: [
-        Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.black.withOpacity(0.08)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Search restaurant dishes...',
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey.shade100,
-                  ),
-                  onChanged: (_) => _debouncer.debounce(() => setState(() {})),
-                ),
-              ),
-              const SizedBox(width: 12),
-              // View toggle buttons
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _viewToggleButton(
-                      'Grid',
-                      true,
-                      () => setState(() => _isRestaurantGridView = true),
-                    ),
-                    _viewToggleButton(
-                      'Table',
-                      false,
-                      () => setState(() => _isRestaurantGridView = false),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: () => _openDishDialog(category: 'restaurant'),
-                icon: const Icon(Icons.add),
-                label: const Text('Add Dish'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFC024),
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ],
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: _buildMenuToolbar(
+            category: 'restaurant',
+            isGridView: _isRestaurantGridView,
+            onViewChanged:
+                (value) => setState(() => _isRestaurantGridView = value),
+            onAddDish: () => _openDishDialog(category: 'restaurant'),
+            searchHint: 'Search restaurant dishes',
           ),
         ),
         Expanded(
@@ -1931,78 +2084,15 @@ class _MenuState extends State<Menu> {
 
     return Column(
       children: [
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.black.withOpacity(0.08)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Search dish',
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey.shade100,
-                  ),
-                  onChanged: (_) => _debouncer.debounce(() => setState(() {})),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(25),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.filter_list, size: 18),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Filter',
-                      style: TextStyle(color: Colors.grey.shade700),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: () => _openDishDialog(category: 'catering'),
-                icon: const Icon(Icons.add),
-                label: const Text('ADD NEW DISH'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFC024),
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ],
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: _buildMenuToolbar(
+            category: 'catering',
+            isGridView: true,
+            onViewChanged: (_) {},
+            onAddDish: () => _openDishDialog(category: 'catering'),
+            searchHint: 'Search set menu dishes',
+            showViewToggle: false,
           ),
         ),
         // Three-column layout
@@ -2126,7 +2216,7 @@ class _MenuState extends State<Menu> {
                           child: SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              onPressed: _saveSetMenu,
+                              onPressed: _isSavingSetMenu ? null : _saveSetMenu,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF1DB954),
                                 foregroundColor: Colors.white,
@@ -2138,7 +2228,9 @@ class _MenuState extends State<Menu> {
                                 ),
                               ),
                               child: Text(
-                                _selectedSetMenuId == null
+                                _isSavingSetMenu
+                                    ? 'Saving...'
+                                    : _selectedSetMenuId == null
                                     ? 'Create Set Menu'
                                     : 'Update Set Menu',
                               ),
@@ -2532,10 +2624,10 @@ class _MenuState extends State<Menu> {
               children: [
                 // Tab buttons
                 Container(
-                  padding: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
                     color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
                     children: [
@@ -2547,7 +2639,7 @@ class _MenuState extends State<Menu> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 6),
                 // Content based on active tab
                 Expanded(
                   child:
@@ -2559,6 +2651,7 @@ class _MenuState extends State<Menu> {
                             MenuStore.instance.activeDishes
                                 .where((d) => d.category == 'catering')
                                 .where(_matchesSearch)
+                                .where(_matchesMenuFilters)
                                 .toList(),
                           ),
                 ),

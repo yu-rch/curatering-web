@@ -179,8 +179,7 @@ class WebsiteContentStore extends ChangeNotifier {
       final content = decoded['content'];
       if (content is Map<String, dynamic> && content.isNotEmpty) {
         _applyMap(content);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_prefsKey, jsonEncode(_toMap()));
+        await _writeLocalCacheBestEffort(_toMap());
       } else {
         await _loadFromLocalCache();
       }
@@ -210,10 +209,9 @@ class WebsiteContentStore extends ChangeNotifier {
   }
 
   Future<void> save() async {
-    final prefs = await SharedPreferences.getInstance();
     final map = _toMap();
 
-    await prefs.setString(_prefsKey, jsonEncode(map));
+    await _writeLocalCacheBestEffort(map);
 
     final result = await ApiClient.instance.putJson(
       '/api/website-content',
@@ -225,10 +223,21 @@ class WebsiteContentStore extends ChangeNotifier {
     final saved = result['content'];
     if (saved is Map<String, dynamic> && saved.isNotEmpty) {
       _applyMap(saved);
-      await prefs.setString(_prefsKey, jsonEncode(_toMap()));
+      await _writeLocalCacheBestEffort(_toMap());
     }
 
     notifyListeners();
+  }
+
+  Future<void> _writeLocalCacheBestEffort(Map<String, dynamic> map) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefsKey, jsonEncode(map));
+    } catch (error) {
+      debugPrint(
+        '[website-content] local cache skipped, likely browser quota: $error',
+      );
+    }
   }
 
   void touch() => notifyListeners();

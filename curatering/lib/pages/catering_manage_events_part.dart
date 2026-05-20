@@ -27,10 +27,22 @@ extension _ManageEventsTableExt on _ManageEventsState {
   }
 
   List<EventOrderDto> get _downpaymentOrders =>
-      _processingOrdersDto.where((o) => o.downPaymentStatus != 'paid').toList();
+      _processingOrdersDto
+          .where((o) => _isForDownpaymentStatus(o.status))
+          .toList();
 
   List<EventOrderDto> get _ongoingOrders =>
-      _processingOrdersDto.where((o) => o.downPaymentStatus == 'paid').toList();
+      _processingOrdersDto.where((o) => _isOngoingStatus(o.status)).toList();
+
+  bool _isForDownpaymentStatus(String status) {
+    final normalized = status.trim().toLowerCase();
+    return normalized == 'for_down_payment' || normalized == 'for_downpayment';
+  }
+
+  bool _isOngoingStatus(String status) {
+    final normalized = status.trim().toLowerCase();
+    return normalized == 'on_going' || normalized == 'ongoing';
+  }
 
   String _formatOrderSchedule(EventOrderDto dto) {
     if (dto.scheduleSlots.isEmpty) return '—';
@@ -784,10 +796,54 @@ extension _ManageEventsTableExt on _ManageEventsState {
     );
   }
 
+  String _formatInquiryDateTime(EventOrderDto dto) {
+    final value = dto.updatedAt;
+    if (value == null) return '—';
+    final local = value.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} ${two(local.hour)}:${two(local.minute)}';
+  }
+
+  bool _matchesInquiryDateFilter(EventOrderDto dto) {
+    if (_inquiryDateFilter.isEmpty) return true;
+    final value = dto.updatedAt?.toLocal();
+    if (value == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (_inquiryDateFilter == 'today') return !value.isBefore(today);
+    if (_inquiryDateFilter == '7d') {
+      return !value.isBefore(now.subtract(const Duration(days: 7)));
+    }
+    if (_inquiryDateFilter == '30d') {
+      return !value.isBefore(now.subtract(const Duration(days: 30)));
+    }
+    return true;
+  }
+
   Widget _buildOnlineInquiriesTableView(bool isNarrow) {
-    final query = _inquirySearchController.text.trim().toLowerCase();
+    final query = _eventSearchController.text.trim().toLowerCase();
+    final serviceTypes =
+        {for (final o in _onlineInquiryOrders) _orderTypeColumnLabel(o).trim()}
+            .where((v) => v.isNotEmpty)
+            .toList()
+          ..sort();
+    final eventTypes =
+        {
+            for (final o in _onlineInquiryOrders)
+              if (o.eventType.trim().isNotEmpty) o.eventType.trim(),
+          }.toList()
+          ..sort();
     final filtered =
         _onlineInquiryOrders.where((o) {
+          if (_inquiryServiceTypeFilter.isNotEmpty &&
+              _orderTypeColumnLabel(o) != _inquiryServiceTypeFilter) {
+            return false;
+          }
+          if (_inquiryEventTypeFilter.isNotEmpty &&
+              o.eventType != _inquiryEventTypeFilter) {
+            return false;
+          }
+          if (!_matchesInquiryDateFilter(o)) return false;
           if (query.isEmpty) return true;
           return [
             o.customerName,
@@ -800,64 +856,144 @@ extension _ManageEventsTableExt on _ManageEventsState {
           ].any((v) => v.toLowerCase().contains(query));
         }).toList();
 
-    return SingleChildScrollView(
-      child: Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Text(
-                    'Online inquiries',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    tooltip: 'Refresh',
-                    onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
-                    icon:
-                        _ordersLoading
-                            ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                            : const Icon(Icons.refresh),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _inquirySearchController,
-                decoration: InputDecoration(
-                  hintText: 'Search inquiries',
-                  prefixIcon: const Icon(Icons.search),
-                  filled: true,
-                  fillColor: Colors.grey.shade100,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Online inquiries',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
+                  icon:
+                      _ordersLoading
+                          ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                          : const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 10,
+              children: [
+                SizedBox(
+                  width: 220,
+                  child: DropdownButtonFormField<String>(
+                    value: _inquiryServiceTypeFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Service type',
+                      isDense: true,
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('All service types'),
+                      ),
+                      ...serviceTypes.map(
+                        (value) =>
+                            DropdownMenuItem(value: value, child: Text(value)),
+                      ),
+                    ],
+                    onChanged:
+                        (value) => _mutateTableState(
+                          () => _inquiryServiceTypeFilter = value ?? '',
+                        ),
                   ),
                 ),
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              if (filtered.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  child: Center(
-                    child: Text(
-                      'No online inquiries to show yet.',
-                      style: TextStyle(color: Colors.grey.shade600),
+                SizedBox(
+                  width: 220,
+                  child: DropdownButtonFormField<String>(
+                    value: _inquiryEventTypeFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Event type',
+                      isDense: true,
                     ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('All event types'),
+                      ),
+                      ...eventTypes.map(
+                        (value) =>
+                            DropdownMenuItem(value: value, child: Text(value)),
+                      ),
+                    ],
+                    onChanged:
+                        (value) => _mutateTableState(
+                          () => _inquiryEventTypeFilter = value ?? '',
+                        ),
                   ),
-                )
-              else
-                PagedDataTable(
+                ),
+                SizedBox(
+                  width: 220,
+                  child: DropdownButtonFormField<String>(
+                    value: _inquiryDateFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Inquiry datetime',
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: '', child: Text('All dates')),
+                      DropdownMenuItem(value: 'today', child: Text('Today')),
+                      DropdownMenuItem(value: '7d', child: Text('Last 7 days')),
+                      DropdownMenuItem(
+                        value: '30d',
+                        child: Text('Last 30 days'),
+                      ),
+                    ],
+                    onChanged:
+                        (value) => _mutateTableState(
+                          () => _inquiryDateFilter = value ?? '',
+                        ),
+                  ),
+                ),
+                if (_inquiryServiceTypeFilter.isNotEmpty ||
+                    _inquiryEventTypeFilter.isNotEmpty ||
+                    _inquiryDateFilter.isNotEmpty ||
+                    query.isNotEmpty)
+                  TextButton.icon(
+                    onPressed:
+                        () => _mutateTableState(() {
+                          _inquiryServiceTypeFilter = '';
+                          _inquiryEventTypeFilter = '';
+                          _inquiryDateFilter = '';
+                          _eventSearchController.clear();
+                        }),
+                    icon: const Icon(Icons.filter_alt_off),
+                    label: const Text('Clear filters'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (filtered.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 32),
+                child: Center(
+                  child: Text(
+                    'No online inquiries to show yet.',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: PagedDataTable(
                   title: 'Online Inquiries',
+                  fullWidth: true,
+                  maxTableHeight: MediaQuery.sizeOf(context).height,
                   headingRowColor: WidgetStateProperty.all(
                     Colors.grey.shade100,
                   ),
@@ -866,6 +1002,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                     DataColumn(label: Text('Customer')),
                     DataColumn(label: Text('Contact')),
                     DataColumn(label: Text('Event type')),
+                    DataColumn(label: Text('Inquiry datetime')),
                     DataColumn(label: Text('Actions')),
                   ],
                   rows:
@@ -878,6 +1015,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                             DataCell(
                               Text(dto.eventType.isEmpty ? '—' : dto.eventType),
                             ),
+                            DataCell(Text(_formatInquiryDateTime(dto))),
                             DataCell(
                               Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -947,8 +1085,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
                         );
                       }).toList(),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );

@@ -16,6 +16,7 @@ export const CATERING_ORDER_STATUSES = CATERING_STATUS_VALUES;
 const LEGACY_CATERING_STATUS_MAP = {
   new_event: 'online_inquiries',
   online_inquiry: 'online_inquiries',
+  for_downpayment: 'for_down_payment',
   for_processing: 'on_going',
   for_post_analysis: 'on_going',
 };
@@ -895,6 +896,7 @@ function staffEventOrderSelectList(eventCols, themeColSql) {
 const STAFF_EVENTS_STATUS_WHERE = `
   WHERE
     status = $1
+    OR ($1 = 'for_down_payment' AND status = 'for_downpayment')
     OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')`;
 
 /** Manager/supervisor list: catering_orders UNION event_orders by status. */

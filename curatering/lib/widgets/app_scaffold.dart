@@ -19,6 +19,7 @@ class AppScaffold extends StatelessWidget {
   final Widget child;
   final TextEditingController? searchController;
   final bool showSearch;
+  final String searchHint;
   final ValueChanged<String>? onSearchChanged;
 
   const AppScaffold({
@@ -26,6 +27,7 @@ class AppScaffold extends StatelessWidget {
     required this.child,
     this.searchController,
     this.showSearch = false,
+    this.searchHint = 'Search staff pages',
     this.onSearchChanged,
   });
 
@@ -64,6 +66,11 @@ class AppScaffold extends StatelessWidget {
       icon: Icons.bar_chart,
       label: 'Reports',
       route: '/reports',
+    ),
+    _SidebarItemData(
+      icon: Icons.help_outline,
+      label: 'Help Requests',
+      route: '/help-requests',
     ),
     _SidebarItemData(
       icon: Icons.swap_horiz,
@@ -205,7 +212,10 @@ class AppScaffold extends StatelessWidget {
       ];
     }
     if (role == Role.superAdmin) {
-      return [..._superAdminSidebarItems, ..._commonSidebarItems];
+      return [
+        ..._superAdminSidebarItems,
+        ..._commonSidebarItems.where((item) => item.route != '/help-requests'),
+      ];
     }
     return _commonSidebarItems
         .where((item) => pageRouteAllowed(item.route, perms))
@@ -418,7 +428,7 @@ class AppScaffold extends StatelessWidget {
                 if (showSearch && searchController != null) ...[
                   AntdSearchInput(
                     controller: searchController!,
-                    hintText: 'Search staff pages',
+                    hintText: searchHint,
                     width: 320,
                     onChanged: onSearchChanged,
                     onClear: () {

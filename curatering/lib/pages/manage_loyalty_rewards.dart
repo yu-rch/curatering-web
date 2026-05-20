@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../widgets/app_scaffold.dart';
+import '../widgets/antd_staff.dart';
+import '../widgets/paginated_data_table.dart';
 import '../services/loyalty_rewards_store.dart';
 import '../utils/responsive_layout.dart';
 import '../auth/auth_session.dart';
@@ -33,6 +35,7 @@ class CustomerTransaction {
   String orderNo;
   String eventTitle;
   String dateTime;
+  DateTime? occurredAt;
   double totalCost;
   int loyaltyPointsObtained;
   int totalLoyaltyPoints;
@@ -43,6 +46,7 @@ class CustomerTransaction {
     required this.orderNo,
     required this.eventTitle,
     required this.dateTime,
+    this.occurredAt,
     required this.totalCost,
     required this.loyaltyPointsObtained,
     required this.totalLoyaltyPoints,
@@ -63,6 +67,11 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
   String? _selectedCustomerId;
   String _pointsTab = 'all'; // 'all', 'restaurant', 'catering'
   String _customerSearchQuery = '';
+  final TextEditingController _orderSearchController = TextEditingController();
+  String _orderSearchQuery = '';
+  String _orderDateFilter = 'all';
+  double? _minCostFilter;
+  double? _maxCostFilter;
 
   List<LoyaltyCustomer> _customers = [];
   List<CustomerTransaction> _orders = [];
@@ -97,6 +106,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
 
   @override
   void dispose() {
+    _orderSearchController.dispose();
     LoyaltyRewardsStore.instance.removeListener(_onStoreChanged);
     super.dispose();
   }
@@ -126,9 +136,6 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
         for (final customerData in customersData) {
           final customerId = customerData['id'] as String?;
           if (customerId == null) continue;
-
-          final loyaltyPoints =
-              (customerData['loyalty_points'] as num?)?.toInt() ?? 0;
 
           final restaurantPoints =
               (customerData['restaurant_loyalty_points'] as num?)?.toInt() ?? 0;
@@ -166,6 +173,12 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
   }
 
   String _determineOrderType(Map<String, dynamic> order) {
+    final orderType =
+        (order['order_type'] ?? order['orderType'] ?? '')
+            .toString()
+            .toLowerCase();
+    if (orderType.contains('restaurant')) return 'restaurant';
+    if (orderType.contains('catering')) return 'catering';
     // Check if order has catering-specific fields
     if (order['event_title'] != null || order['event_date'] != null) {
       return 'catering';
@@ -192,21 +205,41 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
         final transactions = <CustomerTransaction>[];
 
         for (final order in ordersData) {
-          if (order['status'] != 'completed') continue;
+          final status =
+              (order['status'] ?? order['order_status'] ?? '')
+                  .toString()
+                  .toLowerCase();
+          if (status != 'completed' && status != 'delivered') continue;
 
-          final totalCost = (order['total_amount'] as num?)?.toDouble() ?? 0.0;
-          final orderType = _determineOrderType(order);
-          final pointsEarned = LoyaltyRewardsStore.instance.getPointsForOrder(
-            totalCost,
-            orderType: orderType,
+          final totalCost = _toDouble(
+            order['total_amount'] ?? order['total_cost'],
           );
+          final orderType = _determineOrderType(order);
+          final storedPoints =
+              (order['loyalty_points_obtained'] as num?)?.toInt() ?? 0;
+          final pointsEarned =
+              storedPoints > 0
+                  ? storedPoints
+                  : LoyaltyRewardsStore.instance.getPointsForOrder(
+                    totalCost,
+                    orderType: orderType,
+                  );
+          final createdAt =
+              order['created_at'] ?? order['createdAt'] ?? order['dateTime'];
+          final occurredAt = _parseDate(createdAt?.toString());
 
           transactions.add(
             CustomerTransaction(
               orderNo:
-                  order['order_no'] as String? ?? order['id'] as String? ?? '',
+                  (order['order_no'] ??
+                          order['order_id'] ??
+                          order['catering_id'] ??
+                          order['id'] ??
+                          '')
+                      .toString(),
               eventTitle: order['event_title'] as String? ?? 'Order',
-              dateTime: _formatDate(order['created_at'] as String?),
+              dateTime: _formatDateTime(occurredAt),
+              occurredAt: occurredAt,
               totalCost: totalCost,
               loyaltyPointsObtained: pointsEarned,
               totalLoyaltyPoints: pointsEarned, // Simplified for now
@@ -234,14 +267,67 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
     }
   }
 
-  String _formatDate(String? dateStr) {
-    if (dateStr == null) return '';
+  DateTime? _parseDate(String? dateStr) {
+    if (dateStr == null || dateStr.trim().isEmpty) return null;
     try {
-      final date = DateTime.parse(dateStr);
-      return '${date.day}/${date.month}/${date.year}';
-    } catch (e) {
-      return '';
+      return DateTime.parse(dateStr).toLocal();
+    } catch (_) {
+      return null;
     }
+  }
+
+  String _formatDateTime(DateTime? date) {
+    if (date == null) return '—';
+    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final minute = date.minute.toString().padLeft(2, '0');
+    final suffix = date.hour >= 12 ? 'PM' : 'AM';
+    return '${date.month}/${date.day}/${date.year} $hour:$minute $suffix';
+  }
+
+  double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+  }
+
+  bool _matchesOrderDateFilter(CustomerTransaction order) {
+    if (_orderDateFilter == 'all') return true;
+    final date = order.occurredAt;
+    if (date == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(date.year, date.month, date.day);
+    return switch (_orderDateFilter) {
+      'today' => day == today,
+      '7d' => !day.isBefore(today.subtract(const Duration(days: 6))),
+      '30d' => !day.isBefore(today.subtract(const Duration(days: 29))),
+      'year' => date.year == now.year,
+      _ => true,
+    };
+  }
+
+  List<CustomerTransaction> get _filteredCustomerOrders {
+    Iterable<CustomerTransaction> orders = _orders;
+    if (_pointsTab == 'restaurant') {
+      orders = orders.where((o) => o.orderType == 'restaurant');
+    } else if (_pointsTab == 'catering') {
+      orders = orders.where((o) => o.orderType == 'catering');
+    }
+    orders = orders.where(_matchesOrderDateFilter);
+    if (_minCostFilter != null) {
+      orders = orders.where((o) => o.totalCost >= _minCostFilter!);
+    }
+    if (_maxCostFilter != null) {
+      orders = orders.where((o) => o.totalCost <= _maxCostFilter!);
+    }
+    if (_orderSearchQuery.isNotEmpty) {
+      orders = orders.where((order) {
+        final haystack =
+            '${order.orderNo} ${order.eventTitle} ${order.dateTime} ${order.orderType} ${order.totalCost} ${order.loyaltyPointsObtained}'
+                .toLowerCase();
+        return haystack.contains(_orderSearchQuery);
+      });
+    }
+    return orders.toList();
   }
 
   @override
@@ -502,6 +588,8 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
             ],
           ),
           const SizedBox(height: 16),
+          _buildCustomerOrdersToolbar(),
+          const SizedBox(height: 16),
           Expanded(
             child:
                 _isLoadingOrders
@@ -549,6 +637,110 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
         ),
         child: Text(label),
       ),
+    );
+  }
+
+  Widget _buildCustomerOrdersToolbar() {
+    final maxCost =
+        _orders.isEmpty
+            ? 1000.0
+            : _orders
+                .map((o) => o.totalCost)
+                .fold<double>(0, (max, value) => value > max ? value : max);
+    final sliderMax =
+        (((maxCost <= 0 ? 1000 : maxCost) / 500).ceil() * 500).toDouble();
+    final range = RangeValues(
+      (_minCostFilter ?? 0).clamp(0, sliderMax).toDouble(),
+      (_maxCostFilter ?? sliderMax).clamp(0, sliderMax).toDouble(),
+    );
+
+    return AntdToolbar(
+      children: [
+        AntdSearchInput(
+          controller: _orderSearchController,
+          hintText: 'Search customer orders',
+          width: 260,
+          onChanged:
+              (value) => setState(
+                () => _orderSearchQuery = value.trim().toLowerCase(),
+              ),
+          onClear: () {
+            _orderSearchController.clear();
+            setState(() => _orderSearchQuery = '');
+          },
+        ),
+        AntdSelect<String>(
+          label: 'Datetime',
+          width: 180,
+          value: _orderDateFilter,
+          items: const [
+            DropdownMenuItem(value: 'all', child: Text('All dates')),
+            DropdownMenuItem(value: 'today', child: Text('Today')),
+            DropdownMenuItem(value: '7d', child: Text('Last 7 days')),
+            DropdownMenuItem(value: '30d', child: Text('Last 30 days')),
+            DropdownMenuItem(value: 'year', child: Text('This year')),
+          ],
+          onChanged:
+              (value) => setState(() => _orderDateFilter = value ?? 'all'),
+        ),
+        SizedBox(
+          width: 320,
+          child: InputDecorator(
+            decoration: const InputDecoration(
+              labelText: 'Cost range',
+              isDense: true,
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '₱${range.start.toStringAsFixed(2)} - ₱${range.end.toStringAsFixed(2)}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                RangeSlider(
+                  values: range,
+                  min: 0,
+                  max: sliderMax,
+                  divisions: (sliderMax / 500).round().clamp(1, 200),
+                  labels: RangeLabels(
+                    '₱${range.start.toStringAsFixed(0)}',
+                    '₱${range.end.toStringAsFixed(0)}',
+                  ),
+                  onChanged:
+                      (next) => setState(() {
+                        _minCostFilter = next.start <= 0 ? null : next.start;
+                        _maxCostFilter =
+                            next.end >= sliderMax ? null : next.end;
+                      }),
+                ),
+              ],
+            ),
+          ),
+        ),
+        TextButton.icon(
+          onPressed:
+              (_orderSearchQuery.isEmpty &&
+                      _orderDateFilter == 'all' &&
+                      _minCostFilter == null &&
+                      _maxCostFilter == null)
+                  ? null
+                  : () {
+                    setState(() {
+                      _orderSearchQuery = '';
+                      _orderDateFilter = 'all';
+                      _minCostFilter = null;
+                      _maxCostFilter = null;
+                      _orderSearchController.clear();
+                    });
+                  },
+          icon: const Icon(Icons.filter_alt_off, size: 18),
+          label: const Text('Clear filters'),
+        ),
+      ],
     );
   }
 
@@ -688,9 +880,8 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
   }
 
   Widget _buildRewardsTable({required String orderType}) {
-    final conditions = _rewardsConditions
-        .where((c) => c.orderType == orderType)
-        .toList();
+    final conditions =
+        _rewardsConditions.where((c) => c.orderType == orderType).toList();
     if (conditions.isEmpty) {
       return Card(
         child: Padding(
@@ -806,115 +997,33 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
   }
 
   Widget _buildCustomerTransactionsTable() {
-    // Filter orders based on selected tab
-    List<CustomerTransaction> filteredOrders;
-    if (_pointsTab == 'restaurant') {
-      filteredOrders =
-          _orders.where((o) => o.orderType == 'restaurant').toList();
-    } else if (_pointsTab == 'catering') {
-      filteredOrders = _orders.where((o) => o.orderType == 'catering').toList();
-    } else {
-      filteredOrders = _orders;
-    }
-
-    return Card(
-      elevation: 2,
-      child: Column(
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
-            ),
-            child: const Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    'Order No.',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    'Event Title',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    'Date & Time',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Expanded(
-                  flex: 1,
-                  child: Text(
-                    'Type',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Expanded(
-                  flex: 1,
-                  child: Text(
-                    'Total Cost',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Expanded(
-                  flex: 1,
-                  child: Text(
-                    'Points\nEarned',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
+    final filteredOrders = _filteredCustomerOrders;
+    return PagedDataTable(
+      title: 'Customer Loyalty Orders',
+      enableSearch: false,
+      fullWidth: true,
+      maxTableHeight: MediaQuery.sizeOf(context).height,
+      columns: const [
+        DataColumn(label: Text('Order No.')),
+        DataColumn(label: Text('Event Title')),
+        DataColumn(label: Text('Date & Time')),
+        DataColumn(label: Text('Type')),
+        DataColumn(label: Text('Total Cost')),
+        DataColumn(label: Text('Points Earned')),
+      ],
+      rows:
+          filteredOrders.map((order) {
+            return DataRow(
+              cells: [
+                DataCell(Text(order.orderNo)),
+                DataCell(Text(order.eventTitle)),
+                DataCell(Text(order.dateTime)),
+                DataCell(Text(order.orderType.toUpperCase())),
+                DataCell(Text('₱${order.totalCost.toStringAsFixed(2)}')),
+                DataCell(Text('+${order.loyaltyPointsObtained} pts')),
               ],
-            ),
-          ),
-          // Rows
-          ...filteredOrders.map((order) {
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(flex: 2, child: Text(order.orderNo)),
-                  Expanded(flex: 2, child: Text(order.eventTitle)),
-                  Expanded(flex: 2, child: Text(order.dateTime)),
-                  Expanded(
-                    flex: 1,
-                    child: Text(
-                      order.orderType.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color:
-                            order.orderType == 'restaurant'
-                                ? Colors.blue
-                                : Colors.orange,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 1,
-                    child: Text('₱${order.totalCost.toStringAsFixed(2)}'),
-                  ),
-                  Expanded(
-                    flex: 1,
-                    child: Text('+${order.loyaltyPointsObtained} pts'),
-                  ),
-                ],
-              ),
             );
           }).toList(),
-        ],
-      ),
     );
   }
 
@@ -2188,7 +2297,9 @@ class _LoyaltyRewardCalculatorCardState
 
     final rule = _pointsRule();
     final ptsPerOrder =
-        rule != null && avgOrder >= rule.minimumCost ? rule.pointsApplication : 0;
+        rule != null && avgOrder >= rule.minimumCost
+            ? rule.pointsApplication
+            : 0;
     final monthlyPoints = ptsPerOrder * ordersPerMonth;
     final ordersToRedeem =
         ptsPerOrder > 0 ? (pointsToRedeem / ptsPerOrder).ceil() : 0;
@@ -2196,16 +2307,18 @@ class _LoyaltyRewardCalculatorCardState
     final marginAtRisk = revenueToRedeem > 0 ? rewardCost / revenueToRedeem : 0;
     final reward = _rewardRule();
 
-    final riskColor = marginAtRisk > 0.15
-        ? Colors.red.shade700
-        : marginAtRisk > 0.08
-        ? Colors.orange.shade800
-        : Colors.green.shade700;
-    final riskLabel = marginAtRisk > 0.15
-        ? 'High risk — reward may be too easy to earn'
-        : marginAtRisk > 0.08
-        ? 'Moderate — review reward cost or points required'
-        : 'Looks sustainable at these assumptions';
+    final riskColor =
+        marginAtRisk > 0.15
+            ? Colors.red.shade700
+            : marginAtRisk > 0.08
+            ? Colors.orange.shade800
+            : Colors.green.shade700;
+    final riskLabel =
+        marginAtRisk > 0.15
+            ? 'High risk — reward may be too easy to earn'
+            : marginAtRisk > 0.08
+            ? 'Moderate — review reward cost or points required'
+            : 'Looks sustainable at these assumptions';
 
     return Card(
       elevation: 2,

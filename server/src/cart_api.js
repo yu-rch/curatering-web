@@ -1,5 +1,31 @@
-import { pool } from "./db.js";
+import { pool, ensureCustomerTrayDraftsSchema } from "./db.js";
 import { requireCustomerId } from "./customer_auth.js";
+
+function cartItemsFromBody(body) {
+  const raw = body?.cart ?? body?.items ?? body?.tray_items ?? [];
+  return Array.isArray(raw) ? raw : [];
+}
+
+function parseTrayItems(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+async function customerEmail(customerId) {
+  const result = await pool.query(
+    `SELECT email FROM customer_accounts WHERE id::text = $1 LIMIT 1`,
+    [String(customerId)],
+  );
+  return result.rows[0]?.email ?? null;
+}
 
 class CartAPI {
   static async getCart(req, res) {
@@ -7,31 +33,21 @@ class CartAPI {
       const customerId = requireCustomerId(req, res);
       if (!customerId) return;
 
+      await ensureCustomerTrayDraftsSchema();
       const result = await pool.query(
-        `
-        SELECT 
-          cs.device_id,
-          ci.dish_id,
-          ci.dish_name,
-          ci.dish_price,
-          ci.dish_category,
-          ci.dish_type,
-          ci.quantity,
-          ci.selected_sauce,
-          ci.created_at,
-          ci.updated_at
-        FROM cart_sessions cs
-        JOIN cart_items ci ON cs.id = ci.session_id
-        WHERE cs.customer_token = $1
-        ORDER BY ci.created_at DESC
-      `,
+        `SELECT tray_items, user_email, updated_at
+         FROM customer_tray_drafts
+         WHERE customer_id = $1
+         LIMIT 1`,
         [customerId],
       );
 
+      const row = result.rows[0];
       const cart = {
-        items: result.rows,
-        device_id: result.rows[0]?.device_id,
-        last_sync: result.rows[0]?.updated_at,
+        items: parseTrayItems(row?.tray_items),
+        tray_items: parseTrayItems(row?.tray_items),
+        user_email: row?.user_email ?? null,
+        last_sync: row?.updated_at ?? null,
       };
 
       res.json({ success: true, cart });
@@ -47,95 +63,31 @@ class CartAPI {
       const customerId = requireCustomerId(req, res);
       if (!customerId) return;
 
-      const { cart, timestamp } = req.body || {};
-      const device_id = req.body?.device_id ?? req.body?.deviceId;
-      if (!device_id || typeof device_id !== "string") {
-        return res.status(400).json({ error: "device_id is required" });
-      }
+      const { timestamp } = req.body || {};
+      const cart = cartItemsFromBody(req.body);
+      const email = await customerEmail(customerId);
 
       client = await pool.connect();
       await client.query("BEGIN");
-
-      let sessionResult = await client.query(
-        `
-        SELECT id FROM cart_sessions 
-        WHERE customer_token = $1 AND device_id = $2
-        ORDER BY updated_at DESC 
-        LIMIT 1
-      `,
-        [customerId, device_id],
-      );
-
-      let sessionId;
-      if (sessionResult.rows.length === 0) {
-        const newSession = await client.query(
-          `
-          INSERT INTO cart_sessions (customer_token, device_id)
-          VALUES ($1, $2)
-          RETURNING id
-        `,
-          [customerId, device_id],
-        );
-
-        sessionId = newSession.rows[0].id;
-      } else {
-        sessionId = sessionResult.rows[0].id;
-      }
-
+      await ensureCustomerTrayDraftsSchema();
       await client.query(
-        `
-        DELETE FROM cart_items 
-        WHERE session_id = $1
-      `,
-        [sessionId],
-      );
-
-      if (Array.isArray(cart) && cart.length > 0) {
-        const cols = 8;
-        const placeholders = cart
-          .map((_, rowIdx) => {
-            const o = rowIdx * cols;
-            return `($${o + 1}, $${o + 2}, $${o + 3}, $${o + 4}, $${o + 5}, $${o + 6}, $${o + 7}, $${o + 8}, NOW())`;
-          })
-          .join(", ");
-
-        const values = [];
-        for (const item of cart) {
-          values.push(
-            sessionId,
-            item.dish_id ?? item.dishId,
-            item.dish_name ?? item.dishName,
-            String(item.dish_price ?? item.dishPrice ?? "0"),
-            item.dish_category ?? item.dishCategory ?? "",
-            item.dish_type ?? item.dishType ?? "",
-            Number(item.quantity) || 1,
-            item.selected_sauce ?? item.selectedSauce ?? null,
-          );
-        }
-
-        await client.query(
-          `
-          INSERT INTO cart_items (session_id, dish_id, dish_name, dish_price, dish_category, dish_type, quantity, selected_sauce, updated_at)
-          VALUES ${placeholders}
-        `,
-          values,
-        );
-      }
-
-      await client.query(
-        `
-        UPDATE cart_sessions 
-        SET updated_at = NOW()
-        WHERE id = $1
-      `,
-        [sessionId],
+        `INSERT INTO customer_tray_drafts (customer_id, user_email, tray_items, updated_at)
+         VALUES ($1, $2, $3::jsonb, now())
+         ON CONFLICT (customer_id) DO UPDATE SET
+           user_email = EXCLUDED.user_email,
+           tray_items = EXCLUDED.tray_items,
+           updated_at = now()`,
+        [customerId, email, JSON.stringify(cart)],
       );
 
       await client.query("COMMIT");
 
       res.json({
         success: true,
-        session_id: sessionId,
+        customer_id: customerId,
+        user_email: email,
+        items: cart,
+        tray_items: cart,
         timestamp: timestamp ?? null,
       });
     } catch (error) {
@@ -154,35 +106,14 @@ class CartAPI {
       const customerId = requireCustomerId(req, res);
       if (!customerId) return;
 
-      const sessionResult = await pool.query(
-        `
-        SELECT id FROM cart_sessions 
-        WHERE customer_token = $1
-        ORDER BY updated_at DESC
-      `,
+      await ensureCustomerTrayDraftsSchema();
+      await pool.query(
+        `UPDATE customer_tray_drafts
+         SET tray_items = '[]'::jsonb,
+             updated_at = now()
+         WHERE customer_id = $1`,
         [customerId],
       );
-
-      if (sessionResult.rows.length > 0) {
-        const sessionIds = sessionResult.rows.map((r) => r.id);
-
-        await pool.query(
-          `
-          DELETE FROM cart_items 
-          WHERE session_id = ANY($1::uuid[])
-        `,
-          [sessionIds],
-        );
-
-        await pool.query(
-          `
-          UPDATE cart_sessions 
-          SET updated_at = NOW()
-          WHERE id = ANY($1::uuid[])
-        `,
-          [sessionIds],
-        );
-      }
 
       res.json({ success: true });
     } catch (error) {

@@ -392,6 +392,9 @@ class _ManageEventsState extends State<ManageEvents>
   String? _eventType;
   EventFormalityLevel? _formalityLevel;
   String? _orderType; // 'catering' or 'catering_event'
+  String _inquiryServiceTypeFilter = '';
+  String _inquiryEventTypeFilter = '';
+  String _inquiryDateFilter = '';
   final List<EventScheduleSlot> _eventScheduleSlots = [];
 
   bool _ordersLoading = false;
@@ -580,6 +583,9 @@ class _ManageEventsState extends State<ManageEvents>
       _selectedStatus = EventStatus.newEvent;
       _eventSearchController.clear();
       _inquirySearchController.clear();
+      _inquiryServiceTypeFilter = '';
+      _inquiryEventTypeFilter = '';
+      _inquiryDateFilter = '';
     });
   }
 
@@ -711,6 +717,16 @@ class _ManageEventsState extends State<ManageEvents>
             compact: true,
           ),
           EventsApi.instance.listOrders(
+            status: 'for_down_payment',
+            roleType: 'supervisor',
+            compact: true,
+          ),
+          EventsApi.instance.listOrders(
+            status: 'on_going',
+            roleType: 'supervisor',
+            compact: true,
+          ),
+          EventsApi.instance.listOrders(
             status: 'for_post_analysis',
             roleType: 'supervisor',
             compact: true,
@@ -721,10 +737,15 @@ class _ManageEventsState extends State<ManageEvents>
             compact: true,
           ),
         ]);
-        _processingOrdersDto = [...lists[0], ...lists[1]];
+        _processingOrdersDto = [
+          ...lists[0],
+          ...lists[1],
+          ...lists[2],
+          ...lists[3],
+        ];
         _onlineInquiryOrders = const <EventOrderDto>[];
-        _postAnalysisOrdersDto = lists[2];
-        _completedOrdersDto = lists[3];
+        _postAnalysisOrdersDto = lists[4];
+        _completedOrdersDto = lists[5];
       } else if (role == Role.manager || role == Role.superAdmin) {
         final lists = await Future.wait<List<EventOrderDto>>([
           EventsApi.instance.listOrders(
@@ -743,6 +764,16 @@ class _ManageEventsState extends State<ManageEvents>
             compact: true,
           ),
           EventsApi.instance.listOrders(
+            status: 'for_down_payment',
+            roleType: 'manager',
+            compact: true,
+          ),
+          EventsApi.instance.listOrders(
+            status: 'on_going',
+            roleType: 'manager',
+            compact: true,
+          ),
+          EventsApi.instance.listOrders(
             status: 'for_post_analysis',
             roleType: 'manager',
             compact: true,
@@ -754,9 +785,14 @@ class _ManageEventsState extends State<ManageEvents>
           ),
         ]);
         _onlineInquiryOrders = lists[0];
-        _processingOrdersDto = [...lists[1], ...lists[2]];
-        _postAnalysisOrdersDto = lists[3];
-        _completedOrdersDto = lists[4];
+        _processingOrdersDto = [
+          ...lists[1],
+          ...lists[2],
+          ...lists[3],
+          ...lists[4],
+        ];
+        _postAnalysisOrdersDto = lists[5];
+        _completedOrdersDto = lists[6];
       } else {
         // print('DEBUG: Unknown role, returning empty lists');
         _onlineInquiryOrders = const <EventOrderDto>[];
@@ -4546,7 +4582,10 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Future<void> _showThemeDesignDialog() async {
-    final selectedOrder = _selectedProcessingOrderDto;
+    final selectedOrder =
+        _selectedStatus == EventStatus.newEvent
+            ? null
+            : _selectedProcessingOrderDto;
     final isForProcessingReadOnly = selectedOrder?.status == 'for_processing';
     if (isForProcessingReadOnly && selectedOrder != null) {
       final previewSources =
@@ -6903,6 +6942,9 @@ class _ManageEventsState extends State<ManageEvents>
   Widget build(BuildContext context) {
     return AppScaffold(
       showSearch: true,
+      searchController: _eventSearchController,
+      searchHint: 'Search manage events',
+      onSearchChanged: (_) => setState(() {}),
       child: Container(
         color: const Color(0xFFF7F8FA),
         padding: const EdgeInsets.all(20),

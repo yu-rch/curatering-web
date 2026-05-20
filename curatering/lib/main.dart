@@ -158,9 +158,13 @@ Route<dynamic>? _buildRouteForPath(String path) {
         ),
     '/help-requests':
         (context) => _staffPage(
-          const RoleGuard(
+          RoleGuard(
             requiredRole: Role.superAdmin,
-            child: HelpRequestsPage(),
+            allowedRoles: {Role.manager, Role.supervisor},
+            child: PagePermissionGuard(
+              route: PagePermissionRoutes.helpRequests,
+              child: const HelpRequestsPage(),
+            ),
           ),
           '/help-requests',
         ),

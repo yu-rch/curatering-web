@@ -53,15 +53,9 @@ class Transactions extends StatefulWidget {
 
 class _TransactionsState extends State<Transactions> {
   final TextEditingController _searchController = TextEditingController();
-  final TextEditingController _orderNoController = TextEditingController();
-  final TextEditingController _customerIdController = TextEditingController();
-  final TextEditingController _minPriceController = TextEditingController();
-  final TextEditingController _maxPriceController = TextEditingController();
   String _searchQuery = '';
   String _serviceTypeFilter = '';
   String _eventTypeFilter = '';
-  String _orderNoFilter = '';
-  String _customerIdFilter = '';
   double? _minPriceFilter;
   double? _maxPriceFilter;
   int? _completionYearFilter;
@@ -72,8 +66,6 @@ class _TransactionsState extends State<Transactions> {
   String? _errorMessage;
 
   List<_HistoryRow> _allRows = const <_HistoryRow>[];
-  List<DateTime> _availableDates = const <DateTime>[];
-
   @override
   void initState() {
     super.initState();
@@ -83,10 +75,6 @@ class _TransactionsState extends State<Transactions> {
   @override
   void dispose() {
     _searchController.dispose();
-    _orderNoController.dispose();
-    _customerIdController.dispose();
-    _minPriceController.dispose();
-    _maxPriceController.dispose();
     super.dispose();
   }
 
@@ -196,17 +184,8 @@ class _TransactionsState extends State<Transactions> {
         return bd.compareTo(ad);
       });
 
-      final dates = <DateTime>{};
-      for (final r in rows) {
-        final d = r.fulfilmentDate;
-        if (d == null) continue;
-        dates.add(DateTime(d.year, d.month, d.day));
-      }
-      final sortedDates = dates.toList()..sort((a, b) => b.compareTo(a));
-
       setState(() {
         _allRows = rows;
-        _availableDates = sortedDates;
       });
     } catch (e) {
       setState(() => _errorMessage = 'Failed to load orders: $e');
@@ -251,56 +230,6 @@ class _TransactionsState extends State<Transactions> {
     if (amount is num) return amount.toDouble();
     if (amount is String) return double.tryParse(amount) ?? 0.0;
     return 0.0;
-  }
-
-  Widget _dateTile(DateTime date) {
-    final isSelected =
-        _completionYearFilter == date.year &&
-        _completionMonthFilter == date.month &&
-        _completionDayFilter == date.day;
-    return GestureDetector(
-      onTap:
-          () => setState(() {
-            _completionYearFilter = date.year;
-            _completionMonthFilter = date.month;
-            _completionDayFilter = date.day;
-          }),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.orange.shade400 : Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.grey.shade300),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${date.month.toString().padLeft(2, '0')} ${date.day}',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isSelected ? Colors.white : Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              [
-                'Sunday',
-                'Monday',
-                'Tuesday',
-                'Wednesday',
-                'Thursday',
-                'Friday',
-                'Saturday',
-              ][date.weekday % 7],
-              style: TextStyle(
-                color: isSelected ? Colors.white70 : Colors.grey.shade600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   @override
@@ -348,20 +277,6 @@ class _TransactionsState extends State<Transactions> {
             return true;
           }).toList();
     }
-    if (_orderNoFilter.isNotEmpty) {
-      filteredRows =
-          filteredRows
-              .where((r) => r.orderNo.toLowerCase().contains(_orderNoFilter))
-              .toList();
-    }
-    if (_customerIdFilter.isNotEmpty) {
-      filteredRows =
-          filteredRows
-              .where(
-                (r) => r.customerId.toLowerCase().contains(_customerIdFilter),
-              )
-              .toList();
-    }
     if (_minPriceFilter != null) {
       filteredRows =
           filteredRows.where((r) => r.totalAmount >= _minPriceFilter!).toList();
@@ -406,6 +321,18 @@ class _TransactionsState extends State<Transactions> {
                 r.fulfilmentDate!.day,
           }.toList()
           ..sort();
+    final maxPrice =
+        _allRows.isEmpty
+            ? 1000.0
+            : _allRows
+                .map((r) => r.totalAmount)
+                .fold<double>(0, (max, value) => value > max ? value : max);
+    final sliderMax =
+        (((maxPrice <= 0 ? 1000 : maxPrice) / 500).ceil() * 500).toDouble();
+    final priceRange = RangeValues(
+      (_minPriceFilter ?? 0).clamp(0, sliderMax).toDouble(),
+      (_maxPriceFilter ?? sliderMax).clamp(0, sliderMax).toDouble(),
+    );
 
     return AppScaffold(
       showSearch: true,
@@ -564,79 +491,11 @@ class _TransactionsState extends State<Transactions> {
                     onChanged: (v) => setState(() => _completionDayFilter = v),
                   ),
                 ),
-                SizedBox(
-                  width: 170,
-                  child: TextField(
-                    controller: _orderNoController,
-                    decoration: const InputDecoration(
-                      labelText: 'Order No.',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged:
-                        (v) => setState(
-                          () => _orderNoFilter = v.trim().toLowerCase(),
-                        ),
-                  ),
-                ),
-                SizedBox(
-                  width: 170,
-                  child: TextField(
-                    controller: _customerIdController,
-                    decoration: const InputDecoration(
-                      labelText: 'Customer ID',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged:
-                        (v) => setState(
-                          () => _customerIdFilter = v.trim().toLowerCase(),
-                        ),
-                  ),
-                ),
-                SizedBox(
-                  width: 140,
-                  child: TextField(
-                    controller: _minPriceController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: const InputDecoration(
-                      labelText: 'Min price',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged:
-                        (v) => setState(
-                          () => _minPriceFilter = double.tryParse(v.trim()),
-                        ),
-                  ),
-                ),
-                SizedBox(
-                  width: 140,
-                  child: TextField(
-                    controller: _maxPriceController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: const InputDecoration(
-                      labelText: 'Max price',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged:
-                        (v) => setState(
-                          () => _maxPriceFilter = double.tryParse(v.trim()),
-                        ),
-                  ),
-                ),
                 if (_serviceTypeFilter.isNotEmpty ||
                     _eventTypeFilter.isNotEmpty ||
                     _completionYearFilter != null ||
                     _completionMonthFilter != null ||
                     _completionDayFilter != null ||
-                    _orderNoFilter.isNotEmpty ||
-                    _customerIdFilter.isNotEmpty ||
                     _minPriceFilter != null ||
                     _maxPriceFilter != null ||
                     _searchQuery.isNotEmpty)
@@ -648,156 +507,128 @@ class _TransactionsState extends State<Transactions> {
                         _completionYearFilter = null;
                         _completionMonthFilter = null;
                         _completionDayFilter = null;
-                        _orderNoFilter = '';
-                        _customerIdFilter = '';
                         _minPriceFilter = null;
                         _maxPriceFilter = null;
                         _searchQuery = '';
                         _searchController.clear();
-                        _orderNoController.clear();
-                        _customerIdController.clear();
-                        _minPriceController.clear();
-                        _maxPriceController.clear();
                       });
                     },
                     icon: const Icon(Icons.filter_alt_off, size: 18),
                     label: const Text('Clear filters'),
                   ),
+                SizedBox(
+                  width: 340,
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Cost range',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          '${formatPesos(priceRange.start)} - ${formatPesos(priceRange.end)}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        RangeSlider(
+                          values: priceRange,
+                          min: 0,
+                          max: sliderMax,
+                          divisions: (sliderMax / 500).round().clamp(1, 200),
+                          labels: RangeLabels(
+                            formatPesos(priceRange.start),
+                            formatPesos(priceRange.end),
+                          ),
+                          onChanged:
+                              (range) => setState(() {
+                                _minPriceFilter =
+                                    range.start <= 0 ? null : range.start;
+                                _maxPriceFilter =
+                                    range.end >= sliderMax ? null : range.end;
+                              }),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Column(
-                      children: [
-                        if (_availableDates.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: OutlinedButton.icon(
-                              onPressed:
-                                  () => setState(() {
-                                    _completionYearFilter = null;
-                                    _completionMonthFilter = null;
-                                    _completionDayFilter = null;
-                                  }),
-                              icon: const Icon(Icons.calendar_month, size: 18),
-                              label: const Text('All dates'),
+              child: Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Orders',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (_isLoading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 40),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else if (filteredRows.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 40),
+                          child: Center(
+                            child: Text(
+                              _errorMessage ??
+                                  'No orders match the selected filters.',
+                              style: TextStyle(color: Colors.grey.shade600),
                             ),
                           ),
-                        if (_availableDates.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 40),
-                            child: Center(
-                              child: Text(
-                                _isLoading
-                                    ? 'Loading...'
-                                    : (_errorMessage ?? 'No orders yet.'),
-                                style: TextStyle(color: Colors.grey.shade600),
-                              ),
-                            ),
-                          )
-                        else
-                          for (final d in _availableDates.take(8))
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: _dateTile(d),
-                            ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 20),
-                  Expanded(
-                    flex: 6,
-                    child: Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: Colors.black.withValues(alpha: 0.08),
+                        )
+                      else
+                        Expanded(
+                          child: PagedDataTable(
+                            title: 'Completed Order History',
+                            fullWidth: true,
+                            columns: const [
+                              DataColumn(label: Text('Order No.')),
+                              DataColumn(label: Text('Customer ID')),
+                              DataColumn(label: Text('Customer')),
+                              DataColumn(label: Text('Event')),
+                              DataColumn(label: Text('Service type')),
+                              DataColumn(label: Text('Event type')),
+                              DataColumn(label: Text('Fulfilment date & time')),
+                              DataColumn(label: Text('Total')),
+                              DataColumn(label: Text('Loyalty')),
+                            ],
+                            rows:
+                                filteredRows.map((tx) {
+                                  return DataRow(
+                                    cells: [
+                                      DataCell(Text(tx.orderNo)),
+                                      DataCell(Text(tx.customerId)),
+                                      DataCell(Text(tx.customerName)),
+                                      DataCell(Text(tx.eventTitle)),
+                                      DataCell(Text(tx.serviceType)),
+                                      DataCell(Text(tx.eventType)),
+                                      DataCell(Text(tx.fulfilmentDateTime)),
+                                      DataCell(Text(tx.totalCost)),
+                                      DataCell(Text(tx.loyaltyRewards)),
+                                    ],
+                                  );
+                                }).toList(),
+                          ),
                         ),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Orders',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            if (_isLoading)
-                              const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 40),
-                                child: Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              )
-                            else if (filteredRows.isEmpty)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 40,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    'No orders match the selected filters.',
-                                    style: TextStyle(
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                ),
-                              )
-                            else
-                              Expanded(
-                                child: PagedDataTable(
-                                  title: 'Completed Order History',
-                                  fullWidth: true,
-                                  columns: const [
-                                    DataColumn(label: Text('Order No.')),
-                                    DataColumn(label: Text('Customer ID')),
-                                    DataColumn(label: Text('Customer')),
-                                    DataColumn(label: Text('Event')),
-                                    DataColumn(label: Text('Service type')),
-                                    DataColumn(label: Text('Event type')),
-                                    DataColumn(
-                                      label: Text('Fulfilment date & time'),
-                                    ),
-                                    DataColumn(label: Text('Total')),
-                                    DataColumn(label: Text('Loyalty')),
-                                  ],
-                                  rows:
-                                      filteredRows.map((tx) {
-                                        return DataRow(
-                                          cells: [
-                                            DataCell(Text(tx.orderNo)),
-                                            DataCell(Text(tx.customerId)),
-                                            DataCell(Text(tx.customerName)),
-                                            DataCell(Text(tx.eventTitle)),
-                                            DataCell(Text(tx.serviceType)),
-                                            DataCell(Text(tx.eventType)),
-                                            DataCell(
-                                              Text(tx.fulfilmentDateTime),
-                                            ),
-                                            DataCell(Text(tx.totalCost)),
-                                            DataCell(Text(tx.loyaltyRewards)),
-                                          ],
-                                        );
-                                      }).toList(),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ],

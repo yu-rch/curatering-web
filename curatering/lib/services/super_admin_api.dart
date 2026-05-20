@@ -369,9 +369,12 @@ class SuperAdminApi {
 
   static final SuperAdminApi instance = SuperAdminApi._();
 
-  Future<SuperAdminDashboardSummary> getDashboardSummary() async {
+  Future<SuperAdminDashboardSummary> getDashboardSummary({
+    String range = '30d',
+  }) async {
     final decoded = await ApiClient.instance.getJson(
       '/api/super-admin/dashboard/summary',
+      queryParameters: {'range': range},
       useCache: false,
     );
     return SuperAdminDashboardSummary.fromJson(decoded);

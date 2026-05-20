@@ -527,6 +527,9 @@ async function ensureFeedbackAnalyticsSchema() {
           id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           message TEXT NOT NULL,
           source TEXT NOT NULL DEFAULT 'web',
+          customer_name TEXT,
+          customer_email TEXT,
+          rating INTEGER,
           status TEXT NOT NULL DEFAULT 'pending'
             CHECK (status IN ('pending','analyzed','error')),
           created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -537,6 +540,9 @@ async function ensureFeedbackAnalyticsSchema() {
         ALTER TABLE feedback
         ADD COLUMN IF NOT EXISTS message TEXT,
         ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'web',
+        ADD COLUMN IF NOT EXISTS customer_name TEXT,
+        ADD COLUMN IF NOT EXISTS customer_email TEXT,
+        ADD COLUMN IF NOT EXISTS rating INTEGER,
         ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending',
         ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMPTZ
@@ -998,6 +1004,44 @@ app.post("/api/feedback/analyze", publicRateLimit, async (req, res) => {
       error: e?.code === "invalid_ai_response" ? "Invalid AI response" : "Feedback analysis failed",
       code: e?.code || "feedback_analysis_failed",
     });
+  }
+});
+
+app.post("/api/contact-feedback", publicRateLimit, async (req, res) => {
+  try {
+    await ensureFeedbackAnalyticsSchema();
+    const name = String(req.body?.name || "").trim().slice(0, 160);
+    const email = String(req.body?.email || "").trim().toLowerCase().slice(0, 240);
+    const message = String(req.body?.message || req.body?.feedback || "").trim();
+    const ratingRaw = Number(req.body?.rating);
+    const rating = Number.isFinite(ratingRaw)
+      ? Math.max(1, Math.min(5, Math.round(ratingRaw)))
+      : null;
+
+    if (message.length < 3) {
+      return res.status(400).json({ error: "Feedback message is required" });
+    }
+    if (message.length > 5000) {
+      return res.status(413).json({ error: "Feedback message is too long" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO feedback (message, source, customer_name, customer_email, rating, status)
+       VALUES ($1, 'contact_us', $2, $3, $4, 'pending')
+       RETURNING id, created_at AS "createdAt"`,
+      [message, name || null, email || null, rating],
+    );
+
+    return res.status(201).json({
+      ok: true,
+      feedback: {
+        id: String(result.rows[0].id),
+        createdAt: result.rows[0].createdAt?.toISOString?.() || null,
+      },
+    });
+  } catch (e) {
+    console.error("[contact feedback] submit failed", e);
+    return res.status(500).json({ error: "Failed to submit feedback" });
   }
 });
 
@@ -3059,12 +3103,25 @@ app.get(
   "/api/super-admin/dashboard/summary",
   authRequired,
   requireSuperAdmin,
-  async (_req, res) => {
+  async (req, res) => {
     try {
       const now = new Date();
+      const rangeKey = String(req.query?.range || "30d").trim().toLowerCase();
+      const rangeDays = {
+        "7d": 7,
+        "30d": 30,
+        "90d": 90,
+      }[rangeKey];
+      const rangeStart =
+        rangeKey === "today"
+          ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
+          : rangeKey === "year"
+            ? new Date(now.getFullYear(), 0, 1)
+            : rangeKey === "all"
+              ? new Date(0)
+              : new Date(now.getTime() - (rangeDays || 30) * 24 * 60 * 60 * 1000);
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      const since30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       const yearStart = new Date(now.getFullYear(), 0, 1);
 
       const userStats = await pool.query(
@@ -3100,7 +3157,7 @@ app.get(
            COUNT(*) FILTER (WHERE status = 'resolved')::int AS resolved,
            COUNT(*) FILTER (WHERE created_at >= $1)::int AS last30
          FROM help_requests`,
-        [since30],
+        [rangeStart],
       );
 
       const recentHelp = await pool.query(
@@ -3161,7 +3218,7 @@ app.get(
               `SELECT COUNT(*)::int AS total,
                       COUNT(*) FILTER (WHERE created_at >= $1)::int AS last30
                FROM site_page_views`,
-              [since30],
+              [rangeStart],
             ),
             pool.query(
               `SELECT COALESCE(platform, 'web') AS platform, COUNT(*)::int AS views
@@ -3169,7 +3226,7 @@ app.get(
                WHERE created_at >= $1
                GROUP BY platform
                ORDER BY views DESC`,
-              [since30],
+              [rangeStart],
             ),
             pool.query(
               `SELECT COALESCE(path, '/') AS path, COUNT(*)::int AS views
@@ -3178,7 +3235,7 @@ app.get(
                GROUP BY path
                ORDER BY views DESC
                LIMIT 8`,
-              [since30],
+              [rangeStart],
             ),
             pool.query(
               `SELECT COALESCE(registration_platform, 'web') AS platform,
@@ -3187,7 +3244,7 @@ app.get(
                WHERE created_at >= $1
                GROUP BY registration_platform
                ORDER BY accounts DESC`,
-              [since30],
+              [rangeStart],
             ),
           ]);
         websiteAnalytics = {
@@ -3817,7 +3874,8 @@ app.post(
 app.get(
   "/api/super-admin/help-requests",
   authRequired,
-  requireSuperAdmin,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin"])),
   async (req, res) => {
     const { search, status } = req.query || {};
 
@@ -3880,7 +3938,8 @@ app.get(
 app.post(
   "/api/super-admin/help-requests/:requestId/resolve",
   authRequired,
-  requireSuperAdmin,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin"])),
   async (req, res) => {
     const { requestId } = req.params;
 
@@ -4068,14 +4127,34 @@ function normalizeFeedbackAnalysisPayload(parsed, feedbacks, source) {
   const topicText = keyTopics.length ? ` Key topics: ${keyTopics.join(", ")}.` : "";
   const interpretation =
     String(data.interpretation || "").trim() ||
+    (Array.isArray(data.complaints) || Array.isArray(data.praises) || Array.isArray(data.insights)
+      ? [
+          Array.isArray(data.complaints) && data.complaints.length
+            ? `Complaints: ${data.complaints.map((v) => String(v).trim()).filter(Boolean).slice(0, 3).join("; ")}.`
+            : "",
+          Array.isArray(data.praises) && data.praises.length
+            ? `Praises: ${data.praises.map((v) => String(v).trim()).filter(Boolean).slice(0, 3).join("; ")}.`
+            : "",
+          Array.isArray(data.insights) && data.insights.length
+            ? `Insights: ${data.insights.map((v) => String(v).trim()).filter(Boolean).slice(0, 3).join("; ")}.`
+            : "",
+        ].filter(Boolean).join(" ")
+      : "") ||
     (sentiment || topicText
       ? `Overall sentiment: ${sentiment || "mixed"}.${topicText}`.trim()
       : fallback.interpretation);
+  const nlpRecommendations = Array.isArray(data.insights)
+    ? data.insights.map((r) => String(r).trim()).filter(Boolean).slice(0, 5)
+    : [];
 
   return {
     summary: String(data.summary || "").trim() || fallback.summary,
     interpretation,
-    recommendations: recommendations.length ? recommendations : fallback.recommendations,
+    recommendations: recommendations.length
+      ? recommendations
+      : nlpRecommendations.length
+        ? nlpRecommendations
+        : fallback.recommendations,
     source,
     feedbackCount: feedbacks.length,
     averageStars: avg,
@@ -4316,6 +4395,7 @@ app.get(
   async (req, res) => {
     try {
       const roCols = await ensureRestaurantOrdersCanonicalColumns();
+      await ensureFeedbackAnalyticsSchema();
       const orderIdSql = restaurantOrderIdExpr(roCols);
       const { search } = req.query || {};
       const params = [];
@@ -4346,17 +4426,54 @@ app.get(
         LIMIT 1000`,
         params,
       );
+      const genericParams = [];
+      let genericWhereSql = "WHERE message IS NOT NULL";
+      if (search) {
+        genericWhereSql += ` AND (
+          COALESCE(customer_name, '') ILIKE $1 OR
+          COALESCE(customer_email, '') ILIKE $1 OR
+          COALESCE(message, '') ILIKE $1
+        )`;
+        genericParams.push(`%${search}%`);
+      }
+      const generic = await pool.query(
+        `SELECT
+          id,
+          COALESCE(customer_name, 'Website visitor') AS "customerName",
+          COALESCE(customer_email, '') AS "customerEmail",
+          COALESCE(rating, 0) AS stars,
+          COALESCE(message, '') AS remarks,
+          created_at AS "submittedAt",
+          COALESCE(source, 'web') AS source
+        FROM feedback
+        ${genericWhereSql}
+        ORDER BY created_at DESC
+        LIMIT 1000`,
+        genericParams,
+      );
 
       return res.json({
-        feedback: result.rows.map((r) => ({
-          id: String(r.id),
-          orderNo: r.orderNo != null ? String(r.orderNo) : "",
-          customerName: r.customerName || "Guest",
-          customerEmail: r.customerEmail || "",
-          stars: Number(r.stars) || 0,
-          remarks: r.remarks || "",
-          submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
-        })),
+        feedback: [
+          ...result.rows.map((r) => ({
+            id: String(r.id),
+            orderNo: r.orderNo != null ? String(r.orderNo) : "",
+            customerName: r.customerName || "Guest",
+            customerEmail: r.customerEmail || "",
+            stars: Number(r.stars) || 0,
+            remarks: r.remarks || "",
+            submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
+          })),
+          ...generic.rows.map((r) => ({
+            id: String(r.id),
+            orderNo: "Contact Us",
+            customerName: r.customerName || "Website visitor",
+            customerEmail: r.customerEmail || "",
+            stars: Number(r.stars) || 0,
+            remarks: r.remarks || "",
+            submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
+            source: r.source || "contact_us",
+          })),
+        ].sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0)),
       });
     } catch (error) {
       console.error("Error listing customer feedback:", error);
@@ -4372,6 +4489,7 @@ app.post(
   async (req, res) => {
     try {
       const roCols = await ensureRestaurantOrdersCanonicalColumns();
+      await ensureFeedbackAnalyticsSchema();
       const orderIdSql = restaurantOrderIdExpr(roCols);
       const { search } = { ...req.query, ...(req.body || {}) };
       const params = [];
@@ -4400,14 +4518,46 @@ app.post(
         LIMIT 200`,
         params,
       );
+      const genericParams = [];
+      let genericWhereSql = "WHERE message IS NOT NULL";
+      if (search) {
+        genericWhereSql += ` AND (
+          COALESCE(customer_name, '') ILIKE $1 OR
+          COALESCE(customer_email, '') ILIKE $1 OR
+          COALESCE(message, '') ILIKE $1
+        )`;
+        genericParams.push(`%${search}%`);
+      }
+      const generic = await pool.query(
+        `SELECT
+          'Contact Us' AS "orderNo",
+          COALESCE(customer_name, 'Website visitor') AS "customerName",
+          COALESCE(rating, 0) AS stars,
+          COALESCE(message, '') AS remarks,
+          created_at AS "submittedAt"
+        FROM feedback
+        ${genericWhereSql}
+        ORDER BY created_at DESC
+        LIMIT 200`,
+        genericParams,
+      );
 
-      const feedbacks = result.rows.map((r) => ({
-        orderNo: r.orderNo != null ? String(r.orderNo) : "",
-        customerName: r.customerName || "Guest",
-        stars: Number(r.stars) || 0,
-        remarks: r.remarks || "",
-        submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
-      }));
+      const feedbacks = [
+        ...result.rows.map((r) => ({
+          orderNo: r.orderNo != null ? String(r.orderNo) : "",
+          customerName: r.customerName || "Guest",
+          stars: Number(r.stars) || 0,
+          remarks: r.remarks || "",
+          submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
+        })),
+        ...generic.rows.map((r) => ({
+          orderNo: "Contact Us",
+          customerName: r.customerName || "Website visitor",
+          stars: Number(r.stars) || 0,
+          remarks: r.remarks || "",
+          submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
+        })),
+      ].sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
 
       const analysis = await analyzeFeedbackWithAi(feedbacks);
       return res.json({ analysis });
@@ -4560,6 +4710,13 @@ app.put(
       return res.json({ ok: true, content });
     } catch (e) {
       console.error(e);
+      if (/quota|too large|payload/i.test(String(e?.message || e))) {
+        return res.status(507).json({
+          message:
+            "Website content save exceeded storage quota. Try replacing large CMS images with compressed versions or remove unused gallery images.",
+          code: "website_content_quota_exceeded",
+        });
+      }
       return res.status(500).json({ message: "Failed to save website content" });
     }
   },
@@ -9691,7 +9848,7 @@ async function registerRoutesAfterDbInit() {
       try {
         const userResult = await pool.query('SELECT role FROM users WHERE id = $1', [req.user.id]);
         const role = userResult.rows[0]?.role;
-        if (!userResult.rows.length || !['manager', 'super_admin', 'admin'].includes(role)) {
+        if (!userResult.rows.length || !['manager', 'super_admin', 'admin', 'supervisor'].includes(role)) {
           return res.status(403).json({ error: 'Manager access required' });
         }
 
@@ -9709,6 +9866,85 @@ async function registerRoutesAfterDbInit() {
       } catch (error) {
         console.error('Error fetching loyalty customers:', error);
         res.status(500).json({ error: 'Failed to fetch customers' });
+      }
+    });
+
+    app.get('/api/admin/customers/:customerId/orders', authRequired, async (req, res) => {
+      try {
+        const userResult = await pool.query('SELECT role FROM users WHERE id = $1', [req.user.id]);
+        const role = userResult.rows[0]?.role;
+        if (!userResult.rows.length || !['manager', 'super_admin', 'admin', 'supervisor'].includes(role)) {
+          return res.status(403).json({ error: 'Manager access required' });
+        }
+
+        const { customerId } = req.params;
+        const customerResult = await pool.query(
+          `SELECT id, email FROM customer_accounts WHERE id::text = $1 LIMIT 1`,
+          [customerId],
+        );
+        if (customerResult.rowCount === 0) {
+          return res.status(404).json({ error: 'Customer not found' });
+        }
+        const customerEmail = String(customerResult.rows[0].email || '').trim().toLowerCase();
+
+        const roCols = await ensureRestaurantOrdersCanonicalColumns();
+        await ensureOrderCateringIdColumns();
+        await ensureCateringEventOrdersCanonicalColumns();
+        const restaurantSelect = buildRestaurantOrderSelectSql(roCols);
+        const restaurantResult = await pool.query(
+          `SELECT ${restaurantSelect}
+           FROM restaurant_orders
+           WHERE customer_id::text = $1
+           ORDER BY created_at DESC NULLS LAST`,
+          [customerId],
+        );
+        const restaurantOrders = restaurantResult.rows.map((order) => {
+          const normalized = normalizeRestaurantOrderRow(order, parseRestaurantOrderTrayItems(order), {
+            channel: 'staff',
+          });
+          return {
+            id: normalized.id,
+            order_no: normalized.order_no || normalized.order_id,
+            event_title: 'Restaurant order',
+            created_at: normalized.created_at,
+            total_amount: normalized.total_amount || normalized.total_cost || 0,
+            status: normalized.order_status || normalized.status,
+            order_type: 'restaurant',
+            loyalty_points_obtained:
+              normalized.loyalty_points_restaurant_obtained || normalized.points_earned || 0,
+          };
+        });
+
+        const eventResult = await pool.query(
+          `SELECT id, catering_id AS order_no, event_title, created_at, total_cost AS total_amount,
+                  status, order_type, 0 AS loyalty_points_obtained
+           FROM event_orders
+           WHERE customer_id::text = $1
+              OR ($2 <> '' AND lower(email_address) = $2)
+           ORDER BY created_at DESC NULLS LAST`,
+          [customerId, customerEmail],
+        ).catch(() => ({ rows: [] }));
+
+        const cateringResult = await pool.query(
+          `SELECT id, catering_id AS order_no, 'Catering order' AS event_title, created_at,
+                  total_cost AS total_amount, status, order_type, 0 AS loyalty_points_obtained
+           FROM catering_orders
+           WHERE customer_id::text = $1
+              OR ($2 <> '' AND lower(email_address) = $2)
+           ORDER BY created_at DESC NULLS LAST`,
+          [customerId, customerEmail],
+        ).catch(() => ({ rows: [] }));
+
+        const orders = [
+          ...restaurantOrders,
+          ...eventResult.rows,
+          ...cateringResult.rows,
+        ].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+        res.json({ orders });
+      } catch (error) {
+        console.error('Error fetching customer loyalty orders:', error);
+        res.status(500).json({ error: 'Failed to fetch customer orders' });
       }
     });
 

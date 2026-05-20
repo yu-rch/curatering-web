@@ -1,8 +1,13 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import '../utils/web_html.dart' as html;
 import 'antd_buttons.dart';
 import 'antd_dialog.dart';
 import 'antd_staff.dart';
@@ -36,12 +41,14 @@ class TablePaginationBar extends StatelessWidget {
     required this.totalItems,
     this.pageSize = kTablePageSize,
     required this.onPageChanged,
+    this.compact = false,
   });
 
   final int currentPage;
   final int totalItems;
   final int pageSize;
   final ValueChanged<int> onPageChanged;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -52,46 +59,50 @@ class TablePaginationBar extends StatelessWidget {
     final start = safePage * pageSize + 1;
     final end = ((safePage + 1) * pageSize).clamp(0, totalItems);
 
+    final content = Row(
+      mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+      children: [
+        Text(
+          compact
+              ? '$start–$end of $totalItems'
+              : 'Showing $start–$end of $totalItems · Page ${safePage + 1} of $pages',
+          style: const TextStyle(color: AntdTokens.textSecondary, fontSize: 13),
+        ),
+        if (!compact) const Spacer() else const SizedBox(width: 8),
+        AntdIconActionButton(
+          tooltip: 'First page',
+          onPressed: safePage > 0 ? () => onPageChanged(0) : null,
+          icon: Icons.first_page,
+        ),
+        const SizedBox(width: 6),
+        AntdIconActionButton(
+          tooltip: 'Previous page',
+          onPressed: safePage > 0 ? () => onPageChanged(safePage - 1) : null,
+          icon: Icons.chevron_left,
+        ),
+        const SizedBox(width: 6),
+        AntdIconActionButton(
+          tooltip: 'Next page',
+          onPressed:
+              safePage < pages - 1 ? () => onPageChanged(safePage + 1) : null,
+          icon: Icons.chevron_right,
+        ),
+        const SizedBox(width: 6),
+        AntdIconActionButton(
+          tooltip: 'Last page',
+          onPressed:
+              safePage < pages - 1 ? () => onPageChanged(pages - 1) : null,
+          icon: Icons.last_page,
+        ),
+      ],
+    );
+
+    if (compact) return content;
+
     return AntdCard(
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: Row(
-        children: [
-          Text(
-            'Showing $start–$end of $totalItems · Page ${safePage + 1} of $pages',
-            style: const TextStyle(
-              color: AntdTokens.textSecondary,
-              fontSize: 13,
-            ),
-          ),
-          const Spacer(),
-          AntdIconActionButton(
-            tooltip: 'First page',
-            onPressed: safePage > 0 ? () => onPageChanged(0) : null,
-            icon: Icons.first_page,
-          ),
-          const SizedBox(width: 6),
-          AntdIconActionButton(
-            tooltip: 'Previous page',
-            onPressed: safePage > 0 ? () => onPageChanged(safePage - 1) : null,
-            icon: Icons.chevron_left,
-          ),
-          const SizedBox(width: 6),
-          AntdIconActionButton(
-            tooltip: 'Next page',
-            onPressed:
-                safePage < pages - 1 ? () => onPageChanged(safePage + 1) : null,
-            icon: Icons.chevron_right,
-          ),
-          const SizedBox(width: 6),
-          AntdIconActionButton(
-            tooltip: 'Last page',
-            onPressed:
-                safePage < pages - 1 ? () => onPageChanged(pages - 1) : null,
-            icon: Icons.last_page,
-          ),
-        ],
-      ),
+      child: content,
     );
   }
 }
@@ -255,11 +266,21 @@ class _PagedDataTableState extends State<PagedDataTable> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _TableTitleBar(
+            title: widget.title,
+            pagination: TablePaginationBar(
+              currentPage: _page,
+              totalItems: filteredRows.length,
+              pageSize: widget.pageSize,
+              compact: true,
+              onPageChanged: (p) => setState(() => _page = p),
+            ),
+          ),
           if (widget.enableSearch ||
               widget.enablePrint ||
               widget.filters.isNotEmpty)
             _TableToolbar(
-              title: widget.title,
+              tableTitle: widget.title,
               search: _search,
               enableSearch: widget.enableSearch,
               enablePrint: widget.enablePrint,
@@ -268,6 +289,7 @@ class _PagedDataTableState extends State<PagedDataTable> {
               totalRows: widget.rows.length,
               onSearchChanged: (_) => setState(() => _page = 0),
               onPrint: () => _printFilteredRows(filteredRows),
+              onCsv: () => _exportCsv(filteredRows),
             ),
           ClipRRect(
             borderRadius: BorderRadius.circular(AntdTokens.radiusMd),
@@ -380,6 +402,44 @@ class _PagedDataTableState extends State<PagedDataTable> {
       name: '${widget.title}.pdf',
     );
   }
+
+  Future<void> _exportCsv(List<DataRow> rows) async {
+    final includedIndexes = <int>[
+      for (var i = 0; i < widget.columns.length; i++)
+        if (!widget.pdfExcludedColumnIndexes.contains(i) &&
+            !_isActionHeader(_widgetText(widget.columns[i].label)))
+          i,
+    ];
+    final csvRows = <List<String>>[
+      includedIndexes.map((i) => _widgetText(widget.columns[i].label)).toList(),
+      ...rows.map(
+        (row) =>
+            includedIndexes
+                .where((i) => i < row.cells.length)
+                .map((i) => _widgetText(row.cells[i].child))
+                .toList(),
+      ),
+    ];
+    final csv = csvRows.map(_csvLine).join('\r\n');
+    final fileName = '${_safeFileName(widget.title)}.csv';
+    if (kIsWeb) {
+      final blob = html.Blob([utf8.encode(csv)], 'text/csv;charset=utf-8');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final anchor =
+          html.AnchorElement(href: url)
+            ..setAttribute('download', fileName)
+            ..click();
+      html.Url.revokeObjectUrl(url);
+      anchor.remove();
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: csv));
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$fileName copied to clipboard.')));
+    }
+  }
 }
 
 bool _isActionHeader(String raw) {
@@ -389,7 +449,7 @@ bool _isActionHeader(String raw) {
 
 class _TableToolbar extends StatelessWidget {
   const _TableToolbar({
-    required this.title,
+    required this.tableTitle,
     required this.search,
     required this.enableSearch,
     required this.enablePrint,
@@ -398,9 +458,10 @@ class _TableToolbar extends StatelessWidget {
     required this.totalRows,
     required this.onSearchChanged,
     required this.onPrint,
+    required this.onCsv,
   });
 
-  final String title;
+  final String tableTitle;
   final TextEditingController search;
   final bool enableSearch;
   final bool enablePrint;
@@ -409,6 +470,7 @@ class _TableToolbar extends StatelessWidget {
   final int totalRows;
   final ValueChanged<String> onSearchChanged;
   final VoidCallback onPrint;
+  final VoidCallback onCsv;
 
   @override
   Widget build(BuildContext context) {
@@ -417,14 +479,6 @@ class _TableToolbar extends StatelessWidget {
       child: AntdToolbar(
         padding: const EdgeInsets.all(10),
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: AntdTokens.valueDark,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
           if (enableSearch)
             AntdSearchInput(
               controller: search,
@@ -437,7 +491,7 @@ class _TableToolbar extends StatelessWidget {
             ),
           if (filters.isNotEmpty)
             AntdSecondaryButton(
-              onPressed: () => _showFilters(context),
+              onPressed: () => _showFilters(context, tableTitle),
               icon: Icons.filter_list,
               label: 'Filters',
             )
@@ -459,6 +513,11 @@ class _TableToolbar extends StatelessWidget {
               icon: Icons.picture_as_pdf,
               label: 'Print PDF',
             ),
+          AntdSecondaryButton(
+            onPressed: onCsv,
+            icon: Icons.table_view,
+            label: 'Export CSV',
+          ),
           AntdStatusTag(
             label: '$filteredRows of $totalRows rows',
             color: AntdTokens.textSecondary,
@@ -468,7 +527,7 @@ class _TableToolbar extends StatelessWidget {
     );
   }
 
-  void _showFilters(BuildContext context) {
+  void _showFilters(BuildContext context, String title) {
     showAntdModal<void>(
       context: context,
       title: '$title filters',
@@ -484,6 +543,52 @@ class _TableToolbar extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TableTitleBar extends StatelessWidget {
+  const _TableTitleBar({required this.title, required this.pagination});
+
+  final String title;
+  final Widget pagination;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                color: AntdTokens.valueDark,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          pagination,
+        ],
+      ),
+    );
+  }
+}
+
+String _csvLine(List<String> cells) {
+  return cells
+      .map((value) {
+        final escaped = value
+            .replaceAll('"', '""')
+            .replaceAll('\r', ' ')
+            .replaceAll('\n', ' ');
+        return '"$escaped"';
+      })
+      .join(',');
+}
+
+String _safeFileName(String value) {
+  final cleaned = value.trim().replaceAll(RegExp(r'[\\/:*?"<>|]+'), '_');
+  return cleaned.isEmpty ? 'table_export' : cleaned;
 }
 
 String _widgetText(Widget widget) {

@@ -69,9 +69,9 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
       setState(() => _analysis = result);
       showAntdMessage(
         context,
-        result.source == 'openai'
-            ? 'AI analysis ready.'
-            : 'Analysis ready (configure OPENAI_API_KEY on the server for full AI insights).',
+        result.source == 'runpod_nlp'
+            ? 'NLP analysis ready.'
+            : 'Analysis ready using ${result.source} insights.',
       );
     } catch (_) {
       if (!mounted) return;
@@ -135,7 +135,7 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
       child: AntdPage(
         title: 'Customer Feedback',
         subtitle:
-            'Feedback is submitted by customers on delivered restaurant orders.',
+            'Feedback is submitted from delivered restaurant orders and the Contact Us page.',
         actions: [
           AntdSecondaryButton(
             label: 'Refresh',
@@ -143,7 +143,7 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
             onPressed: _loading ? null : _fetch,
           ),
           AntdPrimaryButton(
-            label: _analyzing ? 'Analyzing...' : 'AI summarize',
+            label: _analyzing ? 'Analyzing...' : 'NLP Analyze',
             icon: Icons.auto_awesome,
             loading: _analyzing,
             onPressed: _analyzing || filtered.isEmpty ? null : _analyze,
@@ -220,7 +220,7 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
                         message: 'No customer feedback yet.',
                       )
                       : PagedDataTable(
-                        title: 'Restaurant Customer Feedback',
+                        title: 'Customer Feedback',
                         enableSearch: false,
                         fullWidth: true,
                         columns: const [

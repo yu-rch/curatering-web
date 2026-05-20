@@ -13,6 +13,7 @@ class PagePermissionRoutes {
   static const String archive = '/archive';
   static const String inventory = '/inventory';
   static const String settings = '/settings';
+  static const String helpRequests = '/help-requests';
 
   static const List<(String label, String route)> togglesForStaff = [
     ('Dashboard', dashboard),
@@ -25,6 +26,7 @@ class PagePermissionRoutes {
     ('Order History', orderHistory),
     ('Archive', archive),
     ('Inventory', inventory),
+    ('Help Requests', helpRequests),
     ('Settings', settings),
   ];
 }

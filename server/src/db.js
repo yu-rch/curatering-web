@@ -1460,6 +1460,7 @@ async function createCustomerTrayDraftsTable(withFk) {
   await pool.query(`
     CREATE TABLE customer_tray_drafts (
       customer_id TEXT PRIMARY KEY${fkClause},
+      user_email TEXT,
       tray_items JSONB NOT NULL DEFAULT '[]'::jsonb,
       items JSONB NOT NULL DEFAULT '[]'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -1538,6 +1539,9 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
       `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb`,
     );
     await pool.query(
+      `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS user_email TEXT`,
+    );
+    await pool.query(
       `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
     );
     await syncCustomerTrayDraftsItemColumns();
@@ -1552,6 +1556,9 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
       console.log(`[db] renamed customer_tray_drafts.${legacyCol} → customer_id`);
       await pool.query(
         `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb`,
+      );
+      await pool.query(
+        `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS user_email TEXT`,
       );
       await pool.query(
         `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
@@ -1675,6 +1682,10 @@ export async function migrateCateringOrderStatuses(tableName) {
   await pool.query(
     `UPDATE ${tableName} SET status = 'on_going'
      WHERE status IN ('for_processing', 'for_post_analysis')`,
+  );
+  await pool.query(
+    `UPDATE ${tableName} SET status = 'for_down_payment'
+     WHERE status IN ('for_downpayment')`,
   );
   await pool.query(
     `UPDATE ${tableName} SET status = 'online_inquiries'

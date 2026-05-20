@@ -161,32 +161,6 @@ class _DashboardState extends State<Dashboard> {
       runSpacing: 12,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        SizedBox(
-          width: 260,
-          child: TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              labelText: 'Search dashboard',
-              isDense: true,
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon:
-                  _dashboardSearch.isEmpty
-                      ? null
-                      : IconButton(
-                        tooltip: 'Clear search',
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _dashboardSearch = '');
-                        },
-                        icon: const Icon(Icons.close),
-                      ),
-              border: const OutlineInputBorder(),
-            ),
-            onChanged:
-                (v) =>
-                    setState(() => _dashboardSearch = v.trim().toLowerCase()),
-          ),
-        ),
         _filterDropdown(
           value: _range,
           label: 'Range',
@@ -1036,7 +1010,12 @@ class _DashboardState extends State<Dashboard> {
     final s = _summary;
 
     return AppScaffold(
-      showSearch: false,
+      showSearch: true,
+      searchController: _searchController,
+      searchHint: 'Search manager dashboard',
+      onSearchChanged:
+          (value) =>
+              setState(() => _dashboardSearch = value.trim().toLowerCase()),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

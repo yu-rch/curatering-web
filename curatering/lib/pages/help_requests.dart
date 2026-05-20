@@ -23,6 +23,10 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
 
   final List<String> _statusOptions = ['All', 'Unresolved', 'Resolved'];
   String _statusFilter = 'Unresolved';
+  String _featureFilter = 'All';
+  String _requesterFilter = 'All';
+  String _sourceFilter = 'All';
+  String _dateFilter = 'All';
   String _searchQuery = '';
 
   Timer? _debounce;
@@ -72,8 +76,17 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
 
   List<HelpRequestDto> get _filtered {
     final q = _searchQuery.trim().toLowerCase();
-    if (q.isEmpty) return _requests;
     return _requests.where((r) {
+      if (_featureFilter != 'All' && r.feature != _featureFilter) {
+        return false;
+      }
+      if (_requesterFilter != 'All' && r.userName != _requesterFilter) {
+        return false;
+      }
+      if (_sourceFilter == 'Public' && !_isPublicRequest(r)) return false;
+      if (_sourceFilter == 'Staff' && _isPublicRequest(r)) return false;
+      if (!_matchesDateFilter(r.createdAt)) return false;
+      if (q.isEmpty) return true;
       return [
         r.userName,
         r.feature,
@@ -81,6 +94,49 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
         r.request,
       ].any((v) => v.toLowerCase().contains(q));
     }).toList();
+  }
+
+  bool _isPublicRequest(HelpRequestDto request) {
+    final id = request.userId.trim().toLowerCase();
+    return id.isEmpty || id == 'null';
+  }
+
+  bool _matchesDateFilter(DateTime value) {
+    if (_dateFilter == 'All') return true;
+    final now = DateTime.now();
+    final local = value.toLocal();
+    final today = DateTime(now.year, now.month, now.day);
+    if (_dateFilter == 'Today') return !local.isBefore(today);
+    if (_dateFilter == 'Last 7 days') {
+      return !local.isBefore(now.subtract(const Duration(days: 7)));
+    }
+    if (_dateFilter == 'Last 30 days') {
+      return !local.isBefore(now.subtract(const Duration(days: 30)));
+    }
+    return true;
+  }
+
+  List<String> _distinct(Iterable<String> values) {
+    final set = <String>{};
+    for (final value in values) {
+      final trimmed = value.trim();
+      if (trimmed.isNotEmpty) set.add(trimmed);
+    }
+    final out = set.toList()..sort((a, b) => a.compareTo(b));
+    return ['All', ...out];
+  }
+
+  void _clearFilters() {
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _statusFilter = 'Unresolved';
+      _featureFilter = 'All';
+      _requesterFilter = 'All';
+      _sourceFilter = 'All';
+      _dateFilter = 'All';
+    });
+    _fetch();
   }
 
   Future<void> _resolve(HelpRequestDto req) async {
@@ -102,8 +158,11 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final featureOptions = _distinct(_requests.map((r) => r.feature));
+    final requesterOptions = _distinct(_requests.map((r) => r.userName));
     return AppScaffold(
       showSearch: true,
+      searchHint: 'Search help requests',
       searchController: _searchController,
       onSearchChanged: (query) {
         _debounce?.cancel();
@@ -132,6 +191,82 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
                     setState(() => _statusFilter = value);
                     _fetch();
                   },
+                ),
+                AntdSelect<String>(
+                  label: 'Feature',
+                  value:
+                      featureOptions.contains(_featureFilter)
+                          ? _featureFilter
+                          : 'All',
+                  items:
+                      featureOptions
+                          .map(
+                            (s) => DropdownMenuItem(value: s, child: Text(s)),
+                          )
+                          .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _featureFilter = value);
+                  },
+                ),
+                AntdSelect<String>(
+                  label: 'Requester',
+                  value:
+                      requesterOptions.contains(_requesterFilter)
+                          ? _requesterFilter
+                          : 'All',
+                  items:
+                      requesterOptions
+                          .map(
+                            (s) => DropdownMenuItem(value: s, child: Text(s)),
+                          )
+                          .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _requesterFilter = value);
+                  },
+                ),
+                AntdSelect<String>(
+                  label: 'Source',
+                  value: _sourceFilter,
+                  items: const [
+                    DropdownMenuItem(value: 'All', child: Text('All sources')),
+                    DropdownMenuItem(value: 'Public', child: Text('Public')),
+                    DropdownMenuItem(value: 'Staff', child: Text('Staff')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _sourceFilter = value);
+                  },
+                ),
+                AntdSelect<String>(
+                  label: 'Date',
+                  value: _dateFilter,
+                  items: const [
+                    DropdownMenuItem(value: 'All', child: Text('All dates')),
+                    DropdownMenuItem(value: 'Today', child: Text('Today')),
+                    DropdownMenuItem(
+                      value: 'Last 7 days',
+                      child: Text('Last 7 days'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Last 30 days',
+                      child: Text('Last 30 days'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _dateFilter = value);
+                  },
+                ),
+                AntdSecondaryButton(
+                  label: 'Clear filters',
+                  icon: Icons.filter_alt_off,
+                  onPressed: _clearFilters,
+                ),
+                AntdStatusTag(
+                  label: '${_filtered.length} shown',
+                  color: AntdTokens.textSecondary,
                 ),
                 if (_loading)
                   const SizedBox(
