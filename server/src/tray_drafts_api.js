@@ -1,25 +1,8 @@
-import { pool, ensureCustomerTrayDraftsSchema, getTableColumnNames } from './db.js';
+import { pool, ensureCustomerTrayDraftsSchema } from './db.js';
 import { parseRestaurantOrderTrayItems } from './order_schema.js';
 
 function customerIdFromReq(req) {
   return req.customer?.id ? String(req.customer.id) : null;
-}
-
-let trayDraftColsPromise = null;
-
-async function getTrayDraftCols() {
-  if (!trayDraftColsPromise) {
-    trayDraftColsPromise = ensureCustomerTrayDraftsSchema().then(() =>
-      getTableColumnNames('customer_tray_drafts'),
-    );
-  }
-  return trayDraftColsPromise;
-}
-
-/** Read tray line items from the canonical column (mobile writes `tray_items`). */
-function trayItemsSelectExpr(cols) {
-  if (cols.has('tray_items')) return 'tray_items';
-  return 'items';
 }
 
 function parseItemsArray(raw) {
@@ -121,31 +104,13 @@ function itemsFromRequestBody(body) {
 }
 
 async function upsertTrayDraftItems(customerId, items) {
-  const cols = await getTrayDraftCols();
   const normalized = normalizeTrayItems(items);
   const json = JSON.stringify(normalized);
-  const hasTray = cols.has('tray_items');
-  const hasItems = cols.has('items');
-
-  if (hasTray && hasItems) {
-    await pool.query(
-      `INSERT INTO customer_tray_drafts (customer_id, tray_items, items, updated_at)
-       VALUES ($1, $2::jsonb, $2::jsonb, now())
-       ON CONFLICT (customer_id) DO UPDATE SET
-         tray_items = EXCLUDED.tray_items,
-         items = EXCLUDED.items,
-         updated_at = now()`,
-      [customerId, json],
-    );
-    return;
-  }
-
-  const col = hasTray ? 'tray_items' : 'items';
   await pool.query(
-    `INSERT INTO customer_tray_drafts (customer_id, ${col}, updated_at)
+    `INSERT INTO customer_tray_drafts (customer_id, tray_items, updated_at)
      VALUES ($1, $2::jsonb, now())
      ON CONFLICT (customer_id) DO UPDATE SET
-       ${col} = EXCLUDED.${col},
+       tray_items = EXCLUDED.tray_items,
        updated_at = now()`,
     [customerId, json],
   );
@@ -155,11 +120,9 @@ async function upsertTrayDraftItems(customerId, items) {
 export async function getTrayDraftItemsByCustomerId(customerId) {
   if (!customerId) return [];
   await ensureCustomerTrayDraftsSchema();
-  const cols = await getTrayDraftCols();
-  const expr = trayItemsSelectExpr(cols);
   const id = String(customerId);
   const result = await pool.query(
-    `SELECT ${expr} AS tray_items FROM customer_tray_drafts WHERE customer_id = $1`,
+    `SELECT tray_items FROM customer_tray_drafts WHERE customer_id = $1`,
     [id],
   );
   if (result.rowCount === 0) return [];
@@ -173,10 +136,8 @@ export async function getTrayDraft(req, res) {
     if (!customerId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    const cols = await getTrayDraftCols();
-    const expr = trayItemsSelectExpr(cols);
     const result = await pool.query(
-      `SELECT ${expr} AS tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
+      `SELECT tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
       [customerId],
     );
     if (result.rowCount === 0) {
@@ -210,10 +171,8 @@ export async function saveTrayDraft(req, res) {
       });
     }
     await upsertTrayDraftItems(customerId, items);
-    const cols = await getTrayDraftCols();
-    const expr = trayItemsSelectExpr(cols);
     const saved = await pool.query(
-      `SELECT ${expr} AS tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
+      `SELECT tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
       [customerId],
     );
     const row = saved.rows[0];

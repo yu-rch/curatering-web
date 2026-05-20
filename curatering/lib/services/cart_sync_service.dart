@@ -14,23 +14,6 @@ class CartSyncService {
 
   static const String _cartKey = 'cart';
   static const String _lastSyncKey = 'cart_last_sync';
-  static const String _deviceIdKey = 'device_id';
-
-  /// Server returns `{ cart: { items: [...] } }` or legacy `{ cart: [...] }`.
-  static List<dynamic> _itemsListFromCartPayload(dynamic cartPayload) {
-    if (cartPayload is List) return cartPayload;
-    if (cartPayload is Map) {
-      final items = cartPayload['items'];
-      if (items is List) return items;
-      if (items is String && items.isNotEmpty) {
-        try {
-          final decoded = jsonDecode(items);
-          if (decoded is List) return decoded;
-        } catch (_) {}
-      }
-    }
-    return [];
-  }
 
   /// Extract line items from GET /api/tray-draft (prefers `tray_items`).
   static List<dynamic> _itemsListFromTrayDraftResponse(
@@ -99,7 +82,7 @@ class CartSyncService {
     };
   }
 
-  /// Cart JSON from tray draft (`dish` nested) or cart_sessions rows (flat columns).
+  /// Cart JSON from `customer_tray_drafts.tray_items`.
   static CartItem? parseTrayLineItem(dynamic raw) {
     if (raw is! Map) return null;
     final map = Map<String, dynamic>.from(raw);
@@ -110,51 +93,50 @@ class CartSyncService {
         return CartItem.fromJson({
           'dish': Map<String, dynamic>.from(nestedDish),
           'quantity': map['quantity'] ?? 1,
-          'selectedSauce':
-              map['selectedSauce'] ?? map['selected_sauce'],
+          'selectedSauce': map['selectedSauce'] ?? map['selected_sauce'],
         });
       } catch (_) {
         return null;
       }
     }
 
-    final dishId = map['dish_id'] ??
-        map['dishId'] ??
-        map['id'] ??
-        map['menu_dish_id'];
+    final dishId =
+        map['dish_id'] ?? map['dishId'] ?? map['id'] ?? map['menu_dish_id'];
     if (dishId == null) return null;
 
     final qty = map['quantity'] ?? map['qty'] ?? map['dip_qty'];
-    final quantity = qty is num
-        ? qty.toInt()
-        : int.tryParse(qty?.toString() ?? '') ?? 1;
+    final quantity =
+        qty is num ? qty.toInt() : int.tryParse(qty?.toString() ?? '') ?? 1;
 
     return CartItem(
       dish: MenuDish(
         id: dishId.toString(),
-        name: (map['dish_name'] ??
-                map['dishName'] ??
-                map['item_name'] ??
-                map['name'] ??
-                '')
-            .toString(),
-        price: (map['dish_price'] ?? map['dishPrice'] ?? map['price'] ?? '0')
-            .toString(),
+        name:
+            (map['dish_name'] ??
+                    map['dishName'] ??
+                    map['item_name'] ??
+                    map['name'] ??
+                    '')
+                .toString(),
+        price:
+            (map['dish_price'] ?? map['dishPrice'] ?? map['price'] ?? '0')
+                .toString(),
         category:
-            (map['dish_category'] ?? map['dishCategory'] ?? map['category'] ??
+            (map['dish_category'] ??
+                    map['dishCategory'] ??
+                    map['category'] ??
                     'restaurant')
                 .toString(),
         paxOptions: const [],
-        type: (map['dish_type'] ?? map['dishType'] ?? map['type'] ?? '')
-            .toString(),
-        mealType:
-            (map['meal_type'] ?? map['mealType'] ?? '').toString(),
+        type:
+            (map['dish_type'] ?? map['dishType'] ?? map['type'] ?? '')
+                .toString(),
+        mealType: (map['meal_type'] ?? map['mealType'] ?? '').toString(),
       ),
       quantity: quantity < 1 ? 1 : quantity,
-      selectedSauce: (map['selected_sauce'] ??
-              map['selectedSauce'] ??
-              map['dip'])
-          ?.toString(),
+      selectedSauce:
+          (map['selected_sauce'] ?? map['selectedSauce'] ?? map['dip'])
+              ?.toString(),
     );
   }
 
@@ -181,25 +163,15 @@ class CartSyncService {
       var trayItems = <dynamic>[];
       var trayLoaded = false;
       try {
-        final trayResponse =
-            await ApiClient.instance.getJson('/api/tray-draft');
+        final trayResponse = await ApiClient.instance.getJson(
+          '/api/tray-draft',
+        );
         if (trayResponse['success'] == true) {
           trayLoaded = true;
           trayItems = _itemsListFromTrayDraftResponse(trayResponse);
         }
       } catch (_) {
         /* tray draft may be empty */
-      }
-
-      if (!trayLoaded || trayItems.isEmpty) {
-        try {
-          final response = await ApiClient.instance.getJson('/api/cart');
-          if (trayItems.isEmpty) {
-            trayItems = _itemsListFromCartPayload(response['cart']);
-          }
-        } catch (_) {
-          /* cart_sessions fallback optional */
-        }
       }
 
       if (!trayLoaded && trayItems.isEmpty) return;
@@ -220,7 +192,7 @@ class CartSyncService {
     }
   }
 
-  /// Sync local cart to server (`tray_items` + legacy cart_sessions).
+  /// Sync local cart to `customer_tray_drafts.tray_items`.
   Future<void> syncToServer() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -231,34 +203,10 @@ class CartSyncService {
         final cartItems = CartStore.instance.items;
 
         if (cartItems.isNotEmpty) {
-          final trayData =
-              cartItems.map(trayLineToJson).toList();
-          final flatCart = cartItems
-              .map(
-                (item) => {
-                  'dish_id': item.dish.id,
-                  'dish_name': item.dish.name,
-                  'dish_price': item.dish.price,
-                  'dish_category': item.dish.category,
-                  'dish_type': item.dish.type,
-                  'quantity': item.quantity,
-                  'selected_sauce': item.selectedSauce,
-                },
-              )
-              .toList();
-          await ApiClient.instance.postJson(
-            '/api/cart/sync',
-            body: {
-              'cart': flatCart,
-              'deviceId': await _getDeviceId(),
-              'timestamp': DateTime.now().toIso8601String(),
-            },
-          );
+          final trayData = cartItems.map(trayLineToJson).toList();
           await ApiClient.instance.putJson(
             '/api/tray-draft',
-            body: {
-              'tray_items': trayData,
-            },
+            body: {'tray_items': trayData},
           );
 
           await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());
@@ -272,23 +220,6 @@ class CartSyncService {
       }
     } catch (e) {
       print('Error syncing cart to server: $e');
-    }
-  }
-
-  /// Get or generate device ID for tracking
-  Future<String> _getDeviceId() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      String? deviceId = prefs.getString(_deviceIdKey);
-
-      if (deviceId == null || deviceId.isEmpty) {
-        deviceId = 'device_${DateTime.now().millisecondsSinceEpoch}';
-        await prefs.setString(_deviceIdKey, deviceId);
-      }
-
-      return deviceId;
-    } catch (e) {
-      return 'device_${DateTime.now().millisecondsSinceEpoch}';
     }
   }
 
@@ -358,7 +289,6 @@ class CartSyncService {
       final token = prefs.getString('customer_token');
       if (token != null && token.isNotEmpty) {
         ApiClient.instance.setCustomerBearer(token);
-        await ApiClient.instance.postJson('/api/cart/clear');
         try {
           await ApiClient.instance.delete('/api/tray-draft');
         } catch (_) {

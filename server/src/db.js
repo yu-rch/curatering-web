@@ -862,44 +862,6 @@ export async function initDb() {
     ON CONFLICT (prefix) DO NOTHING;
   `);
 
-  // Create cart tables for synchronization
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS cart_sessions (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      device_id TEXT NOT NULL,
-      customer_token TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS cart_items (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      session_id uuid REFERENCES cart_sessions(id) ON DELETE CASCADE,
-      dish_id TEXT NOT NULL,
-      dish_name TEXT NOT NULL,
-      dish_price TEXT NOT NULL,
-      dish_category TEXT NOT NULL,
-      dish_type TEXT NOT NULL,
-      quantity INTEGER NOT NULL DEFAULT 1,
-      selected_sauce TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_cart_sessions_device ON cart_sessions(device_id);
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_cart_sessions_token ON cart_sessions(customer_token);
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_cart_items_session ON cart_items(session_id);
-  `);
   await pool.query(`
     INSERT INTO id_counters (prefix, last_number) VALUES ('MINQ', 0)
     ON CONFLICT (prefix) DO NOTHING;
@@ -1462,34 +1424,27 @@ async function createCustomerTrayDraftsTable(withFk) {
       customer_id TEXT PRIMARY KEY${fkClause},
       user_email TEXT,
       tray_items JSONB NOT NULL DEFAULT '[]'::jsonb,
-      items JSONB NOT NULL DEFAULT '[]'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
 }
 
-async function syncCustomerTrayDraftsItemColumns() {
+async function ensureCustomerTrayDraftsTrayItemsColumn() {
   const cols = await getTableColumnNames('customer_tray_drafts');
-  if (!cols.has('tray_items') && !cols.has('items')) return;
 
   await pool.query(
     `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_items JSONB NOT NULL DEFAULT '[]'::jsonb`,
   );
-  await pool.query(
-    `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb`,
-  );
 
-  if (cols.has('tray_items') || cols.has('items')) {
+  if (!cols.has('tray_items') && cols.has('items')) {
     try {
       await pool.query(`
         UPDATE customer_tray_drafts
-        SET tray_items = COALESCE(NULLIF(tray_items, '[]'::jsonb), items, '[]'::jsonb),
-            items = COALESCE(NULLIF(items, '[]'::jsonb), tray_items, '[]'::jsonb)
-        WHERE (tray_items IS NULL OR tray_items = '[]'::jsonb)
-           OR (items IS NULL OR items = '[]'::jsonb)
+        SET tray_items = COALESCE(NULLIF(tray_items, '[]'::jsonb), items, '[]'::jsonb)
+        WHERE tray_items IS NULL OR tray_items = '[]'::jsonb
       `);
     } catch (err) {
-      console.warn('[db] customer_tray_drafts column sync:', err.message);
+      console.warn('[db] customer_tray_drafts tray_items backfill:', err.message);
     }
   }
 }
@@ -1511,7 +1466,7 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
       await createCustomerTrayDraftsTable(false);
       console.log('[db] created customer_tray_drafts (customer_id TEXT, no FK)');
     }
-    await syncCustomerTrayDraftsItemColumns();
+    await ensureCustomerTrayDraftsTrayItemsColumn();
     return;
   }
 
@@ -1536,7 +1491,7 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
       } catch (_) {}
     }
     await pool.query(
-      `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb`,
+      `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_items JSONB NOT NULL DEFAULT '[]'::jsonb`,
     );
     await pool.query(
       `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS user_email TEXT`,
@@ -1544,7 +1499,7 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
     await pool.query(
       `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
     );
-    await syncCustomerTrayDraftsItemColumns();
+    await ensureCustomerTrayDraftsTrayItemsColumn();
     return;
   }
 
@@ -1555,7 +1510,7 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
       );
       console.log(`[db] renamed customer_tray_drafts.${legacyCol} → customer_id`);
       await pool.query(
-        `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb`,
+        `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_items JSONB NOT NULL DEFAULT '[]'::jsonb`,
       );
       await pool.query(
         `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS user_email TEXT`,
@@ -1563,7 +1518,7 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
       await pool.query(
         `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
       );
-      await syncCustomerTrayDraftsItemColumns();
+      await ensureCustomerTrayDraftsTrayItemsColumn();
       return;
     }
   }
