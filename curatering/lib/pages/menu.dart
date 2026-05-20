@@ -550,18 +550,20 @@ class _MenuState extends State<Menu> {
                             }
                           },
                         ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _publicDescriptionController,
-                          decoration: const InputDecoration(
-                            labelText: 'Dish description',
-                            alignLabelWithHint: true,
-                            hintText:
-                                'Brief description shown when customers tap the dish on the catering menu',
-                          ),
-                          maxLines: 3,
-                        ),
                       ],
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _publicDescriptionController,
+                        decoration: InputDecoration(
+                          labelText: 'Dish description',
+                          alignLabelWithHint: true,
+                          hintText:
+                              category == 'restaurant'
+                                  ? 'Shown when customers tap the dish on the restaurant menu'
+                                  : 'Shown when customers tap the dish on the catering menu',
+                        ),
+                        maxLines: 3,
+                      ),
                       const SizedBox(height: 12),
                       AllergenSelectorField(
                         key: ValueKey('allergens_${dish?.id ?? 'new'}_$category'),
@@ -634,10 +636,7 @@ class _MenuState extends State<Menu> {
                                   ? normalizeCateringMealType(_editingMealType)
                                   : _editingType,
                           available: _editingAvailable,
-                          publicDescription:
-                              category == 'catering'
-                                  ? _publicDescriptionController.text
-                                  : '',
+                          publicDescription: _publicDescriptionController.text,
                           allergens: _allergensController.text,
                         );
                       } else {
@@ -658,10 +657,7 @@ class _MenuState extends State<Menu> {
                                   ? normalizeCateringMealType(_editingMealType)
                                   : _editingType,
                           available: _editingAvailable,
-                          publicDescription:
-                              category == 'catering'
-                                  ? _publicDescriptionController.text
-                                  : dish.publicDescription,
+                          publicDescription: _publicDescriptionController.text,
                           allergens: _allergensController.text,
                         );
                       }

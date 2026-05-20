@@ -8,6 +8,7 @@ import '../theme/website_header_font.dart';
 import '../models/menu_dish.dart';
 import '../constants/catering_meal_types.dart';
 import '../services/menu_store.dart';
+import '../services/set_menu_store.dart';
 import '../widgets/catering_dish_info_dialog.dart';
 import '../widgets/customer_website_topbar.dart';
 
@@ -55,14 +56,17 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
   void initState() {
     super.initState();
     MenuStore.instance.addListener(_onMenuChanged);
+    SetMenuStore.instance.addListener(_onMenuChanged);
     if (MenuStore.instance.activeDishes.isEmpty && !MenuStore.instance.isLoading) {
       MenuStore.instance.loadDishes();
     }
+    SetMenuStore.instance.loadSetMenus();
   }
 
   @override
   void dispose() {
     MenuStore.instance.removeListener(_onMenuChanged);
+    SetMenuStore.instance.removeListener(_onMenuChanged);
     super.dispose();
   }
 
@@ -122,6 +126,8 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
     final cateringDishes =
         allDishes.where((d) => d.category == 'catering').toList();
     final visibleDishes = _filteredCateringDishes(cateringDishes);
+    final dishById = {for (final dish in visibleDishes) dish.id: dish};
+    final setMenus = SetMenuStore.instance.activeSetMenus;
 
     // Show loading state if dishes are empty or currently loading
     if (MenuStore.instance.isLoading || allDishes.isEmpty) {
@@ -311,99 +317,11 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                             ),
                           )
                         else
-                          GridView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount:
-                                      isMobile(context)
-                                          ? 2
-                                          : isTablet(context)
-                                          ? 3
-                                          : 5,
-                                  crossAxisSpacing: 12,
-                                  mainAxisSpacing: 12,
-                                  childAspectRatio: 0.8,
-                                ),
-                            itemCount: visibleDishes.length,
-                            itemBuilder: (ctx, i) {
-                              final d = visibleDishes[i];
-                              return Card(
-                                clipBehavior: Clip.antiAlias,
-                                elevation: 2,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: InkWell(
-                                  onTap:
-                                      () => showCateringDishInfoDialog(
-                                        context,
-                                        d,
-                                      ),
-                                  child: Column(
-                                    children: [
-                                      Expanded(
-                                        child: ClipRRect(
-                                          borderRadius:
-                                              const BorderRadius.vertical(
-                                                top: Radius.circular(8),
-                                              ),
-                                          child:
-                                              d.imageBase64 != null &&
-                                                      d.imageBase64!.isNotEmpty
-                                                  ? Image.memory(
-                                                    base64Decode(
-                                                      d.imageBase64!,
-                                                    ),
-                                                    fit: BoxFit.cover,
-                                                    width: double.infinity,
-                                                  )
-                                                  : Container(
-                                                    color:
-                                                        Colors.grey.shade200,
-                                                    child: const Icon(
-                                                      Icons.fastfood,
-                                                      size: 48,
-                                                    ),
-                                                  ),
-                                        ),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              d.name.toUpperCase(),
-                                              textAlign: TextAlign.center,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                            if (d.mealType.trim().isNotEmpty)
-                                              Padding(
-                                                padding: const EdgeInsets.only(
-                                                  top: 4,
-                                                ),
-                                                child: Text(
-                                                  d.mealType,
-                                                  textAlign: TextAlign.center,
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    color: Colors.grey.shade600,
-                                                  ),
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
+                          ..._buildCategorizedMenuSections(
+                            context,
+                            visibleDishes,
+                            dishById,
+                            setMenus,
                           ),
                       ],
                     ),
@@ -414,6 +332,129 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
           ),
         ),
       ),
+    );
+  }
+
+  List<Widget> _buildCategorizedMenuSections(
+    BuildContext context,
+    List<MenuDish> visibleDishes,
+    Map<String, MenuDish> dishById,
+    List<SetMenu> setMenus,
+  ) {
+    final shown = <String>{};
+    final sections = <Widget>[];
+    for (final set in setMenus) {
+      final dishes =
+          set.dishIds
+              .map((id) => dishById[id])
+              .whereType<MenuDish>()
+              .toList();
+      if (dishes.isEmpty) continue;
+      shown.addAll(dishes.map((d) => d.id));
+      sections.add(_menuSection(context, set.name, dishes));
+    }
+    final uncategorized =
+        visibleDishes.where((dish) => !shown.contains(dish.id)).toList();
+    if (uncategorized.isNotEmpty) {
+      sections.add(_menuSection(context, 'Individual Catering Dishes', uncategorized));
+    }
+    return sections;
+  }
+
+  Widget _menuSection(BuildContext context, String title, List<MenuDish> dishes) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          _dishGrid(context, dishes),
+        ],
+      ),
+    );
+  }
+
+  Widget _dishGrid(BuildContext context, List<MenuDish> dishes) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount:
+            isMobile(context)
+                ? 2
+                : isTablet(context)
+                ? 3
+                : 5,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 0.8,
+      ),
+      itemCount: dishes.length,
+      itemBuilder: (ctx, i) {
+        final d = dishes[i];
+        return Card(
+          clipBehavior: Clip.antiAlias,
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          child: InkWell(
+            onTap: () => showCateringDishInfoDialog(context, d),
+            child: Column(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(8),
+                    ),
+                    child:
+                        d.imageBase64 != null && d.imageBase64!.isNotEmpty
+                            ? Image.memory(
+                              base64Decode(d.imageBase64!),
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                            )
+                            : Container(
+                              color: Colors.grey.shade200,
+                              child: const Icon(Icons.fastfood, size: 48),
+                            ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        d.name.toUpperCase(),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                      if (d.mealType.trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            d.mealType,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

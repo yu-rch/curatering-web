@@ -35,6 +35,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   double? _deliveryLng;
   bool _isLoading = false;
   bool _saveAddress = false;
+  bool _showValidation = false;
   Map<String, dynamic>? _customerData;
   int _currentPoints = 0; // User's current points - in production from API
 
@@ -170,53 +171,26 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Future<void> _handlePlaceOrder() async {
+    setState(() => _showValidation = true);
     // Prevent checkout when the cart is empty (even if user navigates here directly).
     if (CartStore.instance.items.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Your cart is empty')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Your cart is empty')));
       }
+      return;
+    }
+
+    if (!_isCheckoutValid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fix the highlighted fields')),
+      );
       return;
     }
 
     final isGuest = _customerData == null;
-
-    if (isGuest) {
-      final guestEmail = _guestEmailController.text.trim();
-      if (guestEmail.isEmpty || !guestEmail.contains('@')) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a valid email address')),
-        );
-        return;
-      }
-    }
-
-    if (_nameController.text.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please enter your name')));
-      return;
-    }
-
     final phoneDigits = _phoneController.text.replaceAll(RegExp(r'\D'), '');
-    if (phoneDigits.length != 11) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Contact number must be exactly 11 digits (e.g. 091234567890).',
-          ),
-        ),
-      );
-      return;
-    }
-
-    if (_addressController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a delivery address')),
-      );
-      return;
-    }
 
     if (_deliveryLat == null ||
         _deliveryLng == null ||
@@ -253,18 +227,23 @@ class _CheckoutPageState extends State<CheckoutPage> {
               .toList();
 
       final orderData = <String, dynamic>{
+        'tray_items': items,
         'items': items,
         'fullName': _nameController.text,
-        'phone': phoneDigits,
+        'contactNumber': phoneDigits,
         'deliveryAddress': _addressController.text,
         'deliveryLat': _deliveryLat,
         'deliveryLng': _deliveryLng,
         'deliveryNotes': _notesController.text.trim(),
-        'deliveryTime': _resolveDeliveryTime()?.toIso8601String(),
-        'totalAmount': CartStore.instance.totalAmount,
+        'deliveryTime':
+            _deliveryTimeMode == 'NOW'
+                ? 'NOW'
+                : _resolveDeliveryTime()?.toIso8601String(),
+        'totalCost': CartStore.instance.totalAmount,
+        'orderSource': 'WEB_APP',
       };
       if (isGuest) {
-        orderData['guestContactEmail'] = _guestEmailController.text.trim();
+        orderData['userEmail'] = _guestEmailController.text.trim();
       }
 
       final headers = <String, String>{'Content-Type': 'application/json'};
@@ -303,7 +282,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Order created but response was invalid. Contact support.'),
+                content: Text(
+                  'Order created but response was invalid. Contact support.',
+                ),
               ),
             );
           }
@@ -318,7 +299,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
         if (mounted) {
           if (orderNo != 'N/A') {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Order $orderNo created. Complete payment to confirm.')),
+              SnackBar(
+                content: Text(
+                  'Order $orderNo created. Complete payment to confirm.',
+                ),
+              ),
             );
           }
           Navigator.of(context, rootNavigator: true).pushReplacement(
@@ -357,6 +342,55 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
+  bool get _isCheckoutValid {
+    return _nameError == null &&
+        _phoneError == null &&
+        (_customerData != null || _guestEmailError == null) &&
+        _addressError == null &&
+        _deliveryPinError == null;
+  }
+
+  String? get _nameError {
+    final value = _nameController.text.trim();
+    if (value.isEmpty) return 'Name is required';
+    if (value.length < 2) return 'Enter at least 2 characters';
+    return null;
+  }
+
+  String? get _phoneError {
+    final digits = _phoneController.text.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return 'Contact number is required';
+    if (digits.length != 11 || !digits.startsWith('09')) {
+      return 'Use an 11-digit PH mobile number, e.g. 09123456789';
+    }
+    return null;
+  }
+
+  String? get _guestEmailError {
+    final value = _guestEmailController.text.trim();
+    if (value.isEmpty) return 'Email is required for guest checkout';
+    final ok = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value);
+    return ok ? null : 'Enter a valid email address';
+  }
+
+  String? get _addressError {
+    return _addressController.text.trim().isEmpty
+        ? 'Delivery address is required'
+        : null;
+  }
+
+  String? get _deliveryPinError {
+    if (_deliveryLat == null || _deliveryLng == null) {
+      return 'Pin your delivery location on the map';
+    }
+    final withinRadius = isWithinDeliveryRadius(
+      GeoPin(lat: _deliveryLat!, lng: _deliveryLng!),
+    );
+    return withinRadius
+        ? null
+        : 'Location must be within ${deliveryMaxDistanceKm.toStringAsFixed(0)} km';
+  }
+
   @override
   Widget build(BuildContext context) {
     final cartItems = CartStore.instance.items;
@@ -385,7 +419,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 const SizedBox(height: 24),
                 // Continue ordering button
                 OutlinedButton(
-                  onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+                  onPressed:
+                      () => Navigator.of(context, rootNavigator: true).pop(),
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: Colors.amber.shade400),
                     padding: const EdgeInsets.symmetric(
@@ -636,6 +671,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     'NAME',
                                     '',
                                     controller: _nameController,
+                                    errorText:
+                                        _showValidation ? _nameError : null,
                                   ),
                                   const SizedBox(height: 16),
                                   // Contact Number
@@ -646,7 +683,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     keyboardType: TextInputType.number,
                                     maxLength: 11,
                                     digitsOnly: true,
-                                    hintText: '6391234567890',
+                                    hintText: '09123456789',
+                                    errorText:
+                                        _showValidation ? _phoneError : null,
                                   ),
                                   if (_customerData == null) ...[
                                     const SizedBox(height: 16),
@@ -655,6 +694,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                       'Required for order updates',
                                       controller: _guestEmailController,
                                       keyboardType: TextInputType.emailAddress,
+                                      errorText:
+                                          _showValidation
+                                              ? _guestEmailError
+                                              : null,
                                     ),
                                   ],
                                   const SizedBox(height: 16),
@@ -857,8 +900,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 controller: _addressController,
                 maxLines: 3,
                 style: const TextStyle(fontSize: 12),
+                onChanged: (_) {
+                  if (_showValidation) setState(() {});
+                },
                 decoration: InputDecoration(
                   isDense: true,
+                  errorText:
+                      _showValidation
+                          ? (_addressError ?? _deliveryPinError)
+                          : null,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
                     borderSide: BorderSide(color: Colors.grey.shade300),
@@ -996,6 +1046,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     int? maxLength,
     bool digitsOnly = false,
     String? hintText,
+    String? errorText,
   }) {
     return Row(
       crossAxisAlignment:
@@ -1029,8 +1080,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             ]
                             : null,
                     style: const TextStyle(fontSize: 12),
+                    onChanged: (_) {
+                      if (_showValidation) setState(() {});
+                    },
                     decoration: InputDecoration(
                       isDense: true,
+                      errorText: errorText,
                       hintText: hintText,
                       hintStyle: TextStyle(
                         fontSize: 12,
@@ -1385,7 +1440,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   Align(
                     alignment: Alignment.topRight,
                     child: IconButton(
-                      onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+                      onPressed:
+                          () =>
+                              Navigator.of(context, rootNavigator: true).pop(),
                       icon: const Icon(Icons.close, color: Colors.black),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -1450,7 +1507,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                         onTap:
                             canRedeem
                                 ? () {
-                                  Navigator.of(context, rootNavigator: true).pop();
+                                  Navigator.of(
+                                    context,
+                                    rootNavigator: true,
+                                  ).pop();
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(
@@ -1469,7 +1529,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+                      onPressed:
+                          () =>
+                              Navigator.of(context, rootNavigator: true).pop(),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFFFC024),
                         foregroundColor: Colors.black,

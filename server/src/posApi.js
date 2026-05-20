@@ -6,6 +6,7 @@ import {
   restaurantOrderIdInsertColumn,
   restaurantOrderItemsInsertSql,
   parseRestaurantOrderTrayItems,
+  normalizeRestaurantOrderStatus,
 } from "./order_schema.js";
 import { getTableColumnNames } from "./db.js";
 
@@ -26,23 +27,23 @@ async function restaurantOrderSelectSql() {
 
 export async function ensureRestaurantPosColumns(pool) {
   const cols = [
-    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS order_source TEXT NOT NULL DEFAULT 'ONLINE'`,
-    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS fulfillment_stage TEXT`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS order_source TEXT NOT NULL DEFAULT 'WEB_APP'`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS pos_customer_label TEXT`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_method TEXT`,
-    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS cashier_amount_received DECIMAL(10,2)`,
-    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS cashier_secondary_amount_received DECIMAL(10,2)`,
-    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS supplemental_payment_proof TEXT`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS cashier_amount_received_initial DECIMAL(12,2)`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS cashier_amount_received_balance DECIMAL(12,2)`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_proof_balance TEXT`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS balance_proof_pending_review BOOLEAN NOT NULL DEFAULT FALSE`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS pos_claimed BOOLEAN NOT NULL DEFAULT FALSE`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS pos_claimed_at TIMESTAMPTZ`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_proof_initial TEXT`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_reference_initial TEXT`,
-    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_references_initial TEXT`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_reference_balance TEXT`,
-    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS guest_contact_email TEXT`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS amount_paid DECIMAL(10,2)`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS change_given DECIMAL(10,2)`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_proof TEXT`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_uploaded BOOLEAN NOT NULL DEFAULT FALSE`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS note TEXT NOT NULL DEFAULT ''`,
   ];
   for (const sql of cols) {
     try {
@@ -54,57 +55,45 @@ export async function ensureRestaurantPosColumns(pool) {
 }
 
 function fulfillmentStageFromRow(row) {
-  if (row.fulfillment_stage) {
-    return String(row.fulfillment_stage).toUpperCase();
-  }
-  const os = String(row.order_status || "").toLowerCase();
-  if (os === "pending_cashier" || os === "pending") return "PENDING_CASHIER";
-  if (os === "in_preparation" || os === "confirmed" || os === "preparing") {
-    return "IN_PREPARATION";
-  }
-  if (os === "out_for_delivery") return "OUT_FOR_DELIVERY";
-  if (os === "delivered") return "DELIVERED";
-  if (os === "cancelled") return "CANCELLED";
-  return "PENDING_CASHIER";
+  return normalizeRestaurantOrderStatus(row.order_status);
 }
 
 function orderStatusFromFulfillmentStage(stage) {
   const s = String(stage || "").toUpperCase();
-  if (s === "PENDING_CASHIER") return "pending_cashier";
-  if (s === "IN_PREPARATION") return "in_preparation";
-  if (s === "OUT_FOR_DELIVERY") return "out_for_delivery";
-  if (s === "DELIVERED") return "delivered";
-  return "pending_cashier";
+  if (s === "PENDING_CASHIER") return "PENDING_CASHIER";
+  if (s === "IN_PREPARATION") return "IN_PREPARATION";
+  if (s === "OUT_FOR_DELIVERY") return "OUT_FOR_DELIVERY";
+  if (s === "DELIVERED") return "DELIVERED";
+  return "PENDING_CASHIER";
 }
 
 function posStatusLabel(row) {
-  const os = String(row.order_status || "").toLowerCase();
-  const ps = String(row.payment_status || "").toLowerCase();
-  const total = Number(row.total_amount || 0);
-  const paid = Number(row.cashier_amount_received ?? row.amount_paid ?? 0);
-  const supplemental = Number(row.cashier_secondary_amount_received ?? 0);
+  const os = normalizeRestaurantOrderStatus(row.order_status);
+  const total = Number(row.total_cost ?? row.total_amount ?? 0);
+  const paid = Number(row.cashier_amount_received_initial ?? row.amount_paid ?? 0);
+  const supplemental = Number(row.cashier_amount_received_balance ?? 0);
 
-  if (os === "cancelled") return "CANCELLED";
-  if (ps === "insufficient" || (paid > 0 && paid < total && os === "pending_cashier")) {
+  if (os === "CANCELLED") return "CANCELLED";
+  if (paid > 0 && paid < total && os === "PENDING_CASHIER") {
     return "PAYMENT INSUFFICIENT";
   }
-  if (row.balance_proof_pending_review && row.supplemental_payment_proof) {
+  if (row.balance_proof_pending_review && row.payment_proof_balance) {
     return "BALANCE PAYMENT CONFIRMATION";
   }
-  if (os === "pending_cashier") {
-    if (row.payment_proof_initial) {
+  if (os === "PENDING_CASHIER") {
+    if (row.payment_uploaded_initial || row.payment_proof_initial) {
       return "WAITING FOR PAYMENT CONFIRMATION";
     }
     return "WAITING FOR ORDER CONFIRMATION";
   }
-  if (os === "in_preparation" || os === "out_for_delivery") {
+  if (os === "IN_PREPARATION" || os === "OUT_FOR_DELIVERY") {
     const change = Number(row.change_given ?? 0);
     if (change > 0.01 || paid + supplemental > total + 0.01) {
       return "ORDER CONFIRMED WITH OVERPAYMENT";
     }
     return "ORDER CONFIRMED";
   }
-  if (os === "delivered") return "DELIVERED";
+  if (os === "DELIVERED") return "DELIVERED";
   return (row.order_status || "UNKNOWN").toUpperCase();
 }
 
@@ -138,52 +127,47 @@ export function mapRestaurantOrderRowForPosApi(row, customerName = null) {
   const items = normalizeLineItems(parseRestaurantOrderTrayItems(row));
   const total = Number(row.total_amount ?? row.total_cost ?? 0);
   const proof = row.payment_proof_initial ?? null;
-  const refInitial =
-    row.payment_reference_initial ??
-    row.payment_references_initial ??
-    row.payment_reference ??
-    "";
+  const refInitial = row.payment_reference_initial ?? row.payment_reference ?? "";
   return {
     id: row.id,
-    order_no: row.order_no,
-    order_id: row.order_no,
+    order_no: row.order_id,
+    order_id: row.order_id,
     status: posStatusLabel(row),
     fulfillment_stage: fulfillmentStageFromRow(row),
     total,
     total_cost: total,
     payment_mode: (row.payment_method || "GCASH").toUpperCase(),
-    payment_uploaded: Boolean(proof && String(proof).trim()),
-    payment_proof: proof,
+    payment_uploaded: row.payment_uploaded === true || Boolean(proof && String(proof).trim()),
+    payment_proof: row.payment_proof ?? proof,
     payment_proof_initial: proof,
-    supplemental_payment_proof: row.supplemental_payment_proof ?? null,
-    payment_proof_balance: row.supplemental_payment_proof ?? null,
+    supplemental_payment_proof: row.payment_proof_balance ?? null,
+    payment_proof_balance: row.payment_proof_balance ?? null,
     payment_reference_initial: refInitial,
-    payment_references_initial:
-      row.payment_references_initial ?? row.payment_reference_initial ?? refInitial,
+    payment_references_initial: refInitial,
     payment_reference_balance: row.payment_reference_balance ?? "",
     cashier_amount_received:
-      row.cashier_amount_received != null
-        ? Number(row.cashier_amount_received)
+      row.cashier_amount_received_initial != null
+        ? Number(row.cashier_amount_received_initial)
         : row.amount_paid != null
           ? Number(row.amount_paid)
           : null,
     cashier_secondary_amount_received:
-      row.cashier_secondary_amount_received != null
-        ? Number(row.cashier_secondary_amount_received)
+      row.cashier_amount_received_balance != null
+        ? Number(row.cashier_amount_received_balance)
         : null,
     balance_proof_pending_review: row.balance_proof_pending_review === true,
     pos_customer_label: row.pos_customer_label ?? "",
     order_source: row.order_source ?? "ONLINE",
     customer_display_name: customerName ?? row.full_name ?? "",
-    guest_contact_email: row.guest_contact_email ?? "",
+    guest_contact_email: row.user_email ?? "",
     delivery_name: row.full_name ?? "",
-    delivery_contact: row.phone ?? "",
+    delivery_contact: row.contact_number ?? "",
     delivery_address: row.delivery_address ?? "",
     delivery_time: row.delivery_time,
     delivery_tracking_url: row.delivery_tracking_url ?? "",
     order_lines_snapshot: items,
     tray_items: items,
-    loyalty_points_earned: Number(row.points_earned ?? 0),
+    loyalty_points_earned: Number(row.loyalty_points_restaurant_obtained ?? 0),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -248,9 +232,9 @@ function posAuthMiddleware(pool) {
 }
 
 const CASHIER_ONLINE_ORDER_WHERE = `
-  (COALESCE(order_source, 'ONLINE') <> 'POS')
+  (COALESCE(order_source, 'WEB_APP') IN ('WEB_APP', 'MOBILE_APP'))
   AND (
-    guest_contact_email IS NOT NULL AND trim(guest_contact_email) <> ''
+    user_email IS NOT NULL AND trim(user_email) <> ''
     OR customer_id IS NOT NULL
   )
 `;
@@ -287,6 +271,7 @@ export function registerPosRoutes(app, {
   allocateRestaurantOrderNo,
   sendCustomerNotificationEmail,
   resolveRestaurantOrderEmail,
+  restaurantFeedbackLink,
 }) {
   const posAuth = posAuthMiddleware(pool);
   const staffPos = [authRequired, posAuth];
@@ -317,7 +302,7 @@ export function registerPosRoutes(app, {
       const action = String(req.body?.action || "").toLowerCase();
       const amountReceived = Number(req.body?.amount_received);
       const supplemental = Number(req.body?.supplemental_amount_received);
-      const total = Number(order.total_amount || 0);
+      const total = Number(order.total_cost || order.total_amount || 0);
 
       if (action === "confirm") {
         const primary = Number.isFinite(amountReceived) ? amountReceived : total;
@@ -326,8 +311,7 @@ export function registerPosRoutes(app, {
         if (paid < total - 0.01) {
           await pool.query(
             `UPDATE restaurant_orders
-             SET payment_status = 'insufficient',
-                 cashier_amount_received = $2,
+             SET cashier_amount_received_initial = $2,
                  balance_proof_pending_review = FALSE,
                  updated_at = now()
              WHERE id = $1`,
@@ -338,11 +322,11 @@ export function registerPosRoutes(app, {
         const change = Number((paid - total).toFixed(2));
         await pool.query(
           `UPDATE restaurant_orders
-           SET payment_status = 'paid',
-               order_status = 'in_preparation',
-               fulfillment_stage = 'IN_PREPARATION',
-               cashier_amount_received = $2,
-               cashier_secondary_amount_received = $3,
+           SET payment_confirmed_initial = TRUE,
+               payment_confirmed_balance = CASE WHEN $3::numeric > 0 THEN TRUE ELSE payment_confirmed_balance END,
+               order_status = 'IN_PREPARATION',
+               cashier_amount_received_initial = $2,
+               cashier_amount_received_balance = $3,
                amount_paid = $2,
                change_given = $4,
                balance_proof_pending_review = FALSE,
@@ -364,8 +348,7 @@ export function registerPosRoutes(app, {
       if (action === "insufficient") {
         await pool.query(
           `UPDATE restaurant_orders
-           SET payment_status = 'insufficient',
-               cashier_amount_received = $2,
+           SET cashier_amount_received_initial = $2,
                updated_at = now()
            WHERE id = $1`,
           [order.id, Number.isFinite(amountReceived) ? amountReceived : 0],
@@ -378,10 +361,9 @@ export function registerPosRoutes(app, {
         const change = Number((paid - total).toFixed(2));
         await pool.query(
           `UPDATE restaurant_orders
-           SET payment_status = 'paid',
-               order_status = 'in_preparation',
-               fulfillment_stage = 'IN_PREPARATION',
-               cashier_amount_received = $2,
+           SET payment_confirmed_initial = TRUE,
+               order_status = 'IN_PREPARATION',
+               cashier_amount_received_initial = $2,
                amount_paid = $2,
                change_given = $3,
                updated_at = now()
@@ -404,8 +386,8 @@ export function registerPosRoutes(app, {
       if (!order) return res.status(404).json({ error: "Order not found" });
       const email = await resolveRestaurantOrderEmail(order);
       if (!email) return res.status(400).json({ error: "No customer email on order" });
-      const total = Number(order.total_amount || 0);
-      const paid = Number(order.cashier_amount_received ?? order.amount_paid ?? 0);
+      const total = Number(order.total_cost || order.total_amount || 0);
+      const paid = Number(order.cashier_amount_received_initial ?? order.amount_paid ?? 0);
       await sendCustomerNotificationEmail({
         to: email,
         subject: "Curatering: Balance payment required",
@@ -430,8 +412,8 @@ export function registerPosRoutes(app, {
       const tracking = String(req.body?.delivery_tracking_url || "").trim();
       const orderStatus = orderStatusFromFulfillmentStage(stage);
 
-      const fields = ["fulfillment_stage = $2", "order_status = $3", "updated_at = now()"];
-      const vals = [order.id, stage, orderStatus];
+      const fields = ["order_status = $2", "updated_at = now()"];
+      const vals = [order.id, orderStatus];
       if (tracking) {
         fields.push(`delivery_tracking_url = $${fields.length + 1}`);
         vals.push(tracking);
@@ -442,12 +424,14 @@ export function registerPosRoutes(app, {
         vals,
       );
 
-      if (orderStatus === "delivered") {
-        const total = Number(order.total_amount || 0);
+      if (orderStatus === "DELIVERED") {
+        const total = Number(order.total_cost || order.total_amount || 0);
         if (total >= 100) {
           const points = Math.floor((total * 2) / 100);
           await pool.query(
-            `UPDATE restaurant_orders SET points_earned = $2 WHERE id = $1`,
+            `UPDATE restaurant_orders
+             SET loyalty_points_restaurant_obtained = $2
+             WHERE id = $1`,
             [order.id, points],
           );
           if (order.customer_id) {
@@ -459,6 +443,17 @@ export function registerPosRoutes(app, {
               [order.customer_id, points],
             );
           }
+        }
+        const email = await resolveRestaurantOrderEmail(order);
+        if (email) {
+          await sendCustomerNotificationEmail({
+            to: email,
+            subject: "Curatering: Order delivered",
+            text:
+              `Your order ${order.order_id ?? order.order_no} has been delivered.\n\n` +
+              `Share your feedback: ${restaurantFeedbackLink(order)}\n\n` +
+              `- Curatering Team`,
+          });
         }
       }
 
@@ -488,25 +483,23 @@ export function registerPosRoutes(app, {
       const itemsInsert = restaurantOrderItemsInsertSql(roCols);
       const itemsJson = JSON.stringify(items);
       const itemsSql = itemsInsert.placeholders.replace(/\$ITEM\$/g, "$3::jsonb");
-      const proofCol = roCols.has("payment_proof_initial")
-        ? "payment_proof_initial"
-        : "payment_proof";
       const change =
         amountReceived > total ? Number((amountReceived - total).toFixed(2)) : 0;
 
       const r = await pool.query(
         `INSERT INTO restaurant_orders (
-           ${orderIdCol}, full_name, phone, ${itemsInsert.columns}, total_amount,
+           ${orderIdCol}, full_name, contact_number, ${itemsInsert.columns}, total_cost,
            delivery_address, delivery_lat, delivery_lng,
-           order_status, fulfillment_stage, payment_status, payment_method,
-           order_source, pos_customer_label, ${proofCol},
-           cashier_amount_received, amount_paid, change_given, pos_claimed_at
+           order_status, payment_method,
+           order_source, pos_customer_label, payment_proof,
+           payment_uploaded, cashier_amount_received_initial, amount_paid,
+           change_given, pos_claimed_at, note
          ) VALUES (
            $1, $2, '', ${itemsSql}, $4,
            'Walk-in', NULL, NULL,
-           'in_preparation', 'IN_PREPARATION', 'paid', $5,
-           'POS', $6, $7,
-           $8, $8, $9, now()
+           'IN_PREPARATION', $5,
+           'POS_WEB', $6, $7,
+           $10, $8, $8, $9, now(), $11
          )
          RETURNING *`,
         [
@@ -519,6 +512,8 @@ export function registerPosRoutes(app, {
           proof,
           amountReceived,
           change,
+          Boolean(proof),
+          String(req.body?.note || "").trim(),
         ],
       );
 
@@ -538,12 +533,13 @@ export function registerPosRoutes(app, {
     try {
       const filter = String(req.body?.filter || "preparing").toLowerCase();
       let where = `COALESCE(order_source, '') = 'POS'`;
+      where = `COALESCE(order_source, '') IN ('POS_MOBILE', 'POS_WEB')`;
       if (filter === "preparing") {
-        where += ` AND order_status = 'in_preparation' AND pos_claimed_at IS NULL`;
+        where += ` AND order_status = 'IN_PREPARATION' AND pos_claimed = FALSE`;
       } else if (filter === "claimed") {
-        where += ` AND pos_claimed_at IS NOT NULL AND order_status <> 'cancelled'`;
+        where += ` AND pos_claimed = TRUE AND order_status <> 'CANCELLED'`;
       } else if (filter === "cancelled") {
-        where += ` AND order_status = 'cancelled'`;
+        where += ` AND order_status = 'CANCELLED'`;
       }
 
       const selectSql = await restaurantOrderSelectSql();
@@ -568,8 +564,8 @@ export function registerPosRoutes(app, {
       await pool.query(
         `UPDATE restaurant_orders
          SET pos_claimed_at = COALESCE(pos_claimed_at, now()),
-             order_status = 'delivered',
-             fulfillment_stage = 'DELIVERED',
+             pos_claimed = TRUE,
+             order_status = 'DELIVERED',
              updated_at = now()
          WHERE id = $1`,
         [order.id],
@@ -587,7 +583,7 @@ export function registerPosRoutes(app, {
       if (!order) return res.status(404).json({ error: "Order not found" });
       await pool.query(
         `UPDATE restaurant_orders
-         SET order_status = 'cancelled', fulfillment_stage = 'CANCELLED', updated_at = now()
+         SET order_status = 'CANCELLED', updated_at = now()
          WHERE id = $1`,
         [order.id],
       );
@@ -604,8 +600,8 @@ export function registerPosRoutes(app, {
       const r = await pool.query(
         `SELECT ${selectSql}
          FROM restaurant_orders
-         WHERE order_status = 'delivered'
-            OR (COALESCE(order_source, '') = 'POS' AND pos_claimed_at IS NOT NULL)
+         WHERE order_status = 'DELIVERED'
+            OR (COALESCE(order_source, '') IN ('POS_MOBILE', 'POS_WEB') AND pos_claimed = TRUE)
          ORDER BY updated_at DESC
          LIMIT 250`,
       );

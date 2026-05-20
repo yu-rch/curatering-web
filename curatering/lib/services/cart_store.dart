@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/menu_dish.dart';
+import 'api_client.dart';
 import 'cart_sync_service.dart';
 
 class CartItem {
@@ -107,13 +108,35 @@ class CartStore extends ChangeNotifier {
     }
   }
 
-  void clearCart() {
+  void clearCart({bool skipServerSync = false}) {
     _items.clear();
     _saveCart();
     notifyListeners();
 
-    // Clear on server
-    CartSyncService.instance.clearCart();
+    if (!skipServerSync) {
+      CartSyncService.instance.clearCart();
+    }
+  }
+
+  /// Apply server tray without triggering a push back to the API.
+  void replaceItemsWithoutSync(List<dynamic> rawItems) {
+    _items = [];
+    for (final raw in rawItems) {
+      final parsed = CartSyncService.parseTrayLineItem(raw);
+      if (parsed == null) continue;
+      final existingIndex = _items.indexWhere(
+        (item) =>
+            item.dish.id == parsed.dish.id &&
+            item.selectedSauce == parsed.selectedSauce,
+      );
+      if (existingIndex >= 0) {
+        _items[existingIndex].quantity += parsed.quantity;
+      } else {
+        _items.add(parsed);
+      }
+    }
+    _saveCart();
+    notifyListeners();
   }
 
   Future<void> _saveCart() async {
@@ -142,8 +165,13 @@ class CartStore extends ChangeNotifier {
   }
 
   Future<void> init() async {
-    await _loadCart();
-    // Initialize sync service
-    await CartSyncService.instance.initialize();
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('customer_token');
+    if (token != null && token.isNotEmpty) {
+      ApiClient.instance.setCustomerBearer(token);
+      await CartSyncService.instance.syncFromServer();
+    } else {
+      await _loadCart();
+    }
   }
 }

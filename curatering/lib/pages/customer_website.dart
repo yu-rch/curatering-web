@@ -30,7 +30,6 @@ import '../widgets/venue_autocomplete_field.dart';
 import '../widgets/app_snackbar.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_profile_menu.dart';
-import '../widgets/antd_tokens.dart';
 import '../widgets/pexels_attribution_badge.dart';
 import '../widgets/catering_dish_info_dialog.dart';
 import '../widgets/website_rich_text.dart';
@@ -211,6 +210,7 @@ class CustomerWebsiteScreen extends StatefulWidget {
 
   final bool contentEditable;
   final bool showStaffChrome;
+
   /// When true, opens the customer Event Theme Design Studio for staff (Manage Events).
   final bool staffThemeStudioMode;
 
@@ -248,10 +248,7 @@ EdgeInsets websitePagePadding(BuildContext context, {double vertical = 24}) {
 
 /// Builds each main tab only after it has been opened once, then keeps it in an [IndexedStack].
 class _LazyMainTabStack extends StatefulWidget {
-  const _LazyMainTabStack({
-    required this.index,
-    required this.childBuilder,
-  });
+  const _LazyMainTabStack({required this.index, required this.childBuilder});
 
   final int index;
   final Widget Function(int index) childBuilder;
@@ -315,8 +312,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   void _recordPageView() {
-  final path =
-      ModalRoute.of(context)?.settings.name ?? customerRoute('/');
+    final path = ModalRoute.of(context)?.settings.name ?? customerRoute('/');
     unawaited(
       http.post(
         Uri.parse('$apiBaseUrl/api/public/analytics/page-view'),
@@ -335,7 +331,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     if (MenuStore.instance.activeDishes.isEmpty) {
       await MenuStore.instance.loadDishes();
     }
-    CartStore.instance.init();
+    await CartStore.instance.init();
     CartStore.instance.addListener(_onCartChanged);
     await _checkCustomerAuth();
   }
@@ -445,9 +441,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         for (final it in items) {
           if (it is! Map) continue;
           final im = Map<String, dynamic>.from(it);
-          final id = (im['id'] ?? im['dishId'] ?? im['dish_id'] ?? '')
-              .toString()
-              .trim();
+          final id =
+              (im['id'] ?? im['dishId'] ?? im['dish_id'] ?? '')
+                  .toString()
+                  .trim();
           final name =
               (im['name'] ?? im['dishName'] ?? im['dish_name'] ?? '')
                   .toString()
@@ -458,8 +455,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           counts[key] = (counts[key] ?? 0) + q;
         }
       }
-      final sorted = counts.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
+      final sorted =
+          counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
       final out = <Map<String, dynamic>>[];
       for (final e in sorted.take(10)) {
         final key = e.key;
@@ -614,7 +611,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                 );
                                 Navigator.pop(context);
                                 final rootCtx = this.context;
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
                                   if (!mounted) return;
                                   showAppSnackBar(
                                     rootCtx,
@@ -662,9 +661,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     }
     try {
       nav.push(
-        MaterialPageRoute<void>(
-          builder: (context) => const CheckoutPage(),
-        ),
+        MaterialPageRoute<void>(builder: (context) => const CheckoutPage()),
       );
     } catch (e, st) {
       debugPrint('Navigate to checkout failed: $e\n$st');
@@ -1021,8 +1018,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     // Handle special navigation for gallery, restaurant, inquire, and contact us
     if (index == 1 && label == 'Gallery') {
       return InkWell(
-        onTap: () =>
-            Navigator.pushReplacementNamed(context, customerRoute('/gallery')),
+        onTap:
+            () => Navigator.pushReplacementNamed(
+              context,
+              customerRoute('/gallery'),
+            ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Text(
@@ -1038,10 +1038,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
     if (index == 3 && label == 'Restaurant') {
       return InkWell(
-        onTap: () => Navigator.pushReplacementNamed(
-          context,
-          customerRoute('/restaurant'),
-        ),
+        onTap:
+            () => Navigator.pushReplacementNamed(
+              context,
+              customerRoute('/restaurant'),
+            ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Text(
@@ -1057,8 +1058,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
     if (index == 4 && label == 'Inquire Now') {
       return InkWell(
-        onTap: () =>
-            Navigator.pushReplacementNamed(context, customerRoute('/inquire')),
+        onTap:
+            () => Navigator.pushReplacementNamed(
+              context,
+              customerRoute('/inquire'),
+            ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Text(
@@ -1074,10 +1078,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
     if (index == 5 && label == 'Contact Us') {
       return InkWell(
-        onTap: () => Navigator.pushReplacementNamed(
-          context,
-          customerRoute('/contact-us'),
-        ),
+        onTap:
+            () => Navigator.pushReplacementNamed(
+              context,
+              customerRoute('/contact-us'),
+            ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Text(
@@ -1128,111 +1133,112 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           final wide = constraints.maxWidth > 900;
           final cols = [
             SizedBox(
-            width: wide ? null : 220,
-            child: Column(
+              width: wide ? null : 220,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextButton(
+                    onPressed: () {},
+                    child: const Text(
+                      'PRIVACY POLICY',
+                      style: TextStyle(color: Colors.black),
+                    ),
+                  ),
+                  WebsiteRichText(
+                    value: w.footerCopyright,
+                    style: const TextStyle(fontSize: 11, height: 1.4),
+                  ),
+                  if (widget.contentEditable)
+                    TextButton.icon(
+                      onPressed: () async {
+                        final value = await showWebsiteRichTextEditor(
+                          context: context,
+                          title: 'Edit footer copyright',
+                          initialValue: w.footerCopyright,
+                        );
+                        if (value == null || value.isEmpty) return;
+                        w.footerCopyright = value;
+                        await w.save();
+                        setState(() {});
+                      },
+                      icon: const Icon(Icons.edit, size: 14),
+                      label: const Text('Edit'),
+                    ),
+                ],
+              ),
+            ),
+            Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 TextButton(
-                  onPressed: () {},
+                  onPressed: () => setState(() => _navIndex = 1),
                   child: const Text(
-                    'PRIVACY POLICY',
+                    'GALLERY',
                     style: TextStyle(color: Colors.black),
                   ),
                 ),
-                WebsiteRichText(
-                  value: w.footerCopyright,
-                  style: const TextStyle(fontSize: 11, height: 1.4),
-                ),
-                if (widget.contentEditable)
-                  TextButton.icon(
-                    onPressed: () async {
-                      final value = await showWebsiteRichTextEditor(
-                        context: context,
-                        title: 'Edit footer copyright',
-                        initialValue: w.footerCopyright,
-                      );
-                      if (value == null || value.isEmpty) return;
-                      w.footerCopyright = value;
-                      await w.save();
-                      setState(() {});
-                    },
-                    icon: const Icon(Icons.edit, size: 14),
-                    label: const Text('Edit'),
+                TextButton(
+                  onPressed: () => setState(() => _navIndex = 2),
+                  child: const Text(
+                    'MENU',
+                    style: TextStyle(color: Colors.black),
                   ),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => _navIndex = 3),
+                  child: const Text(
+                    'RESTAURANT',
+                    style: TextStyle(color: Colors.black),
+                  ),
+                ),
               ],
             ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextButton(
-                onPressed: () => setState(() => _navIndex = 1),
-                child: const Text(
-                  'GALLERY',
-                  style: TextStyle(color: Colors.black),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextButton(
+                  onPressed: () => setState(() => _navIndex = 4),
+                  child: const Text(
+                    'INQUIRE NOW',
+                    style: TextStyle(color: Colors.black),
+                  ),
                 ),
-              ),
-              TextButton(
-                onPressed: () => setState(() => _navIndex = 2),
-                child: const Text(
-                  'MENU',
-                  style: TextStyle(color: Colors.black),
+                TextButton(
+                  onPressed: () => setState(() => _navIndex = 5),
+                  child: const Text(
+                    'CONTACT US',
+                    style: TextStyle(color: Colors.black),
+                  ),
                 ),
-              ),
-              TextButton(
-                onPressed: () => setState(() => _navIndex = 3),
-                child: const Text(
-                  'RESTAURANT',
-                  style: TextStyle(color: Colors.black),
+                TextButton(
+                  onPressed:
+                      () => showCustomerFooterFeedback(
+                        context,
+                        isLoggedIn: _isCustomerLoggedIn,
+                        onLogin: _checkCustomerAuth,
+                      ),
+                  child: const Text(
+                    'FEEDBACK',
+                    style: TextStyle(color: Colors.black),
+                  ),
                 ),
-              ),
-            ],
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextButton(
-                onPressed: () => setState(() => _navIndex = 4),
-                child: const Text(
-                  'INQUIRE NOW',
-                  style: TextStyle(color: Colors.black),
-                ),
-              ),
-              TextButton(
-                onPressed: () => setState(() => _navIndex = 5),
-                child: const Text(
-                  'CONTACT US',
-                  style: TextStyle(color: Colors.black),
-                ),
-              ),
-              TextButton(
-                onPressed: () => showCustomerFooterFeedback(
-                  context,
-                  isLoggedIn: _isCustomerLoggedIn,
-                  onLogin: _checkCustomerAuth,
-                ),
-                child: const Text(
-                  'FEEDBACK',
-                  style: TextStyle(color: Colors.black),
-                ),
-              ),
-            ],
-          ),
-          _footerCol(Icons.facebook, w.contactFacebook),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _footerRow(Icons.place, w.contactAddress),
-              _footerRow(Icons.schedule, w.contactHours),
-            ],
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _footerRow(Icons.phone, w.contactPhone),
-              _footerRow(Icons.email, w.contactEmail),
-            ],
-          ),
+              ],
+            ),
+            _footerCol(Icons.facebook, w.contactFacebook),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _footerRow(Icons.place, w.contactAddress),
+                _footerRow(Icons.schedule, w.contactHours),
+              ],
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _footerRow(Icons.phone, w.contactPhone),
+                _footerRow(Icons.email, w.contactEmail),
+              ],
+            ),
           ];
           if (wide) {
             return Row(
@@ -1464,6 +1470,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
+  // Kept for staff preview variants that may re-enable inline home navigation.
+  // ignore: unused_element
   Widget _buildHomeInlineNav() {
     return Material(
       color: const Color(0xFF1E1E1E),
@@ -1495,7 +1503,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   clipBehavior: Clip.none,
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.shopping_cart, color: Colors.white),
+                      icon: const Icon(
+                        Icons.shopping_cart,
+                        color: Colors.white,
+                      ),
                       onPressed: _openCartSidebar,
                     ),
                     if (CartStore.instance.itemCount > 0)
@@ -1572,7 +1583,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Center(
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: websiteContentMaxWidth(context)),
+          constraints: BoxConstraints(
+            maxWidth: websiteContentMaxWidth(context),
+          ),
           child: Column(
             children: [
               WebsiteRichText(
@@ -1690,8 +1703,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           final gap = 10.0;
                           final halfW = (totalW - gap) / 2;
                           final list = w.latestEventCollageBase64;
-                          String? at(int i) =>
-                              i < list.length ? list[i] : null;
+                          String? at(int i) => i < list.length ? list[i] : null;
                           return Column(
                             children: [
                               Row(
@@ -1757,8 +1769,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     if (w.latestEventCollageBase64.length < 4) {
                       w.latestEventCollageBase64.add(b64);
                     } else {
-                      w.latestEventCollageBase64[
-                              w.latestEventCollageBase64.length - 1] =
+                      w.latestEventCollageBase64[w
+                                  .latestEventCollageBase64
+                                  .length -
+                              1] =
                           b64;
                     }
                     await w.save();
@@ -1806,7 +1820,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildHomeHero(w),
-            _buildHomeInlineNav(),
             _buildRedBannerStrip(w),
             Container(
               color: const Color(0xFFF5F5F5),
@@ -2004,289 +2017,336 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           final cat = w.galleryCategories[_galleryDetailIndex!];
           final filteredImages = filterGalleryImages(cat, _gallerySearchQuery);
           return SingleChildScrollView(
-        padding: websitePagePadding(context),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: websiteContentMaxWidth(context),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
+            padding: websitePagePadding(context),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: websiteContentMaxWidth(context),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    FilledButton.tonal(
-                      onPressed:
-                          () => setState(() => _galleryDetailIndex = null),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF1E1E1E),
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('GO BACK'),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
+                    Row(
+                      children: [
+                        FilledButton.tonal(
+                          onPressed:
+                              () => setState(() => _galleryDetailIndex = null),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF1E1E1E),
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('GO BACK'),
                         ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFC024),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          cat.label,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                    ),
-                    if (widget.contentEditable) ...[
-                      const SizedBox(width: 10),
-                      FilledButton.icon(
-                        onPressed: () async {
-                          final b64s = await _pickMultipleImageB64();
-                          if (b64s.isEmpty) return;
-                          cat.addImagesFromBase64(b64s);
-                          await w.save();
-                          setState(() {});
-                        },
-                        icon: const Icon(Icons.add_photo_alternate),
-                        label: const Text('Add Photos'),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  onChanged:
-                      (v) => setState(
-                        () => _gallerySearchQuery = v.trim().toLowerCase(),
-                      ),
-                  decoration: InputDecoration(
-                    hintText: 'SEARCH BY TAG',
-                    isDense: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.amber.shade700),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.amber.shade700),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount:
-                        isMobile(context)
-                            ? 1
-                            : isTablet(context)
-                            ? 2
-                            : 3,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    childAspectRatio: 0.95,
-                  ),
-                  itemCount: filteredImages.length,
-                  itemBuilder: (ctx, i) {
-                    final imgData = filteredImages[i];
-                    final img = imgData.imageBase64;
-                    final fullIndex = cat.images.indexOf(imgData);
-                    return Card(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.grey.shade300),
-                      ),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          showDialog<void>(
-                            context: context,
-                            builder:
-                                (dlgCtx) => Dialog(
-                                  insetPadding: const EdgeInsets.symmetric(
-                                    horizontal: 120,
-                                    vertical: 60,
-                                  ),
-                                  child: Stack(
-                                    children: [
-                                      Padding(
-                                        padding: const EdgeInsets.all(18),
-                                        child: _b64Image(
-                                          img,
-                                          fit: BoxFit.contain,
-                                          alignment: _imageAlignmentFor(w, img),
-                                        ),
-                                      ),
-                                      Positioned(
-                                        top: 8,
-                                        right: 8,
-                                        child: IconButton(
-                                          onPressed:
-                                              () => Navigator.pop(dlgCtx),
-                                          icon: const Icon(Icons.close),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                          );
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.all(10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Expanded(
-                                child: Stack(
-                                  children: [
-                                    Positioned.fill(
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(10),
-                                        child: _b64Image(
-                                          img,
-                                          fit: BoxFit.cover,
-                                          alignment: _imageAlignmentFor(w, img),
-                                        ),
-                                      ),
-                                    ),
-                                    if (widget.contentEditable)
-                                      Positioned(
-                                        right: 6,
-                                        top: 6,
-                                        child: PopupMenuButton<String>(
-                                          icon: const Icon(
-                                            Icons.more_vert,
-                                            color: Colors.white,
-                                          ),
-                                          onSelected: (value) async {
-                                            if (value == 'position') {
-                                              await _editImagePosition(
-                                                w: w,
-                                                b64: img,
-                                              );
-                                              return;
-                                            } else if (value == 'tags') {
-                                              final ctrl = TextEditingController(
-                                                text: imgData.tags.join(', '),
-                                              );
-                                              final saved = await showDialog<bool>(
-                                                context: context,
-                                                builder: (ctx) => AlertDialog(
-                                                  title: const Text('Photo tags'),
-                                                  content: TextField(
-                                                    controller: ctrl,
-                                                    decoration: InputDecoration(
-                                                      hintText: galleryTagsHint(),
-                                                    ),
-                                                  ),
-                                                  actions: [
-                                                    TextButton(
-                                                      onPressed:
-                                                          () => Navigator.pop(ctx, false),
-                                                      child: const Text('Cancel'),
-                                                    ),
-                                                    FilledButton(
-                                                      onPressed:
-                                                          () => Navigator.pop(ctx, true),
-                                                      child: const Text('Save'),
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
-                                              if (saved == true) {
-                                                imgData.tags
-                                                  ..clear()
-                                                  ..addAll(parseTagsInput(ctrl.text));
-                                              }
-                                              ctrl.dispose();
-                                            } else if (value == 'delete' &&
-                                                fullIndex >= 0) {
-                                              cat.images.removeAt(fullIndex);
-                                            } else if (value == 'up' &&
-                                                fullIndex > 0) {
-                                              final tmp = cat.images[fullIndex - 1];
-                                              cat.images[fullIndex - 1] =
-                                                  cat.images[fullIndex];
-                                              cat.images[fullIndex] = tmp;
-                                            } else if (value == 'down' &&
-                                                fullIndex >= 0 &&
-                                                fullIndex < cat.images.length - 1) {
-                                              final tmp = cat.images[fullIndex + 1];
-                                              cat.images[fullIndex + 1] =
-                                                  cat.images[fullIndex];
-                                              cat.images[fullIndex] = tmp;
-                                            } else {
-                                              return;
-                                            }
-                                            await w.save();
-                                            setState(() {});
-                                          },
-                                          itemBuilder:
-                                              (_) => const [
-                                                PopupMenuItem(
-                                                  value: 'position',
-                                                  child: Text('Adjust Position'),
-                                                ),
-                                                PopupMenuItem(
-                                                  value: 'tags',
-                                                  child: Text('Edit tags'),
-                                                ),
-                                                PopupMenuItem(
-                                                  value: 'up',
-                                                  child: Text('Move Up'),
-                                                ),
-                                                PopupMenuItem(
-                                                  value: 'down',
-                                                  child: Text('Move Down'),
-                                                ),
-                                                PopupMenuItem(
-                                                  value: 'delete',
-                                                  child: Text('Delete'),
-                                                ),
-                                              ],
-                                        ),
-                                      ),
-                                  ],
-                                ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFC024),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              cat.label,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
                               ),
-                              if (imgData.tags.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 6),
-                                  child: Wrap(
-                                    spacing: 4,
-                                    runSpacing: 2,
-                                    children: imgData.tags
-                                        .map(
-                                          (t) => Chip(
-                                            label: Text(
-                                              t,
-                                              style: const TextStyle(fontSize: 10),
-                                            ),
-                                            visualDensity: VisualDensity.compact,
-                                            padding: EdgeInsets.zero,
-                                          ),
-                                        )
-                                        .toList(),
-                                  ),
-                                ),
-                            ],
+                            ),
                           ),
                         ),
+                        if (widget.contentEditable) ...[
+                          const SizedBox(width: 10),
+                          FilledButton.icon(
+                            onPressed: () async {
+                              final b64s = await _pickMultipleImageB64();
+                              if (b64s.isEmpty) return;
+                              cat.addImagesFromBase64(b64s);
+                              await w.save();
+                              setState(() {});
+                            },
+                            icon: const Icon(Icons.add_photo_alternate),
+                            label: const Text('Add Photos'),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      onChanged:
+                          (v) => setState(
+                            () => _gallerySearchQuery = v.trim().toLowerCase(),
+                          ),
+                      decoration: InputDecoration(
+                        hintText: 'SEARCH BY TAG',
+                        isDense: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: Colors.amber.shade700),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: Colors.amber.shade700),
+                        ),
                       ),
-                    );
-                  },
+                    ),
+                    const SizedBox(height: 16),
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount:
+                            isMobile(context)
+                                ? 1
+                                : isTablet(context)
+                                ? 2
+                                : 3,
+                        crossAxisSpacing: 16,
+                        mainAxisSpacing: 16,
+                        childAspectRatio: 0.95,
+                      ),
+                      itemCount: filteredImages.length,
+                      itemBuilder: (ctx, i) {
+                        final imgData = filteredImages[i];
+                        final img = imgData.imageBase64;
+                        final fullIndex = cat.images.indexOf(imgData);
+                        return Card(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () {
+                              showDialog<void>(
+                                context: context,
+                                builder:
+                                    (dlgCtx) => Dialog(
+                                      insetPadding: const EdgeInsets.symmetric(
+                                        horizontal: 120,
+                                        vertical: 60,
+                                      ),
+                                      child: Stack(
+                                        children: [
+                                          Padding(
+                                            padding: const EdgeInsets.all(18),
+                                            child: _b64Image(
+                                              img,
+                                              fit: BoxFit.contain,
+                                              alignment: _imageAlignmentFor(
+                                                w,
+                                                img,
+                                              ),
+                                            ),
+                                          ),
+                                          Positioned(
+                                            top: 8,
+                                            right: 8,
+                                            child: IconButton(
+                                              onPressed:
+                                                  () => Navigator.pop(dlgCtx),
+                                              icon: const Icon(Icons.close),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(10),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Expanded(
+                                    child: Stack(
+                                      children: [
+                                        Positioned.fill(
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                            child: _b64Image(
+                                              img,
+                                              fit: BoxFit.cover,
+                                              alignment: _imageAlignmentFor(
+                                                w,
+                                                img,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        if (widget.contentEditable)
+                                          Positioned(
+                                            right: 6,
+                                            top: 6,
+                                            child: PopupMenuButton<String>(
+                                              icon: const Icon(
+                                                Icons.more_vert,
+                                                color: Colors.white,
+                                              ),
+                                              onSelected: (value) async {
+                                                if (value == 'position') {
+                                                  await _editImagePosition(
+                                                    w: w,
+                                                    b64: img,
+                                                  );
+                                                  return;
+                                                } else if (value == 'tags') {
+                                                  final ctrl =
+                                                      TextEditingController(
+                                                        text: imgData.tags.join(
+                                                          ', ',
+                                                        ),
+                                                      );
+                                                  final saved = await showDialog<
+                                                    bool
+                                                  >(
+                                                    context: context,
+                                                    builder:
+                                                        (ctx) => AlertDialog(
+                                                          title: const Text(
+                                                            'Photo tags',
+                                                          ),
+                                                          content: TextField(
+                                                            controller: ctrl,
+                                                            decoration:
+                                                                InputDecoration(
+                                                                  hintText:
+                                                                      galleryTagsHint(),
+                                                                ),
+                                                          ),
+                                                          actions: [
+                                                            TextButton(
+                                                              onPressed:
+                                                                  () =>
+                                                                      Navigator.pop(
+                                                                        ctx,
+                                                                        false,
+                                                                      ),
+                                                              child: const Text(
+                                                                'Cancel',
+                                                              ),
+                                                            ),
+                                                            FilledButton(
+                                                              onPressed:
+                                                                  () =>
+                                                                      Navigator.pop(
+                                                                        ctx,
+                                                                        true,
+                                                                      ),
+                                                              child: const Text(
+                                                                'Save',
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                  );
+                                                  if (saved == true) {
+                                                    imgData.tags
+                                                      ..clear()
+                                                      ..addAll(
+                                                        parseTagsInput(
+                                                          ctrl.text,
+                                                        ),
+                                                      );
+                                                  }
+                                                  ctrl.dispose();
+                                                } else if (value == 'delete' &&
+                                                    fullIndex >= 0) {
+                                                  cat.images.removeAt(
+                                                    fullIndex,
+                                                  );
+                                                } else if (value == 'up' &&
+                                                    fullIndex > 0) {
+                                                  final tmp =
+                                                      cat.images[fullIndex - 1];
+                                                  cat.images[fullIndex - 1] =
+                                                      cat.images[fullIndex];
+                                                  cat.images[fullIndex] = tmp;
+                                                } else if (value == 'down' &&
+                                                    fullIndex >= 0 &&
+                                                    fullIndex <
+                                                        cat.images.length - 1) {
+                                                  final tmp =
+                                                      cat.images[fullIndex + 1];
+                                                  cat.images[fullIndex + 1] =
+                                                      cat.images[fullIndex];
+                                                  cat.images[fullIndex] = tmp;
+                                                } else {
+                                                  return;
+                                                }
+                                                await w.save();
+                                                setState(() {});
+                                              },
+                                              itemBuilder:
+                                                  (_) => const [
+                                                    PopupMenuItem(
+                                                      value: 'position',
+                                                      child: Text(
+                                                        'Adjust Position',
+                                                      ),
+                                                    ),
+                                                    PopupMenuItem(
+                                                      value: 'tags',
+                                                      child: Text('Edit tags'),
+                                                    ),
+                                                    PopupMenuItem(
+                                                      value: 'up',
+                                                      child: Text('Move Up'),
+                                                    ),
+                                                    PopupMenuItem(
+                                                      value: 'down',
+                                                      child: Text('Move Down'),
+                                                    ),
+                                                    PopupMenuItem(
+                                                      value: 'delete',
+                                                      child: Text('Delete'),
+                                                    ),
+                                                  ],
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (imgData.tags.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 6),
+                                      child: Wrap(
+                                        spacing: 4,
+                                        runSpacing: 2,
+                                        children:
+                                            imgData.tags
+                                                .map(
+                                                  (t) => Chip(
+                                                    label: Text(
+                                                      t,
+                                                      style: const TextStyle(
+                                                        fontSize: 10,
+                                                      ),
+                                                    ),
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    padding: EdgeInsets.zero,
+                                                  ),
+                                                )
+                                                .toList(),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
-      );
+          );
         }
 
         return SingleChildScrollView(
@@ -2366,7 +2426,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       final c = filtered[i];
                       final realIndex = w.galleryCategories.indexOf(c);
                       final thumb =
-                          c.images.isNotEmpty ? c.images.first.imageBase64 : null;
+                          c.images.isNotEmpty
+                              ? c.images.first.imageBase64
+                              : null;
                       return InkWell(
                         onTap:
                             () =>
@@ -2871,7 +2933,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           return dishType == selectedType;
         }).toList();
 
-    final panelH = (MediaQuery.sizeOf(context).height * 0.72).clamp(280.0, 880.0);
+    final panelH = (MediaQuery.sizeOf(context).height * 0.72).clamp(
+      280.0,
+      880.0,
+    );
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2884,245 +2949,249 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             child: SingleChildScrollView(
               padding: websitePagePadding(context, vertical: 20),
               child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Title and Login button
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Center(
-                        child: Text(
-                          'Restaurant',
-                          style: websiteHeaderStyle(
-                            fontSize: 42,
-                            color: Colors.red.shade400,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title and Login button
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            'Restaurant',
+                            style: websiteHeaderStyle(
+                              fontSize: 42,
+                              color: Colors.red.shade400,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    if (!_isCustomerLoggedIn)
-                      ElevatedButton(
-                        onPressed: _handleLogin,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFFFC024),
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text(
-                          'LOG IN TO ORDER',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // Loyalty Points Banner
-                _buildLoyaltyBanner(),
-                const SizedBox(height: 16),
-                // Search and Filter
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          border: Border.all(color: const Color(0xFFFFC024)),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const TextField(
-                          decoration: InputDecoration(
-                            hintText: 'SEARCH',
-                            hintStyle: TextStyle(color: Colors.grey),
-                            prefixIcon: Icon(Icons.search, color: Colors.grey),
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.symmetric(
-                              horizontal: 16,
+                      if (!_isCustomerLoggedIn)
+                        ElevatedButton(
+                          onPressed: _handleLogin,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFFC024),
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
                               vertical: 12,
                             ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text(
+                            'LOG IN TO ORDER',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 1,
-                      child: OutlinedButton(
-                        onPressed: () {},
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.grey),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text('FILTER'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // Category tabs
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _buildCategoryTab('RICE MEALS'),
-                      _buildCategoryTab('SILOG MEALS'),
-                      _buildCategoryTab('PASTA'),
-                      _buildCategoryTab('SANDWICHES'),
-                      _buildCategoryTab('OTHERS'),
-                      _buildCategoryTab('DRINKS'),
                     ],
                   ),
-                ),
-                const SizedBox(height: 24),
-                // Dishes grid
-                if (dishes.isEmpty)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Text(
-                        'No dishes available',
-                        style: TextStyle(color: Colors.grey, fontSize: 16),
+                  const SizedBox(height: 16),
+                  // Loyalty Points Banner
+                  _buildLoyaltyBanner(),
+                  const SizedBox(height: 16),
+                  // Search and Filter
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: const Color(0xFFFFC024)),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const TextField(
+                            decoration: InputDecoration(
+                              hintText: 'SEARCH',
+                              hintStyle: TextStyle(color: Colors.grey),
+                              prefixIcon: Icon(
+                                Icons.search,
+                                color: Colors.grey,
+                              ),
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  )
-                else
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 5,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
-                          childAspectRatio: 0.70,
-                        ),
-                    itemCount: dishes.length,
-                    itemBuilder: (ctx, i) {
-                      final d = dishes[i];
-                      return Card(
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: ClipRRect(
-                                borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(12),
-                                ),
-                                child:
-                                    d.imageBase64 != null &&
-                                            d.imageBase64!.isNotEmpty
-                                        ? _b64Image(
-                                          d.imageBase64,
-                                          fit: BoxFit.cover,
-                                        )
-                                        : Container(
-                                          color: Colors.grey.shade200,
-                                          child: const Icon(
-                                            Icons.fastfood,
-                                            size: 48,
-                                          ),
-                                        ),
-                              ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 1,
+                        child: OutlinedButton(
+                          onPressed: () {},
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.grey),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                            Expanded(
-                              flex: 2,
-                              child: Padding(
-                                padding: const EdgeInsets.all(8.0),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      d.name.toUpperCase(),
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 11,
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      d.sauces.isNotEmpty
-                                          ? d.sauces.join(', ').toUpperCase()
-                                          : '',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        color: Colors.grey.shade600,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '₱${d.price}',
-                                      style: TextStyle(
-                                        color: Colors.amber.shade800,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    if (_isCustomerLoggedIn)
-                                      SizedBox(
-                                        height: 28,
-                                        child: ElevatedButton(
-                                          onPressed:
-                                              d.available
-                                                  ? () => _addToCart(d)
-                                                  : null,
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor:
-                                                d.available
-                                                    ? const Color(0xFF1E1E1E)
-                                                    : Colors.grey.shade500,
-                                            foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 16,
-                                            ),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                            ),
-                                          ),
-                                          child: Text(
-                                            d.available
-                                                ? 'Add'
-                                                : 'Not Available',
-                                            style: TextStyle(fontSize: 11),
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
+                          child: const Text('FILTER'),
                         ),
-                      );
-                    },
+                      ),
+                    ],
                   ),
-              ],
+                  const SizedBox(height: 16),
+                  // Category tabs
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _buildCategoryTab('RICE MEALS'),
+                        _buildCategoryTab('SILOG MEALS'),
+                        _buildCategoryTab('PASTA'),
+                        _buildCategoryTab('SANDWICHES'),
+                        _buildCategoryTab('OTHERS'),
+                        _buildCategoryTab('DRINKS'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // Dishes grid
+                  if (dishes.isEmpty)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Text(
+                          'No dishes available',
+                          style: TextStyle(color: Colors.grey, fontSize: 16),
+                        ),
+                      ),
+                    )
+                  else
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 5,
+                            crossAxisSpacing: 10,
+                            mainAxisSpacing: 10,
+                            childAspectRatio: 0.70,
+                          ),
+                      itemCount: dishes.length,
+                      itemBuilder: (ctx, i) {
+                        final d = dishes[i];
+                        return Card(
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: ClipRRect(
+                                  borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(12),
+                                  ),
+                                  child:
+                                      d.imageBase64 != null &&
+                                              d.imageBase64!.isNotEmpty
+                                          ? _b64Image(
+                                            d.imageBase64,
+                                            fit: BoxFit.cover,
+                                          )
+                                          : Container(
+                                            color: Colors.grey.shade200,
+                                            child: const Icon(
+                                              Icons.fastfood,
+                                              size: 48,
+                                            ),
+                                          ),
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(8.0),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        d.name.toUpperCase(),
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 11,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        d.sauces.isNotEmpty
+                                            ? d.sauces.join(', ').toUpperCase()
+                                            : '',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '₱${d.price}',
+                                        style: TextStyle(
+                                          color: Colors.amber.shade800,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      if (_isCustomerLoggedIn)
+                                        SizedBox(
+                                          height: 28,
+                                          child: ElevatedButton(
+                                            onPressed:
+                                                d.available
+                                                    ? () => _addToCart(d)
+                                                    : null,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  d.available
+                                                      ? const Color(0xFF1E1E1E)
+                                                      : Colors.grey.shade500,
+                                              foregroundColor: Colors.white,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 16,
+                                                  ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              d.available
+                                                  ? 'Add'
+                                                  : 'Not Available',
+                                              style: TextStyle(fontSize: 11),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                ],
+              ),
             ),
-          ),
           ),
         ),
         // Right side - Cart Sidebar
@@ -3133,211 +3202,217 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             height: panelH,
             child: Container(
               decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade300),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: Colors.grey.shade200),
-                    ),
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
                   ),
-                  child: const Text(
-                    'YOUR TRAY',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                ),
-                // Cart items
-                Expanded(
-                  child:
-                      cartItems.isEmpty
-                          ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.shopping_cart_outlined,
-                                  size: 48,
-                                  color: Colors.grey.shade300,
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'Your tray is empty',
-                                  style: TextStyle(
-                                    color: Colors.grey.shade500,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                          : ListView.builder(
-                            padding: const EdgeInsets.all(12),
-                            itemCount: cartItems.length,
-                            itemBuilder: (context, index) {
-                              final cartItem = cartItems[index];
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: Row(
-                                  children: [
-                                    if (cartItem.dish.imageBase64 != null)
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(4),
-                                        child: Image.memory(
-                                          base64Decode(
-                                            cartItem.dish.imageBase64!,
-                                          ),
-                                          width: 50,
-                                          height: 50,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      )
-                                    else
-                                      Container(
-                                        width: 50,
-                                        height: 50,
-                                        decoration: BoxDecoration(
-                                          color: Colors.grey.shade200,
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.fastfood,
-                                          size: 20,
-                                          color: Colors.grey,
-                                        ),
-                                      ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            cartItem.dish.name.toUpperCase(),
-                                            style: const TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          if (cartItem.selectedSauce != null)
-                                            Text(
-                                              cartItem.selectedSauce!
-                                                  .toUpperCase(),
-                                              style: TextStyle(
-                                                fontSize: 8,
-                                                color: Colors.grey.shade600,
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          'x${cartItem.quantity}',
-                                          style: const TextStyle(fontSize: 10),
-                                        ),
-                                        Text(
-                                          '₱${(double.tryParse(cartItem.dish.price) ?? 0) * cartItem.quantity}',
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                ),
-                // Footer with total and checkout
-                if (cartItems.isNotEmpty)
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Header
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       border: Border(
-                        top: BorderSide(color: Colors.grey.shade200),
+                        bottom: BorderSide(color: Colors.grey.shade200),
                       ),
                     ),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'TOTAL',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                    child: const Text(
+                      'YOUR TRAY',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ),
+                  // Cart items
+                  Expanded(
+                    child:
+                        cartItems.isEmpty
+                            ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.shopping_cart_outlined,
+                                    size: 48,
+                                    color: Colors.grey.shade300,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Your tray is empty',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade500,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
                               ),
+                            )
+                            : ListView.builder(
+                              padding: const EdgeInsets.all(12),
+                              itemCount: cartItems.length,
+                              itemBuilder: (context, index) {
+                                final cartItem = cartItems[index];
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Row(
+                                    children: [
+                                      if (cartItem.dish.imageBase64 != null)
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                          child: Image.memory(
+                                            base64Decode(
+                                              cartItem.dish.imageBase64!,
+                                            ),
+                                            width: 50,
+                                            height: 50,
+                                            fit: BoxFit.cover,
+                                          ),
+                                        )
+                                      else
+                                        Container(
+                                          width: 50,
+                                          height: 50,
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey.shade200,
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: const Icon(
+                                            Icons.fastfood,
+                                            size: 20,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              cartItem.dish.name.toUpperCase(),
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            if (cartItem.selectedSauce != null)
+                                              Text(
+                                                cartItem.selectedSauce!
+                                                    .toUpperCase(),
+                                                style: TextStyle(
+                                                  fontSize: 8,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          Text(
+                                            'x${cartItem.quantity}',
+                                            style: const TextStyle(
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                          Text(
+                                            '₱${(double.tryParse(cartItem.dish.price) ?? 0) * cartItem.quantity}',
+                                            style: const TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
                             ),
-                            Text(
-                              '₱${totalAmount.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
+                  ),
+                  // Footer with total and checkout
+                  if (cartItems.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          top: BorderSide(color: Colors.grey.shade200),
                         ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: () {
-                              unawaited(_navigateToCheckout());
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFFFC024),
-                              foregroundColor: Colors.black,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'TOTAL',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                            child: Text(
-                              _isCustomerLoggedIn
-                                  ? 'CHECKOUT'
-                                  : 'LOG IN TO ORDER',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
+                              Text(
+                                '₱${totalAmount.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                unawaited(_navigateToCheckout());
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFFFC024),
+                                foregroundColor: Colors.black,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                              ),
+                              child: Text(
+                                _isCustomerLoggedIn
+                                    ? 'CHECKOUT'
+                                    : 'LOG IN TO ORDER',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
         ),
       ],
     );
@@ -3417,65 +3492,55 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       key: _scaffoldKey,
       backgroundColor: const Color(0xFFF5F5F5),
 
-      /// ✅ Sticky header using NestedScrollView
-      body: NestedScrollView(
-        headerSliverBuilder:
-            (context, innerBoxIsScrolled) => [
-              SliverToBoxAdapter(
-                child: Column(
-                  children: [
-                    if (widget.showStaffChrome && AuthSession.instance.hasToken)
-                      Material(
-                        color: Colors.black,
-                        child: SafeArea(
-                          bottom: false,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 6,
+      body: Column(
+        children: [
+          if (widget.showStaffChrome && AuthSession.instance.hasToken)
+            Material(
+              color: Colors.black,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    children: [
+                      TextButton(
+                        onPressed:
+                            () => Navigator.pushReplacementNamed(
+                              context,
+                              _staffHomeRoute(),
                             ),
-                            child: Row(
-                              children: [
-                                TextButton(
-                                  onPressed:
-                                      () => Navigator.pushReplacementNamed(
-                                        context,
-                                        _staffHomeRoute(),
-                                      ),
-                                  child: const Text(
-                                    '← Back to Curatering',
-                                    style: TextStyle(color: Color(0xFFFFC024)),
-                                  ),
-                                ),
-                                const Spacer(),
-                                if (widget.contentEditable)
-                                  Chip(
-                                    label: const Text(
-                                      'EDIT MODE',
-                                      style: TextStyle(fontSize: 11),
-                                    ),
-                                    backgroundColor: Colors.amber.shade100,
-                                  ),
-                              ],
-                            ),
-                          ),
+                        child: const Text(
+                          '← Back to Curatering',
+                          style: TextStyle(color: Color(0xFFFFC024)),
                         ),
                       ),
-
-                    /// Nav below hero on homepage; sticky header on other tabs.
-                    if (_navIndex != 0) _publicHeader(),
-                  ],
+                      const Spacer(),
+                      if (widget.contentEditable)
+                        Chip(
+                          label: const Text(
+                            'EDIT MODE',
+                            style: TextStyle(fontSize: 11),
+                          ),
+                          backgroundColor: Colors.amber.shade100,
+                        ),
+                    ],
+                  ),
                 ),
               ),
-            ],
-
-        /// ✅ Scrollable content + footer
-        body: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(child: body),
-            SliverToBoxAdapter(child: _footer(w)),
-          ],
-        ),
+            ),
+          _publicHeader(),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(child: body),
+                SliverToBoxAdapter(child: _footer(w)),
+              ],
+            ),
+          ),
+        ],
       ),
       endDrawer: _buildCartSidebar(),
       endDrawerEnableOpenDragGesture: false,
@@ -3510,7 +3575,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
                         child: Row(
                           children: [
-                            const Icon(Icons.shopping_cart, color: Colors.white),
+                            const Icon(
+                              Icons.shopping_cart,
+                              color: Colors.white,
+                            ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(
@@ -3529,7 +3597,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                         ? 'Nothing added yet'
                                         : '$itemCount ${itemCount == 1 ? 'item' : 'items'}',
                                     style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.75),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.75,
+                                      ),
                                       fontSize: 12,
                                     ),
                                   ),
@@ -3538,7 +3608,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             ),
                             IconButton(
                               tooltip: 'Close',
-                              icon: const Icon(Icons.close, color: Colors.white),
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.white,
+                              ),
                               onPressed: () => Navigator.pop(drawerContext),
                             ),
                           ],
@@ -3588,7 +3661,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                       icon: const Icon(Icons.restaurant_menu),
                                       label: const Text('Go to Restaurant'),
                                       style: FilledButton.styleFrom(
-                                        backgroundColor: const Color(0xFF1E1E1E),
+                                        backgroundColor: const Color(
+                                          0xFF1E1E1E,
+                                        ),
                                         foregroundColor: Colors.white,
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 20,
@@ -3600,10 +3675,15 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                 ),
                               )
                               : ListView.separated(
-                                padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  12,
+                                  12,
+                                  8,
+                                ),
                                 itemCount: cartItems.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 8),
+                                separatorBuilder:
+                                    (_, __) => const SizedBox(height: 8),
                                 itemBuilder: (context, index) {
                                   final cartItem = cartItems[index];
                                   return Card(
@@ -3611,7 +3691,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     color: Colors.grey.shade50,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
-                                      side: BorderSide(color: Colors.grey.shade200),
+                                      side: BorderSide(
+                                        color: Colors.grey.shade200,
+                                      ),
                                     ),
                                     child: Padding(
                                       padding: const EdgeInsets.all(12),
@@ -3676,7 +3758,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                                 Text(
                                                   '₱${cartItem.dish.price} each',
                                                   style: TextStyle(
-                                                    color: Colors.amber.shade900,
+                                                    color:
+                                                        Colors.amber.shade900,
                                                     fontWeight: FontWeight.w600,
                                                     fontSize: 13,
                                                   ),
@@ -3701,9 +3784,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                                           cartItem.quantity - 1,
                                                         );
                                                   } else {
-                                                    CartStore.instance.removeItem(
-                                                      cartItem.dish.id,
-                                                    );
+                                                    CartStore.instance
+                                                        .removeItem(
+                                                          cartItem.dish.id,
+                                                        );
                                                   }
                                                 },
                                               ),
@@ -3773,8 +3857,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                 ),
                                 const SizedBox(height: 12),
                                 OutlinedButton(
-                                  onPressed: () =>
-                                      Navigator.pop(drawerContext),
+                                  onPressed: () => Navigator.pop(drawerContext),
                                   child: const Text('Keep shopping'),
                                 ),
                                 const SizedBox(height: 8),
@@ -4258,7 +4341,9 @@ class _ContactSectionState extends State<_ContactSection> {
                         ),
                         if (widget.store.contactAddress.trim().isNotEmpty) ...[
                           const SizedBox(height: 12),
-                          ContactAddressMap(address: widget.store.contactAddress),
+                          ContactAddressMap(
+                            address: widget.store.contactAddress,
+                          ),
                         ],
                         _contactRow(
                           Icons.schedule,
@@ -5288,7 +5373,10 @@ class _InquireFormState extends State<_InquireForm> {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _buildServiceTypeButton('Catering + Event', 'catering+event'),
+                child: _buildServiceTypeButton(
+                  'Catering + Event',
+                  'catering+event',
+                ),
               ),
             ],
           ),
@@ -5668,7 +5756,10 @@ class _InquireFormState extends State<_InquireForm> {
                     ),
                     subtitle: Text(
                       '${formatInquiryCateringDishPrice()} / guest',
-                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                     trailing:
                         isSelected

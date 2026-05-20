@@ -370,6 +370,14 @@ class _ReportsState extends State<Reports> {
                                 data.catering.averageGuestCount
                                     .toStringAsFixed(1),
                               ),
+                              _summaryLine(
+                                'Catering feedback complaints',
+                                '${data.catering.feedback.complaintCount}',
+                              ),
+                              _summaryLine(
+                                'Events with complaints',
+                                '${data.catering.feedback.count}',
+                              ),
                             ],
                           ),
                         ),
@@ -431,6 +439,18 @@ class _ReportsState extends State<Reports> {
                               _summaryLine(
                                 'Customer accounts (mobile)',
                                 '${data.restaurant.customerAccountsMobile}',
+                              ),
+                              _summaryLine(
+                                'Feedback submissions',
+                                '${data.restaurant.feedback.count}',
+                              ),
+                              _summaryLine(
+                                'Average feedback rating',
+                                '${data.restaurant.feedback.averageStars.toStringAsFixed(1)} / 5',
+                              ),
+                              _summaryLine(
+                                'Positive / Neutral / Negative',
+                                '${data.restaurant.feedback.positiveCount} / ${data.restaurant.feedback.neutralCount} / ${data.restaurant.feedback.negativeCount}',
                               ),
                             ],
                           ),

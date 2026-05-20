@@ -1,0 +1,3 @@
+docker buildx build --platform linux/amd64 --no-cache -t yurichhh/curatering-ai:v10 --push .
+
+buildx build --platform linux/amd64 -t yurichhh/curatering-nlp-ai:latest --push .

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 /// Default page size for staff/admin data tables.
-const int kTablePageSize = 75;
+const int kTablePageSize = 80;
 
 /// Slices [items] for zero-based [pageIndex].
 List<T> tablePageSlice<T>(
@@ -91,6 +94,11 @@ class PagedDataTable extends StatefulWidget {
     this.headingRowColor,
     this.columnSpacing,
     this.showVerticalScrollbar = true,
+    this.title = 'Table export',
+    this.enableSearch = true,
+    this.enablePrint = true,
+    this.filters = const [],
+    this.maxTableHeight = 560,
   });
 
   final List<DataColumn> columns;
@@ -99,6 +107,11 @@ class PagedDataTable extends StatefulWidget {
   final WidgetStateProperty<Color?>? headingRowColor;
   final double? columnSpacing;
   final bool showVerticalScrollbar;
+  final String title;
+  final bool enableSearch;
+  final bool enablePrint;
+  final List<Widget> filters;
+  final double maxTableHeight;
 
   @override
   State<PagedDataTable> createState() => _PagedDataTableState();
@@ -107,6 +120,13 @@ class PagedDataTable extends StatefulWidget {
 class _PagedDataTableState extends State<PagedDataTable> {
   int _page = 0;
   int _lastRowCount = -1;
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(PagedDataTable oldWidget) {
@@ -115,13 +135,19 @@ class _PagedDataTableState extends State<PagedDataTable> {
       _page = 0;
       _lastRowCount = widget.rows.length;
     }
-    final maxPage = tablePageCount(widget.rows.length, pageSize: widget.pageSize) - 1;
+    final maxPage =
+        tablePageCount(widget.rows.length, pageSize: widget.pageSize) - 1;
     if (_page > maxPage) _page = maxPage < 0 ? 0 : maxPage;
   }
 
   @override
   Widget build(BuildContext context) {
-    final pageRows = tablePageSlice(widget.rows, _page, pageSize: widget.pageSize);
+    final filteredRows = _filteredRows();
+    final pageRows = tablePageSlice(
+      filteredRows,
+      _page,
+      pageSize: widget.pageSize,
+    );
 
     final table = DataTable(
       columns: widget.columns,
@@ -138,9 +164,12 @@ class _PagedDataTableState extends State<PagedDataTable> {
     if (widget.showVerticalScrollbar && pageRows.length > 12) {
       tableScroll = Scrollbar(
         thumbVisibility: true,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.vertical,
-          child: tableScroll,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: widget.maxTableHeight),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.vertical,
+            child: tableScroll,
+          ),
         ),
       );
     }
@@ -148,14 +177,249 @@ class _PagedDataTableState extends State<PagedDataTable> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (widget.enableSearch ||
+            widget.enablePrint ||
+            widget.filters.isNotEmpty)
+          _TableToolbar(
+            title: widget.title,
+            search: _search,
+            enableSearch: widget.enableSearch,
+            enablePrint: widget.enablePrint,
+            filters: widget.filters,
+            filteredRows: filteredRows.length,
+            totalRows: widget.rows.length,
+            onSearchChanged: (_) => setState(() => _page = 0),
+            onPrint: () => _printFilteredRows(filteredRows),
+          ),
         tableScroll,
         TablePaginationBar(
           currentPage: _page,
-          totalItems: widget.rows.length,
+          totalItems: filteredRows.length,
           pageSize: widget.pageSize,
           onPageChanged: (p) => setState(() => _page = p),
         ),
       ],
     );
   }
+
+  List<DataRow> _filteredRows() {
+    final query = _search.text.trim().toLowerCase();
+    if (!widget.enableSearch || query.isEmpty) return widget.rows;
+    return widget.rows.where((row) {
+      return _rowText(row).toLowerCase().contains(query);
+    }).toList();
+  }
+
+  String _rowText(DataRow row) {
+    return row.cells.map((cell) => _widgetText(cell.child)).join(' ');
+  }
+
+  Future<void> _printFilteredRows(List<DataRow> rows) async {
+    final headers = widget.columns.map((c) => _widgetText(c.label)).toList();
+    final data =
+        rows
+            .map(
+              (row) =>
+                  row.cells.map((cell) => _widgetText(cell.child)).toList(),
+            )
+            .toList();
+    final doc = pw.Document(title: widget.title);
+    final generatedAt = DateTime.now();
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(24),
+        footer:
+            (context) => pw.Align(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Text(
+                'Page ${context.pageNumber} of ${context.pagesCount}',
+                style: const pw.TextStyle(fontSize: 8),
+              ),
+            ),
+        build:
+            (context) => [
+              pw.Text(
+                widget.title,
+                style: pw.TextStyle(
+                  fontSize: 16,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                'Generated ${generatedAt.toLocal()} · ${rows.length} row(s)',
+                style: const pw.TextStyle(
+                  fontSize: 9,
+                  color: PdfColors.grey700,
+                ),
+              ),
+              pw.SizedBox(height: 12),
+              pw.TableHelper.fromTextArray(
+                headers: headers,
+                data: data,
+                headerDecoration: const pw.BoxDecoration(
+                  color: PdfColors.grey200,
+                ),
+                headerStyle: pw.TextStyle(
+                  fontSize: 8,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+                cellStyle: const pw.TextStyle(fontSize: 7),
+                cellAlignment: pw.Alignment.centerLeft,
+                headerAlignment: pw.Alignment.centerLeft,
+              ),
+            ],
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (_) => doc.save(),
+      name: '${widget.title}.pdf',
+    );
+  }
+}
+
+class _TableToolbar extends StatelessWidget {
+  const _TableToolbar({
+    required this.title,
+    required this.search,
+    required this.enableSearch,
+    required this.enablePrint,
+    required this.filters,
+    required this.filteredRows,
+    required this.totalRows,
+    required this.onSearchChanged,
+    required this.onPrint,
+  });
+
+  final String title;
+  final TextEditingController search;
+  final bool enableSearch;
+  final bool enablePrint;
+  final List<Widget> filters;
+  final int filteredRows;
+  final int totalRows;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onPrint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (enableSearch)
+            SizedBox(
+              width: 280,
+              child: TextField(
+                controller: search,
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon:
+                      search.text.isEmpty
+                          ? null
+                          : IconButton(
+                            tooltip: 'Clear search',
+                            onPressed: () {
+                              search.clear();
+                              onSearchChanged('');
+                            },
+                            icon: const Icon(Icons.close),
+                          ),
+                  hintText: 'Search table',
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: onSearchChanged,
+              ),
+            ),
+          if (filters.isNotEmpty)
+            OutlinedButton.icon(
+              onPressed: () => _showFilters(context),
+              icon: const Icon(Icons.filter_list),
+              label: const Text('Filters'),
+            )
+          else
+            OutlinedButton.icon(
+              onPressed:
+                  search.text.isEmpty
+                      ? null
+                      : () {
+                        search.clear();
+                        onSearchChanged('');
+                      },
+              icon: const Icon(Icons.filter_alt_off),
+              label: const Text('Clear filter'),
+            ),
+          if (enablePrint)
+            OutlinedButton.icon(
+              onPressed: onPrint,
+              icon: const Icon(Icons.picture_as_pdf),
+              label: const Text('Print PDF'),
+            ),
+          Text(
+            '$filteredRows of $totalRows rows',
+            style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showFilters(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text('$title filters'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: filters,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Done'),
+              ),
+            ],
+          ),
+    );
+  }
+}
+
+String _widgetText(Widget widget) {
+  if (widget is Text) {
+    return widget.data ?? widget.textSpan?.toPlainText() ?? '';
+  }
+  if (widget is RichText) return widget.text.toPlainText();
+  if (widget is Tooltip)
+    return widget.message ?? _widgetText(widget.child ?? const SizedBox());
+  if (widget is Padding) return _widgetText(widget.child ?? const SizedBox());
+  if (widget is Center) return _widgetText(widget.child ?? const SizedBox());
+  if (widget is Align) return _widgetText(widget.child ?? const SizedBox());
+  if (widget is SizedBox && widget.child != null)
+    return _widgetText(widget.child!);
+  if (widget is Container && widget.child != null)
+    return _widgetText(widget.child!);
+  if (widget is Expanded) return _widgetText(widget.child);
+  if (widget is Flexible) return _widgetText(widget.child);
+  if (widget is Row) return widget.children.map(_widgetText).join(' ');
+  if (widget is Column) return widget.children.map(_widgetText).join(' ');
+  if (widget is Wrap) return widget.children.map(_widgetText).join(' ');
+  if (widget is Icon) return '';
+  if (widget is IconButton) return widget.tooltip ?? '';
+  if (widget is TextButton)
+    return _widgetText(widget.child ?? const SizedBox());
+  if (widget is OutlinedButton)
+    return _widgetText(widget.child ?? const SizedBox());
+  if (widget is ElevatedButton)
+    return _widgetText(widget.child ?? const SizedBox());
+  return widget.toStringShort();
 }

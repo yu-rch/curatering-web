@@ -348,22 +348,34 @@ function normalizeRunpodInput(input) {
   return out;
 }
 
-/** Public proxy to RunPod — API key stays in server env (Railway). Body: `{ "input": { ... } }`. */
-app.post("/api/public/runpod/run", publicRateLimit, async (req, res) => {
+function getRunpodInput(req, res) {
+  const input = req.body?.input;
+  if (input == null || typeof input !== "object" || Array.isArray(input)) {
+    res.status(400).json({
+      message: "JSON body must include an object field `input`",
+      code: "bad_request",
+    });
+    return null;
+  }
+  return input;
+}
+
+function sendRunpodNotConfigured(res, service, error) {
+  return res.status(503).json({
+    message: error?.message || `RunPod ${service} service is not configured on this server`,
+    code: "runpod_not_configured",
+    service,
+  });
+}
+
+function validateRunpodJobId(jobId) {
+  return Boolean(jobId && jobId.length <= 240 && !/[?#/\\]/.test(jobId));
+}
+
+async function handleRunpodImageRun(req, res) {
   try {
-    if (!RUNPOD_API_KEY || !RUNPOD_ENDPOINT_ID) {
-      return res.status(503).json({
-        message: "RunPod is not configured on this server",
-        code: "runpod_not_configured",
-      });
-    }
-    const input = req.body?.input;
-    if (input == null || typeof input !== "object" || Array.isArray(input)) {
-      return res.status(400).json({
-        message: "JSON body must include an object field `input`",
-        code: "bad_request",
-      });
-    }
+    const input = getRunpodInput(req, res);
+    if (!input) return;
     let normalized;
     try {
       normalized = normalizeRunpodInput(input);
@@ -386,7 +398,7 @@ app.post("/api/public/runpod/run", publicRateLimit, async (req, res) => {
       }
       throw normErr;
     }
-    const { res: rp, data } = await runpodProxyRequest("/run", {
+    const { res: rp, data } = await runpodProxyRequest("image", "/run", {
       method: "POST",
       jsonBody: { input: normalized },
     });
@@ -396,10 +408,7 @@ app.post("/api/public/runpod/run", publicRateLimit, async (req, res) => {
     return res.status(rp.status).json(data);
   } catch (e) {
     if (e?.code === "runpod_not_configured") {
-      return res.status(503).json({
-        message: e.message,
-        code: "runpod_not_configured",
-      });
+      return sendRunpodNotConfigured(res, "image", e);
     }
     console.error("[runpod proxy] POST /run", e);
     return res.status(502).json({
@@ -407,30 +416,21 @@ app.post("/api/public/runpod/run", publicRateLimit, async (req, res) => {
       code: "runpod_proxy_error",
     });
   }
-});
+}
 
-app.get("/api/public/runpod/status/:jobId", async (req, res) => {
+async function handleRunpodImageStatus(req, res) {
   try {
-    if (!RUNPOD_API_KEY || !RUNPOD_ENDPOINT_ID) {
-      return res.status(503).json({
-        message: "RunPod is not configured on this server",
-        code: "runpod_not_configured",
-      });
-    }
     const jobId = String(req.params.jobId || "").trim();
-    if (!jobId || jobId.length > 240 || /[?#]/.test(jobId)) {
+    if (!validateRunpodJobId(jobId)) {
       return res.status(400).json({ message: "invalid job id", code: "bad_request" });
     }
-    const { res: rp, data } = await runpodProxyRequest(`/status/${encodeURIComponent(jobId)}`, {
+    const { res: rp, data } = await runpodProxyRequest("image", `/status/${encodeURIComponent(jobId)}`, {
       method: "GET",
     });
     return res.status(rp.status).json(data);
   } catch (e) {
     if (e?.code === "runpod_not_configured") {
-      return res.status(503).json({
-        message: e.message,
-        code: "runpod_not_configured",
-      });
+      return sendRunpodNotConfigured(res, "image", e);
     }
     console.error("[runpod proxy] GET /status", e);
     return res.status(502).json({
@@ -438,7 +438,403 @@ app.get("/api/public/runpod/status/:jobId", async (req, res) => {
       code: "runpod_proxy_error",
     });
   }
+}
+
+/** Public image proxy to RunPod — API key stays in server env (Railway). */
+app.post("/api/public/runpod/run", publicRateLimit, handleRunpodImageRun);
+app.get("/api/public/runpod/status/:jobId", handleRunpodImageStatus);
+app.post("/api/public/runpod/image/run", publicRateLimit, handleRunpodImageRun);
+app.get("/api/public/runpod/image/status/:jobId", handleRunpodImageStatus);
+
+app.post(
+  "/api/runpod/nlp/run",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin", "super_admin"])),
+  async (req, res) => {
+    try {
+      const input = getRunpodInput(req, res);
+      if (!input) return;
+      const { res: rp, data } = await runpodProxyRequest("nlp", "/run", {
+        method: "POST",
+        jsonBody: { input },
+      });
+      return res.status(rp.status).json(data);
+    } catch (e) {
+      if (e?.code === "runpod_not_configured") {
+        return sendRunpodNotConfigured(res, "nlp", e);
+      }
+      console.error("[runpod nlp proxy] POST /run", e);
+      return res.status(502).json({
+        message: String(e?.message || e),
+        code: "runpod_proxy_error",
+      });
+    }
+  },
+);
+
+function getFeedbackAnalysisInput(body) {
+  const feedback = String(body?.feedback || "").trim();
+  if (feedback) {
+    if (feedback.length > 20_000) {
+      const err = new Error("feedback is too long");
+      err.status = 413;
+      err.code = "payload_too_large";
+      throw err;
+    }
+    return { feedback };
+  }
+
+  if (Array.isArray(body?.feedbacks)) {
+    const feedbacks = body.feedbacks
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+    if (feedbacks.length === 0) {
+      const err = new Error("feedbacks must include at least one non-empty entry");
+      err.status = 400;
+      err.code = "bad_request";
+      throw err;
+    }
+    if (feedbacks.length > 100) {
+      const err = new Error("feedbacks supports at most 100 entries");
+      err.status = 413;
+      err.code = "payload_too_large";
+      throw err;
+    }
+    const totalChars = feedbacks.reduce((sum, item) => sum + item.length, 0);
+    if (totalChars > 50_000) {
+      const err = new Error("feedbacks payload is too long");
+      err.status = 413;
+      err.code = "payload_too_large";
+      throw err;
+    }
+    return { feedbacks };
+  }
+
+  const err = new Error("feedback or feedbacks is required");
+  err.status = 400;
+  err.code = "bad_request";
+  throw err;
+}
+
+async function ensureFeedbackAnalyticsSchema() {
+  if (!feedbackAnalyticsSchemaPromise) {
+    feedbackAnalyticsSchemaPromise = (async () => {
+      await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS feedback (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          message TEXT NOT NULL,
+          source TEXT NOT NULL DEFAULT 'web',
+          status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending','analyzed','error')),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          analyzed_at TIMESTAMPTZ
+        )
+      `);
+      await pool.query(`
+        ALTER TABLE feedback
+        ADD COLUMN IF NOT EXISTS message TEXT,
+        ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'web',
+        ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending',
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMPTZ
+      `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS feedback_analysis (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          batch_id uuid,
+          feedback_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+          original_feedback TEXT NOT NULL DEFAULT '',
+          sentiment TEXT,
+          complaints JSONB NOT NULL DEFAULT '[]'::jsonb,
+          praises JSONB NOT NULL DEFAULT '[]'::jsonb,
+          insights JSONB NOT NULL DEFAULT '[]'::jsonb,
+          key_topics JSONB NOT NULL DEFAULT '[]'::jsonb,
+          summary TEXT NOT NULL DEFAULT '',
+          ai_response JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS feedback_batches (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          feedbacks JSONB NOT NULL DEFAULT '[]'::jsonb,
+          overall_sentiment TEXT,
+          sentiment_positive INTEGER NOT NULL DEFAULT 0,
+          sentiment_neutral INTEGER NOT NULL DEFAULT 0,
+          sentiment_negative INTEGER NOT NULL DEFAULT 0,
+          top_topics JSONB NOT NULL DEFAULT '[]'::jsonb,
+          summary TEXT NOT NULL DEFAULT '',
+          ai_response JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `);
+      await pool.query(`
+        ALTER TABLE feedback_analysis
+        ADD COLUMN IF NOT EXISTS batch_id uuid,
+        ADD COLUMN IF NOT EXISTS feedback_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS complaints JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS praises JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS insights JSONB NOT NULL DEFAULT '[]'::jsonb
+      `);
+      await pool.query(`
+        ALTER TABLE feedback_analysis
+        ALTER COLUMN original_feedback SET DEFAULT '',
+        ALTER COLUMN original_feedback DROP NOT NULL
+      `);
+      await pool.query(`
+        UPDATE feedback SET status = 'pending' WHERE status IS NULL
+      `);
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_feedback_analysis_created_at
+        ON feedback_analysis (created_at DESC)
+      `);
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_feedback_status_created_at
+        ON feedback (status, created_at DESC)
+      `);
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_feedback_batches_created_at
+        ON feedback_batches (created_at DESC)
+      `);
+      try {
+        await pool.query(`ALTER TABLE feedback ENABLE ROW LEVEL SECURITY`);
+        await pool.query(`ALTER TABLE feedback_analysis ENABLE ROW LEVEL SECURITY`);
+        await pool.query(`ALTER TABLE feedback_batches ENABLE ROW LEVEL SECURITY`);
+      } catch (err) {
+        console.warn("[feedback analytics] RLS enable skipped:", err?.message || err);
+      }
+    })().catch((err) => {
+      feedbackAnalyticsSchemaPromise = null;
+      throw err;
+    });
+  }
+  return feedbackAnalyticsSchemaPromise;
+}
+
+function getFeedbackRunLimit(body, insertedCount = 0) {
+  const raw = Number(body?.limit);
+  const requested = Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 50;
+  return Math.min(100, Math.max(insertedCount, requested));
+}
+
+async function storeFeedbackRows(input) {
+  await ensureFeedbackAnalyticsSchema();
+  const messages = Array.isArray(input.feedbacks) ? input.feedbacks : [input.feedback];
+  const rows = [];
+  for (const message of messages) {
+    const inserted = await pool.query(
+      `INSERT INTO feedback (message, source, status)
+       VALUES ($1, 'web', 'pending')
+       RETURNING id, message, created_at AS "createdAt"`,
+      [message],
+    );
+    rows.push(inserted.rows[0]);
+  }
+  return rows;
+}
+
+function toStringArray(value, max = 5) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, max);
+}
+
+function normalizeSingleFeedbackResult(aiResponse) {
+  const result = extractRunpodNlpResult(aiResponse);
+  if (!result || typeof result !== "object" || Array.isArray(result)) return null;
+  return {
+    sentiment: String(result.sentiment || "").trim(),
+    key_topics: toStringArray(result.key_topics, 5),
+    summary: String(result.summary || "").trim(),
+  };
+}
+
+function normalizeBatchFeedbackResult(aiResponse) {
+  const result = extractRunpodNlpResult(aiResponse);
+  if (!result || typeof result !== "object" || Array.isArray(result)) return null;
+  const distribution =
+    result.sentiment_distribution &&
+    typeof result.sentiment_distribution === "object" &&
+    !Array.isArray(result.sentiment_distribution)
+      ? result.sentiment_distribution
+      : {};
+  const toCount = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
+  };
+  return {
+    overall_sentiment: String(result.overall_sentiment || "").trim(),
+    sentiment_distribution: {
+      positive: toCount(distribution.positive),
+      neutral: toCount(distribution.neutral),
+      negative: toCount(distribution.negative),
+    },
+    top_topics: toStringArray(result.top_topics, 5),
+    summary: String(result.summary || "").trim(),
+  };
+}
+
+async function storeFeedbackAnalysis(input, aiResponse) {
+  await ensureFeedbackAnalyticsSchema();
+  if (Array.isArray(input.feedbacks)) {
+    const result = normalizeBatchFeedbackResult(aiResponse);
+    if (!result) {
+      const err = new Error("Invalid AI response");
+      err.status = 500;
+      err.code = "invalid_ai_response";
+      throw err;
+    }
+    await pool.query(
+      `INSERT INTO feedback_batches (
+         feedbacks,
+         overall_sentiment,
+         sentiment_positive,
+         sentiment_neutral,
+         sentiment_negative,
+         top_topics,
+         summary,
+         ai_response
+       ) VALUES ($1::jsonb, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb)`,
+      [
+        JSON.stringify(input.feedbacks),
+        result.overall_sentiment,
+        result.sentiment_distribution.positive,
+        result.sentiment_distribution.neutral,
+        result.sentiment_distribution.negative,
+        JSON.stringify(result.top_topics),
+        result.summary,
+        JSON.stringify(aiResponse),
+      ],
+    );
+    return result;
+  }
+
+  const result = normalizeSingleFeedbackResult(aiResponse);
+  if (!result) {
+    const err = new Error("Invalid AI response");
+    err.status = 500;
+    err.code = "invalid_ai_response";
+    throw err;
+  }
+  await pool.query(
+    `INSERT INTO feedback_analysis (
+       original_feedback,
+       sentiment,
+       key_topics,
+       summary,
+       ai_response
+     ) VALUES ($1, $2, $3::jsonb, $4, $5::jsonb)`,
+    [
+      input.feedback,
+      result.sentiment,
+      JSON.stringify(result.key_topics),
+      result.summary,
+      JSON.stringify(aiResponse),
+    ],
+  );
+  return result;
+}
+
+app.post(
+  "/api/runpod/nlp/analyze",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin", "super_admin"])),
+  async (req, res) => {
+    try {
+      const input = getFeedbackAnalysisInput(req.body);
+      const feedbackRows = await storeFeedbackRows(input);
+      const aiResponse = await runRunpodJobAndWait("nlp", {
+        limit: getFeedbackRunLimit(req.body, feedbackRows.length),
+      });
+      const result = extractRunpodNlpResult(aiResponse) || aiResponse?.analysis || aiResponse;
+      return res.json({
+        success: true,
+        feedbackIds: feedbackRows.map((row) => String(row.id)),
+        batchId: aiResponse?.batch_id || null,
+        processed: Number(aiResponse?.processed) || 0,
+        data: result,
+      });
+    } catch (e) {
+      if (e?.code === "runpod_not_configured") {
+        return sendRunpodNotConfigured(res, "nlp", e);
+      }
+      if (e?.code === "bad_request" || e?.code === "payload_too_large") {
+        return res.status(e.status || 400).json({
+          message: e.message,
+          code: e.code,
+        });
+      }
+      console.error("[runpod nlp feedback] analyze failed", e);
+      return res.status(e?.status || 500).json({
+        error: e?.code === "invalid_ai_response" ? "Invalid AI response" : "Feedback analysis failed",
+        code: e?.code || "feedback_analysis_failed",
+      });
+    }
+  },
+);
+
+app.post("/api/feedback/analyze", publicRateLimit, async (req, res) => {
+  try {
+    const input = getFeedbackAnalysisInput(req.body);
+    const feedbackRows = await storeFeedbackRows(input);
+    const aiResponse = await runRunpodJobAndWait("nlp", {
+      limit: getFeedbackRunLimit(req.body, feedbackRows.length),
+    });
+    const result = extractRunpodNlpResult(aiResponse) || aiResponse?.analysis || aiResponse;
+    return res.json({
+      success: true,
+      feedbackIds: feedbackRows.map((row) => String(row.id)),
+      batchId: aiResponse?.batch_id || null,
+      processed: Number(aiResponse?.processed) || 0,
+      data: result,
+    });
+  } catch (e) {
+    if (e?.code === "runpod_not_configured") {
+      return sendRunpodNotConfigured(res, "nlp", e);
+    }
+    if (e?.code === "bad_request" || e?.code === "payload_too_large") {
+      return res.status(e.status || 400).json({
+        message: e.message,
+        code: e.code,
+      });
+    }
+    console.error("[feedback analyze] RunPod NLP failed", e);
+    return res.status(e?.status || 500).json({
+      error: e?.code === "invalid_ai_response" ? "Invalid AI response" : "Feedback analysis failed",
+      code: e?.code || "feedback_analysis_failed",
+    });
+  }
 });
+
+app.get(
+  "/api/runpod/nlp/status/:jobId",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin", "super_admin"])),
+  async (req, res) => {
+    try {
+      const jobId = String(req.params.jobId || "").trim();
+      if (!validateRunpodJobId(jobId)) {
+        return res.status(400).json({ message: "invalid job id", code: "bad_request" });
+      }
+      const { res: rp, data } = await runpodProxyRequest("nlp", `/status/${encodeURIComponent(jobId)}`, {
+        method: "GET",
+      });
+      return res.status(rp.status).json(data);
+    } catch (e) {
+      if (e?.code === "runpod_not_configured") {
+        return sendRunpodNotConfigured(res, "nlp", e);
+      }
+      console.error("[runpod nlp proxy] GET /status", e);
+      return res.status(502).json({
+        message: String(e?.message || e),
+        code: "runpod_proxy_error",
+      });
+    }
+  },
+);
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
@@ -490,19 +886,40 @@ const AI_SERVICE_SEGMENT_TIMEOUT_RETRIES = Math.max(
   Number(process.env.AI_SERVICE_SEGMENT_TIMEOUT_RETRIES || 1),
 );
 
-/** RunPod serverless — proxied so the API key never ships in the Flutter web bundle. */
+/** RunPod serverless — proxied so API keys never ship in the Flutter web bundle. */
 const RUNPOD_API_KEY = String(process.env.RUNPOD_API_KEY || "").trim();
-const RUNPOD_ENDPOINT_ID = String(process.env.RUNPOD_ENDPOINT_ID || "").trim();
+const RUNPOD_IMAGE_ENDPOINT_ID = String(
+  process.env.RUNPOD_IMAGE_ENDPOINT_ID || RUNPOD_ENDPOINT_ID,
+).trim();
+const RUNPOD_NLP_ENDPOINT_ID = String(
+  process.env.RUNPOD_NLP_ENDPOINT_ID ||
+    process.env.RUNPOD_NLP_AI_ENDPOINT_ID ||
+    process.env.RUNPOD_TEXT_ENDPOINT_ID ||
+    "",
+).trim();
 const RUNPOD_API_BASE = "https://api.runpod.ai/v2";
+const RUNPOD_NLP_TIMEOUT_MS = Number(process.env.RUNPOD_NLP_TIMEOUT_MS || 180000);
+const RUNPOD_NLP_POLL_INTERVAL_MS = Number(process.env.RUNPOD_NLP_POLL_INTERVAL_MS || 2500);
 
-async function runpodProxyRequest(pathSuffix, { method = "GET", jsonBody } = {}) {
-  if (!RUNPOD_API_KEY || !RUNPOD_ENDPOINT_ID) {
-    const err = new Error("RUNPOD_API_KEY and RUNPOD_ENDPOINT_ID must be set on the server");
+function getRunpodEndpointId(service) {
+  if (service === "nlp") return RUNPOD_NLP_ENDPOINT_ID;
+  return RUNPOD_IMAGE_ENDPOINT_ID;
+}
+
+async function runpodProxyRequest(service, pathSuffix, { method = "GET", jsonBody } = {}) {
+  const endpointId = getRunpodEndpointId(service);
+  if (!RUNPOD_API_KEY || !endpointId) {
+    const envName =
+      service === "nlp"
+        ? "RUNPOD_NLP_ENDPOINT_ID"
+        : "RUNPOD_IMAGE_ENDPOINT_ID or RUNPOD_ENDPOINT_ID";
+    const err = new Error(`RUNPOD_API_KEY and ${envName} must be set on the server`);
     err.code = "runpod_not_configured";
+    err.service = service;
     throw err;
   }
   const path = pathSuffix.startsWith("/") ? pathSuffix : `/${pathSuffix}`;
-  const url = `${RUNPOD_API_BASE}/${RUNPOD_ENDPOINT_ID}${path}`;
+  const url = `${RUNPOD_API_BASE}/${endpointId}${path}`;
   const headers = {
     Authorization: `Bearer ${RUNPOD_API_KEY}`,
     ...(jsonBody != null ? { "Content-Type": "application/json" } : {}),
@@ -524,6 +941,7 @@ async function runpodProxyRequest(pathSuffix, { method = "GET", jsonBody } = {})
 
 const allowedRoles = new Set(["admin", "manager", "supervisor", "super_admin", "cashier"]);
 const allowedHelpStatuses = new Set(["unresolved", "resolved"]);
+let feedbackAnalyticsSchemaPromise = null;
 
 const themePromptColorMap = [
   { keyword: "orange", hex: "#f4511e" },
@@ -1573,6 +1991,28 @@ async function sendCustomerNotificationEmail({ to, subject, text, html, attachme
 /** Fire-and-forget — never block API responses on SMTP. */
 function sendCustomerNotificationEmailAsync(payload) {
   void sendCustomerNotificationEmail(payload);
+}
+
+function customerWebOrigin() {
+  return (
+    process.env.PUBLIC_WEB_URL ||
+    process.env.FRONTEND_URL ||
+    process.env.WEB_ORIGIN ||
+    'https://macrinas-kitchen.curatering.com'
+  ).replace(/\/+$/, '');
+}
+
+function restaurantFeedbackLink(order) {
+  const token = jwt.sign(
+    {
+      type: 'restaurant_feedback',
+      orderId: String(order.order_id ?? ''),
+      email: String(order.user_email ?? ''),
+    },
+    JWT_SECRET,
+    { expiresIn: '30d' },
+  );
+  return `${customerWebOrigin()}/restaurant-feedback?token=${encodeURIComponent(token)}`;
 }
 
 function sendOtpEmailAsync(email, otp) {
@@ -2848,6 +3288,185 @@ function buildHeuristicFeedbackAnalysis(feedbacks) {
   };
 }
 
+function normalizeFeedbackAnalysisPayload(parsed, feedbacks, source) {
+  const fallback = buildHeuristicFeedbackAnalysis(feedbacks);
+  const stars = feedbacks.map((f) => Number(f.stars)).filter((n) => Number.isFinite(n));
+  const avg = stars.length ? stars.reduce((a, b) => a + b, 0) / stars.length : null;
+  const data = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  const keyTopics = Array.isArray(data.key_topics)
+    ? data.key_topics.map((t) => String(t).trim()).filter(Boolean).slice(0, 8)
+    : [];
+  const recommendations = Array.isArray(data.recommendations)
+    ? data.recommendations.map((r) => String(r).trim()).filter(Boolean).slice(0, 8)
+    : [];
+  const sentiment = String(data.sentiment || "").trim();
+  const topicText = keyTopics.length ? ` Key topics: ${keyTopics.join(", ")}.` : "";
+  const interpretation =
+    String(data.interpretation || "").trim() ||
+    (sentiment || topicText
+      ? `Overall sentiment: ${sentiment || "mixed"}.${topicText}`.trim()
+      : fallback.interpretation);
+
+  return {
+    summary: String(data.summary || "").trim() || fallback.summary,
+    interpretation,
+    recommendations: recommendations.length ? recommendations : fallback.recommendations,
+    source,
+    feedbackCount: feedbacks.length,
+    averageStars: avg,
+  };
+}
+
+function normalizeRunpodStatus(status) {
+  return status == null ? "" : String(status).trim().toUpperCase();
+}
+
+function runpodStatusIsQueued(status) {
+  return ["IN_QUEUE", "IN_PROGRESS", "QUEUED", "RUNNING", "PROCESSING", "SUBMITTED"].includes(
+    normalizeRunpodStatus(status),
+  );
+}
+
+function runpodStatusIsCompleted(status) {
+  return normalizeRunpodStatus(status) === "COMPLETED";
+}
+
+function runpodStatusIsFailed(status) {
+  return ["FAILED", "CANCELLED", "TIMED_OUT"].includes(normalizeRunpodStatus(status));
+}
+
+function runpodJobIdFromResponse(data) {
+  const direct = data?.id ?? data?.jobId;
+  if (direct != null && String(direct).trim()) return String(direct).trim();
+  const nested = data?.job?.id;
+  if (nested != null && String(nested).trim()) return String(nested).trim();
+  return "";
+}
+
+async function runRunpodJobAndWait(
+  service,
+  input,
+  {
+    timeoutMs = RUNPOD_NLP_TIMEOUT_MS,
+    pollIntervalMs = RUNPOD_NLP_POLL_INTERVAL_MS,
+  } = {},
+) {
+  const started = Date.now();
+  const start = await runpodProxyRequest(service, "/run", {
+    method: "POST",
+    jsonBody: { input },
+  });
+  if (!start.res.ok) {
+    throw new Error(
+      `RunPod ${service} start failed (${start.res.status}): ${
+        start.data?.error || start.data?.message || "upstream error"
+      }`,
+    );
+  }
+  if (runpodStatusIsCompleted(start.data?.status)) {
+    return start.data?.output ?? start.data;
+  }
+  if (runpodStatusIsFailed(start.data?.status)) {
+    throw new Error(start.data?.error || `RunPod ${service} job failed`);
+  }
+
+  const jobId = runpodJobIdFromResponse(start.data);
+  if (!jobId) {
+    if (start.data?.output != null) return start.data.output;
+    throw new Error(`RunPod ${service} did not return a job id`);
+  }
+
+  while (Date.now() - started < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    const status = await runpodProxyRequest(service, `/status/${encodeURIComponent(jobId)}`, {
+      method: "GET",
+    });
+    if (!status.res.ok) {
+      throw new Error(
+        `RunPod ${service} status failed (${status.res.status}): ${
+          status.data?.error || status.data?.message || "upstream error"
+        }`,
+      );
+    }
+    if (runpodStatusIsCompleted(status.data?.status)) {
+      return status.data?.output ?? status.data;
+    }
+    if (runpodStatusIsFailed(status.data?.status)) {
+      throw new Error(status.data?.error || `RunPod ${service} job failed`);
+    }
+    if (!runpodStatusIsQueued(status.data?.status)) {
+      console.warn("[runpod]", service, "unexpected status", status.data?.status, "job", jobId);
+    }
+  }
+
+  throw new Error(`RunPod ${service} timed out after ${timeoutMs}ms`);
+}
+
+function parseJsonFromText(text) {
+  if (!text || typeof text !== "string") return null;
+  const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const first = trimmed.indexOf("{");
+    const last = trimmed.lastIndexOf("}");
+    if (first >= 0 && last > first) {
+      try {
+        return JSON.parse(trimmed.slice(first, last + 1));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+function extractRunpodNlpResult(output) {
+  if (!output || typeof output !== "object") return null;
+  if (output.result && typeof output.result === "object") return output.result;
+  if (typeof output.result === "string") return parseJsonFromText(output.result);
+  if (output.output && typeof output.output === "object") return extractRunpodNlpResult(output.output);
+  if (output.summary || output.interpretation || output.recommendations || output.sentiment) {
+    return output;
+  }
+  return parseJsonFromText(output.raw_output || output.text || output.response || "");
+}
+
+async function analyzeFeedbackWithRunPodNlp(feedbacks) {
+  if (!RUNPOD_API_KEY || !RUNPOD_NLP_ENDPOINT_ID) return null;
+  const sample = feedbacks.slice(0, 120).map((f) => ({
+    orderNo: f.orderNo,
+    stars: f.stars,
+    remarks: f.remarks,
+    customerName: f.customerName,
+    submittedAt: f.submittedAt,
+  }));
+  const feedbackText = JSON.stringify(sample);
+  const prompt = `Analyze these ${feedbacks.length} restaurant customer feedback entries for a catering operations team.
+Return ONLY valid JSON with keys:
+summary (string, 2-3 sentences),
+interpretation (string, 2-4 sentences on themes and sentiment),
+recommendations (array of 3-5 short actionable strings for management).
+
+Feedback entries:
+${feedbackText}`;
+
+  try {
+    const output = await runRunpodJobAndWait("nlp", {
+      task: "customer_feedback_analysis",
+      prompt,
+      feedback: feedbackText,
+      feedbacks: sample,
+    });
+    const parsed = extractRunpodNlpResult(output);
+    if (!parsed) throw new Error("RunPod NLP returned no parseable analysis");
+    return normalizeFeedbackAnalysisPayload(parsed, feedbacks, "runpod_nlp");
+  } catch (e) {
+    console.error("[feedback AI] RunPod NLP failed:", e?.message || e);
+    return null;
+  }
+}
+
 async function analyzeFeedbackWithOpenAI(feedbacks) {
   const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
   if (!apiKey) {
@@ -2910,24 +3529,18 @@ recommendations (array of 3-5 short actionable strings for management).`;
       return buildHeuristicFeedbackAnalysis(feedbacks);
     }
 
-    const stars = feedbacks.map((f) => Number(f.stars)).filter((n) => Number.isFinite(n));
-    const avg = stars.length ? stars.reduce((a, b) => a + b, 0) / stars.length : null;
-
-    return {
-      summary: String(parsed.summary || "").trim() || buildHeuristicFeedbackAnalysis(feedbacks).summary,
-      interpretation: String(parsed.interpretation || "").trim(),
-      recommendations: Array.isArray(parsed.recommendations)
-        ? parsed.recommendations.map((r) => String(r).trim()).filter(Boolean).slice(0, 8)
-        : [],
-      source: "openai",
-      feedbackCount: feedbacks.length,
-      averageStars: avg,
-    };
+    return normalizeFeedbackAnalysisPayload(parsed, feedbacks, "openai");
   } catch (e) {
     clearTimeout(timeout);
     console.error("[feedback AI] request failed:", e?.message || e);
     return buildHeuristicFeedbackAnalysis(feedbacks);
   }
+}
+
+async function analyzeFeedbackWithAi(feedbacks) {
+  const runpod = await analyzeFeedbackWithRunPodNlp(feedbacks);
+  if (runpod) return runpod;
+  return analyzeFeedbackWithOpenAI(feedbacks);
 }
 
 // Super Admin: Customer feedback (restaurant orders)
@@ -2946,7 +3559,7 @@ app.get(
         whereSql += ` AND (
           (${orderIdSql})::text ILIKE $1 OR
           COALESCE(ro.full_name, '') ILIKE $1 OR
-          COALESCE(ca.email, ro.guest_contact_email, '') ILIKE $1 OR
+          COALESCE(ca.email, ro.user_email, '') ILIKE $1 OR
           COALESCE(ro.feedback_remarks, '') ILIKE $1
         )`;
         params.push(`%${search}%`);
@@ -2957,7 +3570,7 @@ app.get(
           ro.id,
           (${orderIdSql}) AS "orderNo",
           COALESCE(ca.full_name, ro.full_name, 'Guest') AS "customerName",
-          COALESCE(ca.email, ro.guest_contact_email, '') AS "customerEmail",
+          COALESCE(ca.email, ro.user_email, '') AS "customerEmail",
           ro.feedback_stars AS stars,
           COALESCE(ro.feedback_remarks, '') AS remarks,
           ro.feedback_submitted_at AS "submittedAt"
@@ -3002,7 +3615,7 @@ app.post(
         whereSql += ` AND (
           (${orderIdSql})::text ILIKE $1 OR
           COALESCE(ro.full_name, '') ILIKE $1 OR
-          COALESCE(ca.email, ro.guest_contact_email, '') ILIKE $1 OR
+          COALESCE(ca.email, ro.user_email, '') ILIKE $1 OR
           COALESCE(ro.feedback_remarks, '') ILIKE $1
         )`;
         params.push(`%${search}%`);
@@ -3031,7 +3644,7 @@ app.post(
         submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
       }));
 
-      const analysis = await analyzeFeedbackWithOpenAI(feedbacks);
+      const analysis = await analyzeFeedbackWithAi(feedbacks);
       return res.json({ analysis });
     } catch (error) {
       console.error("Error analyzing customer feedback:", error);
@@ -5119,8 +5732,8 @@ function parseRestaurantCoord(value) {
 }
 
 async function resolveRestaurantOrderEmail(order) {
-  if (order.guest_contact_email) {
-    return String(order.guest_contact_email).trim();
+  if (order.user_email) {
+    return String(order.user_email).trim();
   }
   if (!order.customer_id) return null;
   const r = await pool.query(
@@ -5249,8 +5862,8 @@ async function autoCancelStalePendingCashierOrders() {
     await ensureRestaurantOrderWorkflowColumns();
     const result = await pool.query(
       `UPDATE restaurant_orders
-       SET order_status = 'cancelled', updated_at = now()
-       WHERE order_status = 'pending_cashier'
+       SET order_status = 'CANCELLED', updated_at = now()
+       WHERE order_status = 'PENDING_CASHIER'
          AND COALESCE(updated_at, created_at) < now() - interval '1 hour'
        RETURNING *`,
     );
@@ -5261,7 +5874,7 @@ async function autoCancelStalePendingCashierOrders() {
           to: email,
           subject: 'Curatering: Order cancelled (payment timeout)',
           text:
-            `Your order ${order.order_id ?? order.order_no} was cancelled because payment was not confirmed within 1 hour.\n\n` +
+            `Your order ${order.order_id} was cancelled because payment was not confirmed within 1 hour.\n\n` +
             `- Curatering Team`,
         });
       }
@@ -6354,29 +6967,40 @@ async function registerRoutesAfterDbInit() {
       try {
         const {
           items,
+          tray_items,
+          trayItems,
           fullName,
           phone,
+          contactNumber,
           deliveryAddress,
           deliveryLat,
           deliveryLng,
           deliveryTime,
           deliveryNotes,
           totalAmount,
+          totalCost,
           guestContactEmail,
+          userEmail,
+          orderSource,
         } = req.body || {};
 
         const customerId = req.customer?.id ?? null;
-        const guestEmail = guestContactEmail
-          ? String(guestContactEmail).trim().toLowerCase()
+        const submittedEmail = userEmail ?? guestContactEmail;
+        const orderEmail = submittedEmail
+          ? String(submittedEmail).trim().toLowerCase()
           : null;
 
-        if (!customerId && !guestEmail) {
+        if (!customerId && !orderEmail) {
           return res.status(400).json({
-            error: 'Log in or provide guestContactEmail for guest checkout',
+            error: 'Log in or provide userEmail for guest checkout',
           });
         }
 
-        let orderItems = items;
+        let orderItems = Array.isArray(tray_items)
+          ? tray_items
+          : Array.isArray(trayItems)
+            ? trayItems
+            : items;
         if (customerId && (!Array.isArray(orderItems) || orderItems.length === 0)) {
           orderItems = await getTrayDraftItemsByCustomerId(customerId);
         }
@@ -6396,31 +7020,39 @@ async function registerRoutesAfterDbInit() {
         const itemsInsert = restaurantOrderItemsInsertSql(roCols);
         const itemsJson = JSON.stringify(orderItems);
         const itemsSql = itemsInsert.placeholders.replace(/\$ITEM\$/g, '$6');
-        const orderSourceCol = roCols.has('order_source') ? ', order_source' : '';
-        const orderSourceVal = roCols.has('order_source') ? ", 'ONLINE'" : '';
+        const normalizedSource = (() => {
+          const s = String(orderSource || req.body?.platform || 'WEB_APP').trim().toUpperCase();
+          if (s === 'MOBILE' || s === 'MOBILE_APP') return 'MOBILE_APP';
+          if (s === 'POS_MOBILE' || s === 'POS_WEB') return s;
+          return 'WEB_APP';
+        })();
 
         const result = await pool.query(
           `INSERT INTO restaurant_orders (
-             ${orderIdCol}, customer_id, guest_contact_email, full_name, phone,
+             ${orderIdCol}, customer_id, user_email, full_name, contact_number,
              ${itemsInsert.columns},
-             total_amount, delivery_address, delivery_lat, delivery_lng,
-             delivery_time, delivery_notes, order_status${orderSourceCol}
+             total_cost, delivery_address, delivery_lat, delivery_lng,
+             delivery_time, delivery_notes, payment_mode, order_status, order_source,
+             submitted_order_dt_stamp, last_updated_order_status_dt_stamp
            )
-           VALUES ($1, $2, $3, $4, $5, ${itemsSql}, $7, $8, $9, $10, COALESCE($11::timestamptz, now()), $12, 'pending_cashier'${orderSourceVal})
+           VALUES ($1, $2, $3, $4, $5, ${itemsSql}, $7, $8, $9, $10,
+                   COALESCE($11::text, 'NOW'), $12, 'GCASH ONLY', 'PENDING_CASHIER', $13,
+                   now(), now())
            RETURNING *`,
           [
             orderNo,
             customerId,
-            guestEmail,
+            orderEmail,
             fullName || null,
-            phone || null,
+            contactNumber || phone || null,
             itemsJson,
-            totalAmount || 0,
+            totalCost ?? totalAmount ?? 0,
             deliveryAddress,
             lat,
             lng,
             deliveryTime || null,
             deliveryNotes || null,
+            normalizedSource,
           ],
         );
 
@@ -6431,7 +7063,7 @@ async function registerRoutesAfterDbInit() {
                 [customerId],
               )
             ).rows[0]?.email
-          : guestEmail;
+          : orderEmail;
 
         if (notifyEmail) {
           await sendCustomerNotificationEmail({
@@ -6440,8 +7072,8 @@ async function registerRoutesAfterDbInit() {
             text:
               `Hello ${fullName || 'Customer'},\n\n` +
               `Your order has been placed.\n` +
-              `Order No: ${result.rows[0].order_id ?? result.rows[0].order_no}\n` +
-              `Total: PHP ${Number(totalAmount || 0).toFixed(2)}\n\n` +
+              `Order No: ${result.rows[0].order_id}\n` +
+              `Total: PHP ${Number(totalCost ?? totalAmount ?? 0).toFixed(2)}\n\n` +
               `Complete payment to submit for cashier review.\n\n` +
               `- Curatering Team`,
           });
@@ -6467,7 +7099,7 @@ async function registerRoutesAfterDbInit() {
     app.post('/api/restaurant/orders/:orderId/payment', optionalCustomerAuth, async (req, res) => {
       try {
         const { orderId } = req.params;
-        const { paymentReference, paymentProof, guestContactEmail } = req.body || {};
+        const { paymentReference, paymentProof, guestContactEmail, userEmail } = req.body || {};
 
         if (!paymentReference && !paymentProof) {
           return res.status(400).json({
@@ -6494,13 +7126,13 @@ async function registerRoutesAfterDbInit() {
             return res.status(403).json({ error: 'Order not found' });
           }
         } else {
-          const guestEmail = guestContactEmail
-            ? String(guestContactEmail).trim().toLowerCase()
+          const guestEmail = (userEmail ?? guestContactEmail)
+            ? String(userEmail ?? guestContactEmail).trim().toLowerCase()
             : null;
           if (
             !guestEmail ||
-            !order.guest_contact_email ||
-            String(order.guest_contact_email).toLowerCase() !== guestEmail
+            !order.user_email ||
+            String(order.user_email).toLowerCase() !== guestEmail
           ) {
             return res.status(403).json({ error: 'Guest email does not match order' });
           }
@@ -6536,7 +7168,7 @@ async function registerRoutesAfterDbInit() {
               to: email,
               subject: 'Curatering: Payment submitted',
               text:
-                `Your payment for order ${updated.order_id ?? updated.order_no} is awaiting cashier verification.\n\n` +
+                `Your payment for order ${updated.order_id} is awaiting cashier verification.\n\n` +
                 `- Curatering Team`,
             });
           }
@@ -6611,7 +7243,7 @@ async function registerRoutesAfterDbInit() {
           if (String(order.customer_id) !== String(req.customer.id)) {
             return res.status(403).json({ error: 'Order not found' });
           }
-          if (String(order.order_status).toLowerCase() !== 'delivered') {
+          if (String(order.order_status).toUpperCase() !== 'DELIVERED') {
             return res.status(400).json({ error: 'Feedback is only available for delivered orders' });
           }
           if (order.feedback_stars != null) {
@@ -6642,6 +7274,81 @@ async function registerRoutesAfterDbInit() {
       },
     );
 
+    app.get('/api/restaurant/feedback/:token', async (req, res) => {
+      try {
+        const payload = jwt.verify(String(req.params.token || ''), JWT_SECRET);
+        if (payload?.type !== 'restaurant_feedback' || !payload.orderId) {
+          return res.status(400).json({ error: 'Invalid feedback link' });
+        }
+        const lookup = await restaurantOrderWhereClause(String(payload.orderId), 1);
+        if (!lookup) return res.status(400).json({ error: 'Invalid feedback link' });
+        const result = await pool.query(
+          `SELECT order_id, full_name, order_status, feedback_stars
+           FROM restaurant_orders
+           WHERE ${lookup.sql}
+           LIMIT 1`,
+          [lookup.value],
+        );
+        if (result.rowCount === 0) return res.status(404).json({ error: 'Order not found' });
+        const order = result.rows[0];
+        if (String(order.order_status).toUpperCase() !== 'DELIVERED') {
+          return res.status(400).json({ error: 'Feedback is available after delivery' });
+        }
+        res.json({
+          order: {
+            order_id: order.order_id,
+            full_name: order.full_name,
+            feedback_submitted: order.feedback_stars != null,
+          },
+        });
+      } catch (error) {
+        res.status(400).json({ error: 'Invalid or expired feedback link' });
+      }
+    });
+
+    app.post('/api/restaurant/feedback/:token', async (req, res) => {
+      try {
+        const payload = jwt.verify(String(req.params.token || ''), JWT_SECRET);
+        if (payload?.type !== 'restaurant_feedback' || !payload.orderId) {
+          return res.status(400).json({ error: 'Invalid feedback link' });
+        }
+        const stars = Number(req.body?.stars ?? req.body?.feedback_stars);
+        const remarks = String(req.body?.remarks ?? req.body?.feedback_remarks ?? '').trim();
+        if (!Number.isFinite(stars) || stars < 1 || stars > 5) {
+          return res.status(400).json({ error: 'Rating must be between 1 and 5 stars' });
+        }
+        const lookup = await restaurantOrderWhereClause(String(payload.orderId), 1);
+        if (!lookup) return res.status(400).json({ error: 'Invalid feedback link' });
+        const existing = await pool.query(
+          `SELECT id, order_status, feedback_stars
+           FROM restaurant_orders
+           WHERE ${lookup.sql}
+           LIMIT 1`,
+          [lookup.value],
+        );
+        if (existing.rowCount === 0) return res.status(404).json({ error: 'Order not found' });
+        const order = existing.rows[0];
+        if (String(order.order_status).toUpperCase() !== 'DELIVERED') {
+          return res.status(400).json({ error: 'Feedback is available after delivery' });
+        }
+        if (order.feedback_stars != null) {
+          return res.status(409).json({ error: 'Feedback was already submitted for this order' });
+        }
+        await pool.query(
+          `UPDATE restaurant_orders
+           SET feedback_stars = $2,
+               feedback_remarks = $3,
+               feedback_submitted_at = now(),
+               updated_at = now()
+           WHERE id = $1`,
+          [order.id, Math.round(stars), remarks || null],
+        );
+        res.json({ ok: true });
+      } catch (error) {
+        res.status(400).json({ error: 'Invalid or expired feedback link' });
+      }
+    });
+
     app.get('/api/restaurant/orders', customerAuthRequired, async (req, res) => {
       try {
         const roCols = await ensureRestaurantOrdersCanonicalColumns();
@@ -6659,9 +7366,6 @@ async function registerRoutesAfterDbInit() {
         const emailMatchParts = [];
         if (roCols.has('user_email')) {
           emailMatchParts.push(`lower(COALESCE(user_email::text, '')) = $2`);
-        }
-        if (roCols.has('guest_contact_email')) {
-          emailMatchParts.push(`lower(COALESCE(guest_contact_email::text, '')) = $2`);
         }
         const emailClause =
           customerEmail && emailMatchParts.length > 0
@@ -6689,7 +7393,7 @@ async function registerRoutesAfterDbInit() {
     });
 
     // Manager Restaurant Orders endpoints
-    app.get('/api/manager/dashboard/summary', managerAuthRequired, async (_req, res) => {
+    app.get('/api/manager/dashboard/summary', managerAuthRequired, async (req, res) => {
       try {
         const now = new Date();
         const year = now.getFullYear();
@@ -6698,22 +7402,40 @@ async function registerRoutesAfterDbInit() {
         const nextMonth = new Date(year, month, 1);
         const yearStart = new Date(year, 0, 1);
         const nextYear = new Date(year + 1, 0, 1);
+        const parseDate = (raw, fallback) => {
+          const d = raw ? new Date(String(raw)) : null;
+          return d && !Number.isNaN(d.getTime()) ? d : fallback;
+        };
+        const rangeStart = parseDate(req.query.start, yearStart);
+        const rangeEnd = parseDate(req.query.end, nextYear);
+        const restFilters = ['created_at >= $1', 'created_at < $2'];
+        const restParams = [rangeStart, rangeEnd];
+        const orderSource = String(req.query.orderSource || 'ALL').trim().toUpperCase();
+        const orderStatus = String(req.query.orderStatus || 'ALL').trim().toUpperCase();
+        if (orderSource && orderSource !== 'ALL') {
+          restParams.push(orderSource);
+          restFilters.push(`order_source = $${restParams.length}`);
+        }
+        if (orderStatus && orderStatus !== 'ALL') {
+          restParams.push(orderStatus);
+          restFilters.push(`order_status = $${restParams.length}`);
+        }
+        const restWhere = `WHERE ${restFilters.join(' AND ')}`;
 
         const restToday = await pool.query(
           `SELECT
-             COUNT(*) FILTER (WHERE order_status IN ('pending_cashier','pending'))::int AS pending_confirmations,
-             COUNT(*) FILTER (WHERE order_status = 'delivered')::int AS delivered,
-             COUNT(*) FILTER (WHERE order_status = 'cancelled')::int AS cancelled,
-             COALESCE(SUM(total_amount) FILTER (
-               WHERE order_status NOT IN ('cancelled')
-                 AND created_at >= date_trunc('day', now())
+             COUNT(*) FILTER (WHERE order_status = 'PENDING_CASHIER')::int AS pending_confirmations,
+             COUNT(*) FILTER (WHERE order_status = 'DELIVERED')::int AS delivered,
+             COUNT(*) FILTER (WHERE order_status = 'CANCELLED')::int AS cancelled,
+             COALESCE(SUM(total_cost) FILTER (
+               WHERE order_status NOT IN ('CANCELLED')
              ), 0)::float AS sales_today,
-             COALESCE(SUM(total_amount) FILTER (
-               WHERE order_status NOT IN ('cancelled')
-                 AND created_at >= $1 AND created_at < $2
+             COALESCE(SUM(total_cost) FILTER (
+               WHERE order_status NOT IN ('CANCELLED')
              ), 0)::float AS sales_year
-           FROM restaurant_orders`,
-          [yearStart, nextYear],
+           FROM restaurant_orders
+           ${restWhere}`,
+          restParams,
         );
         const r = restToday.rows[0] || {};
 
@@ -6721,7 +7443,7 @@ async function registerRoutesAfterDbInit() {
           `SELECT
              COUNT(*) FILTER (
                WHERE status = 'online_inquiries'
-                 AND created_at >= $1 AND created_at < $2
+                AND created_at >= $1 AND created_at < $2
              )::int AS inquiries_this_month,
              COUNT(*) FILTER (WHERE status IN ('for_down_payment', 'on_going', 'for_full_payment', 'for_processing', 'for_post_analysis'))::int AS accepted_transactions,
              COUNT(*) FILTER (
@@ -6746,7 +7468,7 @@ async function registerRoutesAfterDbInit() {
              ), 0)::float AS sales_today,
              COALESCE(SUM(total_cost) FILTER (
                WHERE status = 'completed'
-                 AND created_at >= $3 AND created_at < $4
+                 AND created_at >= $1 AND created_at < $2
              ), 0)::float AS sales_year
            FROM (
              SELECT status, down_payment_status, full_payment_status, total_cost, created_at
@@ -6755,12 +7477,104 @@ async function registerRoutesAfterDbInit() {
              SELECT status, down_payment_status, full_payment_status, total_cost, created_at
              FROM event_orders
            ) combined`,
-          [monthStart, nextMonth, yearStart, nextYear],
+          [rangeStart, rangeEnd],
         );
         const c = cateringMetrics.rows[0] || {};
 
         const restaurantSalesYear = Number(r.sales_year) || 0;
         const cateringSalesYear = Number(c.sales_year) || 0;
+
+        const restaurantMonthlySales = await pool.query(
+          `SELECT
+             EXTRACT(MONTH FROM created_at)::int AS month,
+             COUNT(*)::int AS orders,
+             COALESCE(SUM(total_cost), 0)::float AS sales
+           FROM restaurant_orders
+           WHERE order_status NOT IN ('CANCELLED')
+             AND created_at >= $1 AND created_at < $2
+             ${orderSource && orderSource !== 'ALL' ? `AND order_source = $3` : ''}
+             ${orderStatus && orderStatus !== 'ALL' ? `AND order_status = $${orderSource && orderSource !== 'ALL' ? 4 : 3}` : ''}
+           GROUP BY 1
+           ORDER BY 1`,
+          [
+            yearStart,
+            nextYear,
+            ...(orderSource && orderSource !== 'ALL' ? [orderSource] : []),
+            ...(orderStatus && orderStatus !== 'ALL' ? [orderStatus] : []),
+          ],
+        );
+
+        const cateringMonthlySales = await pool.query(
+          `SELECT
+             EXTRACT(MONTH FROM created_at)::int AS month,
+             COUNT(*)::int AS orders,
+             COALESCE(SUM(total_cost) FILTER (WHERE status = 'completed'), 0)::float AS sales
+           FROM (
+             SELECT status, total_cost, created_at FROM catering_orders
+             UNION ALL
+             SELECT status, total_cost, created_at FROM event_orders
+           ) combined
+           WHERE status != 'cancelled'
+             AND created_at >= $1 AND created_at < $2
+           GROUP BY 1
+           ORDER BY 1`,
+          [yearStart, nextYear],
+        );
+
+        const restaurantFeedback = await pool.query(
+          `SELECT
+             COUNT(*)::int AS count,
+             COALESCE(AVG(feedback_stars), 0)::float AS average_stars,
+             COUNT(*) FILTER (WHERE feedback_stars >= 4)::int AS positive_count,
+             COUNT(*) FILTER (WHERE feedback_stars = 3)::int AS neutral_count,
+             COUNT(*) FILTER (WHERE feedback_stars <= 2)::int AS negative_count
+           FROM restaurant_orders
+           WHERE feedback_stars IS NOT NULL
+             AND COALESCE(feedback_submitted_at, updated_at, created_at) >= $1
+             AND COALESCE(feedback_submitted_at, updated_at, created_at) < $2`,
+          [rangeStart, rangeEnd],
+        );
+
+        const cateringFeedback = await pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE complaints > 0)::int AS count,
+             COALESCE(SUM(complaints), 0)::int AS complaint_count
+           FROM (
+             SELECT COALESCE((post_analysis->>'complaints')::int, 0) AS complaints,
+                    COALESCE(updated_at, created_at) AS feedback_at
+             FROM event_orders
+             UNION ALL
+             SELECT COALESCE((post_analysis->>'complaints')::int, 0) AS complaints,
+                    COALESCE(updated_at, created_at) AS feedback_at
+             FROM catering_orders
+           ) feedback
+           WHERE feedback_at >= $1 AND feedback_at < $2`,
+          [rangeStart, rangeEnd],
+        );
+        const rf = restaurantFeedback.rows[0] || {};
+        const cf = cateringFeedback.rows[0] || {};
+
+        const monthly = Array.from({ length: 12 }, (_, i) => ({
+          month: i + 1,
+          restaurantSales: 0,
+          restaurantOrders: 0,
+          cateringSales: 0,
+          cateringOrders: 0,
+        }));
+        for (const row of restaurantMonthlySales.rows) {
+          const idx = Number(row.month) - 1;
+          if (idx >= 0 && idx < 12) {
+            monthly[idx].restaurantSales = Number(row.sales) || 0;
+            monthly[idx].restaurantOrders = Number(row.orders) || 0;
+          }
+        }
+        for (const row of cateringMonthlySales.rows) {
+          const idx = Number(row.month) - 1;
+          if (idx >= 0 && idx < 12) {
+            monthly[idx].cateringSales = Number(row.sales) || 0;
+            monthly[idx].cateringOrders = Number(row.orders) || 0;
+          }
+        }
 
         res.json({
           restaurant: {
@@ -6769,6 +7583,14 @@ async function registerRoutesAfterDbInit() {
             cancelled: Number(r.cancelled) || 0,
             salesToday: Number(r.sales_today) || 0,
             salesThisYear: restaurantSalesYear,
+            feedback: {
+              count: Number(rf.count) || 0,
+              averageStars: Number(rf.average_stars) || 0,
+              positiveCount: Number(rf.positive_count) || 0,
+              neutralCount: Number(rf.neutral_count) || 0,
+              negativeCount: Number(rf.negative_count) || 0,
+              complaintCount: 0,
+            },
           },
           catering: {
             inquiriesThisMonth: Number(c.inquiries_this_month) || 0,
@@ -6780,12 +7602,25 @@ async function registerRoutesAfterDbInit() {
             cancelled: Number(c.cancelled) || 0,
             salesToday: Number(c.sales_today) || 0,
             salesThisYear: cateringSalesYear,
+            feedback: {
+              count: Number(cf.count) || 0,
+              averageStars: 0,
+              positiveCount: 0,
+              neutralCount: 0,
+              negativeCount: Number(cf.count) || 0,
+              complaintCount: Number(cf.complaint_count) || 0,
+            },
           },
           salesThisYear: {
             restaurant: restaurantSalesYear,
             catering: cateringSalesYear,
             all: restaurantSalesYear + cateringSalesYear,
           },
+          monthlySales: monthly.map((m) => ({
+            ...m,
+            totalSales: m.restaurantSales + m.cateringSales,
+            totalOrders: m.restaurantOrders + m.cateringOrders,
+          })),
         });
       } catch (e) {
         console.error('dashboard summary', e);
@@ -6805,23 +7640,15 @@ async function registerRoutesAfterDbInit() {
         const rangeEnd = annual ? new Date(year + 1, 0, 1) : periodEnd;
 
         const roCols = await getTableColumnNames('restaurant_orders');
-        const roTotalCol = roCols.has('total_amount')
-          ? 'total_amount'
-          : roCols.has('total_cost')
-            ? 'total_cost'
-            : '0';
+        const roTotalCol = roCols.has('total_cost') ? 'total_cost' : '0';
         const roStatusCol = roCols.has('order_status')
           ? 'order_status'
           : roCols.has('status')
             ? 'status'
             : null;
-        const roItemsCol = roCols.has('tray_items')
-          ? 'tray_items'
-          : roCols.has('items')
-            ? 'items'
-            : null;
+        const roItemsCol = roCols.has('tray_items') ? 'tray_items' : null;
         const roStatusFilter = roStatusCol
-          ? `AND COALESCE(${roStatusCol}::text, '') NOT IN ('cancelled')`
+          ? `AND upper(COALESCE(${roStatusCol}::text, '')) NOT IN ('CANCELLED')`
           : '';
         const roItemsSelect = roItemsCol ? `${roItemsCol} AS items` : "'[]'::jsonb AS items";
 
@@ -6954,6 +7781,38 @@ async function registerRoutesAfterDbInit() {
           .slice(0, 15)
           .map(([name, count]) => ({ name, count }));
 
+        const restaurantFeedback = await pool.query(
+          `SELECT
+             COUNT(*)::int AS count,
+             COALESCE(AVG(feedback_stars), 0)::float AS average_stars,
+             COUNT(*) FILTER (WHERE feedback_stars >= 4)::int AS positive_count,
+             COUNT(*) FILTER (WHERE feedback_stars = 3)::int AS neutral_count,
+             COUNT(*) FILTER (WHERE feedback_stars <= 2)::int AS negative_count
+           FROM restaurant_orders
+           WHERE feedback_stars IS NOT NULL
+             AND COALESCE(feedback_submitted_at, updated_at, created_at) >= $1
+             AND COALESCE(feedback_submitted_at, updated_at, created_at) < $2`,
+          [rangeStart, rangeEnd],
+        );
+        const cateringFeedback = await pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE complaints > 0)::int AS count,
+             COALESCE(SUM(complaints), 0)::int AS complaint_count
+           FROM (
+             SELECT COALESCE((post_analysis->>'complaints')::int, 0) AS complaints,
+                    COALESCE(updated_at, created_at) AS feedback_at
+             FROM event_orders
+             UNION ALL
+             SELECT COALESCE((post_analysis->>'complaints')::int, 0) AS complaints,
+                    COALESCE(updated_at, created_at) AS feedback_at
+             FROM catering_orders
+           ) feedback
+           WHERE feedback_at >= $1 AND feedback_at < $2`,
+          [rangeStart, rangeEnd],
+        );
+        const rf = restaurantFeedback.rows[0] || {};
+        const cf = cateringFeedback.rows[0] || {};
+
         res.json({
           period: { year, month: annual ? null : month, annual },
           catering: {
@@ -6962,6 +7821,14 @@ async function registerRoutesAfterDbInit() {
             averageGuestCount: guestCountN > 0 ? guestTotal / guestCountN : 0,
             topDishes,
             topEventTypes,
+            feedback: {
+              count: Number(cf.count) || 0,
+              averageStars: 0,
+              positiveCount: 0,
+              neutralCount: 0,
+              negativeCount: Number(cf.count) || 0,
+              complaintCount: Number(cf.complaint_count) || 0,
+            },
           },
           restaurant: {
             orderCount: restaurantOrders.rowCount,
@@ -6972,6 +7839,14 @@ async function registerRoutesAfterDbInit() {
             customerAccountsWeb: accountsWeb,
             customerAccountsMobile: accountsMobile,
             topDishes: topRestaurantDishes,
+            feedback: {
+              count: Number(rf.count) || 0,
+              averageStars: Number(rf.average_stars) || 0,
+              positiveCount: Number(rf.positive_count) || 0,
+              neutralCount: Number(rf.neutral_count) || 0,
+              negativeCount: Number(rf.negative_count) || 0,
+              complaintCount: 0,
+            },
           },
         });
       } catch (e) {
@@ -7080,32 +7955,32 @@ async function registerRoutesAfterDbInit() {
         let paramIndex = 1;
 
         if (status) {
+          const normalizedStatus = String(status).trim().toUpperCase();
           const allowedStatuses = [
-            'pending_cashier',
-            'in_preparation',
-            'out_for_delivery',
-            'delivered',
-            'cancelled',
+            'PENDING_CASHIER',
+            'IN_PREPARATION',
+            'OUT_FOR_DELIVERY',
+            'DELIVERED',
+            'CANCELLED',
           ];
-          if (!allowedStatuses.includes(status)) {
+          if (!allowedStatuses.includes(normalizedStatus)) {
             return res.status(400).json({
               error: `Invalid status: ${status}. Allowed: ${allowedStatuses.join(', ')}`,
             });
           }
           updateFields.push(`order_status = $${paramIndex++}`);
-          updateValues.push(status);
+          updateValues.push(normalizedStatus);
         }
 
         if (delivery_tracking_url) {
           updateFields.push(`delivery_tracking_url = $${paramIndex++}`);
           updateValues.push(delivery_tracking_url);
           updateFields.push(`order_status = $${paramIndex++}`);
-          updateValues.push('out_for_delivery');
+          updateValues.push('OUT_FOR_DELIVERY');
         }
         
-        if (payment_status) {
-          updateFields.push(`payment_status = $${paramIndex++}`);
-          updateValues.push(payment_status);
+        if (payment_status === 'paid' || payment_status === 'confirmed') {
+          updateFields.push(`payment_confirmed_initial = TRUE`);
         }
         
         updateFields.push(`updated_at = now()`);
@@ -7130,14 +8005,14 @@ async function registerRoutesAfterDbInit() {
         }
 
         const effectiveStatus = delivery_tracking_url
-          ? 'out_for_delivery'
-          : status;
+          ? 'OUT_FOR_DELIVERY'
+          : status?.toString().trim().toUpperCase();
 
         // Auto-calculate loyalty points when order is delivered
-        if (effectiveStatus === 'delivered') {
+        if (effectiveStatus === 'DELIVERED') {
           const order = result.rows[0];
           const customerId = order.customer_id;
-          const totalAmount = parseFloat(order.total_amount || 0);
+          const totalAmount = parseFloat(order.total_cost || 0);
           
           // Default restaurant loyalty points: 100 min order to earn 2 points (2% rate)
           const minimumCost = 100.0;
@@ -7157,7 +8032,9 @@ async function registerRoutesAfterDbInit() {
             const pointsLookup = await restaurantOrderWhereClause(orderId, 2);
             if (pointsLookup) {
               await pool.query(
-                `UPDATE restaurant_orders SET points_earned = $1 WHERE ${pointsLookup.sql}`,
+                `UPDATE restaurant_orders
+                 SET loyalty_points_restaurant_obtained = $1
+                 WHERE ${pointsLookup.sql}`,
                 [points, pointsLookup.value],
               );
             }
@@ -7173,19 +8050,22 @@ async function registerRoutesAfterDbInit() {
           }
         }
 
-        const customerResult = await pool.query(
-          "SELECT email, full_name FROM customer_accounts WHERE id = $1 LIMIT 1",
-          [result.rows[0].customer_id],
-        );
-        if (customerResult.rowCount > 0) {
+        const updatedOrder = result.rows[0];
+        const notifyEmail = await resolveRestaurantOrderEmail(updatedOrder);
+        if (notifyEmail) {
+          const feedbackText = effectiveStatus === 'DELIVERED'
+            ? `\nShare your feedback: ${restaurantFeedbackLink(updatedOrder)}\n`
+            : '';
           await sendCustomerNotificationEmail({
-            to: customerResult.rows[0].email,
+            to: notifyEmail,
             subject: "Curatering: Restaurant order status updated",
             text:
-              `Hello ${customerResult.rows[0].full_name || "Customer"},\n\n` +
+              `Hello ${updatedOrder.full_name || "Customer"},\n\n` +
               `Your restaurant order (${orderId}) has a status update.\n` +
-              `${status ? `New status: ${status}\n` : ""}` +
-              `${payment_status ? `Payment status: ${payment_status}\n` : ""}\n` +
+              `${effectiveStatus ? `New status: ${effectiveStatus}\n` : ""}` +
+              `${payment_status ? `Payment review: ${payment_status}\n` : ""}` +
+              feedbackText +
+              `\n` +
               `- Curatering Team`,
           });
         }
@@ -7220,7 +8100,7 @@ async function registerRoutesAfterDbInit() {
             return res.status(404).json({ error: 'Order not found' });
           }
           const order = existing.rows[0];
-          const total = Number(order.total_amount || 0);
+          const total = Number(order.total_cost || 0);
           if (paid < total) {
             return res.status(400).json({
               error: 'insufficient_payment',
@@ -7236,8 +8116,9 @@ async function registerRoutesAfterDbInit() {
             `UPDATE restaurant_orders
              SET amount_paid = $1,
                  change_given = $2,
-                 payment_status = 'paid',
-                 order_status = 'in_preparation',
+                 payment_confirmed_initial = TRUE,
+                 order_status = 'IN_PREPARATION',
+                 cashier_amount_received_initial = $1,
                  updated_at = now()
              WHERE ${confirmLookup.sql}
              RETURNING *`,
@@ -7251,7 +8132,7 @@ async function registerRoutesAfterDbInit() {
               to: email,
               subject: 'Curatering: Payment confirmed',
               text:
-                `Your payment for order ${updated.order_id ?? updated.order_no} was confirmed.\n` +
+                `Your payment for order ${updated.order_id} was confirmed.\n` +
                 `Your order is now being prepared.\n\n` +
                 `- Curatering Team`,
             });
@@ -7286,14 +8167,14 @@ async function registerRoutesAfterDbInit() {
           if (!email) {
             return res.status(400).json({ error: 'No email on file for this order' });
           }
-          const total = Number(order.total_amount || 0);
+          const total = Number(order.total_cost || 0);
           const paid = Number(amountPaid ?? 0);
           await sendCustomerNotificationEmail({
             to: email,
             subject: 'Curatering: Payment issue on your order',
             text:
               (message ||
-                `We could not confirm payment for order ${order.order_id ?? order.order_no}.\n` +
+                `We could not confirm payment for order ${order.order_id}.\n` +
                   `Order total: PHP ${total.toFixed(2)}\n` +
                   `Amount received: PHP ${paid.toFixed(2)}\n` +
                   `Please submit the correct payment or contact us.\n`) +
@@ -7316,7 +8197,7 @@ async function registerRoutesAfterDbInit() {
           const lookup = await restaurantOrderWhereClause(orderId, 1);
           const result = await pool.query(
             `UPDATE restaurant_orders
-             SET order_status = 'cancelled', updated_at = now()
+             SET order_status = 'CANCELLED', updated_at = now()
              WHERE ${lookup.sql}
              RETURNING *`,
             [lookup.value],
@@ -7332,7 +8213,7 @@ async function registerRoutesAfterDbInit() {
               to: email,
               subject: 'Curatering: Order cancelled',
               text:
-                `Your order ${order.order_id ?? order.order_no} has been cancelled.\n\n` +
+                `Your order ${order.order_id} has been cancelled.\n\n` +
                 `- Curatering Team`,
             });
           }
@@ -8075,9 +8956,9 @@ async function registerRoutesAfterDbInit() {
           const customerId = customer.id;
 
           const restaurantPoints = await pool.query(
-            `SELECT COALESCE(SUM(COALESCE(loyalty_points_restaurant_obtained, points_earned, 0)), 0) as total
+            `SELECT COALESCE(SUM(COALESCE(loyalty_points_restaurant_obtained, 0)), 0) as total
              FROM restaurant_orders
-             WHERE customer_id::text = $1 AND order_status = 'delivered'`,
+             WHERE customer_id::text = $1 AND order_status = 'DELIVERED'`,
             [customerId]
           );
 
@@ -8151,16 +9032,16 @@ async function registerRoutesAfterDbInit() {
         // Get customer orders
         // TODO: Fix customer_id column issue - using id for testing
         const ordersResult = await pool.query(
-          `SELECT id, total_amount, order_status AS status, payment_status, created_at
+          `SELECT id, total_cost, order_status AS status, created_at
            FROM restaurant_orders
-           WHERE id = $1
+           WHERE customer_id::text = $1
            ORDER BY created_at DESC`,
           [customerId]
         );
 
         // Calculate total spent
         const totalSpent = ordersResult.rows.reduce((sum, order) => {
-          return sum + parseFloat(order.total_amount || 0);
+          return sum + parseFloat(order.total_cost || 0);
         }, 0);
 
         res.json({
@@ -8530,6 +9411,7 @@ async function registerRoutesAfterDbInit() {
     await ensureCustomerTrayDraftsSchema();
     app.get('/api/tray-draft', customerAuthRequired, getTrayDraft);
     app.put('/api/tray-draft', customerAuthRequired, saveTrayDraft);
+    app.post('/api/tray-draft', customerAuthRequired, saveTrayDraft);
     app.delete('/api/tray-draft', customerAuthRequired, clearTrayDraft);
 
     await ensureRestaurantOrderWorkflowColumns();
@@ -8542,6 +9424,7 @@ async function registerRoutesAfterDbInit() {
       allocateRestaurantOrderNo,
       sendCustomerNotificationEmail,
       resolveRestaurantOrderEmail,
+      restaurantFeedbackLink,
     });
 
     routesRegistered = true;

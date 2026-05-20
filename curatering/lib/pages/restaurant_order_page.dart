@@ -47,7 +47,7 @@ class RestaurantOrderPage extends StatefulWidget {
 }
 
 class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
-  String _selectedRestaurantType = 'RICE MEALS';
+  String _selectedRestaurantType = 'ALL';
 
   @override
   Widget build(BuildContext context) {
@@ -105,16 +105,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     final restaurantDishes =
         allDishes.where((d) {
           final category = d.category.trim().toLowerCase();
-          final isRestaurantCategory =
-              category == 'restaurant' ||
-              category == 'main_course' ||
-              category == 'noodles' ||
-              category == 'appetizer' ||
-              category == 'rice' ||
-              category == 'dessert' ||
-              category == 'drinks' ||
-              category == 'drink';
-          return isRestaurantCategory || d.effectiveMealType.isNotEmpty;
+          return category == 'restaurant';
         }).toList();
 
     // Filter restaurant dishes by selected meal type (menu_dishes.meal_type)
@@ -143,6 +134,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     final selectedType = _selectedRestaurantType.trim().toLowerCase();
     final dishes =
         restaurantDishes.where((d) {
+          if (selectedType == 'all') return true;
           final dishType = restaurantTypeForDish(d);
           return dishType == selectedType;
         }).toList();
@@ -163,70 +155,74 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                // Title
-                Text(
-                  'RESTAURANT',
-                  style: GoogleFonts.getFont(
-                    _primaryFont,
-                    fontSize: 36,
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFF1E1E1E),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Order from our delicious restaurant menu',
-                  style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
-                ),
-                const SizedBox(height: 24),
-
-                // Category tabs
-                _buildCategoryTabs(restaurantDishes),
-                const SizedBox(height: 24),
-
-                // Menu items
-                if (dishes.isEmpty)
-                  Center(
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 100),
-                        Icon(
-                          Icons.restaurant_menu,
-                          size: 64,
-                          color: Colors.grey.shade400,
+                      // Title
+                      Text(
+                        'RESTAURANT',
+                        style: GoogleFonts.getFont(
+                          _primaryFont,
+                          fontSize: 36,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF1E1E1E),
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No items available in this category',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey.shade600,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Order from our delicious restaurant menu',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Category tabs
+                      _buildCategoryTabs(restaurantDishes),
+                      const SizedBox(height: 24),
+
+                      // Menu items
+                      if (dishes.isEmpty)
+                        Center(
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 100),
+                              Icon(
+                                Icons.restaurant_menu,
+                                size: 64,
+                                color: Colors.grey.shade400,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No items available in this category',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
                           ),
+                        )
+                      else
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount:
+                                    isMobile(context)
+                                        ? 1
+                                        : isTablet(context)
+                                        ? 2
+                                        : 3,
+                                crossAxisSpacing: 16,
+                                mainAxisSpacing: 16,
+                                childAspectRatio: 0.8,
+                              ),
+                          itemCount: dishes.length,
+                          itemBuilder: (context, index) {
+                            final dish = dishes[index];
+                            return _buildDishCard(dish);
+                          },
                         ),
-                      ],
-                    ),
-                  )
-                else
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount:
-                          isMobile(context)
-                              ? 1
-                              : isTablet(context)
-                              ? 2
-                              : 3,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                      childAspectRatio: 0.8,
-                    ),
-                    itemCount: dishes.length,
-                    itemBuilder: (context, index) {
-                      final dish = dishes[index];
-                      return _buildDishCard(dish);
-                    },
-                  ),
                     ],
                   ),
                 ),
@@ -262,9 +258,9 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   Future<void> _proceedToCheckout({VoidCallback? closeOverlay}) async {
     if (CartStore.instance.items.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Your cart is empty')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Your cart is empty')));
       return;
     }
 
@@ -275,17 +271,13 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
 
     try {
       await Navigator.of(context, rootNavigator: true).push<void>(
-        MaterialPageRoute<void>(
-          builder: (context) => const CheckoutPage(),
-        ),
+        MaterialPageRoute<void>(builder: (context) => const CheckoutPage()),
       );
     } catch (e, st) {
       debugPrint('RestaurantOrderPage checkout navigation failed: $e\n$st');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not open checkout. ${e.toString()}'),
-        ),
+        SnackBar(content: Text('Could not open checkout. ${e.toString()}')),
       );
     }
   }
@@ -323,8 +315,10 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
       }
     }
 
-    final typeList = types.toList();
+    final typeList = ['ALL', ...types.toList()];
     typeList.sort();
+    typeList.remove('ALL');
+    typeList.insert(0, 'ALL');
 
     return Container(
       height: 50,
@@ -365,89 +359,183 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Image
-          Expanded(
-            flex: 3,
-            child: Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _showDishDetails(dish),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image
+            Expanded(
+              flex: 3,
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(12),
+                  ),
+                  color: Colors.grey.shade200,
                 ),
-                color: Colors.grey.shade200,
+                clipBehavior: Clip.antiAlias,
+                child:
+                    dish.imageBase64?.isNotEmpty == true
+                        ? Image.memory(
+                          base64Decode(dish.imageBase64!),
+                          fit: BoxFit.cover,
+                        )
+                        : Icon(
+                          Icons.restaurant,
+                          size: 48,
+                          color: Colors.grey.shade400,
+                        ),
               ),
-              child:
-                  dish.imageBase64?.isNotEmpty == true
-                      ? Image.memory(
-                        base64Decode(dish.imageBase64!),
-                        fit: BoxFit.cover,
-                      )
-                      : Icon(
-                        Icons.restaurant,
-                        size: 48,
-                        color: Colors.grey.shade400,
-                      ),
             ),
-          ),
-          // Content
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
+            // Content
+            Expanded(
+              flex: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      dish.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      dish.effectiveMealType.isNotEmpty
+                          ? dish.effectiveMealType
+                          : 'Restaurant',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const Spacer(),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '₱${double.tryParse(dish.price)?.toStringAsFixed(2) ?? dish.price}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1E1E1E),
+                          ),
+                        ),
+                        ElevatedButton(
+                          onPressed:
+                              dish.available ? () => _addToCart(dish) : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1E1E1E),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            minimumSize: Size.zero,
+                          ),
+                          child: const Text('ADD'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  void _showDishDetails(MenuDish dish) {
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        final description = dish.publicDescription.trim();
+        final ingredients =
+            dish.ingredients.where((e) => e.trim().isNotEmpty).toList();
+        final allergens = dish.allergens.trim();
+        return AlertDialog(
+          title: Text(dish.name),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: SingleChildScrollView(
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    dish.name,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+                  if (dish.imageBase64?.isNotEmpty == true)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: InteractiveViewer(
+                        minScale: 1,
+                        maxScale: 4,
+                        child: Image.memory(
+                          base64Decode(dish.imageBase64!),
+                          fit: BoxFit.contain,
+                        ),
+                      ),
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  const SizedBox(height: 16),
+                  _dishDetailBlock(
+                    'Description',
+                    description.isEmpty
+                        ? 'No description available.'
+                        : description,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    dish.category,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  _dishDetailBlock(
+                    'Ingredients',
+                    ingredients.isEmpty
+                        ? 'No ingredients listed.'
+                        : ingredients.join(', '),
                   ),
-                  const Spacer(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '₱${double.tryParse(dish.price)?.toStringAsFixed(2) ?? dish.price}',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E1E1E),
-                        ),
-                      ),
-                      ElevatedButton(
-                        onPressed:
-                            dish.available ? () => _addToCart(dish) : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E1E1E),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          minimumSize: Size.zero,
-                        ),
-                        child: const Text('ADD'),
-                      ),
-                    ],
+                  _dishDetailBlock(
+                    'Allergens',
+                    allergens.isEmpty ? 'No allergens listed.' : allergens,
                   ),
                 ],
               ),
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+            FilledButton(
+              onPressed:
+                  dish.available
+                      ? () {
+                        Navigator.of(context).pop();
+                        _addToCart(dish);
+                      }
+                      : null,
+              child: const Text('Add to cart'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _dishDetailBlock(String title, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(value),
         ],
       ),
     );
@@ -678,6 +766,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     }
   }
 
+  // ignore: unused_element
   void _openCartSidebar() {
     // For mobile, show bottom sheet
     if (isMobile(context)) {
@@ -693,9 +782,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
               return Container(
                 decoration: const BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.vertical(
-                    top: Radius.circular(20),
-                  ),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                 ),
                 child: Column(
                   children: [

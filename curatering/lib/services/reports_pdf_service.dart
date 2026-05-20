@@ -379,6 +379,18 @@ Future<Uint8List> buildOperationsReportPdf({
         data.catering.averageGuestCount.toStringAsFixed(1),
       ),
     );
+    blocks.add(
+      line(
+        'Catering feedback complaints',
+        '${data.catering.feedback.complaintCount}',
+      ),
+    );
+    blocks.add(
+      line(
+        'Events with complaints',
+        '${data.catering.feedback.count}',
+      ),
+    );
     blocks.add(rankTable('Top requested dishes', data.catering.topDishes));
     blocks.add(rankTable('Most frequent event type', data.catering.topEventTypes));
   }
@@ -403,6 +415,21 @@ Future<Uint8List> buildOperationsReportPdf({
       line(
         'Customer accounts (mobile)',
         '${data.restaurant.customerAccountsMobile}',
+      ),
+    );
+    blocks.add(
+      line('Feedback submissions', '${data.restaurant.feedback.count}'),
+    );
+    blocks.add(
+      line(
+        'Average feedback rating',
+        '${data.restaurant.feedback.averageStars.toStringAsFixed(1)} / 5',
+      ),
+    );
+    blocks.add(
+      line(
+        'Positive / Neutral / Negative',
+        '${data.restaurant.feedback.positiveCount} / ${data.restaurant.feedback.neutralCount} / ${data.restaurant.feedback.negativeCount}',
       ),
     );
     blocks.add(rankTable('Most ordered dishes', data.restaurant.topDishes));

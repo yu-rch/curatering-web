@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../services/cashier_pos_api.dart';
 import '../utils/cashier_pos_filters.dart';
+import '../widgets/antd_tokens.dart';
+
 /// Cashier POS shell: online orders, walk-in queue, new walk-in order, history.
 class CashierPosShell extends StatefulWidget {
   const CashierPosShell({super.key});
@@ -28,6 +30,7 @@ class _CashierPosShellState extends State<CashierPosShell>
   final _walkInLabelCtrl = TextEditingController();
   final _amountCtrl = TextEditingController();
   String _paymentMethod = 'CASH';
+  bool _showWalkInValidation = false;
 
   @override
   void initState() {
@@ -76,22 +79,24 @@ class _CashierPosShellState extends State<CashierPosShell>
     }
   }
 
-  List<PosOrderView> get _pendingOnline => _online
-      .map(PosOrderView.new)
-      .where((o) => !isWalkIn(o))
-      .where((o) => matchesPendingFilter(o, _pendingFilter))
-      .toList();
+  List<PosOrderView> get _pendingOnline =>
+      _online
+          .map(PosOrderView.new)
+          .where((o) => !isWalkIn(o))
+          .where((o) => matchesPendingFilter(o, _pendingFilter))
+          .toList();
 
-  List<PosOrderView> get _preparingOnline => _online
-      .map(PosOrderView.new)
-      .where((o) => !isWalkIn(o))
-      .where((o) => matchesPreparingFilter(o, _preparingFilter))
-      .where(
-        (o) =>
-            o.fulfillmentStage == 'IN_PREPARATION' ||
-            o.status.toUpperCase().contains('ORDER CONFIRMED'),
-      )
-      .toList();
+  List<PosOrderView> get _preparingOnline =>
+      _online
+          .map(PosOrderView.new)
+          .where((o) => !isWalkIn(o))
+          .where((o) => matchesPreparingFilter(o, _preparingFilter))
+          .where(
+            (o) =>
+                o.fulfillmentStage == 'IN_PREPARATION' ||
+                o.status.toUpperCase().contains('ORDER CONFIRMED'),
+          )
+          .toList();
 
   Future<void> _confirmPayment(PosOrderView order) async {
     final paidCtrl = TextEditingController(
@@ -99,18 +104,27 @@ class _CashierPosShellState extends State<CashierPosShell>
     );
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Confirm · ${order.orderNo}'),
-        content: TextField(
-          controller: paidCtrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Amount received'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Confirm')),
-        ],
-      ),
+      builder:
+          (ctx) => AlertDialog(
+            title: Text('Confirm · ${order.orderNo}'),
+            content: TextField(
+              controller: paidCtrl,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(labelText: 'Amount received'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Confirm'),
+              ),
+            ],
+          ),
     );
     final paid = double.tryParse(paidCtrl.text) ?? order.total;
     paidCtrl.dispose();
@@ -123,13 +137,15 @@ class _CashierPosShellState extends State<CashierPosShell>
       );
       await _refreshAll();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment confirmed')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Payment confirmed')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
   }
@@ -143,21 +159,30 @@ class _CashierPosShellState extends State<CashierPosShell>
       await _refreshAll();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
   }
 
   double get _trayTotal => _tray.fold<double>(0, (s, it) {
-        final q = (it['qty'] as num?)?.toInt() ?? 1;
-        final p = (it['price'] as num?)?.toDouble() ?? 0;
-        return s + q * p;
-      });
+    final q = (it['qty'] as num?)?.toInt() ?? 1;
+    final p = (it['price'] as num?)?.toDouble() ?? 0;
+    return s + q * p;
+  });
 
   Future<void> _submitWalkIn() async {
+    setState(() => _showWalkInValidation = true);
     if (_tray.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Add items to the tray')));
+      return;
+    }
+    if (_walkInAmountError != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add items to the tray')),
+        const SnackBar(content: Text('Please enter a valid amount received')),
       );
       return;
     }
@@ -182,42 +207,87 @@ class _CashierPosShellState extends State<CashierPosShell>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
   }
 
+  String? get _walkInAmountError {
+    if (_tray.isEmpty) return null;
+    final value = _amountCtrl.text.trim();
+    if (value.isEmpty) return 'Amount received is required';
+    final amount = double.tryParse(value);
+    if (amount == null) return 'Enter a valid amount';
+    if (amount < _trayTotal) return 'Amount must cover the tray total';
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Container(
+      color: const Color(0xFFF5F7FA),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: Row(
-              children: [
-                const Text(
-                  'Cashier POS',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: _loading ? null : _refreshAll,
-                  icon: const Icon(Icons.refresh),
-                  tooltip: 'Refresh',
-                ),
-              ],
+          Card(
+            elevation: 0,
+            margin: const EdgeInsets.fromLTRB(20, 16, 20, 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: const BorderSide(color: AntdTokens.borderSubtle),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  const Text(
+                    'Cashier POS',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: AntdTokens.valueDark,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Chip(
+                    label: Text('AntD layout'),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  const Spacer(),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AntdTokens.brandPrimary,
+                      foregroundColor: AntdTokens.brandOnPrimary,
+                    ),
+                    onPressed: _loading ? null : _refreshAll,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Refresh'),
+                  ),
+                ],
+              ),
             ),
           ),
-          TabBar(
-            controller: _tabs,
-            labelColor: const Color(0xFFFFC024),
-            tabs: const [
-              Tab(text: 'Online'),
-              Tab(text: 'Walk-in'),
-              Tab(text: 'New order'),
-              Tab(text: 'History'),
-            ],
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AntdTokens.borderSubtle),
+            ),
+            child: TabBar(
+              controller: _tabs,
+              labelColor: AntdTokens.brandOnPrimary,
+              unselectedLabelColor: AntdTokens.labelMuted,
+              indicatorColor: AntdTokens.brandPrimary,
+              tabs: const [
+                Tab(text: 'Online'),
+                Tab(text: 'Walk-in'),
+                Tab(text: 'New order'),
+                Tab(text: 'History'),
+              ],
+            ),
           ),
           if (_error != null)
             Padding(
@@ -225,19 +295,21 @@ class _CashierPosShellState extends State<CashierPosShell>
               child: Text(_error!, style: const TextStyle(color: Colors.red)),
             ),
           Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : TabBarView(
-                    controller: _tabs,
-                    children: [
-                      _buildOnlineTab(),
-                      _buildWalkInTab(),
-                      _buildNewOrderTab(),
-                      _buildHistoryTab(),
-                    ],
-                  ),
+            child:
+                _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : TabBarView(
+                      controller: _tabs,
+                      children: [
+                        _buildOnlineTab(),
+                        _buildWalkInTab(),
+                        _buildNewOrderTab(),
+                        _buildHistoryTab(),
+                      ],
+                    ),
           ),
         ],
+      ),
     );
   }
 
@@ -251,29 +323,38 @@ class _CashierPosShellState extends State<CashierPosShell>
             ChoiceChip(
               label: const Text('Awaiting payment'),
               selected: _pendingFilter == 'wait_payment',
-              onSelected: (_) => setState(() => _pendingFilter = 'wait_payment'),
+              onSelected:
+                  (_) => setState(() => _pendingFilter = 'wait_payment'),
             ),
             ChoiceChip(
               label: const Text('Insufficient'),
               selected: _pendingFilter == 'payment_insufficient',
-              onSelected: (_) =>
-                  setState(() => _pendingFilter = 'payment_insufficient'),
+              onSelected:
+                  (_) =>
+                      setState(() => _pendingFilter = 'payment_insufficient'),
             ),
             ChoiceChip(
               label: const Text('Balance review'),
               selected: _pendingFilter == 'wait_balance',
-              onSelected: (_) => setState(() => _pendingFilter = 'wait_balance'),
+              onSelected:
+                  (_) => setState(() => _pendingFilter = 'wait_balance'),
             ),
           ],
         ),
         const SizedBox(height: 12),
-        Text('Pending (${_pendingOnline.length})',
-            style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text(
+          'Pending (${_pendingOnline.length})',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         ..._pendingOnline.map(_onlineOrderTile),
         const Divider(height: 32),
-        Text('In preparation (${_preparingOnline.length})',
-            style: const TextStyle(fontWeight: FontWeight.bold)),
-        ..._preparingOnline.map((o) => _onlineOrderTile(o, showFulfillment: true)),
+        Text(
+          'In preparation (${_preparingOnline.length})',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        ..._preparingOnline.map(
+          (o) => _onlineOrderTile(o, showFulfillment: true),
+        ),
       ],
     );
   }
@@ -286,21 +367,26 @@ class _CashierPosShellState extends State<CashierPosShell>
           '${o.status}\n₱${o.total.toStringAsFixed(2)} · ${o.raw['customer_display_name'] ?? ''}',
         ),
         isThreeLine: true,
-        trailing: showFulfillment
-            ? PopupMenuButton<String>(
-                onSelected: (v) => _advanceFulfillment(o, v),
-                itemBuilder: (_) => const [
-                  PopupMenuItem(
-                    value: 'OUT_FOR_DELIVERY',
-                    child: Text('Out for delivery'),
-                  ),
-                  PopupMenuItem(value: 'DELIVERED', child: Text('Delivered')),
-                ],
-              )
-            : IconButton(
-                icon: const Icon(Icons.check_circle_outline),
-                onPressed: () => _confirmPayment(o),
-              ),
+        trailing:
+            showFulfillment
+                ? PopupMenuButton<String>(
+                  onSelected: (v) => _advanceFulfillment(o, v),
+                  itemBuilder:
+                      (_) => const [
+                        PopupMenuItem(
+                          value: 'OUT_FOR_DELIVERY',
+                          child: Text('Out for delivery'),
+                        ),
+                        PopupMenuItem(
+                          value: 'DELIVERED',
+                          child: Text('Delivered'),
+                        ),
+                      ],
+                )
+                : IconButton(
+                  icon: const Icon(Icons.check_circle_outline),
+                  onPressed: () => _confirmPayment(o),
+                ),
       ),
     );
   }
@@ -309,14 +395,18 @@ class _CashierPosShellState extends State<CashierPosShell>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('Preparing (${_walkInPreparing.length})',
-            style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text(
+          'Preparing (${_walkInPreparing.length})',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         ..._walkInPreparing.map((raw) {
           final o = PosOrderView(raw);
           return Card(
             child: ListTile(
               title: Text(o.orderNo),
-              subtitle: Text(raw['pos_customer_label']?.toString() ?? 'Walk-in'),
+              subtitle: Text(
+                raw['pos_customer_label']?.toString() ?? 'Walk-in',
+              ),
               trailing: FilledButton(
                 onPressed: () async {
                   await CashierPosApi.instance.claimWalkIn(raw['id']);
@@ -328,8 +418,10 @@ class _CashierPosShellState extends State<CashierPosShell>
           );
         }),
         const Divider(height: 24),
-        Text('Claimed (${_walkInClaimed.length})',
-            style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text(
+          'Claimed (${_walkInClaimed.length})',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         ..._walkInClaimed.map((raw) {
           final o = PosOrderView(raw);
           return ListTile(
@@ -385,6 +477,9 @@ class _CashierPosShellState extends State<CashierPosShell>
                 children: [
                   TextField(
                     controller: _walkInLabelCtrl,
+                    onChanged: (_) {
+                      if (_showWalkInValidation) setState(() {});
+                    },
                     decoration: const InputDecoration(
                       labelText: 'Customer label',
                       hintText: 'Table 3',
@@ -398,34 +493,49 @@ class _CashierPosShellState extends State<CashierPosShell>
                       DropdownMenuItem(value: 'CASH', child: Text('Cash')),
                       DropdownMenuItem(value: 'GCASH', child: Text('GCash')),
                     ],
-                    onChanged: (v) => setState(() => _paymentMethod = v ?? 'CASH'),
+                    onChanged:
+                        (v) => setState(() => _paymentMethod = v ?? 'CASH'),
                   ),
                   TextField(
                     controller: _amountCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    onChanged: (_) {
+                      if (_showWalkInValidation) setState(() {});
+                    },
                     decoration: InputDecoration(
                       labelText: 'Amount received',
                       hintText: _trayTotal.toStringAsFixed(2),
+                      errorText:
+                          _showWalkInValidation ? _walkInAmountError : null,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text('Tray · ₱${_trayTotal.toStringAsFixed(2)}',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    'Tray · ₱${_trayTotal.toStringAsFixed(2)}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   Expanded(
                     child: ListView(
-                      children: _tray
-                          .map(
-                            (it) => ListTile(
-                              dense: true,
-                              title: Text('${it['item_name']} × ${it['qty']}'),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.remove_circle_outline),
-                                onPressed: () =>
-                                    setState(() => _tray.remove(it)),
-                              ),
-                            ),
-                          )
-                          .toList(),
+                      children:
+                          _tray
+                              .map(
+                                (it) => ListTile(
+                                  dense: true,
+                                  title: Text(
+                                    '${it['item_name']} × ${it['qty']}',
+                                  ),
+                                  trailing: IconButton(
+                                    icon: const Icon(
+                                      Icons.remove_circle_outline,
+                                    ),
+                                    onPressed:
+                                        () => setState(() => _tray.remove(it)),
+                                  ),
+                                ),
+                              )
+                              .toList(),
                     ),
                   ),
                   FilledButton(

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../models/menu_dish.dart';
-import '../utils/inquiry_pricing.dart';
 import '../services/set_menu_store.dart';
 import 'antd_buttons.dart';
 import 'antd_dialog.dart';
@@ -98,6 +97,7 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
   TabController? _tabController;
   final Set<String> _customIds = {};
   SetMenu? _selectedSet;
+  final Set<String> _selectedSetDishIds = {};
   String _customFilter = '';
   String? _localError;
 
@@ -141,6 +141,7 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
       _localError = null;
       if (_tabController!.index == 0) {
         _selectedSet = null;
+        _selectedSetDishIds.clear();
       } else {
         _customIds.clear();
       }
@@ -157,6 +158,7 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
         _localError = null;
         if (widget.tabIndex == 0) {
           _selectedSet = null;
+          _selectedSetDishIds.clear();
         } else {
           _customIds.clear();
         }
@@ -171,6 +173,7 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
   void _restoreFromInitial(List<Map<String, dynamic>> blocks) {
     _customIds.clear();
     _selectedSet = null;
+    _selectedSetDishIds.clear();
     if (blocks.isEmpty) return;
     final b = blocks.first;
     final kind = b['kind'] as String? ?? 'custom';
@@ -179,6 +182,8 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
       for (final s in widget.setMenus) {
         if (s.name == name) {
           _selectedSet = s;
+          final ids = b['dishIds'] as List<dynamic>? ?? s.dishIds;
+          _selectedSetDishIds.addAll(ids.map((e) => e.toString()));
           break;
         }
       }
@@ -229,7 +234,7 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
 
     final set = _selectedSet;
     if (set == null) return [];
-    final ids = set.dishIds.toList();
+    final ids = _selectedSetDishIds.toList()..sort();
     if (ids.isEmpty) return [];
     return [
       {
@@ -262,8 +267,9 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
       final n = _customIds.length;
       if (n < widget.minCustomDishes || n > widget.maxCustomDishes) {
         setState(
-          () => _localError =
-              'Select between ${widget.minCustomDishes} and ${widget.maxCustomDishes} dishes.',
+          () =>
+              _localError =
+                  'Select between ${widget.minCustomDishes} and ${widget.maxCustomDishes} dishes.',
         );
         return;
       }
@@ -274,8 +280,10 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
         setState(() => _localError = 'Please choose a set menu.');
         return;
       }
-      if (set.dishIds.isEmpty) {
-        setState(() => _localError = 'Set "${set.name}" has no dishes yet.');
+      if (_selectedSetDishIds.isEmpty) {
+        setState(
+          () => _localError = 'Please keep at least one dish in "${set.name}".',
+        );
         return;
       }
       Navigator.of(context).pop(_buildCurrentBlocks());
@@ -295,10 +303,13 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
   }
 
   Widget _buildCustomDishesPanel() {
-    final filtered = widget.cateringDishes.where((d) {
-      if (_customFilter.trim().isEmpty) return true;
-      return d.name.toLowerCase().contains(_customFilter.trim().toLowerCase());
-    }).toList();
+    final filtered =
+        widget.cateringDishes.where((d) {
+          if (_customFilter.trim().isEmpty) return true;
+          return d.name.toLowerCase().contains(
+            _customFilter.trim().toLowerCase(),
+          );
+        }).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -332,15 +343,15 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
         else
           ListView.builder(
             shrinkWrap: widget.embedded,
-            physics: widget.embedded
-                ? const NeverScrollableScrollPhysics()
-                : null,
+            physics:
+                widget.embedded ? const NeverScrollableScrollPhysics() : null,
             itemCount: filtered.length,
             itemBuilder: (context, i) {
               final d = filtered[i];
               final checked = _customIds.contains(d.id);
               return CheckboxListTile(
                 dense: true,
+                secondary: _dishThumb(d),
                 value: checked,
                 onChanged: (v) {
                   setState(() {
@@ -359,10 +370,6 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
                   _emitSelection();
                 },
                 title: Text(d.name),
-                subtitle: Text(
-                  '${formatInquiryCateringDishPrice()} / guest (× guests at checkout)',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
               );
             },
           ),
@@ -383,26 +390,23 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
 
     return ListView.builder(
       shrinkWrap: widget.embedded,
-      physics:
-          widget.embedded ? const NeverScrollableScrollPhysics() : null,
+      physics: widget.embedded ? const NeverScrollableScrollPhysics() : null,
       padding: EdgeInsets.zero,
       itemCount: widget.setMenus.length,
       itemBuilder: (context, i) {
         final s = widget.setMenus[i];
         final selected = _selectedSet?.name == s.name;
-        final preview =
-            s.dishIds.map((id) => _dishNameById[id] ?? id).join(', ');
+        final preview = s.dishIds
+            .map((id) => _dishNameById[id] ?? id)
+            .join(', ');
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
-          color: selected
-              ? AntdTokens.brandPrimary.withValues(alpha: 0.15)
-              : null,
+          color:
+              selected ? AntdTokens.brandPrimary.withValues(alpha: 0.15) : null,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
             side: BorderSide(
-              color: selected
-                  ? AntdTokens.brandPrimary
-                  : Colors.grey.shade300,
+              color: selected ? AntdTokens.brandPrimary : Colors.grey.shade300,
             ),
           ),
           child: ListTile(
@@ -424,6 +428,9 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
               onChanged: (v) {
                 setState(() {
                   _selectedSet = v;
+                  _selectedSetDishIds
+                    ..clear()
+                    ..addAll(v?.dishIds ?? const []);
                   _localError = null;
                 });
                 _emitSelection();
@@ -432,6 +439,9 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
             onTap: () {
               setState(() {
                 _selectedSet = s;
+                _selectedSetDishIds
+                  ..clear()
+                  ..addAll(s.dishIds);
                 _localError = null;
               });
               _emitSelection();
@@ -439,6 +449,55 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
           ),
         );
       },
+    );
+  }
+
+  Widget _buildSetDishCustomizer() {
+    final selected = _selectedSet;
+    if (selected == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Customize "${selected.name}" with catering dishes',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          for (final d in widget.cateringDishes)
+            CheckboxListTile(
+              dense: true,
+              secondary: _dishThumb(d),
+              value: _selectedSetDishIds.contains(d.id),
+              title: Text(d.name),
+              onChanged: (v) {
+                setState(() {
+                  if (v == true) {
+                    _selectedSetDishIds.add(d.id);
+                  } else {
+                    _selectedSetDishIds.remove(d.id);
+                  }
+                  _localError = null;
+                });
+                _emitSelection();
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dishThumb(MenuDish dish) {
+    if (dish.imageBase64?.isNotEmpty != true) {
+      return const CircleAvatar(child: Icon(Icons.restaurant, size: 18));
+    }
+    return CircleAvatar(
+      backgroundImage: MemoryImage(
+        UriData.parse(
+          'data:image/png;base64,${dish.imageBase64}',
+        ).contentAsBytes(),
+      ),
     );
   }
 
@@ -464,7 +523,14 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
               controller: _tabController,
               children: [
                 _buildCustomDishesPanel(),
-                _buildSetMenusPanel(),
+                SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      _buildSetMenusPanel(),
+                      _buildSetDishCustomizer(),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -490,7 +556,11 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
   Widget _buildEmbeddedMenuPanel() {
     const maxHeight = 280.0;
     final panel =
-        _activeTab == 0 ? _buildCustomDishesPanel() : _buildSetMenusPanel();
+        _activeTab == 0
+            ? _buildCustomDishesPanel()
+            : Column(
+              children: [_buildSetMenusPanel(), _buildSetDishCustomizer()],
+            );
     return ConstrainedBox(
       constraints: const BoxConstraints(maxHeight: maxHeight),
       child: Scrollbar(
@@ -533,12 +603,14 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
                           selected: _pickDishId == id,
                           selectedColor: AntdTokens.brandPrimary,
                           labelStyle: TextStyle(
-                            color: _pickDishId == id
-                                ? AntdTokens.brandOnPrimary
-                                : Colors.black87,
-                            fontWeight: _pickDishId == id
-                                ? FontWeight.w700
-                                : FontWeight.normal,
+                            color:
+                                _pickDishId == id
+                                    ? AntdTokens.brandOnPrimary
+                                    : Colors.black87,
+                            fontWeight:
+                                _pickDishId == id
+                                    ? FontWeight.w700
+                                    : FontWeight.normal,
                           ),
                           onSelected: (_) {
                             setState(() {
@@ -583,9 +655,6 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
       return _buildExclusiveContent();
     }
 
-    return SizedBox(
-      height: 420,
-      child: _buildExclusiveContent(),
-    );
+    return SizedBox(height: 420, child: _buildExclusiveContent());
   }
 }

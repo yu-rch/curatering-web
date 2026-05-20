@@ -1,6 +1,6 @@
 /**
- * Simple in-memory rate limiter for unauthenticated public API routes.
- */
+* Simple in-memory rate limiter for unauthenticated public API routes.
+ */ 
 export function createPublicRateLimiter({
   windowMs = 60_000,
   max = Number(process.env.PUBLIC_API_RATE_LIMIT_PER_MIN || 20),

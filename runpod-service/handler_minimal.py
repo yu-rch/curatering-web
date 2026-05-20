@@ -14,8 +14,8 @@ from typing import List, Optional, Tuple
 import requests
 from diffusers import (
     DPMSolverMultistepScheduler,
-    StableDiffusionImg2ImgPipeline,
-    StableDiffusionPipeline,
+    StableDiffusionXLImg2ImgPipeline,
+    StableDiffusionXLPipeline,
 )
 from PIL import Image
 from supabase import create_client
@@ -150,11 +150,16 @@ _sd_img2img_pipeline = None
 _sd_pipeline_lock = threading.Lock()
 
 MAX_INIT_IMAGE_BYTES = int(os.getenv("MAX_INIT_IMAGE_BYTES", "6000000"))
-SD_IMAGE_SIZE = int(os.getenv("SD_IMAGE_SIZE", "512"))
-DEFAULT_INFERENCE_STEPS = int(os.getenv("DEFAULT_INFERENCE_STEPS", "20"))
-IMG2IMG_INFERENCE_STEPS = int(os.getenv("IMG2IMG_INFERENCE_STEPS", "18"))
-MODEL_ID = os.getenv("SD_MODEL_ID", "runwayml/stable-diffusion-v1-5")
+SD_IMAGE_SIZE = int(os.getenv("SD_IMAGE_SIZE", "1024"))
+DEFAULT_INFERENCE_STEPS = int(os.getenv("DEFAULT_INFERENCE_STEPS", "28"))
+IMG2IMG_INFERENCE_STEPS = int(os.getenv("IMG2IMG_INFERENCE_STEPS", "24"))
+GUIDANCE_SCALE = float(os.getenv("SD_GUIDANCE_SCALE", "7.0"))
+MODEL_ID = os.getenv("SD_MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0")
 HF_CACHE = os.getenv("HF_HOME", "/app/huggingface")
+NEGATIVE_PROMPT = os.getenv(
+    "SD_NEGATIVE_PROMPT",
+    "low quality, blurry, distorted, deformed, text, watermark, logo",
+)
 
 
 def _configure_pipeline(pipe):
@@ -183,10 +188,16 @@ def get_sd_pipeline():
         print("Loading model:", MODEL_ID)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float16 if device == "cuda" else torch.float32
-        _sd_pipeline = StableDiffusionPipeline.from_pretrained(
+        kwargs = {
+            "torch_dtype": dtype,
+            "cache_dir": HF_CACHE,
+            "use_safetensors": True,
+        }
+        if device == "cuda" and os.getenv("SD_MODEL_VARIANT", "fp16"):
+            kwargs["variant"] = os.getenv("SD_MODEL_VARIANT", "fp16")
+        _sd_pipeline = StableDiffusionXLPipeline.from_pretrained(
             MODEL_ID,
-            torch_dtype=dtype,
-            cache_dir=HF_CACHE,
+            **kwargs,
         ).to(device)
         _configure_pipeline(_sd_pipeline)
         print(f"Model loaded in {time.time() - t0:.1f}s on {device}")
@@ -204,7 +215,7 @@ def get_sd_img2img_pipeline():
         t0 = time.time()
         print("Building img2img pipeline from txt2img weights...")
         txt = get_sd_pipeline()
-        _sd_img2img_pipeline = StableDiffusionImg2ImgPipeline(**txt.components)
+        _sd_img2img_pipeline = StableDiffusionXLImg2ImgPipeline(**txt.components)
         _configure_pipeline(_sd_img2img_pipeline)
         print(f"Img2img pipeline ready in {time.time() - t0:.1f}s")
         return _sd_img2img_pipeline
@@ -294,7 +305,10 @@ def build_prompt(data) -> str:
         parts.append("professional event venue decoration, elegant lighting")
 
     combined = ". ".join(parts)
-    quality = "high quality, realistic lighting, professional event venue photography"
+    quality = (
+        "high quality, realistic lighting, professional event venue photography, "
+        "SDXL, sharp details"
+    )
     if "high quality" not in combined.lower():
         combined = f"{combined}. {quality}"
     return combined.strip()
@@ -316,7 +330,7 @@ def generate(
     else:
         default_steps = DEFAULT_INFERENCE_STEPS
     steps = num_inference_steps if num_inference_steps is not None else default_steps
-    steps = max(12, min(int(steps), 30))
+    steps = max(15, min(int(steps), 40))
 
     t0 = time.time()
     with torch.inference_mode():
@@ -332,12 +346,21 @@ def generate(
                 image=prepared,
                 strength=strength,
                 num_inference_steps=steps,
+                guidance_scale=GUIDANCE_SCALE,
+                negative_prompt=NEGATIVE_PROMPT,
             )
             mode = "img2img"
         else:
             print(f"Txt2img (steps={steps}, size={SD_IMAGE_SIZE}):", prompt[:200])
             pipe = get_sd_pipeline()
-            result = pipe(prompt, num_inference_steps=steps)
+            result = pipe(
+                prompt=prompt,
+                width=SD_IMAGE_SIZE,
+                height=SD_IMAGE_SIZE,
+                num_inference_steps=steps,
+                guidance_scale=GUIDANCE_SCALE,
+                negative_prompt=NEGATIVE_PROMPT,
+            )
             mode = "txt2img"
 
     print(f"Inference finished in {time.time() - t0:.1f}s ({mode})")

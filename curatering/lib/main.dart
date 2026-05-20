@@ -24,6 +24,7 @@ import 'pages/gallery_page.dart';
 import 'pages/contact_us_page.dart';
 import 'pages/inquire_page.dart';
 import 'pages/restaurant_order_page.dart';
+import 'pages/restaurant_feedback_public_page.dart';
 import 'pages/catering_menu_page.dart';
 import 'auth/page_permissions.dart';
 import 'auth/role_guard.dart';
@@ -37,7 +38,6 @@ import 'pages/customer_management.dart';
 import 'pages/website_admin_page.dart';
 import 'pages/restaurant_orders_route.dart';
 import 'pages/inventory.dart';
-import 'widgets/app_scaffold.dart';
 import 'data_store.dart';
 
 Future<void> main() async {
@@ -66,17 +66,11 @@ Future<void> main() async {
 }
 
 Widget _customerPage(Widget child, String path) {
-  return HostRouteGuard(
-    routePath: path,
-    child: child,
-  );
+  return HostRouteGuard(routePath: path, child: child);
 }
 
 Widget _staffPage(Widget child, String path) {
-  return HostRouteGuard(
-    routePath: path,
-    child: child,
-  );
+  return HostRouteGuard(routePath: path, child: child);
 }
 
 String _startupRoutePath() => resolveAppInitialRoute();
@@ -117,6 +111,13 @@ Route<dynamic>? _buildRouteForPath(String path) {
             showStaffChrome: false,
           ),
           '/restaurant',
+        ),
+    '/restaurant-feedback':
+        (context) => _customerPage(
+          RestaurantFeedbackPublicPage(
+            token: Uri.base.queryParameters['token'] ?? '',
+          ),
+          '/restaurant-feedback',
         ),
     '/catering-menu':
         (context) => _customerPage(
@@ -320,8 +321,7 @@ Route<dynamic>? _buildRouteForPath(String path) {
   if (needsRedirectToStaffSite(path)) {
     return MaterialPageRoute<void>(
       settings: RouteSettings(name: path),
-      builder:
-          (_) => ExternalHostRedirect(origin: staffSiteOrigin, path: path),
+      builder: (_) => ExternalHostRedirect(origin: staffSiteOrigin, path: path),
     );
   }
 
@@ -376,9 +376,7 @@ class MyApp extends StatelessWidget {
                 if (states.contains(WidgetState.selected)) {
                   return const Color(0xFFFFC024);
                 }
-                return dark
-                    ? const Color(0xFF5C5C5C)
-                    : const Color(0xFFBFBFBF);
+                return dark ? const Color(0xFF5C5C5C) : const Color(0xFFBFBFBF);
               }),
             ),
           ),
@@ -605,14 +603,14 @@ class MyApp extends StatelessWidget {
                 (context) => _staffPage(
                   RoleGuard(
                     requiredRole: Role.manager,
-            allowedRoles: {Role.manager, Role.supervisor, Role.cashier},
-            child: PagePermissionGuard(
-              route: PagePermissionRoutes.restaurantOrders,
-              child: const RestaurantOrdersRoute(),
-            ),
-          ),
-          '/restaurant-orders',
-        ),
+                    allowedRoles: {Role.manager, Role.supervisor, Role.cashier},
+                    child: PagePermissionGuard(
+                      route: PagePermissionRoutes.restaurantOrders,
+                      child: const RestaurantOrdersRoute(),
+                    ),
+                  ),
+                  '/restaurant-orders',
+                ),
             '/reports':
                 (context) => _staffPage(
                   RoleGuard(

@@ -16,23 +16,27 @@ import '../widgets/paginated_data_table.dart';
 
 class _HistoryRow {
   final String orderNo;
+  final String customerId;
   final String customerName;
   final String eventTitle;
   final String serviceType;
   final String eventType;
   final String fulfilmentDateTime;
   final String totalCost;
+  final double totalAmount;
   final String loyaltyRewards;
   final DateTime? fulfilmentDate;
 
   const _HistoryRow({
     required this.orderNo,
+    required this.customerId,
     required this.customerName,
     required this.eventTitle,
     required this.serviceType,
     required this.eventType,
     required this.fulfilmentDateTime,
     required this.totalCost,
+    required this.totalAmount,
     required this.loyaltyRewards,
     required this.fulfilmentDate,
   });
@@ -47,20 +51,26 @@ class Transactions extends StatefulWidget {
 
 class _TransactionsState extends State<Transactions> {
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _orderNoController = TextEditingController();
+  final TextEditingController _customerIdController = TextEditingController();
+  final TextEditingController _minPriceController = TextEditingController();
+  final TextEditingController _maxPriceController = TextEditingController();
   String _searchQuery = '';
   String _serviceTypeFilter = '';
   String _eventTypeFilter = '';
+  String _orderNoFilter = '';
+  String _customerIdFilter = '';
+  double? _minPriceFilter;
+  double? _maxPriceFilter;
+  int? _completionYearFilter;
+  int? _completionMonthFilter;
+  int? _completionDayFilter;
 
   bool _isLoading = false;
   String? _errorMessage;
 
   List<_HistoryRow> _allRows = const <_HistoryRow>[];
   List<DateTime> _availableDates = const <DateTime>[];
-  DateTime _selectedDate = DateTime(
-    DateTime.now().year,
-    DateTime.now().month,
-    DateTime.now().day,
-  );
 
   @override
   void initState() {
@@ -71,6 +81,10 @@ class _TransactionsState extends State<Transactions> {
   @override
   void dispose() {
     _searchController.dispose();
+    _orderNoController.dispose();
+    _customerIdController.dispose();
+    _minPriceController.dispose();
+    _maxPriceController.dispose();
     super.dispose();
   }
 
@@ -114,6 +128,7 @@ class _TransactionsState extends State<Transactions> {
         rows.add(
           _HistoryRow(
             orderNo: _displayOrderNo(o),
+            customerId: o.customerId.trim().isEmpty ? '—' : o.customerId.trim(),
             customerName: o.customerName,
             eventTitle: o.eventTitle.trim().isEmpty ? '—' : o.eventTitle,
             serviceType: serviceTypeDisplayLabel(
@@ -129,6 +144,7 @@ class _TransactionsState extends State<Transactions> {
             totalCost: formatPesos(
               o.totalCost > 0 ? o.totalCost : totalCost,
             ),
+            totalAmount: o.totalCost > 0 ? o.totalCost : totalCost,
             loyaltyRewards: '+$points pts',
             fulfilmentDate: fulfilmentDateOnlyFromEvent(o),
           ),
@@ -144,6 +160,10 @@ class _TransactionsState extends State<Transactions> {
         rows.add(
           _HistoryRow(
             orderNo: formatRestaurantOrderNo(o),
+            customerId:
+                (o['customer_id'] ?? '').toString().trim().isEmpty
+                    ? '—'
+                    : (o['customer_id'] ?? '').toString().trim(),
             customerName: (o['full_name'] ?? o['guest_contact_email'] ?? '—')
                 .toString(),
             eventTitle: '—',
@@ -155,6 +175,7 @@ class _TransactionsState extends State<Transactions> {
             ),
             fulfilmentDateTime: formatFulfilmentDateTimeFromRestaurant(o),
             totalCost: formatPesos(total),
+            totalAmount: total,
             loyaltyRewards: '+$points pts',
             fulfilmentDate: fulfilmentDateOnlyFromRestaurant(o),
           ),
@@ -181,9 +202,6 @@ class _TransactionsState extends State<Transactions> {
       setState(() {
         _allRows = rows;
         _availableDates = sortedDates;
-        if (sortedDates.isNotEmpty) {
-          _selectedDate = sortedDates.first;
-        }
       });
     } catch (e) {
       setState(() => _errorMessage = 'Failed to load orders: $e');
@@ -229,9 +247,17 @@ class _TransactionsState extends State<Transactions> {
   }
 
   Widget _dateTile(DateTime date) {
-    final isSelected = date == _selectedDate;
+    final isSelected =
+        _completionYearFilter == date.year &&
+        _completionMonthFilter == date.month &&
+        _completionDayFilter == date.day;
     return GestureDetector(
-      onTap: () => setState(() => _selectedDate = date),
+      onTap:
+          () => setState(() {
+            _completionYearFilter = date.year;
+            _completionMonthFilter = date.month;
+            _completionDayFilter = date.day;
+          }),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         decoration: BoxDecoration(
@@ -272,17 +298,7 @@ class _TransactionsState extends State<Transactions> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedKey = DateTime(
-      _selectedDate.year,
-      _selectedDate.month,
-      _selectedDate.day,
-    );
-
-    var filteredRows = _allRows.where((r) {
-      final d = r.fulfilmentDate;
-      if (d == null) return false;
-      return DateTime(d.year, d.month, d.day) == selectedKey;
-    }).toList();
+    var filteredRows = _allRows.toList();
 
     if (_serviceTypeFilter.isNotEmpty) {
       filteredRows = filteredRows
@@ -302,14 +318,82 @@ class _TransactionsState extends State<Transactions> {
           )
           .toList();
     }
+    if (_completionYearFilter != null ||
+        _completionMonthFilter != null ||
+        _completionDayFilter != null) {
+      filteredRows =
+          filteredRows.where((r) {
+            final d = r.fulfilmentDate;
+            if (d == null) return false;
+            if (_completionYearFilter != null &&
+                d.year != _completionYearFilter) {
+              return false;
+            }
+            if (_completionMonthFilter != null &&
+                d.month != _completionMonthFilter) {
+              return false;
+            }
+            if (_completionDayFilter != null && d.day != _completionDayFilter) {
+              return false;
+            }
+            return true;
+          }).toList();
+    }
+    if (_orderNoFilter.isNotEmpty) {
+      filteredRows =
+          filteredRows
+              .where((r) => r.orderNo.toLowerCase().contains(_orderNoFilter))
+              .toList();
+    }
+    if (_customerIdFilter.isNotEmpty) {
+      filteredRows =
+          filteredRows
+              .where(
+                (r) => r.customerId.toLowerCase().contains(_customerIdFilter),
+              )
+              .toList();
+    }
+    if (_minPriceFilter != null) {
+      filteredRows =
+          filteredRows
+              .where((r) => r.totalAmount >= _minPriceFilter!)
+              .toList();
+    }
+    if (_maxPriceFilter != null) {
+      filteredRows =
+          filteredRows
+              .where((r) => r.totalAmount <= _maxPriceFilter!)
+              .toList();
+    }
     if (_searchQuery.isNotEmpty) {
       filteredRows = filteredRows.where((r) {
         final haystack =
-            '${r.orderNo} ${r.eventTitle} ${r.customerName} ${r.serviceType} ${r.eventType} ${r.fulfilmentDateTime}'
+            '${r.orderNo} ${r.customerId} ${r.eventTitle} ${r.customerName} ${r.serviceType} ${r.eventType} ${r.fulfilmentDateTime}'
                 .toLowerCase();
         return haystack.contains(_searchQuery);
       }).toList();
     }
+
+    final completionYears = {
+      for (final r in _allRows)
+        if (r.fulfilmentDate != null) r.fulfilmentDate!.year,
+    }.toList()..sort((a, b) => b.compareTo(a));
+    final completionMonths = {
+      for (final r in _allRows)
+        if (r.fulfilmentDate != null &&
+            (_completionYearFilter == null ||
+                r.fulfilmentDate!.year == _completionYearFilter))
+          r.fulfilmentDate!.month,
+    }.toList()..sort();
+    final completionDays = {
+      for (final r in _allRows)
+        if (r.fulfilmentDate != null &&
+            (_completionYearFilter == null ||
+                r.fulfilmentDate!.year == _completionYearFilter) &&
+            (_completionMonthFilter == null ||
+                r.fulfilmentDate!.month == _completionMonthFilter))
+          r.fulfilmentDate!.day,
+    }.toList()..sort();
 
     return AppScaffold(
       showSearch: true,
@@ -353,7 +437,8 @@ class _TransactionsState extends State<Transactions> {
                 SizedBox(
                   width: 220,
                   child: DropdownButtonFormField<String>(
-                    value: _serviceTypeFilter,
+                    key: ValueKey('service_$_serviceTypeFilter'),
+                    initialValue: _serviceTypeFilter,
                     decoration: const InputDecoration(
                       labelText: 'Service type',
                       isDense: true,
@@ -377,7 +462,8 @@ class _TransactionsState extends State<Transactions> {
                 SizedBox(
                   width: 220,
                   child: DropdownButtonFormField<String>(
-                    value: _eventTypeFilter,
+                    key: ValueKey('event_$_eventTypeFilter'),
+                    initialValue: _eventTypeFilter,
                     decoration: const InputDecoration(
                       labelText: 'Event type',
                       isDense: true,
@@ -402,16 +488,184 @@ class _TransactionsState extends State<Transactions> {
                         setState(() => _eventTypeFilter = v ?? ''),
                   ),
                 ),
+                SizedBox(
+                  width: 150,
+                  child: DropdownButtonFormField<int?>(
+                    key: ValueKey('year_$_completionYearFilter'),
+                    initialValue: _completionYearFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Completion year',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('All years'),
+                      ),
+                      ...completionYears.map(
+                        (y) => DropdownMenuItem<int?>(
+                          value: y,
+                          child: Text('$y'),
+                        ),
+                      ),
+                    ],
+                    onChanged:
+                        (v) => setState(() {
+                          _completionYearFilter = v;
+                          _completionMonthFilter = null;
+                          _completionDayFilter = null;
+                        }),
+                  ),
+                ),
+                SizedBox(
+                  width: 150,
+                  child: DropdownButtonFormField<int?>(
+                    key: ValueKey('month_$_completionMonthFilter'),
+                    initialValue: _completionMonthFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Completion month',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('All months'),
+                      ),
+                      ...completionMonths.map(
+                        (m) => DropdownMenuItem<int?>(
+                          value: m,
+                          child: Text(m.toString().padLeft(2, '0')),
+                        ),
+                      ),
+                    ],
+                    onChanged:
+                        (v) => setState(() {
+                          _completionMonthFilter = v;
+                          _completionDayFilter = null;
+                        }),
+                  ),
+                ),
+                SizedBox(
+                  width: 140,
+                  child: DropdownButtonFormField<int?>(
+                    key: ValueKey('day_$_completionDayFilter'),
+                    initialValue: _completionDayFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Completion day',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('All days'),
+                      ),
+                      ...completionDays.map(
+                        (d) => DropdownMenuItem<int?>(
+                          value: d,
+                          child: Text(d.toString().padLeft(2, '0')),
+                        ),
+                      ),
+                    ],
+                    onChanged: (v) => setState(() => _completionDayFilter = v),
+                  ),
+                ),
+                SizedBox(
+                  width: 170,
+                  child: TextField(
+                    controller: _orderNoController,
+                    decoration: const InputDecoration(
+                      labelText: 'Order No.',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged:
+                        (v) => setState(
+                          () => _orderNoFilter = v.trim().toLowerCase(),
+                        ),
+                  ),
+                ),
+                SizedBox(
+                  width: 170,
+                  child: TextField(
+                    controller: _customerIdController,
+                    decoration: const InputDecoration(
+                      labelText: 'Customer ID',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged:
+                        (v) => setState(
+                          () => _customerIdFilter = v.trim().toLowerCase(),
+                        ),
+                  ),
+                ),
+                SizedBox(
+                  width: 140,
+                  child: TextField(
+                    controller: _minPriceController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Min price',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged:
+                        (v) => setState(
+                          () => _minPriceFilter = double.tryParse(v.trim()),
+                        ),
+                  ),
+                ),
+                SizedBox(
+                  width: 140,
+                  child: TextField(
+                    controller: _maxPriceController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Max price',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged:
+                        (v) => setState(
+                          () => _maxPriceFilter = double.tryParse(v.trim()),
+                        ),
+                  ),
+                ),
                 if (_serviceTypeFilter.isNotEmpty ||
                     _eventTypeFilter.isNotEmpty ||
+                    _completionYearFilter != null ||
+                    _completionMonthFilter != null ||
+                    _completionDayFilter != null ||
+                    _orderNoFilter.isNotEmpty ||
+                    _customerIdFilter.isNotEmpty ||
+                    _minPriceFilter != null ||
+                    _maxPriceFilter != null ||
                     _searchQuery.isNotEmpty)
                   TextButton.icon(
                     onPressed: () {
                       setState(() {
                         _serviceTypeFilter = '';
                         _eventTypeFilter = '';
+                        _completionYearFilter = null;
+                        _completionMonthFilter = null;
+                        _completionDayFilter = null;
+                        _orderNoFilter = '';
+                        _customerIdFilter = '';
+                        _minPriceFilter = null;
+                        _maxPriceFilter = null;
                         _searchQuery = '';
                         _searchController.clear();
+                        _orderNoController.clear();
+                        _customerIdController.clear();
+                        _minPriceController.clear();
+                        _maxPriceController.clear();
                       });
                     },
                     icon: const Icon(Icons.filter_alt_off, size: 18),
@@ -428,6 +682,20 @@ class _TransactionsState extends State<Transactions> {
                     flex: 2,
                     child: Column(
                       children: [
+                        if (_availableDates.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: OutlinedButton.icon(
+                              onPressed:
+                                  () => setState(() {
+                                    _completionYearFilter = null;
+                                    _completionMonthFilter = null;
+                                    _completionDayFilter = null;
+                                  }),
+                              icon: const Icon(Icons.calendar_month, size: 18),
+                              label: const Text('All dates'),
+                            ),
+                          ),
                         if (_availableDates.isEmpty)
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 40),
@@ -487,7 +755,7 @@ class _TransactionsState extends State<Transactions> {
                                 ),
                                 child: Center(
                                   child: Text(
-                                    'No orders for this date.',
+                                    'No orders match the selected filters.',
                                     style: TextStyle(
                                       color: Colors.grey.shade600,
                                     ),
@@ -499,6 +767,7 @@ class _TransactionsState extends State<Transactions> {
                                 child: PagedDataTable(
                                   columns: const [
                                     DataColumn(label: Text('Order No.')),
+                                    DataColumn(label: Text('Customer ID')),
                                     DataColumn(label: Text('Customer')),
                                     DataColumn(label: Text('Event')),
                                     DataColumn(label: Text('Service type')),
@@ -513,6 +782,7 @@ class _TransactionsState extends State<Transactions> {
                                     return DataRow(
                                       cells: [
                                         DataCell(Text(tx.orderNo)),
+                                        DataCell(Text(tx.customerId)),
                                         DataCell(Text(tx.customerName)),
                                         DataCell(Text(tx.eventTitle)),
                                         DataCell(Text(tx.serviceType)),

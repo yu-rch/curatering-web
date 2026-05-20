@@ -33,6 +33,23 @@ function pickCol(cols, candidates) {
   return null;
 }
 
+const ONLINE_ORDER_STATUSES = new Set([
+  'PENDING_CASHIER',
+  'IN_PREPARATION',
+  'OUT_FOR_DELIVERY',
+  'DELIVERED',
+  'CANCELLED',
+]);
+
+export function normalizeRestaurantOrderStatus(raw, fallback = 'PENDING_CASHIER') {
+  const s = String(raw ?? '').trim().toUpperCase();
+  if (!s) return fallback;
+  if (s === 'PENDING' || s === 'WAITING FOR ORDER CONFIRMATION') return 'PENDING_CASHIER';
+  if (s === 'CONFIRMED' || s === 'PREPARING') return 'IN_PREPARATION';
+  if (ONLINE_ORDER_STATUSES.has(s)) return s;
+  return fallback;
+}
+
 /** Public ORD-0001 id (order_id preferred; order_no legacy). */
 export function restaurantOrderIdExpr(cols) {
   if (cols.has('order_id') && cols.has('order_no')) {
@@ -105,53 +122,53 @@ async function ensureRestaurantOrdersCanonicalColumnsOnce() {
   }
 
   const adds = [
-    ['tray_items', 'JSONB NOT NULL DEFAULT \'[]\'::jsonb'],
-    ['total_cost', 'DECIMAL(10,2)'],
     ['order_id', 'TEXT'],
+    ['id', 'uuid DEFAULT gen_random_uuid()'],
+    ['customer_id', 'TEXT'],
+    ['mobile_id', "BIGINT"],
+    ['order_source', "TEXT NOT NULL DEFAULT 'WEB_APP'"],
+    ['total_cost', 'DECIMAL(12,2)'],
+    ['tray_items', 'JSONB NOT NULL DEFAULT \'[]\'::jsonb'],
+    ['loyalty_points_restaurant_obtained', 'INTEGER NOT NULL DEFAULT 0'],
+    ['loyalty_reward_restaurant_obtained', 'TEXT'],
+    ['delivery_address', 'TEXT'],
+    ['delivery_lat', 'DOUBLE PRECISION'],
+    ['delivery_lng', 'DOUBLE PRECISION'],
+    ['delivery_notes', 'TEXT'],
+    ['delivery_tracking_url', 'TEXT'],
+    ['full_name', 'TEXT'],
     ['user_email', 'TEXT'],
-    ['payment_mode', 'TEXT'],
-    ['contact_number', 'TEXT'],
+    ['payment_mode', "TEXT NOT NULL DEFAULT 'GCASH ONLY'"],
+    ['delivery_time', "TEXT DEFAULT 'NOW'"],
+    ['payment_reference_initial', 'TEXT'],
+    ['payment_reference_balance', 'TEXT'],
+    ['payment_proof_initial', 'TEXT'],
     ['payment_proof_balance', 'TEXT'],
     ['payment_uploaded_initial', 'BOOLEAN NOT NULL DEFAULT FALSE'],
     ['payment_uploaded_balance', 'BOOLEAN NOT NULL DEFAULT FALSE'],
     ['payment_confirmed_initial', 'BOOLEAN NOT NULL DEFAULT FALSE'],
     ['payment_confirmed_balance', 'BOOLEAN NOT NULL DEFAULT FALSE'],
-    ['loyalty_points_restaurant_obtained', 'INTEGER DEFAULT 0'],
-    ['loyalty_points_catering_obtained', 'INTEGER DEFAULT 0'],
-    ['cashier_amount_received_initial', 'DECIMAL(10,2)'],
-    ['cashier_amount_received_balance', 'DECIMAL(10,2)'],
+    ['order_status', "TEXT NOT NULL DEFAULT 'PENDING_CASHIER'"],
+    ['contact_number', "TEXT NOT NULL DEFAULT ''"],
+    ['cashier_amount_received_initial', 'DECIMAL(12,2)'],
+    ['cashier_amount_received_balance', 'DECIMAL(12,2)'],
     ['feedback_stars', 'INTEGER'],
     ['feedback_remarks', 'TEXT'],
     ['amount_paid', 'DECIMAL(10,2)'],
     ['change_given', 'DECIMAL(10,2)'],
-    ['delivery_address', 'TEXT'],
-    ['delivery_lat', 'DECIMAL(10,8)'],
-    ['delivery_lng', 'DECIMAL(10,8)'],
-    ['delivery_notes', 'TEXT'],
-    ['delivery_tracking_url', 'TEXT'],
-    ['delivery_time', 'TIMESTAMPTZ'],
-    ['order_source', "TEXT NOT NULL DEFAULT 'ONLINE'"],
-    ['guest_contact_email', 'TEXT'],
-    ['payment_proof_initial', 'TEXT'],
-    ['payment_reference_initial', 'TEXT'],
-    ['payment_references_initial', 'TEXT'],
-    ['payment_reference_balance', 'TEXT'],
-    ['order_status', "TEXT NOT NULL DEFAULT 'pending_cashier'"],
-    ['payment_status', "TEXT NOT NULL DEFAULT 'pending'"],
-    ['created_at', 'TIMESTAMPTZ NOT NULL DEFAULT now()'],
-    ['updated_at', 'TIMESTAMPTZ NOT NULL DEFAULT now()'],
-    ['customer_id', 'TEXT'],
-    ['items', "JSONB NOT NULL DEFAULT '[]'::jsonb"],
-    ['total_amount', 'DECIMAL(10,2) NOT NULL DEFAULT 0.00'],
-    ['order_no', 'TEXT'],
-    ['phone', 'TEXT'],
-    ['full_name', 'TEXT'],
-    ['points_earned', 'INTEGER DEFAULT 0'],
     ['payment_method', 'TEXT'],
     ['payment_proof', 'TEXT'],
-    ['cashier_amount_received', 'DECIMAL(10,2)'],
-    ['cashier_secondary_amount_received', 'DECIMAL(10,2)'],
-    ['id', 'uuid DEFAULT gen_random_uuid()'],
+    ['pos_customer_label', 'TEXT'],
+    ['balance_proof_pending_review', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+    ['pos_claimed', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+    ['pos_claimed_at', 'TIMESTAMPTZ'],
+    ['feedback_submitted_at', 'TIMESTAMPTZ'],
+    ['note', "TEXT NOT NULL DEFAULT ''"],
+    ['payment_uploaded', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+    ['submitted_order_dt_stamp', 'TIMESTAMPTZ'],
+    ['last_updated_order_status_dt_stamp', 'TIMESTAMPTZ'],
+    ['created_at', 'TIMESTAMPTZ NOT NULL DEFAULT now()'],
+    ['updated_at', 'TIMESTAMPTZ NOT NULL DEFAULT now()'],
   ];
 
   for (const [name, typ] of adds) {
@@ -166,62 +183,17 @@ async function ensureRestaurantOrdersCanonicalColumnsOnce() {
   }
 
   const syncPairs = [
-    ['tray_items', 'items', "COALESCE(tray_items, '[]'::jsonb)"],
-    ['items', 'tray_items', "COALESCE(items, '[]'::jsonb)"],
+    ['tray_items', 'items', "COALESCE(NULLIF(tray_items, '[]'::jsonb), items, '[]'::jsonb)"],
     ['total_cost', 'total_amount', 'total_amount'],
-    ['total_amount', 'total_cost', 'total_cost'],
     ['order_id', 'order_no', 'order_no::text'],
-    ['order_no', 'order_id', 'order_id::text'],
     ['contact_number', 'phone', 'phone'],
-    ['phone', 'contact_number', 'contact_number'],
     ['user_email', 'guest_contact_email', 'guest_contact_email'],
-    ['guest_contact_email', 'user_email', 'user_email'],
     ['payment_mode', 'payment_method', 'payment_method'],
-    ['payment_method', 'payment_mode', 'payment_mode'],
-    [
-      'loyalty_points_restaurant_obtained',
-      'points_earned',
-      'COALESCE(points_earned, 0)',
-    ],
-    [
-      'points_earned',
-      'loyalty_points_restaurant_obtained',
-      'loyalty_points_restaurant_obtained',
-    ],
-    [
-      'cashier_amount_received_initial',
-      'cashier_amount_received',
-      'cashier_amount_received',
-    ],
-    [
-      'cashier_amount_received',
-      'cashier_amount_received_initial',
-      'cashier_amount_received_initial',
-    ],
-    [
-      'cashier_amount_received_balance',
-      'cashier_secondary_amount_received',
-      'cashier_secondary_amount_received',
-    ],
-    [
-      'cashier_secondary_amount_received',
-      'cashier_amount_received_balance',
-      'cashier_amount_received_balance',
-    ],
-    ['payment_proof_initial', 'payment_proof', 'payment_proof'],
-    ['payment_proof', 'payment_proof_initial', 'payment_proof_initial'],
-    [
-      'payment_reference_initial',
-      'payment_references_initial',
-      'payment_reference_initial',
-    ],
-    [
-      'payment_references_initial',
-      'payment_reference_initial',
-      'payment_reference_initial',
-    ],
-    ['payment_reference_initial', 'payment_reference', 'payment_reference'],
-    ['payment_reference', 'payment_reference_initial', 'payment_reference_initial'],
+    ['loyalty_points_restaurant_obtained', 'points_earned', 'COALESCE(points_earned, 0)'],
+    ['cashier_amount_received_initial', 'cashier_amount_received', 'cashier_amount_received'],
+    ['cashier_amount_received_balance', 'cashier_secondary_amount_received', 'cashier_secondary_amount_received'],
+    ['payment_reference_initial', 'payment_references_initial', 'payment_references_initial'],
+    ['payment_proof_balance', 'supplemental_payment_proof', 'supplemental_payment_proof'],
   ];
 
   for (const [target, source, expr] of syncPairs) {
@@ -243,11 +215,76 @@ async function ensureRestaurantOrdersCanonicalColumnsOnce() {
         `UPDATE restaurant_orders SET order_id = order_no::text
          WHERE order_id IS NULL AND order_no IS NOT NULL`,
       );
-      await pool.query(
-        `UPDATE restaurant_orders SET order_no = order_id
-         WHERE order_no IS NULL AND order_id IS NOT NULL`,
-      );
     } catch (_) {}
+  }
+
+  if (cols.has('order_status')) {
+    try {
+      await pool.query(
+        `UPDATE restaurant_orders
+         SET order_status = CASE
+           WHEN upper(COALESCE(order_status::text, '')) IN ('PENDING', 'WAITING FOR ORDER CONFIRMATION') THEN 'PENDING_CASHIER'
+           WHEN upper(COALESCE(order_status::text, '')) IN ('CONFIRMED', 'PREPARING') THEN 'IN_PREPARATION'
+           WHEN upper(COALESCE(order_status::text, '')) IN ('PENDING_CASHIER', 'IN_PREPARATION', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED')
+             THEN upper(order_status::text)
+           ELSE 'PENDING_CASHIER'
+         END`,
+      );
+    } catch (err) {
+      console.warn('[order_schema] restaurant_orders.order_status normalize:', err.message);
+    }
+  }
+
+  if (cols.has('order_source')) {
+    try {
+      await pool.query(
+        `UPDATE restaurant_orders
+         SET order_source = CASE
+           WHEN upper(COALESCE(order_source::text, '')) IN ('POS', 'POS_MOBILE', 'POS_WEB') THEN upper(order_source::text)
+           WHEN upper(COALESCE(order_source::text, '')) IN ('MOBILE', 'MOBILE_APP') THEN 'MOBILE_APP'
+           WHEN upper(COALESCE(order_source::text, '')) IN ('WEB', 'ONLINE', 'WEB_APP') THEN 'WEB_APP'
+           ELSE 'WEB_APP'
+         END`,
+      );
+    } catch (err) {
+      console.warn('[order_schema] restaurant_orders.order_source normalize:', err.message);
+    }
+  }
+
+  try {
+    await pool.query(`DROP INDEX IF EXISTS restaurant_orders_order_no_uq`);
+  } catch (_) {}
+
+  const dropColumns = [
+    'items',
+    'total_amount',
+    'phone',
+    'order_no',
+    'points_earned',
+    'guest_contact_email',
+    'loyalty_points_catering_obtained',
+    'cashier_secondary_amount_received',
+    'payment_status',
+    'fulfillment_stage',
+    'supplemental_payment_proof',
+    'delivery_name',
+    'delivery_contact',
+    'total',
+    'cashier_change',
+    'cashier_changer',
+    'order_lines_snapshot',
+    'payment_references_initial',
+  ];
+  for (const name of dropColumns) {
+    if (cols.has(name)) {
+      try {
+        await pool.query(`ALTER TABLE restaurant_orders DROP COLUMN IF EXISTS ${name}`);
+        cols.delete(name);
+        console.log(`[order_schema] Dropped restaurant_orders.${name}`);
+      } catch (err) {
+        console.warn(`[order_schema] drop restaurant_orders.${name}:`, err.message);
+      }
+    }
   }
 
   return cols;
@@ -391,29 +428,33 @@ export function buildRestaurantOrderSelectSql(cols) {
     `${publicId} AS order_id`,
     `${publicId} AS order_no`,
     `${sqlExpr(cols, ['customer_id'], 'NULL::text')} AS customer_id`,
-    `${sqlExpr(cols, ['guest_contact_email'], 'NULL::text')} AS guest_contact_email`,
-    `${sqlExpr(cols, ['user_email', 'guest_contact_email'], 'NULL::text')} AS user_email`,
+    `${sqlExpr(cols, ['user_email'], 'NULL::text')} AS user_email`,
+    `${sqlExpr(cols, ['user_email'], 'NULL::text')} AS guest_contact_email`,
     `${sqlExpr(cols, ['full_name'], 'NULL::text')} AS full_name`,
-    `${sqlExpr(cols, ['phone', 'contact_number'], 'NULL::text')} AS phone`,
-    `${sqlExpr(cols, ['contact_number', 'phone'], 'NULL::text')} AS contact_number`,
-    `COALESCE(${sqlExpr(cols, ['tray_items'], 'NULL::jsonb')}, ${sqlExpr(cols, ['items'], "'[]'::jsonb")}) AS tray_items`,
-    `COALESCE(${sqlExpr(cols, ['tray_items'], 'NULL::jsonb')}, ${sqlExpr(cols, ['items'], "'[]'::jsonb")}) AS items`,
-    `COALESCE(${sqlExpr(cols, ['total_amount', 'total_cost'], '0')}, ${sqlExpr(cols, ['total_cost', 'total_amount'], '0')})::numeric AS total_amount`,
-    `COALESCE(${sqlExpr(cols, ['total_cost', 'total_amount'], '0')}, ${sqlExpr(cols, ['total_amount', 'total_cost'], '0')})::numeric AS total_cost`,
+    `${sqlExpr(cols, ['contact_number'], 'NULL::text')} AS contact_number`,
+    `${sqlExpr(cols, ['contact_number'], 'NULL::text')} AS phone`,
+    `${sqlExpr(cols, ['tray_items'], "'[]'::jsonb")} AS tray_items`,
+    `${sqlExpr(cols, ['tray_items'], "'[]'::jsonb")} AS items`,
+    `${sqlExpr(cols, ['total_cost'], '0')}::numeric AS total_cost`,
+    `${sqlExpr(cols, ['total_cost'], '0')}::numeric AS total_amount`,
     `${sqlExpr(cols, ['delivery_address'], 'NULL::text')} AS delivery_address`,
     `${sqlExpr(cols, ['delivery_lat'], 'NULL')} AS delivery_lat`,
     `${sqlExpr(cols, ['delivery_lng'], 'NULL')} AS delivery_lng`,
     `${sqlExpr(cols, ['delivery_time'], 'NULL::timestamptz')} AS delivery_time`,
     `${sqlExpr(cols, ['delivery_notes'], 'NULL::text')} AS delivery_notes`,
     `${sqlExpr(cols, ['delivery_tracking_url'], 'NULL::text')} AS delivery_tracking_url`,
-    `${sqlExpr(cols, ['order_status', 'status'], "'pending_cashier'")} AS order_status`,
-    `${sqlExpr(cols, ['payment_status'], "'pending'")} AS payment_status`,
-    `${sqlExpr(cols, ['payment_reference_initial', 'payment_references_initial', 'payment_reference'], 'NULL::text')} AS payment_reference_initial`,
-    `${sqlExpr(cols, ['payment_references_initial', 'payment_reference_initial'], 'NULL::text')} AS payment_references_initial`,
+    `${sqlExpr(cols, ['order_status', 'status'], "'PENDING_CASHIER'")} AS order_status`,
+    `CASE
+       WHEN ${sqlExpr(cols, ['payment_confirmed_initial'], 'FALSE')} = TRUE THEN 'paid'
+       WHEN ${sqlExpr(cols, ['payment_uploaded_initial'], 'FALSE')} = TRUE THEN 'pending'
+       ELSE 'pending'
+     END AS payment_status`,
+    `${sqlExpr(cols, ['payment_reference_initial'], 'NULL::text')} AS payment_reference_initial`,
+    `${sqlExpr(cols, ['payment_reference_initial'], 'NULL::text')} AS payment_references_initial`,
     `${sqlExpr(cols, ['payment_reference_balance'], 'NULL::text')} AS payment_reference_balance`,
-    `${sqlExpr(cols, ['payment_reference_initial', 'payment_references_initial', 'payment_reference'], 'NULL::text')} AS payment_reference`,
+    `${sqlExpr(cols, ['payment_reference_initial'], 'NULL::text')} AS payment_reference`,
     `${sqlExpr(cols, ['payment_proof_initial'], 'NULL::text')} AS payment_proof_initial`,
-    `${sqlExpr(cols, ['payment_proof_initial'], 'NULL::text')} AS payment_proof`,
+    `${sqlExpr(cols, ['payment_proof'], 'NULL::text')} AS payment_proof`,
     `${sqlExpr(cols, ['payment_proof_balance'], 'NULL::text')} AS payment_proof_balance`,
     `${sqlExpr(cols, ['payment_uploaded_initial'], 'FALSE')} AS payment_uploaded_initial`,
     `${sqlExpr(cols, ['payment_uploaded_balance'], 'FALSE')} AS payment_uploaded_balance`,
@@ -421,20 +462,21 @@ export function buildRestaurantOrderSelectSql(cols) {
     `${sqlExpr(cols, ['payment_confirmed_balance'], 'FALSE')} AS payment_confirmed_balance`,
     `${sqlExpr(cols, ['amount_paid'], 'NULL')} AS amount_paid`,
     `${sqlExpr(cols, ['change_given'], 'NULL')} AS change_given`,
-    `${sqlExpr(cols, ['points_earned', 'loyalty_points_restaurant_obtained'], '0')} AS points_earned`,
-    `${sqlExpr(cols, ['loyalty_points_restaurant_obtained', 'points_earned'], '0')} AS loyalty_points_restaurant_obtained`,
-    `${sqlExpr(cols, ['loyalty_points_catering_obtained'], '0')} AS loyalty_points_catering_obtained`,
+    `${sqlExpr(cols, ['loyalty_points_restaurant_obtained'], '0')} AS points_earned`,
+    `${sqlExpr(cols, ['loyalty_points_restaurant_obtained'], '0')} AS loyalty_points_restaurant_obtained`,
     `${sqlExpr(cols, ['order_source'], "'ONLINE'")} AS order_source`,
     `${sqlExpr(cols, ['payment_method', 'payment_mode'], 'NULL::text')} AS payment_method`,
     `${sqlExpr(cols, ['payment_mode', 'payment_method'], 'NULL::text')} AS payment_mode`,
-    `${sqlExpr(cols, ['cashier_amount_received', 'cashier_amount_received_initial'], 'NULL')} AS cashier_amount_received`,
-    `${sqlExpr(cols, ['cashier_amount_received_initial', 'cashier_amount_received'], 'NULL')} AS cashier_amount_received_initial`,
-    `${sqlExpr(cols, ['cashier_secondary_amount_received', 'cashier_amount_received_balance'], 'NULL')} AS cashier_secondary_amount_received`,
-    `${sqlExpr(cols, ['cashier_amount_received_balance', 'cashier_secondary_amount_received'], 'NULL')} AS cashier_amount_received_balance`,
-    `${sqlExpr(cols, ['fulfillment_stage'], 'NULL::text')} AS fulfillment_stage`,
+    `${sqlExpr(cols, ['cashier_amount_received_initial'], 'NULL')} AS cashier_amount_received`,
+    `${sqlExpr(cols, ['cashier_amount_received_initial'], 'NULL')} AS cashier_amount_received_initial`,
+    `${sqlExpr(cols, ['cashier_amount_received_balance'], 'NULL')} AS cashier_secondary_amount_received`,
+    `${sqlExpr(cols, ['cashier_amount_received_balance'], 'NULL')} AS cashier_amount_received_balance`,
+    `${sqlExpr(cols, ['order_status'], "'PENDING_CASHIER'")} AS fulfillment_stage`,
     `${sqlExpr(cols, ['pos_customer_label'], 'NULL::text')} AS pos_customer_label`,
     `${sqlExpr(cols, ['balance_proof_pending_review'], 'FALSE')} AS balance_proof_pending_review`,
-    `${sqlExpr(cols, ['supplemental_payment_proof'], 'NULL::text')} AS supplemental_payment_proof`,
+    `${sqlExpr(cols, ['payment_proof_balance'], 'NULL::text')} AS supplemental_payment_proof`,
+    `${sqlExpr(cols, ['pos_claimed'], 'FALSE')} AS pos_claimed`,
+    `${sqlExpr(cols, ['note'], "''")} AS note`,
     `${sqlExpr(cols, ['pos_claimed_at'], 'NULL::timestamptz')} AS pos_claimed_at`,
     `${sqlExpr(cols, ['feedback_stars'], 'NULL::int')} AS feedback_stars`,
     `${sqlExpr(cols, ['feedback_remarks'], 'NULL::text')} AS feedback_remarks`,
@@ -466,36 +508,31 @@ export function parseRestaurantOrderTrayItems(orderOrRaw) {
   return [];
 }
 
-/** INSERT column list for dish JSON (writes tray_items + items when both exist). */
+/** INSERT column list for dish JSON (canonical: tray_items only). */
 export function restaurantOrderItemsInsertSql(cols) {
   const json = '$ITEM$::jsonb';
-  if (cols.has('tray_items') && cols.has('items')) {
-    return { columns: 'tray_items, items', placeholders: `${json}, ${json}` };
-  }
   if (cols.has('tray_items')) {
     return { columns: 'tray_items', placeholders: json };
   }
-  return { columns: 'items', placeholders: json };
+  return { columns: 'tray_items', placeholders: json };
 }
 
 /** SET clauses for web checkout payment (reference → *_reference_initial, proof → payment_proof_initial). */
 export function buildRestaurantOrderPaymentUpdateSets(cols) {
   const sets = [
-    "payment_status = 'pending'",
-    "order_status = 'pending_cashier'",
     'updated_at = now()',
   ];
   if (cols.has('payment_reference_initial')) {
     sets.push('payment_reference_initial = COALESCE($1, payment_reference_initial)');
   }
-  if (cols.has('payment_references_initial')) {
-    sets.push('payment_references_initial = COALESCE($1, payment_references_initial)');
-  }
-  if (cols.has('payment_reference')) {
-    sets.push('payment_reference = COALESCE($1, payment_reference)');
-  }
   if (cols.has('payment_proof_initial')) {
     sets.push('payment_proof_initial = COALESCE($2, payment_proof_initial)');
+  }
+  if (cols.has('payment_uploaded_initial')) {
+    sets.push('payment_uploaded_initial = TRUE');
+  }
+  if (cols.has('order_status')) {
+    sets.push("order_status = 'PENDING_CASHIER'");
   }
   return sets.join(', ');
 }
@@ -511,22 +548,18 @@ export function normalizeRestaurantOrderRow(order, parsedItems, { channel = 'web
 
   const refInitial =
     o.payment_reference_initial ??
-    o.payment_references_initial ??
     o.payment_reference ??
     null;
   o.payment_reference_initial = refInitial;
-  o.payment_references_initial =
-    o.payment_references_initial ?? o.payment_reference_initial ?? null;
   o.payment_reference = refInitial;
 
   const proofInitial = o.payment_proof_initial ?? null;
   o.payment_proof_initial = proofInitial;
-  if (channel === 'mobile' || channel === 'pos') {
-    o.payment_proof = proofInitial;
-  } else {
-    o.payment_proof = proofInitial ?? o.payment_proof ?? null;
-  }
+  o.payment_proof = o.payment_proof ?? proofInitial ?? null;
 
+  if (o.order_status != null) {
+    o.order_status = normalizeRestaurantOrderStatus(o.order_status);
+  }
   if (o.order_status != null && o.status == null) o.status = o.order_status;
   if (o.status != null && o.order_status == null) o.order_status = o.status;
 
@@ -538,6 +571,9 @@ export function normalizeRestaurantOrderRow(order, parsedItems, { channel = 'web
 
   if (o.phone == null && o.contact_number != null) o.phone = o.contact_number;
   if (o.contact_number == null && o.phone != null) o.contact_number = o.phone;
+  if (o.user_email != null && o.guest_contact_email == null) {
+    o.guest_contact_email = o.user_email;
+  }
 
   if (o.points_earned == null && o.loyalty_points_restaurant_obtained != null) {
     o.points_earned = o.loyalty_points_restaurant_obtained;
@@ -796,6 +832,7 @@ function staffCateringOrderSelectList(cateringCols) {
     SELECT
       id,
       ${cateringIdSelectAlias(cateringCols)},
+      ${cateringSelectField(cateringCols, 'customerId', ['customer_id'], 'NULL::text')},
       ${cateringSelectField(cateringCols, 'source', ['source'], "''")},
       ${cateringSelectField(cateringCols, 'status', ['status'], "'online_inquiries'")},
       NULL::text AS "eventTitle",
@@ -829,6 +866,7 @@ function staffEventOrderSelectList(eventCols, themeColSql) {
     SELECT
       id,
       ${cateringIdSelectAlias(eventCols)},
+      ${cateringSelectField(eventCols, 'customerId', ['customer_id'], 'NULL::text')},
       ${cateringSelectField(eventCols, 'source', ['source'], "''")},
       ${cateringSelectField(eventCols, 'status', ['status'], "'online_inquiries'")},
       ${cateringSelectField(eventCols, 'eventTitle', ['event_title'], 'NULL::text')},
@@ -886,6 +924,7 @@ function staffEventOrderSelectById(eventCols) {
     SELECT
       id,
       ${cateringIdSelectAlias(eventCols)},
+      ${cateringSelectField(eventCols, 'customerId', ['customer_id'], 'NULL::text')},
       ${cateringSelectField(eventCols, 'source', ['source'], "''")},
       ${cateringSelectField(eventCols, 'status', ['status'], "'online_inquiries'")},
       ${cateringSelectField(eventCols, 'eventTitle', ['event_title'], 'NULL::text')},

@@ -945,77 +945,58 @@ export async function initDb() {
 
   await ensureCustomerAccountsColumns();
 
-  // Create restaurant_orders table for customer orders
+  // Create canonical restaurant_orders table for online + walk-in orders.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS restaurant_orders (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      order_no TEXT UNIQUE,
+      order_id TEXT PRIMARY KEY,
+      id uuid DEFAULT gen_random_uuid(),
       customer_id TEXT,
-      full_name TEXT,
-      phone TEXT,
-      items JSONB NOT NULL DEFAULT '[]'::jsonb,
-      total_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-      delivery_address TEXT NOT NULL,
-      delivery_lat DECIMAL(10,8),
-      delivery_lng DECIMAL(10,8),
-      delivery_time TIMESTAMPTZ,
+      mobile_id BIGINT,
+      order_source TEXT NOT NULL DEFAULT 'WEB_APP',
+      total_cost DECIMAL(12,2),
+      tray_items JSONB NOT NULL DEFAULT '[]'::jsonb,
+      loyalty_points_restaurant_obtained INTEGER NOT NULL DEFAULT 0,
+      loyalty_reward_restaurant_obtained TEXT,
+      delivery_address TEXT,
+      delivery_lat DOUBLE PRECISION,
+      delivery_lng DOUBLE PRECISION,
       delivery_notes TEXT,
-      order_status TEXT NOT NULL DEFAULT 'pending_cashier',
-      payment_reference TEXT,
-      payment_status TEXT NOT NULL DEFAULT 'pending' CHECK (payment_status IN ('pending', 'paid', 'failed')),
       delivery_tracking_url TEXT,
-      points_earned INTEGER DEFAULT 0,
+      full_name TEXT,
+      user_email TEXT,
+      payment_mode TEXT NOT NULL DEFAULT 'GCASH ONLY',
+      delivery_time TEXT DEFAULT 'NOW',
+      payment_reference_initial TEXT,
+      payment_reference_balance TEXT,
+      payment_proof_initial TEXT,
+      payment_proof_balance TEXT,
+      payment_uploaded_initial BOOLEAN NOT NULL DEFAULT FALSE,
+      payment_uploaded_balance BOOLEAN NOT NULL DEFAULT FALSE,
+      payment_confirmed_initial BOOLEAN NOT NULL DEFAULT FALSE,
+      payment_confirmed_balance BOOLEAN NOT NULL DEFAULT FALSE,
+      order_status TEXT NOT NULL DEFAULT 'PENDING_CASHIER',
+      contact_number TEXT NOT NULL DEFAULT '',
+      cashier_amount_received_initial DECIMAL(12,2),
+      cashier_amount_received_balance DECIMAL(12,2),
+      feedback_stars INTEGER,
+      feedback_remarks TEXT,
+      amount_paid DECIMAL(10,2),
+      change_given DECIMAL(10,2),
+      payment_method TEXT,
+      payment_proof TEXT,
+      pos_customer_label TEXT,
+      balance_proof_pending_review BOOLEAN NOT NULL DEFAULT FALSE,
+      pos_claimed BOOLEAN NOT NULL DEFAULT FALSE,
+      pos_claimed_at TIMESTAMPTZ,
+      feedback_submitted_at TIMESTAMPTZ,
+      note TEXT NOT NULL DEFAULT '',
+      payment_uploaded BOOLEAN NOT NULL DEFAULT FALSE,
+      submitted_order_dt_stamp TIMESTAMPTZ,
+      last_updated_order_status_dt_stamp TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
-
-  try {
-    await ensureCustomerAccountsUuidCompat();
-  } catch (err) {
-    console.log('Migration restaurant_orders customer_id FK drop:', err.message);
-  }
-
-  // Migration: Add delivery_time column if it doesn't exist
-  try {
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS delivery_time TIMESTAMPTZ`,
-    );
-    console.log('Migration: Added delivery_time column to restaurant_orders');
-  } catch (err) {
-    console.log(
-      'Migration check for restaurant_orders delivery_time:',
-      err.message,
-    );
-  }
-
-  // Some deployments have delivery_time NOT NULL without a default; allow null
-  // and rely on INSERT COALESCE(now()) so legacy clients stay valid.
-  try {
-    await pool.query(
-      `ALTER TABLE restaurant_orders ALTER COLUMN delivery_time DROP NOT NULL`,
-    );
-    console.log('Migration: delivery_time may be null on restaurant_orders');
-  } catch (err) {
-    console.log('Migration check restaurant_orders delivery_time nullability:', err.message);
-  }
-
-  // Migration: Add full_name and phone columns if they don't exist (for existing tables)
-  try {
-    await pool.query(`ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS full_name TEXT`);
-    await pool.query(`ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS phone TEXT`);
-    console.log('Migration: Added full_name and phone columns to restaurant_orders');
-  } catch (err) {
-    console.log('Migration check for restaurant_orders columns:', err.message);
-  }
-
-  // Migration: Add order_no column to restaurant_orders
-  try {
-    await pool.query(`ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS order_no TEXT UNIQUE`);
-    console.log('Migration: Added order_no column to restaurant_orders');
-  } catch (err) {
-    console.log('Migration check for restaurant_orders order_no:', err.message);
-  }
 
   // Migration: ensure id column exists (legacy deployments created without it)
   try {
@@ -1033,45 +1014,7 @@ export async function initDb() {
     console.log('Migration check for restaurant_orders id:', err.message);
   }
 
-  // Migration: Add points_earned column to restaurant_orders
-  try {
-    await pool.query(`ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS points_earned INTEGER DEFAULT 0`);
-    console.log('Migration: Added points_earned column to restaurant_orders');
-  } catch (err) {
-    console.log('Migration check for restaurant_orders points_earned:', err.message);
-  }
-
   await ensureRestaurantOrderWorkflowColumns();
-
-  // Migration: line items JSON (older restaurant_orders tables may lack this column)
-  try {
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb`,
-    );
-    console.log('Migration: ensured items column on restaurant_orders');
-  } catch (err) {
-    console.log('Migration check for restaurant_orders items:', err.message);
-  }
-
-  // Migration: order total (reports + POS; legacy tables may use other column names)
-  try {
-    const roCols = await getTableColumnNames('restaurant_orders');
-    if (!roCols.has('total_amount')) {
-      if (roCols.has('total')) {
-        await pool.query(
-          `ALTER TABLE restaurant_orders RENAME COLUMN total TO total_amount`,
-        );
-        console.log('Migration: renamed restaurant_orders.total → total_amount');
-      } else {
-        await pool.query(
-          `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS total_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00`,
-        );
-        console.log('Migration: added restaurant_orders.total_amount');
-      }
-    }
-  } catch (err) {
-    console.log('Migration check for restaurant_orders total_amount:', err.message);
-  }
 
   // Migration: Add points_earned column to catering_orders
   try {
@@ -1089,50 +1032,6 @@ export async function initDb() {
     console.log('Migration check for event_orders points_earned:', err.message);
   }
 
-  try {
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS order_source TEXT NOT NULL DEFAULT 'ONLINE'`,
-    );
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS fulfillment_stage TEXT`,
-    );
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS pos_customer_label TEXT`,
-    );
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_method TEXT`,
-    );
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS cashier_amount_received DECIMAL(10,2)`,
-    );
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS cashier_secondary_amount_received DECIMAL(10,2)`,
-    );
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS supplemental_payment_proof TEXT`,
-    );
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS balance_proof_pending_review BOOLEAN NOT NULL DEFAULT FALSE`,
-    );
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS pos_claimed_at TIMESTAMPTZ`,
-    );
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_proof_initial TEXT`,
-    );
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_reference_initial TEXT`,
-    );
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_reference_balance TEXT`,
-    );
-    await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS guest_contact_email TEXT`,
-    );
-    console.log('Migration: Added POS columns to restaurant_orders');
-  } catch (err) {
-    console.log('Migration check for restaurant_orders POS columns:', err.message);
-  }
 
   try {
     await pool.query(
@@ -1180,7 +1079,7 @@ export async function initDb() {
         console.log('Migration: renamed restaurant_orders.status → order_status');
       } else {
         await pool.query(
-          `ALTER TABLE restaurant_orders ADD COLUMN order_status TEXT NOT NULL DEFAULT 'pending_cashier'`,
+          `ALTER TABLE restaurant_orders ADD COLUMN order_status TEXT NOT NULL DEFAULT 'PENDING_CASHIER'`,
         );
         console.log('Migration: added restaurant_orders.order_status');
       }
@@ -1192,10 +1091,13 @@ export async function initDb() {
   // Restaurant order workflow columns + guest checkout
   try {
     await pool.query(
-      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS guest_contact_email TEXT`,
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS user_email TEXT`,
     );
     await pool.query(
       `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_proof TEXT`,
+    );
+    await pool.query(
+      `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_uploaded BOOLEAN NOT NULL DEFAULT FALSE`,
     );
     await pool.query(
       `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS amount_paid DECIMAL(10,2)`,
@@ -1433,15 +1335,16 @@ async function ensureRestaurantOrderWorkflowColumnsOnce() {
       console.log('[db] renamed restaurant_orders.status → order_status');
     } else {
       await pool.query(
-        `ALTER TABLE restaurant_orders ADD COLUMN order_status TEXT NOT NULL DEFAULT 'pending_cashier'`,
+        `ALTER TABLE restaurant_orders ADD COLUMN order_status TEXT NOT NULL DEFAULT 'PENDING_CASHIER'`,
       );
       console.log('[db] added restaurant_orders.order_status');
     }
   }
 
   const alters = [
-    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS guest_contact_email TEXT`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS user_email TEXT`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_proof TEXT`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_uploaded BOOLEAN NOT NULL DEFAULT FALSE`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS amount_paid DECIMAL(10,2)`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS change_given DECIMAL(10,2)`,
   ];
@@ -1519,10 +1422,37 @@ async function createCustomerTrayDraftsTable(withFk) {
   await pool.query(`
     CREATE TABLE customer_tray_drafts (
       customer_id TEXT PRIMARY KEY${fkClause},
+      tray_items JSONB NOT NULL DEFAULT '[]'::jsonb,
       items JSONB NOT NULL DEFAULT '[]'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+}
+
+async function syncCustomerTrayDraftsItemColumns() {
+  const cols = await getTableColumnNames('customer_tray_drafts');
+  if (!cols.has('tray_items') && !cols.has('items')) return;
+
+  await pool.query(
+    `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_items JSONB NOT NULL DEFAULT '[]'::jsonb`,
+  );
+  await pool.query(
+    `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb`,
+  );
+
+  if (cols.has('tray_items') || cols.has('items')) {
+    try {
+      await pool.query(`
+        UPDATE customer_tray_drafts
+        SET tray_items = COALESCE(NULLIF(tray_items, '[]'::jsonb), items, '[]'::jsonb),
+            items = COALESCE(NULLIF(items, '[]'::jsonb), tray_items, '[]'::jsonb)
+        WHERE (tray_items IS NULL OR tray_items = '[]'::jsonb)
+           OR (items IS NULL OR items = '[]'::jsonb)
+      `);
+    } catch (err) {
+      console.warn('[db] customer_tray_drafts column sync:', err.message);
+    }
+  }
 }
 
 async function resolveTrayDraftsCustomerIdType() {
@@ -1542,6 +1472,7 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
       await createCustomerTrayDraftsTable(false);
       console.log('[db] created customer_tray_drafts (customer_id TEXT, no FK)');
     }
+    await syncCustomerTrayDraftsItemColumns();
     return;
   }
 
@@ -1571,6 +1502,7 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
     await pool.query(
       `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
     );
+    await syncCustomerTrayDraftsItemColumns();
     return;
   }
 
@@ -1586,6 +1518,7 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
       await pool.query(
         `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
       );
+      await syncCustomerTrayDraftsItemColumns();
       return;
     }
   }

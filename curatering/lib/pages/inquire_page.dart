@@ -117,9 +117,12 @@ class _InquirePageState extends State<InquirePage> {
   final List<String> _selectedColors = [];
   final List<String> _selectedDecor = [];
   final _designPromptController = TextEditingController();
+  final _inquiryEventTypeOtherController = TextEditingController();
   final _eventTypeOtherController = TextEditingController();
   final _styleOtherController = TextEditingController();
   final _moodOtherController = TextEditingController();
+  final _colorOtherController = TextEditingController();
+  final _decorOtherController = TextEditingController();
   String? _venuePhotoBase64;
 
   final _eventTypes = [
@@ -163,6 +166,7 @@ class _InquirePageState extends State<InquirePage> {
     "Navy & Silver",
     "Peach & Cream",
     "Black & White",
+    "Other",
   ];
   final _decorOptions = [
     "Floral Centerpieces",
@@ -173,6 +177,7 @@ class _InquirePageState extends State<InquirePage> {
     "Table Runners",
     "Photo Booth",
     "Chandeliers",
+    "Other",
   ];
 
   @override
@@ -222,11 +227,14 @@ class _InquirePageState extends State<InquirePage> {
     _dateController.dispose();
     _timeController.dispose();
     _designPromptController.dispose();
+    _inquiryEventTypeOtherController.dispose();
     _macrinaPalette.dispose();
     _macrinaTheme.dispose();
     _eventTypeOtherController.dispose();
     _styleOtherController.dispose();
     _moodOtherController.dispose();
+    _colorOtherController.dispose();
+    _decorOtherController.dispose();
     super.dispose();
   }
 
@@ -237,6 +245,24 @@ class _InquirePageState extends State<InquirePage> {
       return t.isEmpty ? 'Other' : t;
     }
     return selected;
+  }
+
+  List<String> _resolvedMultiSelectWithOther(
+    List<String> selected,
+    TextEditingController other,
+  ) {
+    final values = selected.where((value) => value != 'Other').toList();
+    if (selected.contains('Other')) {
+      final custom = other.text.trim();
+      if (custom.isNotEmpty) values.add(custom);
+    }
+    return values;
+  }
+
+  String get _resolvedInquiryEventType {
+    if (_eventType != 'Other') return _eventType;
+    final custom = _inquiryEventTypeOtherController.text.trim();
+    return custom.isEmpty ? 'Other' : custom;
   }
 
   double _estimateMenuCost() {
@@ -317,7 +343,7 @@ class _InquirePageState extends State<InquirePage> {
             _serviceType == 'catering'
                 ? _customer.text.trim()
                 : _eventTitle.text.trim(),
-        'eventType': _eventType,
+        'eventType': _resolvedInquiryEventType,
         'formalityLevel': _formality,
         'customerName': _customer.text.trim(),
         'contactPerson': _contactPerson.text.trim(),
@@ -370,6 +396,10 @@ class _InquirePageState extends State<InquirePage> {
 
     if (_serviceType != 'catering' && _eventTitle.text.trim().isEmpty) {
       err('eventTitle', 'Please enter an event title');
+    }
+    if (_eventType == 'Other' &&
+        _inquiryEventTypeOtherController.text.trim().isEmpty) {
+      err('eventTypeOther', 'Please specify the event type');
     }
     if (_customer.text.trim().isEmpty) err('customer', 'Please enter your name');
     if (_contactPerson.text.trim().isEmpty) err('contactPerson', 'Please enter a contact person');
@@ -480,15 +510,18 @@ class _InquirePageState extends State<InquirePage> {
       };
     }
     if (_eventDesignMode == 'customer') {
-      final style = _selectedStyle == 'Other'
-          ? _styleOtherController.text.trim()
-          : (_selectedStyle ?? '');
-      final mood = _selectedMood == 'Other'
-          ? _moodOtherController.text.trim()
-          : (_selectedMood ?? '');
-      final eventType = _selectedEventType == 'Other'
-          ? _eventTypeOtherController.text.trim()
-          : (_selectedEventType ?? '');
+      final style = _resolvedCategory(_selectedStyle, _styleOtherController) ?? '';
+      final mood = _resolvedCategory(_selectedMood, _moodOtherController) ?? '';
+      final eventType =
+          _resolvedCategory(_selectedEventType, _eventTypeOtherController) ?? '';
+      final colors = _resolvedMultiSelectWithOther(
+        _selectedColors,
+        _colorOtherController,
+      );
+      final decor = _resolvedMultiSelectWithOther(
+        _selectedDecor,
+        _decorOtherController,
+      );
       return {
         'eventDesignSource': 'customer_ai',
         'wantsCustomDesign': _wantsCustomDesign,
@@ -497,8 +530,8 @@ class _InquirePageState extends State<InquirePage> {
         if (eventType.isNotEmpty) 'eventDesignEventType': eventType,
         if (style.isNotEmpty) 'style': style,
         if (mood.isNotEmpty) 'mood': mood,
-        if (_selectedColors.isNotEmpty) 'colorPalette': List<String>.from(_selectedColors),
-        if (_selectedDecor.isNotEmpty) 'decorElements': List<String>.from(_selectedDecor),
+        if (colors.isNotEmpty) 'colorPalette': colors,
+        if (decor.isNotEmpty) 'decorElements': decor,
         if (_designPromptController.text.trim().isNotEmpty)
           'customInstructions': _designPromptController.text.trim(),
         'serviceType': _serviceType,
@@ -533,6 +566,7 @@ class _InquirePageState extends State<InquirePage> {
     _dateController.clear();
     _timeController.clear();
     _eventType = 'Birthday';
+    _inquiryEventTypeOtherController.clear();
     _formality = 'casual';
     _serviceType = 'catering';
     _formPhase = 0;
@@ -553,6 +587,8 @@ class _InquirePageState extends State<InquirePage> {
     _selectedMood = null;
     _selectedColors.clear();
     _selectedDecor.clear();
+    _colorOtherController.clear();
+    _decorOtherController.clear();
     _designPromptController.clear();
     _venuePhotoBase64 = null;
     });
@@ -649,6 +685,53 @@ class _InquirePageState extends State<InquirePage> {
     );
   }
 
+  Widget _responsiveThreeCol(
+    BuildContext context,
+    Widget first,
+    Widget second,
+    Widget third,
+  ) {
+    if (isMobile(context)) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          first,
+          const SizedBox(height: 16),
+          second,
+          const SizedBox(height: 16),
+          third,
+        ],
+      );
+    }
+    if (isTablet(context)) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: first),
+              const SizedBox(width: 16),
+              Expanded(child: second),
+            ],
+          ),
+          const SizedBox(height: 16),
+          third,
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: first),
+        const SizedBox(width: 16),
+        Expanded(child: second),
+        const SizedBox(width: 16),
+        Expanded(child: third),
+      ],
+    );
+  }
+
   String _mapInquiryEventTypeToDesign(String t) {
     if (t == 'Corporate Event') return 'Corporate';
     if (t == 'Anniversary' || t == 'Graduation') return 'Other';
@@ -716,7 +799,7 @@ class _InquirePageState extends State<InquirePage> {
         ],
       ),
       const SizedBox(height: 20),
-      _responsiveTwoCol(
+      _responsiveThreeCol(
         context,
         AntdFieldShell(
           label: 'Event Title',
@@ -751,6 +834,7 @@ class _InquirePageState extends State<InquirePage> {
               if (value == null) return;
               setState(() {
                 _eventType = value;
+                _fieldErrors.remove('eventTypeOther');
                 if (_serviceType == 'catering+event') {
                   _selectedEventType = _mapInquiryEventTypeToDesign(value);
                 }
@@ -758,37 +842,49 @@ class _InquirePageState extends State<InquirePage> {
             },
           ),
         ),
-      ),
-      const SizedBox(height: 16),
-      AntdFieldShell(
-        label: 'Formality',
-        required: true,
-        child: DropdownButtonFormField<String>(
-          value: _formality,
-          isExpanded: true,
-          decoration: const InputDecoration(
-            border: InputBorder.none,
-            isDense: true,
-            contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        AntdFieldShell(
+          label: 'Formality',
+          required: true,
+          child: DropdownButtonFormField<String>(
+            value: _formality,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            ),
+            items:
+                ['casual', 'semi-formal', 'formal']
+                    .map(
+                      (l) => DropdownMenuItem(
+                        value: l,
+                        child: Text(l.toUpperCase()),
+                      ),
+                    )
+                    .toList(),
+            onChanged: (v) {
+              if (v != null) setState(() => _formality = v);
+            },
           ),
-          items:
-              ['casual', 'semi-formal', 'formal']
-                  .map(
-                    (l) => DropdownMenuItem(
-                      value: l,
-                      child: Text(l.toUpperCase()),
-                    ),
-                  )
-                  .toList(),
-          onChanged: (v) {
-            if (v != null) setState(() => _formality = v);
-          },
         ),
       ),
+      if (_eventType == 'Other') ...[
+        const SizedBox(height: 16),
+        AntdFieldShell(
+          label: 'Custom Event Type',
+          required: true,
+          errorText: _fieldErrors['eventTypeOther'],
+          child: AntdOutlineInput(
+            controller: _inquiryEventTypeOtherController,
+            hintText: 'Enter custom event type',
+            onChanged: (_) => onFieldChanged('eventTypeOther'),
+          ),
+        ),
+      ],
       const SizedBox(height: 32),
       _inquirySectionTitle('Contact Information'),
       const SizedBox(height: 16),
-      _responsiveTwoCol(
+      _responsiveThreeCol(
         context,
         AntdFieldShell(
           label: 'Customer Name',
@@ -810,10 +906,6 @@ class _InquirePageState extends State<InquirePage> {
             onChanged: (_) => onFieldChanged('contactPerson'),
           ),
         ),
-      ),
-      const SizedBox(height: 16),
-      _responsiveTwoCol(
-        context,
         AntdFieldShell(
           label: 'Phone Number',
           required: true,
@@ -829,6 +921,10 @@ class _InquirePageState extends State<InquirePage> {
             onChanged: (_) => onFieldChanged('phone'),
           ),
         ),
+      ),
+      const SizedBox(height: 16),
+      _responsiveThreeCol(
+        context,
         AntdFieldShell(
           label: 'Email Address',
           required: true,
@@ -840,16 +936,30 @@ class _InquirePageState extends State<InquirePage> {
             onChanged: (_) => onFieldChanged('email'),
           ),
         ),
-      ),
-      const SizedBox(height: 16),
-      AntdFieldShell(
-        label: 'Event Address',
-        required: true,
-        errorText: _fieldErrors['address'],
-        child: VenueAutocompleteField(
-          controller: _address,
-          label: 'Venue name, street, city',
-          onSelected: (_) => onFieldChanged('address'),
+        AntdFieldShell(
+          label: 'Event Address',
+          required: true,
+          errorText: _fieldErrors['address'],
+          child: VenueAutocompleteField(
+            controller: _address,
+            label: 'Venue name, street, city',
+            onSelected: (_) => onFieldChanged('address'),
+          ),
+        ),
+        AntdFieldShell(
+          label: 'Number of Guests',
+          required: true,
+          errorText: _fieldErrors['guests'],
+          child: AntdOutlineInput(
+            controller: _guests,
+            hintText: 'Guest count',
+            keyboardType: TextInputType.number,
+            onChanged:
+                (_) => setState(() {
+                  _fieldErrors.remove('guests');
+                  _fieldErrors.remove('cateringService');
+                }),
+          ),
         ),
       ),
       const SizedBox(height: 8),
@@ -882,22 +992,7 @@ class _InquirePageState extends State<InquirePage> {
       const SizedBox(height: 32),
       _inquirySectionTitle('Event Details'),
       const SizedBox(height: 16),
-      AntdFieldShell(
-        label: 'Number of Guests',
-        required: true,
-        errorText: _fieldErrors['guests'],
-        child: AntdOutlineInput(
-          controller: _guests,
-          hintText: 'Guest count',
-          keyboardType: TextInputType.number,
-          onChanged: (_) => setState(() {
-            _fieldErrors.remove('guests');
-            _fieldErrors.remove('cateringService');
-          }),
-        ),
-      ),
-      const SizedBox(height: 12),
-      _responsiveTwoCol(
+      _responsiveThreeCol(
         context,
         AntdFieldShell(
           label: 'Event Date',
@@ -959,6 +1054,7 @@ class _InquirePageState extends State<InquirePage> {
             },
           ),
         ),
+        const SizedBox.shrink(),
       ),
       if (_serviceType == 'catering') ...[
         Builder(
@@ -1633,7 +1729,7 @@ class _InquirePageState extends State<InquirePage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildSectionTitle('Style'),
-              _buildChips(
+              _buildDropdown(
                 _styles,
                 _selectedStyle,
                 (val) => setState(() => _selectedStyle = val),
@@ -1650,7 +1746,7 @@ class _InquirePageState extends State<InquirePage> {
         ),
         const SizedBox(height: 16),
         _buildSectionTitle('Mood / Lighting'),
-        _buildChips(
+        _buildDropdown(
           _moods,
           _selectedMood,
           (val) => setState(() => _selectedMood = val),
@@ -1670,6 +1766,13 @@ class _InquirePageState extends State<InquirePage> {
             children: [
               _buildSectionTitle('Color Palette'),
               _buildMultiSelect(_colorPalettes, _selectedColors),
+              if (_selectedColors.contains('Other')) ...[
+                const SizedBox(height: 8),
+                AntdOutlineInput(
+                  controller: _colorOtherController,
+                  hintText: 'Describe your color palette',
+                ),
+              ],
             ],
           ),
           Column(
@@ -1677,6 +1780,13 @@ class _InquirePageState extends State<InquirePage> {
             children: [
               _buildSectionTitle('Decor Elements'),
               _buildMultiSelect(_decorOptions, _selectedDecor),
+              if (_selectedDecor.contains('Other')) ...[
+                const SizedBox(height: 8),
+                AntdOutlineInput(
+                  controller: _decorOtherController,
+                  hintText: 'Describe decor elements',
+                ),
+              ],
             ],
           ),
         ),
@@ -2177,11 +2287,19 @@ class _InquirePageState extends State<InquirePage> {
     if (mood != null && mood.isNotEmpty) {
       parts.add('Mood: $mood');
     }
-    if (_selectedColors.isNotEmpty) {
-      parts.add('Colors: ${_selectedColors.join(', ')}');
+    final colors = _resolvedMultiSelectWithOther(
+      _selectedColors,
+      _colorOtherController,
+    );
+    final decor = _resolvedMultiSelectWithOther(
+      _selectedDecor,
+      _decorOtherController,
+    );
+    if (colors.isNotEmpty) {
+      parts.add('Colors: ${colors.join(', ')}');
     }
-    if (_selectedDecor.isNotEmpty) {
-      parts.add('Decor: ${_selectedDecor.join(', ')}');
+    if (decor.isNotEmpty) {
+      parts.add('Decor: ${decor.join(', ')}');
     }
     final notes = _designPromptController.text.trim();
     if (notes.isNotEmpty) parts.add(notes);
@@ -2282,8 +2400,24 @@ class _InquirePageState extends State<InquirePage> {
             'style': _selectedStyle,
           if (_selectedMood != null && _selectedMood!.isNotEmpty)
             'mood': _selectedMood,
-          if (_selectedColors.isNotEmpty) 'colors': _selectedColors.join(', '),
-          if (_selectedDecor.isNotEmpty) 'decor': _selectedDecor.join(', '),
+          if (_resolvedMultiSelectWithOther(
+            _selectedColors,
+            _colorOtherController,
+          ).isNotEmpty)
+            'colors':
+                _resolvedMultiSelectWithOther(
+                  _selectedColors,
+                  _colorOtherController,
+                ).join(', '),
+          if (_resolvedMultiSelectWithOther(
+            _selectedDecor,
+            _decorOtherController,
+          ).isNotEmpty)
+            'decor':
+                _resolvedMultiSelectWithOther(
+                  _selectedDecor,
+                  _decorOtherController,
+                ).join(', '),
           'formality': _formality,
         },
       );

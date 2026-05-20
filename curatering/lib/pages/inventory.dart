@@ -109,7 +109,6 @@ class _InventoryState extends State<Inventory> {
   String? _editingItemId;
   String _sortBy = 'name';
   bool _sortAscending = true;
-  bool _isTabularView = false;
 
   final List<String> _categories = const [
     'Cooking Equipment',
@@ -493,35 +492,6 @@ class _InventoryState extends State<Inventory> {
     _editingItemId = null;
   }
 
-  Widget _buildViewToggleButton(
-    String label,
-    bool isTabular,
-    VoidCallback onPressed,
-  ) {
-    final isSelected = _isTabularView == isTabular;
-    return GestureDetector(
-      onTap: onPressed,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFFFC024) : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? const Color(0xFFFFC024) : Colors.grey.shade300,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.grey.shade700,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-            fontSize: 14,
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildTabularView(List<InventoryItem> items) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -625,66 +595,6 @@ class _InventoryState extends State<Inventory> {
               );
             }).toList(),
       ),
-    );
-  }
-
-  Widget _buildGridCard(InventoryItem item) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              item.name,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 4),
-            Text(item.category, style: TextStyle(color: Colors.grey.shade600)),
-            const SizedBox(height: 12),
-            Text('Qty: ${item.quantity} ${item.unit}'),
-            if (item.notes != null && item.notes!.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  item.notes!,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-              ),
-            if (_isManager) ...[
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                alignment: WrapAlignment.end,
-                children: [
-                  TextButton.icon(
-                    onPressed: () => _showAddEditDialog(item),
-                    icon: const Icon(Icons.edit, size: 18),
-                    label: const Text('Edit'),
-                  ),
-                  TextButton.icon(
-                    onPressed: () => _archiveItem(item),
-                    icon: const Icon(Icons.archive_outlined, size: 18),
-                    label: const Text('Archive'),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGridView(List<InventoryItem> items) {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        return _buildGridCard(items[index]);
-      },
     );
   }
 
@@ -795,22 +705,6 @@ class _InventoryState extends State<Inventory> {
                 Expanded(
                   child: _buildStatsRow(displayList, _activeItems.length),
                 ),
-                const SizedBox(width: 12),
-                Column(
-                  children: [
-                    _buildViewToggleButton(
-                      'Grid',
-                      false,
-                      () => setState(() => _isTabularView = false),
-                    ),
-                    const SizedBox(height: 6),
-                    _buildViewToggleButton(
-                      'Table',
-                      true,
-                      () => setState(() => _isTabularView = true),
-                    ),
-                  ],
-                ),
                 if (_isManager) ...[
                   const SizedBox(width: 12),
                   ElevatedButton.icon(
@@ -835,9 +729,7 @@ class _InventoryState extends State<Inventory> {
                         style: TextStyle(color: Colors.grey.shade600),
                       ),
                     )
-                    : _isTabularView
-                    ? _buildTabularView(displayList)
-                    : _buildGridView(displayList),
+                    : _buildTabularView(displayList),
           ),
         ],
       ),

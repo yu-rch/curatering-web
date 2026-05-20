@@ -7,7 +7,7 @@ import traceback
 
 import requests
 from io import BytesIO
-from diffusers import StableDiffusionPipeline
+from diffusers import DPMSolverMultistepScheduler, StableDiffusionXLPipeline, StableDiffusionXLImg2ImgPipeline
 from supabase import create_client
 
 BUCKET_ID = "ai-images"
@@ -128,6 +128,15 @@ def format_exception_detail(exc: BaseException) -> dict:
 # ---------------------------
 _sd_pipeline = None
 _sd_pipeline_lock = threading.Lock()
+MODEL_ID = os.getenv("SD_MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0")
+HF_CACHE = os.getenv("HF_HOME", "/app/huggingface")
+SD_IMAGE_SIZE = int(os.getenv("SD_IMAGE_SIZE", "1024"))
+DEFAULT_INFERENCE_STEPS = int(os.getenv("DEFAULT_INFERENCE_STEPS", "28"))
+GUIDANCE_SCALE = float(os.getenv("SD_GUIDANCE_SCALE", "7.0"))
+NEGATIVE_PROMPT = os.getenv(
+    "SD_NEGATIVE_PROMPT",
+    "low quality, blurry, distorted, deformed, text, watermark, logo",
+)
 
 
 def get_sd_pipeline():
@@ -137,15 +146,29 @@ def get_sd_pipeline():
     with _sd_pipeline_lock:
         if _sd_pipeline is not None:
             return _sd_pipeline
-        print("Loading model...")
+        print("Loading SDXL model:", MODEL_ID)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float16 if device == "cuda" else torch.float32
-        _sd_pipeline = StableDiffusionPipeline.from_pretrained(
-            "runwayml/stable-diffusion-v1-5",
-            torch_dtype=dtype,
+        kwargs = {
+            "torch_dtype": dtype,
+            "cache_dir": HF_CACHE,
+            "use_safetensors": True,
+        }
+        if device == "cuda" and os.getenv("SD_MODEL_VARIANT", "fp16"):
+            kwargs["variant"] = os.getenv("SD_MODEL_VARIANT", "fp16")
+        _sd_pipeline = StableDiffusionXLPipeline.from_pretrained(
+            MODEL_ID,
+            **kwargs,
         ).to(device)
+        _sd_pipeline.scheduler = DPMSolverMultistepScheduler.from_config(
+            _sd_pipeline.scheduler.config
+        )
         _sd_pipeline.enable_attention_slicing()
-        print("Model loaded")
+        try:
+            _sd_pipeline.enable_vae_slicing()
+        except Exception:
+            pass
+        print("SDXL model loaded")
         return _sd_pipeline
 
 
@@ -176,7 +199,14 @@ def generate(prompt):
     print("Generating image for:", prompt)
 
     pipe = get_sd_pipeline()
-    image = pipe(prompt, num_inference_steps=25).images[0]
+    image = pipe(
+        prompt=prompt,
+        width=SD_IMAGE_SIZE,
+        height=SD_IMAGE_SIZE,
+        num_inference_steps=DEFAULT_INFERENCE_STEPS,
+        guidance_scale=GUIDANCE_SCALE,
+        negative_prompt=NEGATIVE_PROMPT,
+    ).images[0]
 
     buffer = BytesIO()
     image.save(buffer, format="PNG")

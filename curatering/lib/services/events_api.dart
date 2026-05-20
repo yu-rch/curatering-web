@@ -562,6 +562,7 @@ class EventsApi {
               map['inquiry_id'] ??
               '')
           .toString(),
+      customerId: (map['customerId'] ?? map['customer_id'] ?? '').toString(),
       source: (map['source'] ?? '').toString(),
       status: (map['status'] ?? '').toString(),
       themeAssetsDeferred: _toBool(map['listSummaryOnly']),

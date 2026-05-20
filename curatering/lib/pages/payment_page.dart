@@ -20,6 +20,7 @@ class PaymentPage extends StatefulWidget {
 class _PaymentPageState extends State<PaymentPage> {
   final _referenceController = TextEditingController();
   bool _isLoading = false;
+  bool _showValidation = false;
 
   @override
   void dispose() {
@@ -28,16 +29,10 @@ class _PaymentPageState extends State<PaymentPage> {
   }
 
   Future<void> _handleConfirmPayment() async {
-    if (_referenceController.text.trim().isEmpty) {
+    setState(() => _showValidation = true);
+    if (_referenceError != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the payment reference number')),
-      );
-      return;
-    }
-    
-    if (_referenceController.text.trim().length != 13 || !RegExp(r'^\d{13}$').hasMatch(_referenceController.text.trim())) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid 13-digit reference number')),
+        const SnackBar(content: Text('Please enter a valid payment reference')),
       );
       return;
     }
@@ -49,13 +44,17 @@ class _PaymentPageState extends State<PaymentPage> {
       final token = prefs.getString('customer_token');
 
       final orderKey =
+          widget.orderData['order_id']?.toString() ??
           widget.orderData['id']?.toString() ??
-          widget.orderData['order_no']?.toString() ??
           '';
       if (orderKey.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Order reference missing. Please place the order again.')),
+            const SnackBar(
+              content: Text(
+                'Order reference missing. Please place the order again.',
+              ),
+            ),
           );
         }
         return;
@@ -65,10 +64,11 @@ class _PaymentPageState extends State<PaymentPage> {
         'paymentReference': _referenceController.text.trim(),
       };
       final guestEmail =
-          widget.orderData['guest_contact_email']?.toString().trim() ??
-          widget.orderData['guestContactEmail']?.toString().trim();
+          widget.orderData['user_email']?.toString().trim() ??
+          widget.orderData['userEmail']?.toString().trim() ??
+          widget.orderData['guest_contact_email']?.toString().trim();
       if (guestEmail != null && guestEmail.isNotEmpty) {
-        body['guestContactEmail'] = guestEmail;
+        body['userEmail'] = guestEmail;
       }
 
       final headers = <String, String>{'Content-Type': 'application/json'};
@@ -104,12 +104,15 @@ class _PaymentPageState extends State<PaymentPage> {
       final ok = response.statusCode == 200 || response.statusCode == 201;
       if (ok) {
         final rawOrder = data['order'];
-        final orderMap = rawOrder is Map
-            ? Map<String, dynamic>.from(rawOrder)
-            : Map<String, dynamic>.from(widget.orderData)
+        final orderMap =
+            rawOrder is Map
+                  ? Map<String, dynamic>.from(rawOrder)
+                  : Map<String, dynamic>.from(widget.orderData)
               ..['payment_reference'] = _referenceController.text.trim()
-              ..['status'] = 'pending_cashier'
-              ..['payment_status'] = 'pending';
+              ..['payment_reference_initial'] = _referenceController.text.trim()
+              ..['status'] = 'PENDING_CASHIER'
+              ..['order_status'] = 'PENDING_CASHIER'
+              ..['payment_uploaded_initial'] = true;
 
         if (mounted) {
           Navigator.of(context).pushReplacement(
@@ -121,15 +124,17 @@ class _PaymentPageState extends State<PaymentPage> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(data['error'] ?? 'Failed to confirm payment')),
+            SnackBar(
+              content: Text(data['error'] ?? 'Failed to confirm payment'),
+            ),
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) {
@@ -138,9 +143,21 @@ class _PaymentPageState extends State<PaymentPage> {
     }
   }
 
+  String? get _referenceError {
+    final value = _referenceController.text.trim();
+    if (value.isEmpty) return 'Reference number is required';
+    if (!RegExp(r'^\d{13}$').hasMatch(value)) {
+      return 'Reference number must be exactly 13 digits';
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final totalAmount = widget.orderData['total_amount'] ?? '0.00';
+    final totalAmount =
+        widget.orderData['total_cost'] ??
+        widget.orderData['total_amount'] ??
+        '0.00';
     final displayOrderNo = formatRestaurantOrderNo(widget.orderData);
 
     return Scaffold(
@@ -172,7 +189,10 @@ class _PaymentPageState extends State<PaymentPage> {
                 const SizedBox(height: 24),
                 // Order No badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     border: Border.all(color: const Color(0xFFFFC024)),
                     borderRadius: BorderRadius.circular(8),
@@ -218,15 +238,34 @@ class _PaymentPageState extends State<PaymentPage> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  _buildLabelAndValue('NAME', widget.orderData['full_name'] ?? widget.orderData['fullName'] ?? ''),
+                                  _buildLabelAndValue(
+                                    'NAME',
+                                    widget.orderData['full_name'] ??
+                                        widget.orderData['fullName'] ??
+                                        '',
+                                  ),
                                   const SizedBox(height: 16),
-                                  _buildLabelAndValue('CONTACT NUMBER', widget.orderData['phone'] ?? ''),
+                                  _buildLabelAndValue(
+                                    'CONTACT NUMBER',
+                                    widget.orderData['contact_number'] ??
+                                        widget.orderData['phone'] ??
+                                        '',
+                                  ),
                                   const SizedBox(height: 16),
-                                  _buildLabelAndValue('DELIVERY ADDRESS', widget.orderData['delivery_address'] ?? ''),
+                                  _buildLabelAndValue(
+                                    'DELIVERY ADDRESS',
+                                    widget.orderData['delivery_address'] ?? '',
+                                  ),
                                   const SizedBox(height: 24),
-                                  _buildLabelAndValue('TIME OF DELIVERY', 'NOW'),
+                                  _buildLabelAndValue(
+                                    'TIME OF DELIVERY',
+                                    'NOW',
+                                  ),
                                   const SizedBox(height: 16),
-                                  _buildLabelAndValue('MODE OF PAYMENT', 'GCASH ONLY'),
+                                  _buildLabelAndValue(
+                                    'MODE OF PAYMENT',
+                                    'GCASH ONLY',
+                                  ),
                                   const SizedBox(height: 32),
                                   // YOUR ORDER section
                                   const Center(
@@ -241,74 +280,119 @@ class _PaymentPageState extends State<PaymentPage> {
                                   ),
                                   const SizedBox(height: 16),
                                   // Order items
-                                  if (widget.orderData['items'] != null)
-                                    ...(widget.orderData['items'] as List).map((item) {
-                                      return Padding(
-                                        padding: const EdgeInsets.only(bottom: 12),
-                                        child: Row(
-                                          children: [
-                                            Container(
-                                              width: 40,
-                                              height: 40,
-                                              decoration: BoxDecoration(
-                                                color: Colors.grey.shade200,
-                                                borderRadius: BorderRadius.circular(4),
-                                              ),
-                                              child: const Icon(Icons.fastfood, size: 16),
+                                  if ((widget.orderData['tray_items'] ??
+                                          widget.orderData['items']) !=
+                                      null)
+                                    ...((widget.orderData['tray_items'] ??
+                                                widget.orderData['items'])
+                                            as List)
+                                        .map((item) {
+                                          return Padding(
+                                            padding: const EdgeInsets.only(
+                                              bottom: 12,
                                             ),
-                                            const SizedBox(width: 10),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    item['name']?.toString().toUpperCase() ?? '',
-                                                    style: const TextStyle(
-                                                      fontSize: 10,
-                                                      fontWeight: FontWeight.w600,
-                                                    ),
+                                            child: Row(
+                                              children: [
+                                                Container(
+                                                  width: 40,
+                                                  height: 40,
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.grey.shade200,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          4,
+                                                        ),
                                                   ),
-                                                  if (item['sauces'] != null && (item['sauces'] as List).isNotEmpty)
+                                                  child: const Icon(
+                                                    Icons.fastfood,
+                                                    size: 16,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        item['name']
+                                                                ?.toString()
+                                                                .toUpperCase() ??
+                                                            '',
+                                                        style: const TextStyle(
+                                                          fontSize: 10,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                      ),
+                                                      if (item['sauces'] !=
+                                                              null &&
+                                                          (item['sauces']
+                                                                  as List)
+                                                              .isNotEmpty)
+                                                        Text(
+                                                          (item['sauces']
+                                                                  as List)
+                                                              .first
+                                                              .toString()
+                                                              .toUpperCase(),
+                                                          style: TextStyle(
+                                                            fontSize: 8,
+                                                            color:
+                                                                Colors
+                                                                    .grey
+                                                                    .shade600,
+                                                          ),
+                                                        ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.end,
+                                                  children: [
                                                     Text(
-                                                      (item['sauces'] as List).first.toString().toUpperCase(),
-                                                      style: TextStyle(
-                                                        fontSize: 8,
-                                                        color: Colors.grey.shade600,
+                                                      'x${item['quantity'] ?? 1}',
+                                                      style: const TextStyle(
+                                                        fontSize: 9,
                                                       ),
                                                     ),
-                                                ],
-                                              ),
-                                            ),
-                                            Column(
-                                              crossAxisAlignment: CrossAxisAlignment.end,
-                                              children: [
-                                                Text(
-                                                  'x${item['quantity'] ?? 1}',
-                                                  style: const TextStyle(fontSize: 9),
-                                                ),
-                                                Text(
-                                                  '₱${item['price'] ?? 0}',
-                                                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold),
+                                                    Text(
+                                                      '₱${item['price'] ?? 0}',
+                                                      style: const TextStyle(
+                                                        fontSize: 9,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
                                               ],
                                             ),
-                                          ],
-                                        ),
-                                      );
-                                    }).toList(),
+                                          );
+                                        })
+                                        .toList(),
                                   const SizedBox(height: 16),
                                   Divider(color: Colors.grey.shade200),
                                   const SizedBox(height: 8),
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       const Text(
                                         'TOTAL',
-                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                       Text(
                                         '₱${totalAmount.toString()}',
-                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -402,15 +486,33 @@ class _PaymentPageState extends State<PaymentPage> {
                                           controller: _referenceController,
                                           keyboardType: TextInputType.number,
                                           maxLength: 13,
-                                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter
+                                                .digitsOnly,
+                                          ],
                                           style: const TextStyle(fontSize: 12),
+                                          onChanged: (_) {
+                                            if (_showValidation)
+                                              setState(() {});
+                                          },
                                           decoration: InputDecoration(
                                             isDense: true,
+                                            errorText:
+                                                _showValidation
+                                                    ? _referenceError
+                                                    : null,
                                             border: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(6),
-                                              borderSide: BorderSide(color: Colors.grey.shade300),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              borderSide: BorderSide(
+                                                color: Colors.grey.shade300,
+                                              ),
                                             ),
-                                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 8,
+                                                ),
                                             counterText: '',
                                           ),
                                         ),
@@ -419,28 +521,37 @@ class _PaymentPageState extends State<PaymentPage> {
                                   ),
                                   const SizedBox(height: 40),
                                   ElevatedButton(
-                                    onPressed: _isLoading ? null : _handleConfirmPayment,
+                                    onPressed:
+                                        _isLoading
+                                            ? null
+                                            : _handleConfirmPayment,
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: const Color(0xFFFFC024),
                                       foregroundColor: Colors.black,
-                                      padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 12),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 48,
+                                        vertical: 12,
+                                      ),
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(20),
                                       ),
                                     ),
-                                    child: _isLoading
-                                        ? const SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: CircularProgressIndicator(strokeWidth: 2),
-                                          )
-                                        : const Text(
-                                            'CONFIRM',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
+                                    child:
+                                        _isLoading
+                                            ? const SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                            : const Text(
+                                              'CONFIRM',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                              ),
                                             ),
-                                          ),
                                   ),
                                 ],
                               ),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -19,7 +20,7 @@ class _RestaurantOrderingPageState extends State<RestaurantOrderingPage> {
   @override
   void initState() {
     super.initState();
-    CartStore.instance.init();
+    unawaited(CartStore.instance.init());
     CartStore.instance.addListener(_onCartChanged);
   }
 
