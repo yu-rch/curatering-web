@@ -17,8 +17,11 @@ class Dashboard extends StatefulWidget {
 
 class _DashboardState extends State<Dashboard> {
   bool _isLoading = false;
+  bool _isInsightLoading = false;
   String? _errorMessage;
+  String? _insightError;
   DashboardSummary? _summary;
+  DashboardInsight? _insight;
   String _range = 'year';
   String _orderSource = 'ALL';
   String _orderStatus = 'ALL';
@@ -27,6 +30,7 @@ class _DashboardState extends State<Dashboard> {
   void initState() {
     super.initState();
     _load();
+    _loadInsight();
   }
 
   Future<void> _load({bool forceRefresh = false}) async {
@@ -53,6 +57,59 @@ class _DashboardState extends State<Dashboard> {
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  String get _insightRange {
+    switch (_range) {
+      case 'today':
+        return '7d';
+      case 'month':
+        return '30d';
+      case 'year':
+      case 'all':
+      default:
+        return '90d';
+    }
+  }
+
+  Future<void> _loadInsight() async {
+    if (!AuthSession.instance.hasToken) return;
+    setState(() {
+      _isInsightLoading = true;
+      _insightError = null;
+    });
+    try {
+      final insight = await DashboardApi.instance.loadLatestInsight(
+        range: _insightRange,
+      );
+      if (mounted) setState(() => _insight = insight);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _insightError = 'Failed to load AI insights.');
+      }
+    } finally {
+      if (mounted) setState(() => _isInsightLoading = false);
+    }
+  }
+
+  Future<void> _generateInsight() async {
+    if (!AuthSession.instance.hasToken || _isInsightLoading) return;
+    setState(() {
+      _isInsightLoading = true;
+      _insightError = null;
+    });
+    try {
+      final insight = await DashboardApi.instance.analyzeDashboard(
+        range: _insightRange,
+      );
+      if (mounted) setState(() => _insight = insight);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _insightError = 'Failed to generate AI analysis.');
+      }
+    } finally {
+      if (mounted) setState(() => _isInsightLoading = false);
     }
   }
 
@@ -108,6 +165,7 @@ class _DashboardState extends State<Dashboard> {
               onChanged: (v) {
                 setState(() => _range = v);
                 _load(forceRefresh: true);
+                _loadInsight();
               },
             ),
             _filterDropdown(
@@ -440,6 +498,153 @@ class _DashboardState extends State<Dashboard> {
                   .toList(),
         );
       },
+    );
+  }
+
+  Widget _aiInsightsPanel() {
+    final insight = _insight;
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: AntdTokens.borderSubtle),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.auto_awesome, color: AntdTokens.blue),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'AI Dashboard Analyst',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: AntdTokens.valueDark,
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _isInsightLoading ? null : _generateInsight,
+                  icon:
+                      _isInsightLoading
+                          ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                          : const Icon(Icons.psychology_alt_outlined),
+                  label: Text(
+                    _isInsightLoading ? 'Analyzing...' : 'Generate AI analysis',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Range: $_insightRange'
+              '${insight?.createdAt != null ? ' · Generated ${_formatInsightDate(insight!.createdAt!)}' : ''}',
+              style: const TextStyle(color: AntdTokens.labelMuted, fontSize: 12),
+            ),
+            if (_insightError != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _insightError!,
+                style: TextStyle(color: Colors.red.shade700),
+              ),
+            ],
+            const SizedBox(height: 14),
+            if (insight == null)
+              const Text(
+                'No stored AI analysis yet. Generate one to summarize recent feedback, alerts, and recommended actions.',
+                style: TextStyle(color: AntdTokens.labelMuted),
+              )
+            else ...[
+              Text(
+                insight.summary.isEmpty ? 'No summary returned.' : insight.summary,
+                style: const TextStyle(
+                  color: AntdTokens.valueDark,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (insight.alerts.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children:
+                      insight.alerts
+                          .map(
+                            (item) => Chip(
+                              label: Text(item.message),
+                              backgroundColor:
+                                  item.severity == 'high'
+                                      ? Colors.red.shade50
+                                      : Colors.orange.shade50,
+                              side: BorderSide(
+                                color:
+                                    item.severity == 'high'
+                                        ? Colors.red.shade200
+                                        : Colors.orange.shade200,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 24,
+                runSpacing: 16,
+                children: [
+                  _insightList('Insights', insight.insights),
+                  _insightList('Trends', insight.trends),
+                  _insightList('Problems', insight.problems),
+                  _insightList('Recommendations', insight.recommendations),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _insightList(String title, List<String> items) {
+    return SizedBox(
+      width: 280,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: AntdTokens.valueDark,
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (items.isEmpty)
+            const Text('No items.', style: TextStyle(color: AntdTokens.labelMuted))
+          else
+            for (final item in items)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 5),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('• '),
+                    Expanded(child: Text(item)),
+                  ],
+                ),
+              ),
+        ],
+      ),
     );
   }
 
@@ -845,6 +1050,8 @@ class _DashboardState extends State<Dashboard> {
               ]),
               const SizedBox(height: 20),
               _sectionTitle('Operational Insights'),
+              _aiInsightsPanel(),
+              const SizedBox(height: 16),
               _metricsRow([
                 _metricCard(
                   'Inquiries this month',
@@ -1043,6 +1250,15 @@ String _monthLabel(int month) {
   ];
   if (month < 1 || month > 12) return '';
   return labels[month - 1];
+}
+
+String _formatInsightDate(DateTime value) {
+  final local = value.toLocal();
+  final date =
+      '${local.year.toString().padLeft(4, '0')}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+  final time =
+      '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+  return '$date $time';
 }
 
 String _bestMonthLabel(

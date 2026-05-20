@@ -228,6 +228,91 @@ class MonthlyDashboardSales {
   }
 }
 
+class DashboardInsightAlert {
+  const DashboardInsightAlert({
+    required this.type,
+    required this.severity,
+    required this.message,
+    required this.explanation,
+  });
+
+  final String type;
+  final String severity;
+  final String message;
+  final String explanation;
+
+  factory DashboardInsightAlert.fromJson(Map<String, dynamic> json) {
+    return DashboardInsightAlert(
+      type: '${json['type'] ?? 'alert'}',
+      severity: '${json['severity'] ?? 'info'}',
+      message: '${json['message'] ?? ''}'.trim(),
+      explanation: '${json['explanation'] ?? ''}'.trim(),
+    );
+  }
+}
+
+class DashboardInsight {
+  const DashboardInsight({
+    required this.id,
+    required this.range,
+    required this.summary,
+    required this.insights,
+    required this.trends,
+    required this.problems,
+    required this.recommendations,
+    required this.alerts,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String range;
+  final String summary;
+  final List<String> insights;
+  final List<String> trends;
+  final List<String> problems;
+  final List<String> recommendations;
+  final List<DashboardInsightAlert> alerts;
+  final DateTime? createdAt;
+
+  bool get isEmpty =>
+      summary.trim().isEmpty &&
+      insights.isEmpty &&
+      trends.isEmpty &&
+      problems.isEmpty &&
+      recommendations.isEmpty &&
+      alerts.isEmpty;
+
+  static List<String> _stringList(dynamic raw) {
+    return (raw as List? ?? const [])
+        .map((item) => '$item'.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  factory DashboardInsight.fromJson(Map<String, dynamic> json) {
+    return DashboardInsight(
+      id: '${json['id'] ?? ''}',
+      range: '${json['range'] ?? '7d'}',
+      summary: '${json['summary'] ?? ''}'.trim(),
+      insights: _stringList(json['insights']),
+      trends: _stringList(json['trends']),
+      problems: _stringList(json['problems']),
+      recommendations: _stringList(json['recommendations']),
+      alerts:
+          (json['alerts'] as List? ?? const [])
+              .whereType<Map>()
+              .map(
+                (item) => DashboardInsightAlert.fromJson(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .where((alert) => alert.message.isNotEmpty)
+              .toList(),
+      createdAt: DateTime.tryParse('${json['createdAt'] ?? ''}'),
+    );
+  }
+}
+
 class DashboardApi {
   DashboardApi._();
   static final DashboardApi instance = DashboardApi._();
@@ -243,5 +328,30 @@ class DashboardApi {
         ).toString();
     final decoded = await ApiClient.instance.getJson(path, useCache: false);
     return DashboardSummary.fromJson(Map<String, dynamic>.from(decoded));
+  }
+
+  Future<DashboardInsight?> loadLatestInsight({String range = '7d'}) async {
+    final path =
+        Uri(
+          path: '/api/dashboard/insights',
+          queryParameters: {'range': range},
+        ).toString();
+    final decoded = await ApiClient.instance.getJson(path, useCache: false);
+    final data = decoded['data'];
+    if (data is! Map) return null;
+    final insight = DashboardInsight.fromJson(Map<String, dynamic>.from(data));
+    return insight.isEmpty ? null : insight;
+  }
+
+  Future<DashboardInsight> analyzeDashboard({String range = '7d'}) async {
+    final decoded = await ApiClient.instance.postJson(
+      '/api/dashboard/analyze',
+      body: {'range': range},
+    );
+    final data = decoded['data'];
+    if (data is! Map) {
+      throw ApiError(message: 'Dashboard analysis returned no insight');
+    }
+    return DashboardInsight.fromJson(Map<String, dynamic>.from(data));
   }
 }

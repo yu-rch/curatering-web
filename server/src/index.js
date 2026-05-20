@@ -571,6 +571,34 @@ async function ensureFeedbackAnalyticsSchema() {
         )
       `);
       await pool.query(`
+        CREATE TABLE IF NOT EXISTS dashboard_insights (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          range_key TEXT NOT NULL DEFAULT '7d',
+          summary TEXT NOT NULL DEFAULT '',
+          insights JSONB NOT NULL DEFAULT '[]'::jsonb,
+          trends JSONB NOT NULL DEFAULT '[]'::jsonb,
+          problems JSONB NOT NULL DEFAULT '[]'::jsonb,
+          recommendations JSONB NOT NULL DEFAULT '[]'::jsonb,
+          alerts JSONB NOT NULL DEFAULT '[]'::jsonb,
+          dashboard_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+          ai_response JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `);
+      await pool.query(`
+        ALTER TABLE dashboard_insights
+        ADD COLUMN IF NOT EXISTS range_key TEXT NOT NULL DEFAULT '7d',
+        ADD COLUMN IF NOT EXISTS summary TEXT NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS insights JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS trends JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS problems JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS recommendations JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS alerts JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS dashboard_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS ai_response JSONB NOT NULL DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      `);
+      await pool.query(`
         ALTER TABLE feedback_analysis
         ADD COLUMN IF NOT EXISTS batch_id uuid,
         ADD COLUMN IF NOT EXISTS feedback_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -598,10 +626,15 @@ async function ensureFeedbackAnalyticsSchema() {
         CREATE INDEX IF NOT EXISTS idx_feedback_batches_created_at
         ON feedback_batches (created_at DESC)
       `);
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_dashboard_insights_range_created_at
+        ON dashboard_insights (range_key, created_at DESC)
+      `);
       try {
         await pool.query(`ALTER TABLE feedback ENABLE ROW LEVEL SECURITY`);
         await pool.query(`ALTER TABLE feedback_analysis ENABLE ROW LEVEL SECURITY`);
         await pool.query(`ALTER TABLE feedback_batches ENABLE ROW LEVEL SECURITY`);
+        await pool.query(`ALTER TABLE dashboard_insights ENABLE ROW LEVEL SECURITY`);
       } catch (err) {
         console.warn("[feedback analytics] RLS enable skipped:", err?.message || err);
       }
@@ -633,6 +666,165 @@ async function storeFeedbackRows(input) {
     rows.push(inserted.rows[0]);
   }
   return rows;
+}
+
+function getDashboardRange(rawRange) {
+  const key = String(rawRange || "7d").trim().toLowerCase();
+  const daysByKey = {
+    "7d": 7,
+    "30d": 30,
+    "90d": 90,
+  };
+  const rangeKey = Object.prototype.hasOwnProperty.call(daysByKey, key) ? key : "7d";
+  const end = new Date();
+  const start = new Date(end.getTime() - daysByKey[rangeKey] * 24 * 60 * 60 * 1000);
+  const previousStart = new Date(start.getTime() - daysByKey[rangeKey] * 24 * 60 * 60 * 1000);
+  return { key: rangeKey, days: daysByKey[rangeKey], start, end, previousStart };
+}
+
+function sentimentBucket(value) {
+  const v = String(value || "").trim().toLowerCase();
+  if (v === "positive") return "positive";
+  if (v === "negative") return "negative";
+  return "neutral";
+}
+
+function addTopicCounts(topicCount, values) {
+  if (!Array.isArray(values)) return;
+  for (const raw of values) {
+    const topic = String(raw || "").trim();
+    if (!topic) continue;
+    topicCount[topic] = (topicCount[topic] || 0) + 1;
+  }
+}
+
+function aggregateDashboardFeedback(rows) {
+  const sentiment = { positive: 0, negative: 0, neutral: 0 };
+  const topicCount = {};
+  let complaintCount = 0;
+  let praiseCount = 0;
+  let insightCount = 0;
+
+  for (const item of rows) {
+    sentiment[sentimentBucket(item.sentiment)] += 1;
+    const complaints = Array.isArray(item.complaints) ? item.complaints : [];
+    const praises = Array.isArray(item.praises) ? item.praises : [];
+    const insights = Array.isArray(item.insights) ? item.insights : [];
+    complaintCount += complaints.length;
+    praiseCount += praises.length;
+    insightCount += insights.length;
+    addTopicCounts(topicCount, item.key_topics);
+    addTopicCounts(topicCount, complaints);
+    addTopicCounts(topicCount, praises);
+  }
+
+  return {
+    total: rows.length,
+    sentiment,
+    complaint_count: complaintCount,
+    praise_count: praiseCount,
+    insight_count: insightCount,
+    top_topics: Object.entries(topicCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([topic, count]) => ({ topic, count })),
+  };
+}
+
+function detectDashboardAlerts(today, yesterday) {
+  const alerts = [];
+  if (yesterday.negative > 0 && today.negative > yesterday.negative * 1.5) {
+    alerts.push({
+      type: "negative_sentiment_spike",
+      severity: "high",
+      message: "Negative sentiment spike detected",
+    });
+  }
+  if (yesterday.complaint_count > 0 && today.complaint_count > yesterday.complaint_count * 1.5) {
+    alerts.push({
+      type: "complaint_surge",
+      severity: "medium",
+      message: "Complaint surge detected",
+    });
+  }
+  if (yesterday.total > 0 && today.total > yesterday.total * 2) {
+    alerts.push({
+      type: "feedback_volume_increase",
+      severity: "medium",
+      message: "Unusual feedback volume increase",
+    });
+  }
+  return alerts;
+}
+
+function normalizeDashboardAiResult(output) {
+  const parsed = extractRunpodNlpResult(output) || output?.analysis || output;
+  const data = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  const list = (value, max = 8) => toStringArray(value, max);
+  const alerts = Array.isArray(data.alerts)
+    ? data.alerts
+        .map((item) => {
+          if (item && typeof item === "object") {
+            return {
+              type: String(item.type || "alert"),
+              severity: String(item.severity || "info"),
+              message: String(item.message || item.summary || "").trim(),
+              explanation: String(item.explanation || "").trim(),
+            };
+          }
+          return {
+            type: "alert",
+            severity: "info",
+            message: String(item || "").trim(),
+            explanation: "",
+          };
+        })
+        .filter((item) => item.message)
+        .slice(0, 8)
+    : [];
+
+  return {
+    summary: String(data.summary || "").trim(),
+    insights: list(data.insights),
+    trends: list(data.trends),
+    problems: list(data.problems),
+    recommendations: list(data.recommendations),
+    alerts,
+  };
+}
+
+async function queryDashboardAnalysisRows(start, end) {
+  const result = await pool.query(
+    `SELECT
+       sentiment,
+       complaints,
+       praises,
+       insights,
+       key_topics,
+       created_at
+     FROM feedback_analysis
+     WHERE created_at >= $1 AND created_at < $2
+     ORDER BY created_at DESC
+     LIMIT 1000`,
+    [start, end],
+  );
+  return result.rows;
+}
+
+function serializeDashboardInsight(row) {
+  if (!row) return null;
+  const jsonArray = (value) => (Array.isArray(value) ? value : []);
+  return {
+    id: String(row.id || ""),
+    range: String(row.range_key || row.range || "7d"),
+    summary: String(row.summary || ""),
+    insights: jsonArray(row.insights),
+    trends: jsonArray(row.trends),
+    problems: jsonArray(row.problems),
+    recommendations: jsonArray(row.recommendations),
+    alerts: jsonArray(row.alerts),
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+  };
 }
 
 function toStringArray(value, max = 5) {
@@ -807,6 +999,127 @@ app.post("/api/feedback/analyze", publicRateLimit, async (req, res) => {
     });
   }
 });
+
+app.post(
+  "/api/dashboard/analyze",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin", "super_admin"])),
+  async (req, res) => {
+    try {
+      await ensureFeedbackAnalyticsSchema();
+      const range = getDashboardRange(req.body?.range);
+      const currentRows = await queryDashboardAnalysisRows(range.start, range.end);
+      const previousRows = await queryDashboardAnalysisRows(range.previousStart, range.start);
+      const current = aggregateDashboardFeedback(currentRows);
+      const previous = aggregateDashboardFeedback(previousRows);
+      const alerts = detectDashboardAlerts(
+        {
+          total: current.total,
+          negative: current.sentiment.negative,
+          complaint_count: current.complaint_count,
+        },
+        {
+          total: previous.total,
+          negative: previous.sentiment.negative,
+          complaint_count: previous.complaint_count,
+        },
+      );
+      const dashboardData = {
+        range: range.key,
+        start: range.start.toISOString(),
+        end: range.end.toISOString(),
+        current,
+        previous,
+      };
+
+      const aiResponse = await runRunpodJobAndWait("nlp", {
+        dashboard_data: dashboardData,
+        alerts,
+      });
+      const normalized = normalizeDashboardAiResult(aiResponse);
+      if (!normalized.summary) {
+        normalized.summary =
+          current.total > 0
+            ? `Analyzed ${current.total} feedback analysis record(s) for the last ${range.days} days.`
+            : `No feedback analysis records found for the last ${range.days} days.`;
+      }
+      const stored = await pool.query(
+        `INSERT INTO dashboard_insights (
+           range_key,
+           summary,
+           insights,
+           trends,
+           problems,
+           recommendations,
+           alerts,
+           dashboard_data,
+           ai_response
+         ) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb)
+         RETURNING *`,
+        [
+          range.key,
+          normalized.summary,
+          JSON.stringify(normalized.insights),
+          JSON.stringify(normalized.trends),
+          JSON.stringify(normalized.problems),
+          JSON.stringify(normalized.recommendations),
+          JSON.stringify(normalized.alerts.length ? normalized.alerts : alerts),
+          JSON.stringify(dashboardData),
+          JSON.stringify(aiResponse),
+        ],
+      );
+
+      return res.json({
+        success: true,
+        data: serializeDashboardInsight(stored.rows[0]),
+        dashboardData,
+      });
+    } catch (e) {
+      if (e?.code === "runpod_not_configured") {
+        return sendRunpodNotConfigured(res, "nlp", e);
+      }
+      console.error("[dashboard analyze] failed", e);
+      return res.status(e?.status || 500).json({
+        error: "Dashboard analysis failed",
+        message: String(e?.message || e),
+        code: e?.code || "dashboard_analysis_failed",
+      });
+    }
+  },
+);
+
+app.get(
+  "/api/dashboard/insights",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin", "super_admin"])),
+  async (req, res) => {
+    try {
+      await ensureFeedbackAnalyticsSchema();
+      const range = getDashboardRange(req.query?.range);
+      const result = await pool.query(
+        `SELECT *
+         FROM dashboard_insights
+         WHERE range_key = $1
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [range.key],
+      );
+      return res.json({
+        success: true,
+        data: serializeDashboardInsight(result.rows[0] || null),
+      });
+    } catch (e) {
+      console.error("[dashboard insights] failed", e);
+      return res.status(500).json({
+        error: "Failed to load dashboard insights",
+        message: String(e?.message || e),
+        code: "dashboard_insights_failed",
+      });
+    }
+  },
+);
 
 app.get(
   "/api/runpod/nlp/status/:jobId",

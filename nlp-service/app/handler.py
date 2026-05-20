@@ -60,6 +60,75 @@ Feedback:
 """.strip()
 
 
+def build_dashboard_prompt(data, alerts):
+    return f"""
+[INST] You are a business analyst AI for a catering and restaurant dashboard.
+
+Analyze this dashboard data and return ONLY valid JSON. No explanations outside JSON. No markdown.
+
+Schema:
+{{
+  "summary": "string",
+  "insights": ["string"],
+  "trends": ["string"],
+  "problems": ["string"],
+  "recommendations": ["string"],
+  "alerts": [
+    {{
+      "type": "string",
+      "severity": "info | medium | high",
+      "message": "string",
+      "explanation": "string"
+    }}
+  ]
+}}
+
+Rules:
+- Be concise and structured
+- Use double quotes only
+- No trailing commas
+- Each array should contain at most 5 items
+
+Dashboard data:
+{json.dumps(data, ensure_ascii=False)}
+
+Detected alerts:
+{json.dumps(alerts or [], ensure_ascii=False)}
+[/INST]
+""".strip()
+
+
+def build_alert_prompt(alert, data):
+    return f"""
+[INST] Explain this business alert and return ONLY valid JSON. No markdown.
+
+Schema:
+{{
+  "summary": "string",
+  "insights": ["string"],
+  "problems": ["string"],
+  "recommendations": ["string"],
+  "alerts": [
+    {{
+      "type": "string",
+      "severity": "info | medium | high",
+      "message": "string",
+      "explanation": "string"
+    }}
+  ]
+}}
+
+Alert:
+{alert}
+
+Data:
+{json.dumps(data, ensure_ascii=False)}
+
+Provide likely causes, what to check, and recommended actions.
+[/INST]
+""".strip()
+
+
 def extract_json(text):
     try:
         return json.loads(text)
@@ -77,6 +146,52 @@ def _string_list(value, max_items=10):
     if not isinstance(value, list):
         return []
     return [str(item).strip() for item in value if str(item).strip()][:max_items]
+
+
+def _dashboard_alerts(value):
+    if not isinstance(value, list):
+        return []
+    alerts = []
+    for item in value[:8]:
+        if isinstance(item, dict):
+            message = str(item.get("message") or item.get("summary") or "").strip()
+            if not message:
+                continue
+            alerts.append({
+                "type": str(item.get("type") or "alert").strip() or "alert",
+                "severity": str(item.get("severity") or "info").strip() or "info",
+                "message": message,
+                "explanation": str(item.get("explanation") or "").strip(),
+            })
+        else:
+            message = str(item).strip()
+            if message:
+                alerts.append({
+                    "type": "alert",
+                    "severity": "info",
+                    "message": message,
+                    "explanation": "",
+                })
+    return alerts
+
+
+def normalize_dashboard_analysis(parsed):
+    if not isinstance(parsed, dict):
+        return None
+    return {
+        "summary": str(parsed.get("summary") or "").strip(),
+        "insights": _string_list(parsed.get("insights"), 5),
+        "trends": _string_list(parsed.get("trends"), 5),
+        "problems": _string_list(parsed.get("problems"), 5),
+        "recommendations": _string_list(parsed.get("recommendations"), 5),
+        "alerts": _dashboard_alerts(parsed.get("alerts")),
+    }
+
+
+def generate_json(prompt):
+    outputs = llm.generate([prompt], sampling_params)
+    raw_output = outputs[0].outputs[0].text.strip()
+    return raw_output, extract_json(raw_output)
 
 
 def normalize_analysis(parsed):
@@ -138,6 +253,24 @@ def handler(job):
     data = (job or {}).get("input") or {}
     rows = []
 
+    if isinstance(data.get("dashboard_data"), dict):
+        raw_output, parsed = generate_json(
+            build_dashboard_prompt(data["dashboard_data"], data.get("alerts") or [])
+        )
+        result = normalize_dashboard_analysis(parsed)
+        if not result:
+            return {"error": "Model did not return valid JSON", "raw_output": raw_output}
+        return {"analysis": result, "result": result}
+
+    if data.get("alert"):
+        raw_output, parsed = generate_json(
+            build_alert_prompt(str(data.get("alert")), data.get("data") or {})
+        )
+        result = normalize_dashboard_analysis(parsed)
+        if not result:
+            return {"error": "Model did not return valid JSON", "raw_output": raw_output}
+        return {"analysis": result, "result": result}
+
     direct_feedbacks = data.get("feedbacks")
     if isinstance(direct_feedbacks, list) and direct_feedbacks:
         feedbacks = [str(item).strip() for item in direct_feedbacks if str(item).strip()]
@@ -155,10 +288,8 @@ def handler(job):
 
     prompt = build_prompt(feedbacks)
 
-    outputs = llm.generate([prompt], sampling_params)
-    raw_output = outputs[0].outputs[0].text.strip()
-
-    parsed = normalize_analysis(extract_json(raw_output))
+    raw_output, raw_json = generate_json(prompt)
+    parsed = normalize_analysis(raw_json)
     if not parsed:
         if rows:
             mark_feedback(rows, "error")
