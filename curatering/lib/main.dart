@@ -157,8 +157,9 @@ Route<dynamic>? _buildRouteForPath(String path) {
         ),
     '/customer-feedback':
         (context) => _staffPage(
-          const RoleGuard(
+          RoleGuard(
             requiredRole: Role.superAdmin,
+            allowedRoles: {Role.manager},
             child: CustomerFeedbackPage(),
           ),
           '/customer-feedback',
@@ -529,8 +530,9 @@ class MyApp extends StatelessWidget {
                 ),
             '/customer-feedback':
                 (context) => _staffPage(
-                  const RoleGuard(
+                  RoleGuard(
                     requiredRole: Role.superAdmin,
+                    allowedRoles: {Role.manager},
                     child: CustomerFeedbackPage(),
                   ),
                   '/customer-feedback',

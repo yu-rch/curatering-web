@@ -496,7 +496,7 @@ def handler(event):
         step = "insert_db"
         user_prompt = (data.get("prompt") or "").strip()
         record = {
-            "prompt": prompt if not user_prompt else f"{user_prompt}\n\n--- enriched ---\n{prompt}",
+            "prompt": user_prompt or prompt,
             "image_url": url,
         }
         if _is_valid_uuid(user_id):

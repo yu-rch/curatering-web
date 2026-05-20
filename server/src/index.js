@@ -1010,6 +1010,7 @@ app.post(
     try {
       await ensureFeedbackAnalyticsSchema();
       const range = getDashboardRange(req.body?.range);
+      const prompt = String(req.body?.prompt || "").trim().slice(0, 4000);
       const currentRows = await queryDashboardAnalysisRows(range.start, range.end);
       const previousRows = await queryDashboardAnalysisRows(range.previousStart, range.start);
       const current = aggregateDashboardFeedback(currentRows);
@@ -1032,12 +1033,15 @@ app.post(
         end: range.end.toISOString(),
         current,
         previous,
+        prompt,
       };
 
-      const aiResponse = await runRunpodJobAndWait("nlp", {
+      const input = {
         dashboard_data: dashboardData,
         alerts,
-      });
+      };
+      if (prompt) input.prompt = prompt;
+      const aiResponse = await runRunpodJobAndWait("nlp", input);
       const normalized = normalizeDashboardAiResult(aiResponse);
       if (!normalized.summary) {
         normalized.summary =
@@ -3861,7 +3865,7 @@ async function analyzeFeedbackWithAi(feedbacks) {
 app.get(
   "/api/super-admin/customer-feedback",
   authRequired,
-  requireSuperAdmin,
+  (req, res, next) => requireRoles(req, res, next, new Set(["manager", "admin", "super_admin"])),
   async (req, res) => {
     try {
       const roCols = await ensureRestaurantOrdersCanonicalColumns();
@@ -3917,7 +3921,7 @@ app.get(
 app.post(
   "/api/super-admin/customer-feedback/analyze",
   authRequired,
-  requireSuperAdmin,
+  (req, res, next) => requireRoles(req, res, next, new Set(["manager", "admin", "super_admin"])),
   async (req, res) => {
     try {
       const roCols = await ensureRestaurantOrdersCanonicalColumns();

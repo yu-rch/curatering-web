@@ -345,10 +345,16 @@ class DashboardApi {
     return insight.isEmpty ? null : insight;
   }
 
-  Future<DashboardInsight> analyzeDashboard({String range = '7d'}) async {
+  Future<DashboardInsight> analyzeDashboard({
+    String range = '7d',
+    String prompt = '',
+  }) async {
+    final body = <String, dynamic>{'range': range};
+    final trimmedPrompt = prompt.trim();
+    if (trimmedPrompt.isNotEmpty) body['prompt'] = trimmedPrompt;
     final decoded = await ApiClient.instance.postJson(
       '/api/dashboard/analyze',
-      body: {'range': range},
+      body: body,
     );
     final data = decoded['data'];
     if (data is! Map) {

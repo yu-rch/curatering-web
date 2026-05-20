@@ -20,6 +20,10 @@ class Dashboard extends StatefulWidget {
 
 class _DashboardState extends State<Dashboard> {
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _insightPromptController = TextEditingController(
+    text:
+        'Analyze current restaurant and catering feedback, identify urgent issues, explain trends, and recommend specific actions for management.',
+  );
   bool _isLoading = false;
   bool _isInsightLoading = false;
   bool _isPrintingPdf = false;
@@ -43,6 +47,7 @@ class _DashboardState extends State<Dashboard> {
   @override
   void dispose() {
     _searchController.dispose();
+    _insightPromptController.dispose();
     super.dispose();
   }
 
@@ -115,6 +120,7 @@ class _DashboardState extends State<Dashboard> {
     try {
       final insight = await DashboardApi.instance.analyzeDashboard(
         range: _insightRange,
+        prompt: _insightPromptController.text,
       );
       if (mounted) setState(() => _insight = insight);
     } catch (_) {
@@ -911,6 +917,19 @@ class _DashboardState extends State<Dashboard> {
               style: const TextStyle(
                 color: AntdTokens.labelMuted,
                 fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _insightPromptController,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'AI analysis prompt',
+                hintText:
+                    'Tell the AI what to focus on, such as complaints, sales risks, operations, or next actions.',
+                border: OutlineInputBorder(),
+                isDense: true,
               ),
             ),
             if (_insightError != null) ...[

@@ -179,7 +179,7 @@ def build_prompt(data):
     base = data.get("prompt", "")
 
     event = data.get("event_type", "")
-    theme = data.get("theme", "")
+    theme = data.get("style") or data.get("theme", "")
     formality = data.get("formality", "")
 
     enriched = f"""
@@ -289,7 +289,7 @@ def handler(event):
         user_prompt = (data.get("prompt") or "").strip()
         record = {
             "user_id": user_id,
-            "prompt": prompt if not user_prompt else f"{user_prompt}\n\n--- enriched ---\n{prompt}",
+            "prompt": user_prompt or prompt,
             "image_url": url,
         }
 

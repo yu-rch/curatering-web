@@ -73,69 +73,48 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         'Debug: Using token for restaurant orders: ${token.substring(0, 20)}...',
       );
 
-      // Load smaller batches for faster initial display
-      final response = await http.get(
-        Uri.parse('$apiBaseUrl/api/manager/restaurant/orders?limit=200'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
+      final parseTime = Stopwatch()..start();
+      final buckets = await Future.wait([
+        _fetchManagerOrders(token, statuses: const ['PENDING_CASHIER']),
+        _fetchManagerOrders(
+          token,
+          statuses: const ['IN_PREPARATION', 'OUT_FOR_DELIVERY'],
+        ),
+        _fetchManagerOrders(token, statuses: const ['DELIVERED', 'CANCELLED']),
+      ]);
+      final allOrders = [...buckets[0], ...buckets[1], ...buckets[2]];
+      parseTime.stop();
 
-      if (response.statusCode == 200) {
-        final parseTime = Stopwatch()..start();
-        final allOrders = _parseResponse(response.body);
-        parseTime.stop();
+      // Optimized filtering with pre-allocated lists. Keep this classification
+      // as a second pass so rows with legacy status labels still land correctly.
+      final confirmationOrders = <Map<String, dynamic>>[];
+      final processingOrders = <Map<String, dynamic>>[];
+      final completedOrders = <Map<String, dynamic>>[];
 
-        // Optimized filtering with pre-allocated lists
-        final confirmationOrders = <Map<String, dynamic>>[];
-        final processingOrders = <Map<String, dynamic>>[];
-        final completedOrders = <Map<String, dynamic>>[];
-
-        // Use forEach instead of for loop for better performance
-        allOrders.forEach((order) {
-          final status = (order['status'] as String? ?? '').toLowerCase();
-          switch (status) {
-            case 'pending_cashier':
-            case 'pending':
-              confirmationOrders.add(order);
-              break;
-            case 'in_preparation':
-            case 'confirmed':
-            case 'preparing':
-            case 'out_for_delivery':
-              processingOrders.add(order);
-              break;
-            case 'delivered':
-            case 'cancelled':
-              completedOrders.add(order);
-              break;
-            default:
-              processingOrders.add(order);
-              break;
-          }
-        });
-
-        setState(() {
-          _confirmationOrders = confirmationOrders;
-          _processingOrders = processingOrders;
-          _completedOrders = completedOrders;
-          _lastFetchTime = DateTime.now();
-        });
-
-        stopwatch.stop();
-        print(
-          'Performance: Load took ${stopwatch.elapsedMilliseconds}ms, Parse took ${parseTime.elapsedMilliseconds}ms',
-        );
-      } else {
-        final errorMessage =
-            response.statusCode == 401
-                ? 'Authentication failed. Please log in again.'
-                : response.statusCode == 403
-                ? 'Access denied. You need manager permissions to view orders.'
-                : 'Failed to load orders (Status: ${response.statusCode})';
-        throw Exception(errorMessage);
+      for (final order in allOrders) {
+        final status = _normalizedStatus(order['status']);
+        if (_isPendingStatus(status)) {
+          confirmationOrders.add(order);
+        } else if (_isCompletedStatus(status) || _isCancelledStatus(status)) {
+          completedOrders.add(order);
+        } else if (_isProcessingStatus(status)) {
+          processingOrders.add(order);
+        } else {
+          processingOrders.add(order);
+        }
       }
+
+      setState(() {
+        _confirmationOrders = confirmationOrders;
+        _processingOrders = processingOrders;
+        _completedOrders = completedOrders;
+        _lastFetchTime = DateTime.now();
+      });
+
+      stopwatch.stop();
+      print(
+        'Performance: Load took ${stopwatch.elapsedMilliseconds}ms, Parse took ${parseTime.elapsedMilliseconds}ms',
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -149,6 +128,42 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     } finally {
       setState(() => _isLoading = false);
     }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchManagerOrders(
+    String token, {
+    required List<String> statuses,
+    int limit = 200,
+  }) async {
+    final query = <String, String>{
+      'limit': '$limit',
+      if (statuses.isNotEmpty) 'status': statuses.join(','),
+    };
+    final uri = Uri.parse(
+      '$apiBaseUrl/api/manager/restaurant/orders',
+    ).replace(queryParameters: query);
+    final response = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      final errorMessage =
+          response.statusCode == 401
+              ? 'Authentication failed. Please log in again.'
+              : response.statusCode == 403
+              ? 'Access denied. You need manager permissions to view orders.'
+              : 'Failed to load orders (Status: ${response.statusCode})';
+      throw Exception(errorMessage);
+    }
+
+    return _parseResponse(response.body)
+        .whereType<Map>()
+        .map((order) => Map<String, dynamic>.from(order))
+        .toList();
   }
 
   void _refreshOrders() {
@@ -172,6 +187,29 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     }
     return 0.0;
   }
+
+  String _normalizedStatus(dynamic raw) {
+    final value = (raw ?? '').toString().trim().toLowerCase();
+    return value.replaceAll(' ', '_');
+  }
+
+  bool _isPendingStatus(String status) =>
+      status == 'pending_cashier' ||
+      status == 'pending' ||
+      status == 'waiting_for_order_confirmation' ||
+      status == 'waiting_for_payment_confirmation';
+
+  bool _isProcessingStatus(String status) =>
+      status == 'in_preparation' ||
+      status == 'confirmed' ||
+      status == 'preparing' ||
+      status == 'out_for_delivery' ||
+      status == 'order_confirmed';
+
+  bool _isCompletedStatus(String status) =>
+      status == 'delivered' || status == 'completed';
+
+  bool _isCancelledStatus(String status) => status == 'cancelled';
 
   String _formatDateTimeCell(dynamic raw) {
     if (raw == null) return 'N/A';
@@ -221,7 +259,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     // Optimistic update: Update UI immediately
     final originalOrder = _findOrderById(orderId);
     if (originalOrder != null) {
-      _optimisticallyUpdateOrder(orderId, newStatus, deliveryUrl);
+      _optimisticallyUpdateOrder(originalOrder, newStatus, deliveryUrl);
     }
 
     try {
@@ -279,33 +317,28 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   void _optimisticallyUpdateOrder(
-    String orderId,
+    Map<String, dynamic> originalOrder,
     String newStatus,
     String? deliveryUrl,
   ) {
     setState(() {
       // Remove from current list
-      _removeOrderFromAllLists(orderId);
+      _removeOrderFromAllLists(originalOrder['id']?.toString() ?? '');
 
       // Add to appropriate new list with updated status
-      final updatedOrder = _findOrderById(orderId);
-      if (updatedOrder != null) {
-        updatedOrder['status'] = newStatus;
-        if (deliveryUrl != null) {
-          updatedOrder['delivery_tracking_url'] = deliveryUrl;
-        }
+      final updatedOrder = Map<String, dynamic>.from(originalOrder);
+      updatedOrder['status'] = newStatus;
+      if (deliveryUrl != null) {
+        updatedOrder['delivery_tracking_url'] = deliveryUrl;
+      }
 
-        final s = newStatus.toLowerCase();
-        if (s == 'pending_cashier' || s == 'pending') {
-          _confirmationOrders.add(updatedOrder);
-        } else if (s == 'in_preparation' ||
-            s == 'confirmed' ||
-            s == 'preparing' ||
-            s == 'out_for_delivery') {
-          _processingOrders.add(updatedOrder);
-        } else if (s == 'delivered' || s == 'cancelled') {
-          _completedOrders.add(updatedOrder);
-        }
+      final s = _normalizedStatus(newStatus);
+      if (_isPendingStatus(s)) {
+        _confirmationOrders.add(updatedOrder);
+      } else if (_isCompletedStatus(s) || _isCancelledStatus(s)) {
+        _completedOrders.add(updatedOrder);
+      } else {
+        _processingOrders.add(updatedOrder);
       }
     });
   }
@@ -314,16 +347,13 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     setState(() {
       _removeOrderFromAllLists(orderId);
 
-      final status = (originalOrder['status'] as String? ?? '').toLowerCase();
-      if (status == 'pending_cashier' || status == 'pending') {
+      final status = _normalizedStatus(originalOrder['status']);
+      if (_isPendingStatus(status)) {
         _confirmationOrders.add(originalOrder);
-      } else if (status == 'in_preparation' ||
-          status == 'confirmed' ||
-          status == 'preparing' ||
-          status == 'out_for_delivery') {
-        _processingOrders.add(originalOrder);
-      } else if (status == 'delivered' || status == 'cancelled') {
+      } else if (_isCompletedStatus(status) || _isCancelledStatus(status)) {
         _completedOrders.add(originalOrder);
+      } else {
+        _processingOrders.add(originalOrder);
       }
     });
   }
@@ -657,21 +687,21 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             children: [
               _buildSummaryCard(
                 'Completed Orders',
-                '${_completedOrders.where((o) => o['status'] == 'completed').length}',
+                '${_completedOrders.where((o) => _isCompletedStatus(_normalizedStatus(o['status']))).length}',
                 Icons.check_circle,
                 Colors.green,
               ),
               const SizedBox(width: 16),
               _buildSummaryCard(
                 'Cancelled Orders',
-                '${_completedOrders.where((o) => o['status'] == 'cancelled').length}',
+                '${_completedOrders.where((o) => _isCancelledStatus(_normalizedStatus(o['status']))).length}',
                 Icons.cancel,
                 Colors.red,
               ),
               const SizedBox(width: 16),
               _buildSummaryCard(
                 'Total Revenue',
-                '$_currencySymbol${_completedOrders.where((o) => o['status'] == 'completed').fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
+                '$_currencySymbol${_completedOrders.where((o) => _isCompletedStatus(_normalizedStatus(o['status']))).fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
                 Icons.attach_money,
                 Colors.green,
               ),
@@ -758,13 +788,14 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                               item['name'] ??
                               item['dishName'] ??
                               'Unknown dish';
-                          final desc = (item['description'] ??
-                                  item['public_description'] ??
-                                  item['publicDescription'] ??
-                                  item['category'] ??
-                                  '')
-                              .toString()
-                              .trim();
+                          final desc =
+                              (item['description'] ??
+                                      item['public_description'] ??
+                                      item['publicDescription'] ??
+                                      item['category'] ??
+                                      '')
+                                  .toString()
+                                  .trim();
                           final qty = item['quantity'] ?? 1;
                           final price = item['price'] ?? '0';
                           return Column(
@@ -810,7 +841,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
+    switch (_normalizedStatus(status)) {
       case 'pending_cashier':
       case 'pending':
         return Colors.orange;
@@ -895,10 +926,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   String _shortOrderId(dynamic rawId, dynamic orderNo) {
-    return formatRestaurantOrderNo({
-      'order_no': orderNo,
-      'id': rawId,
-    });
+    return formatRestaurantOrderNo({'order_no': orderNo, 'id': rawId});
   }
 
   Widget _buildOrderTableRow(Map<String, dynamic> order, int index) {
@@ -942,7 +970,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               Expanded(
                 flex: 1,
                 child: _buildTableCell(
-                  _formatDateTimeCell(order['delivery_time'] ?? order['created_at']),
+                  _formatDateTimeCell(
+                    order['delivery_time'] ?? order['created_at'],
+                  ),
                 ),
               ),
               Expanded(
@@ -1098,6 +1128,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   Widget _buildProcessingOrderTableRow(Map<String, dynamic> order, int index) {
     final items = (order['items'] as List<dynamic>?) ?? [];
     final status = order['status'] as String? ?? 'processing';
+    final normalizedStatus = _normalizedStatus(status);
     final isEven = index % 2 == 0;
 
     return InkWell(
@@ -1134,7 +1165,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               Expanded(
                 flex: 1,
                 child: _buildTableCell(
-                  _formatDateTimeCell(order['delivery_time'] ?? order['created_at']),
+                  _formatDateTimeCell(
+                    order['delivery_time'] ?? order['created_at'],
+                  ),
                 ),
               ),
               Expanded(
@@ -1183,7 +1216,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                       order['payment_status'] as String? ?? 'pending',
                     ),
                     const SizedBox(width: 8),
-                    if (status == 'in_preparation') ...[
+                    if (normalizedStatus == 'in_preparation') ...[
                       GestureDetector(
                         onTap: () => _showDeliveryUrlDialog(order['id']),
                         child: MouseRegion(
@@ -1220,7 +1253,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                         ),
                       ),
                     ],
-                    if (status == 'out_for_delivery') ...[
+                    if (normalizedStatus == 'out_for_delivery') ...[
                       GestureDetector(
                         onTap: () => _markDelivered(order['id']),
                         child: MouseRegion(
@@ -1307,7 +1340,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               Expanded(
                 flex: 1,
                 child: _buildTableCell(
-                  _formatDateTimeCell(order['delivery_time'] ?? order['created_at']),
+                  _formatDateTimeCell(
+                    order['delivery_time'] ?? order['created_at'],
+                  ),
                 ),
               ),
               Expanded(
@@ -1352,7 +1387,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Expanded(child: _buildPaymentStatusBadge(paymentStatus)),
+                    _buildPaymentStatusBadge(paymentStatus),
                   ],
                 ),
               ),
@@ -1420,7 +1455,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     if (proof == null) return null;
     final s = proof.toString().trim();
     if (s.isEmpty) return null;
-    if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('data:')) {
+    if (s.startsWith('http://') ||
+        s.startsWith('https://') ||
+        s.startsWith('data:')) {
       return s;
     }
     if (s.startsWith('/')) return '$apiBaseUrl$s';
@@ -1436,11 +1473,12 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     final total = _parseAmount(order['total_amount']);
     final isMobile = _isMobileRestaurantOrder(order);
     final paymentRef = isMobile ? '' : _webPaymentReference(order);
-    final proofUrl = isMobile
-        ? _paymentProofImageUrl(
-            order['payment_proof_initial'] ?? order['payment_proof'],
-          )
-        : null;
+    final proofUrl =
+        isMobile
+            ? _paymentProofImageUrl(
+              order['payment_proof_initial'] ?? order['payment_proof'],
+            )
+            : null;
     final amountController = TextEditingController(
       text: total > 0 ? total.toStringAsFixed(2) : '',
     );
@@ -1449,205 +1487,264 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final paid = double.tryParse(amountController.text.trim()) ?? 0;
-          final change = paid - total;
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              final paid = double.tryParse(amountController.text.trim()) ?? 0;
+              final change = paid - total;
 
-          return Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 480),
-              padding: const EdgeInsets.all(24),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'CONFIRM PAYMENT',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: submitting
-                              ? null
-                              : () => Navigator.of(dialogContext).pop(),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Order ${formatRestaurantOrderNo(order)}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    Text('Order total: $_currencySymbol${total.toStringAsFixed(2)}'),
-                    if (paymentRef.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text('Reference: $paymentRef'),
-                    ],
-                    if (proofUrl != null) ...[
-                      const SizedBox(height: 12),
-                      const Text('Payment proof', style: TextStyle(fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 8),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          proofUrl,
-                          height: 180,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Text('Unable to load image'),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: amountController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Amount paid by customer',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      onChanged: (_) => setDialogState(() => errorText = null),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Change: $_currencySymbol${change >= 0 ? change.toStringAsFixed(2) : '0.00'}',
-                      style: TextStyle(
-                        color: change >= 0 ? Colors.green.shade700 : Colors.red.shade700,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (errorText != null) ...[
-                      const SizedBox(height: 8),
-                      Text(errorText!, style: TextStyle(color: Colors.red.shade700, fontSize: 12)),
-                    ],
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: submitting
-                                ? null
-                                : () async {
-                                    if (paid < total) {
-                                      setDialogState(() {
-                                        errorText =
-                                            'Payment is insufficient. Notify the customer or collect the correct amount.';
-                                      });
-                                      return;
-                                    }
-                                    setDialogState(() => submitting = true);
-                                    try {
-                                      final token = await _getAuthToken();
-                                      final response = await http.post(
-                                        Uri.parse(
-                                          '$apiBaseUrl/api/manager/restaurant/orders/$orderId/confirm-payment',
-                                        ),
-                                        headers: {
-                                          'Authorization': 'Bearer $token',
-                                          'Content-Type': 'application/json',
-                                        },
-                                        body: jsonEncode({'amountPaid': paid}),
-                                      );
-                                      if (response.statusCode == 200) {
-                                        if (dialogContext.mounted) {
-                                          Navigator.of(dialogContext).pop();
-                                        }
-                                        await _loadOrders(forceRefresh: true);
-                                        if (mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            const SnackBar(
-                                              content: Text('Payment confirmed — order in preparation'),
-                                            ),
-                                          );
-                                        }
-                                      } else if (response.statusCode == 400) {
-                                        setDialogState(() {
-                                          errorText = 'Insufficient payment amount';
-                                          submitting = false;
-                                        });
-                                      } else {
-                                        throw Exception(response.body);
-                                      }
-                                    } catch (e) {
-                                      setDialogState(() {
-                                        errorText = e.toString();
-                                        submitting = false;
-                                      });
-                                    }
-                                  },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFFFC024),
-                              foregroundColor: Colors.black,
-                            ),
-                            child: submitting
-                                ? const SizedBox(
-                                    height: 18,
-                                    width: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Text('CONFIRM & START PREP'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (paid < total && paid > 0) ...[
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton(
-                          onPressed: submitting
-                              ? null
-                              : () async {
-                                  try {
-                                    final token = await _getAuthToken();
-                                    await http.post(
-                                      Uri.parse(
-                                        '$apiBaseUrl/api/manager/restaurant/orders/$orderId/notify-insufficient-payment',
-                                      ),
-                                      headers: {
-                                        'Authorization': 'Bearer $token',
-                                        'Content-Type': 'application/json',
-                                      },
-                                      body: jsonEncode({'amountPaid': paid}),
-                                    );
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Customer notified about insufficient payment'),
-                                        ),
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Failed to notify: $e')),
-                                      );
-                                    }
-                                  }
-                                },
-                          child: const Text('EMAIL CUSTOMER (INSUFFICIENT PAYMENT)'),
-                        ),
-                      ),
-                    ],
-                  ],
+              return Dialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
                 ),
-              ),
-            ),
-          );
-        },
-      ),
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  padding: const EdgeInsets.all(24),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'CONFIRM PAYMENT',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                            IconButton(
+                              onPressed:
+                                  submitting
+                                      ? null
+                                      : () => Navigator.of(dialogContext).pop(),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Order ${formatRestaurantOrderNo(order)}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Order total: $_currencySymbol${total.toStringAsFixed(2)}',
+                        ),
+                        if (paymentRef.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text('Reference: $paymentRef'),
+                        ],
+                        if (proofUrl != null) ...[
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Payment proof',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 8),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(
+                              proofUrl,
+                              height: 180,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder:
+                                  (_, __, ___) =>
+                                      const Text('Unable to load image'),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: amountController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Amount paid by customer',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          onChanged:
+                              (_) => setDialogState(() => errorText = null),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Change: $_currencySymbol${change >= 0 ? change.toStringAsFixed(2) : '0.00'}',
+                          style: TextStyle(
+                            color:
+                                change >= 0
+                                    ? Colors.green.shade700
+                                    : Colors.red.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (errorText != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            errorText!,
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 20),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed:
+                                    submitting
+                                        ? null
+                                        : () async {
+                                          if (paid < total) {
+                                            setDialogState(() {
+                                              errorText =
+                                                  'Payment is insufficient. Notify the customer or collect the correct amount.';
+                                            });
+                                            return;
+                                          }
+                                          setDialogState(
+                                            () => submitting = true,
+                                          );
+                                          try {
+                                            final token = await _getAuthToken();
+                                            final response = await http.post(
+                                              Uri.parse(
+                                                '$apiBaseUrl/api/manager/restaurant/orders/$orderId/confirm-payment',
+                                              ),
+                                              headers: {
+                                                'Authorization':
+                                                    'Bearer $token',
+                                                'Content-Type':
+                                                    'application/json',
+                                              },
+                                              body: jsonEncode({
+                                                'amountPaid': paid,
+                                              }),
+                                            );
+                                            if (response.statusCode == 200) {
+                                              if (dialogContext.mounted) {
+                                                Navigator.of(
+                                                  dialogContext,
+                                                ).pop();
+                                              }
+                                              await _loadOrders(
+                                                forceRefresh: true,
+                                              );
+                                              if (mounted) {
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'Payment confirmed — order in preparation',
+                                                    ),
+                                                  ),
+                                                );
+                                              }
+                                            } else if (response.statusCode ==
+                                                400) {
+                                              setDialogState(() {
+                                                errorText =
+                                                    'Insufficient payment amount';
+                                                submitting = false;
+                                              });
+                                            } else {
+                                              throw Exception(response.body);
+                                            }
+                                          } catch (e) {
+                                            setDialogState(() {
+                                              errorText = e.toString();
+                                              submitting = false;
+                                            });
+                                          }
+                                        },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFFFC024),
+                                  foregroundColor: Colors.black,
+                                ),
+                                child:
+                                    submitting
+                                        ? const SizedBox(
+                                          height: 18,
+                                          width: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                        : const Text('CONFIRM & START PREP'),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (paid < total && paid > 0) ...[
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton(
+                              onPressed:
+                                  submitting
+                                      ? null
+                                      : () async {
+                                        try {
+                                          final token = await _getAuthToken();
+                                          await http.post(
+                                            Uri.parse(
+                                              '$apiBaseUrl/api/manager/restaurant/orders/$orderId/notify-insufficient-payment',
+                                            ),
+                                            headers: {
+                                              'Authorization': 'Bearer $token',
+                                              'Content-Type':
+                                                  'application/json',
+                                            },
+                                            body: jsonEncode({
+                                              'amountPaid': paid,
+                                            }),
+                                          );
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  'Customer notified about insufficient payment',
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        } catch (e) {
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  'Failed to notify: $e',
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      },
+                              child: const Text(
+                                'EMAIL CUSTOMER (INSUFFICIENT PAYMENT)',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
     );
 
     amountController.dispose();
@@ -1750,7 +1847,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       try {
         final token = await _getAuthToken();
         final response = await http.post(
-          Uri.parse('$apiBaseUrl/api/manager/restaurant/orders/$orderId/cancel'),
+          Uri.parse(
+            '$apiBaseUrl/api/manager/restaurant/orders/$orderId/cancel',
+          ),
           headers: {
             'Authorization': 'Bearer $token',
             'Content-Type': 'application/json',
@@ -1759,18 +1858,18 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         if (response.statusCode == 200) {
           await _loadOrders(forceRefresh: true);
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Order cancelled')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Order cancelled')));
           }
         } else {
           throw Exception(response.body);
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Cancel failed: $e')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Cancel failed: $e')));
         }
       }
     }

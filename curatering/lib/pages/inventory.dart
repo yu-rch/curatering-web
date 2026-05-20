@@ -86,6 +86,7 @@ class InventoryItem {
         (json['itemCode'] ?? json['itemNo'] ?? json['item_code'] ?? '')
             .toString()
             .trim();
+    final parsedUpdated = DateTime.tryParse('${json['lastUpdated']}');
     return InventoryItem(
       id: json['id']?.toString() ?? '',
       itemCode:
@@ -103,8 +104,7 @@ class InventoryItem {
               ? (json['unitCost'] as num).toDouble()
               : double.tryParse('${json['unitCost']}') ?? 0,
       unit: (json['unit'] ?? 'pcs').toString(),
-      lastUpdated:
-          DateTime.tryParse('${json['lastUpdated']}') ?? DateTime.now(),
+      lastUpdated: parsedUpdated?.toLocal() ?? DateTime.now(),
       notes: json['notes']?.toString(),
       lowStock: json['lowStock'] == true,
       available: json['available'] != false,
@@ -260,33 +260,46 @@ class _InventoryState extends State<Inventory> {
     _filteredActive =
         _activeItems.where((item) {
           if (q.isNotEmpty && !_matchesInventoryPrefix(item, q)) return false;
-          if (_categoryFilter != 'all' && item.category != _categoryFilter) {
+          if (_categoryFilter != 'all' && !_matchesCategoryFilter(item)) {
             return false;
           }
-          if (_stockFilter == 'ok' && (item.lowStock || !item.available)) {
-            return false;
-          }
-          if (_stockFilter == 'low' && (!item.lowStock || !item.available)) {
-            return false;
-          }
-          if (_stockFilter == 'unavailable' && item.available) {
-            return false;
-          }
+          if (!_matchesStockFilter(item)) return false;
+          final updated = item.lastUpdated.toLocal();
           if (_updatedYearFilter != null &&
-              item.lastUpdated.year != _updatedYearFilter) {
+              updated.year != _updatedYearFilter) {
             return false;
           }
           if (_updatedMonthFilter != null &&
-              item.lastUpdated.month != _updatedMonthFilter) {
+              updated.month != _updatedMonthFilter) {
             return false;
           }
-          if (_updatedDayFilter != null &&
-              item.lastUpdated.day != _updatedDayFilter) {
+          if (_updatedDayFilter != null && updated.day != _updatedDayFilter) {
             return false;
           }
           return true;
         }).toList();
     _sortList(_filteredActive);
+  }
+
+  String _filterKey(String value) =>
+      value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+  bool _matchesCategoryFilter(InventoryItem item) {
+    return _filterKey(item.category) == _filterKey(_categoryFilter);
+  }
+
+  bool _matchesStockFilter(InventoryItem item) {
+    switch (_stockFilter) {
+      case 'ok':
+        return item.available && !item.lowStock;
+      case 'low':
+        return item.available && item.lowStock;
+      case 'unavailable':
+        return !item.available;
+      case 'all':
+      default:
+        return true;
+    }
   }
 
   bool _matchesInventoryPrefix(InventoryItem item, String query) {
@@ -1064,42 +1077,35 @@ class _InventoryState extends State<Inventory> {
         {
             for (final item in _activeItems) item.category,
             ..._categories,
+            if (_categoryFilter != 'all') _categoryFilter,
           }.where((e) => e.trim().isNotEmpty).toList()
           ..sort();
-    if (_categoryFilter != 'all' &&
-        !categoryOptions.contains(_categoryFilter)) {
-      _categoryFilter = 'all';
-    }
     final years =
-        {for (final item in _activeItems) item.lastUpdated.year}.toList()
+        {
+            for (final item in _activeItems) item.lastUpdated.toLocal().year,
+            if (_updatedYearFilter != null) _updatedYearFilter!,
+          }.toList()
           ..sort((a, b) => b.compareTo(a));
-    if (_updatedYearFilter != null && !years.contains(_updatedYearFilter)) {
-      _updatedYearFilter = null;
-    }
     final months =
         {
             for (final item in _activeItems)
               if (_updatedYearFilter == null ||
-                  item.lastUpdated.year == _updatedYearFilter)
-                item.lastUpdated.month,
+                  item.lastUpdated.toLocal().year == _updatedYearFilter)
+                item.lastUpdated.toLocal().month,
+            if (_updatedMonthFilter != null) _updatedMonthFilter!,
           }.toList()
           ..sort();
-    if (_updatedMonthFilter != null && !months.contains(_updatedMonthFilter)) {
-      _updatedMonthFilter = null;
-    }
     final days =
         {
             for (final item in _activeItems)
               if ((_updatedYearFilter == null ||
-                      item.lastUpdated.year == _updatedYearFilter) &&
+                      item.lastUpdated.toLocal().year == _updatedYearFilter) &&
                   (_updatedMonthFilter == null ||
-                      item.lastUpdated.month == _updatedMonthFilter))
-                item.lastUpdated.day,
+                      item.lastUpdated.toLocal().month == _updatedMonthFilter))
+                item.lastUpdated.toLocal().day,
+            if (_updatedDayFilter != null) _updatedDayFilter!,
           }.toList()
           ..sort();
-    if (_updatedDayFilter != null && !days.contains(_updatedDayFilter)) {
-      _updatedDayFilter = null;
-    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Wrap(
@@ -1302,7 +1308,7 @@ class _InventoryState extends State<Inventory> {
                       child: Text(
                         _activeItems.isEmpty
                             ? 'No inventory items'
-                            : 'No matches for your search',
+                            : 'No inventory items match the active filters',
                         style: TextStyle(color: Colors.grey.shade600),
                       ),
                     )

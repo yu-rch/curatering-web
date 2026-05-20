@@ -401,8 +401,10 @@ class _InquirePageState extends State<InquirePage> {
         _inquiryEventTypeOtherController.text.trim().isEmpty) {
       err('eventTypeOther', 'Please specify the event type');
     }
-    if (_customer.text.trim().isEmpty) err('customer', 'Please enter your name');
-    if (_contactPerson.text.trim().isEmpty) err('contactPerson', 'Please enter a contact person');
+    if (_customer.text.trim().isEmpty)
+      err('customer', 'Please enter your name');
+    if (_contactPerson.text.trim().isEmpty)
+      err('contactPerson', 'Please enter a contact person');
     if (_phone.text.trim().isEmpty) err('phone', 'Please enter a phone number');
     if (_email.text.trim().isEmpty) {
       err('email', 'Please enter an email address');
@@ -416,7 +418,8 @@ class _InquirePageState extends State<InquirePage> {
     } else if (!isAllowedCateringAddress(_address.text)) {
       err('address', cateringCoverageError);
     }
-    if (_dateController.text.trim().isEmpty) err('date', 'Please select an event date');
+    if (_dateController.text.trim().isEmpty)
+      err('date', 'Please select an event date');
     if (_timeController.text.trim().isEmpty) {
       err('time', 'Please select an event time');
     }
@@ -435,7 +438,10 @@ class _InquirePageState extends State<InquirePage> {
     if (_serviceType == 'catering') {
       final guests = int.tryParse(_guests.text.trim()) ?? 0;
       if (guests > 0 && guests < 50 && _includeCateringService == null) {
-        err('cateringService', 'Please choose whether to include catering service');
+        err(
+          'cateringService',
+          'Please choose whether to include catering service',
+        );
       }
     }
 
@@ -481,7 +487,11 @@ class _InquirePageState extends State<InquirePage> {
 
   void _goNextFromDesignChoice() {
     if (_eventDesignMode == null) {
-      setState(() => _fieldErrors['eventDesignMode'] = 'Please choose who will design your event');
+      setState(
+        () =>
+            _fieldErrors['eventDesignMode'] =
+                'Please choose who will design your event',
+      );
       return;
     }
     setState(() {
@@ -510,10 +520,12 @@ class _InquirePageState extends State<InquirePage> {
       };
     }
     if (_eventDesignMode == 'customer') {
-      final style = _resolvedCategory(_selectedStyle, _styleOtherController) ?? '';
+      final style =
+          _resolvedCategory(_selectedStyle, _styleOtherController) ?? '';
       final mood = _resolvedCategory(_selectedMood, _moodOtherController) ?? '';
       final eventType =
-          _resolvedCategory(_selectedEventType, _eventTypeOtherController) ?? '';
+          _resolvedCategory(_selectedEventType, _eventTypeOtherController) ??
+          '';
       final colors = _resolvedMultiSelectWithOther(
         _selectedColors,
         _colorOtherController,
@@ -554,43 +566,43 @@ class _InquirePageState extends State<InquirePage> {
 
   void _clearForm() {
     setState(() {
-    _eventTitle.clear();
-    _customer.clear();
-    _contactPerson.clear();
-    _phone.clear();
-    _email.clear();
-    _address.clear();
-    _addressLat = null;
-    _addressLng = null;
-    _guests.clear();
-    _dateController.clear();
-    _timeController.clear();
-    _eventType = 'Birthday';
-    _inquiryEventTypeOtherController.clear();
-    _formality = 'casual';
-    _serviceType = 'catering';
-    _formPhase = 0;
-    _eventDesignMode = null;
-    _macrinaPalette.clear();
-    _macrinaTheme.clear();
-    _fieldErrors.clear();
-    _venueFieldError = null;
-    _genAiError = null;
-    _menuPrefTabIndex = 0;
-    _includeCateringService = null;
-    _selectedDishIds.clear();
-    _menuSelections.clear();
-    // Reset event design
-    _wantsCustomDesign = false;
-    _selectedEventType = null;
-    _selectedStyle = null;
-    _selectedMood = null;
-    _selectedColors.clear();
-    _selectedDecor.clear();
-    _colorOtherController.clear();
-    _decorOtherController.clear();
-    _designPromptController.clear();
-    _venuePhotoBase64 = null;
+      _eventTitle.clear();
+      _customer.clear();
+      _contactPerson.clear();
+      _phone.clear();
+      _email.clear();
+      _address.clear();
+      _addressLat = null;
+      _addressLng = null;
+      _guests.clear();
+      _dateController.clear();
+      _timeController.clear();
+      _eventType = 'Birthday';
+      _inquiryEventTypeOtherController.clear();
+      _formality = 'casual';
+      _serviceType = 'catering';
+      _formPhase = 0;
+      _eventDesignMode = null;
+      _macrinaPalette.clear();
+      _macrinaTheme.clear();
+      _fieldErrors.clear();
+      _venueFieldError = null;
+      _genAiError = null;
+      _menuPrefTabIndex = 0;
+      _includeCateringService = null;
+      _selectedDishIds.clear();
+      _menuSelections.clear();
+      // Reset event design
+      _wantsCustomDesign = false;
+      _selectedEventType = null;
+      _selectedStyle = null;
+      _selectedMood = null;
+      _selectedColors.clear();
+      _selectedDecor.clear();
+      _colorOtherController.clear();
+      _decorOtherController.clear();
+      _designPromptController.clear();
+      _venuePhotoBase64 = null;
     });
   }
 
@@ -668,11 +680,7 @@ class _InquirePageState extends State<InquirePage> {
     if (isMobile(context)) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          left,
-          const SizedBox(height: 16),
-          right,
-        ],
+        children: [left, const SizedBox(height: 16), right],
       );
     }
     return Row(
@@ -747,7 +755,9 @@ class _InquirePageState extends State<InquirePage> {
     }
 
     final eventTypeValue =
-        _inquiryEventTypes.contains(_eventType) ? _eventType : _inquiryEventTypes.first;
+        _inquiryEventTypes.contains(_eventType)
+            ? _eventType
+            : _inquiryEventTypes.first;
 
     return [
       _inquirySectionTitle('Event Information'),
@@ -761,7 +771,10 @@ class _InquirePageState extends State<InquirePage> {
         children: [
           Expanded(
             child: RadioListTile<String>(
-              title: const Text('Catering Only', style: TextStyle(fontSize: 14)),
+              title: const Text(
+                'Catering Only',
+                style: TextStyle(fontSize: 14),
+              ),
               value: 'catering',
               groupValue: _serviceType,
               onChanged: (value) {
@@ -789,7 +802,9 @@ class _InquirePageState extends State<InquirePage> {
                 if (value != null) {
                   setState(() {
                     _serviceType = value;
-                    _selectedEventType = _mapInquiryEventTypeToDesign(_eventType);
+                    _selectedEventType = _mapInquiryEventTypeToDesign(
+                      _eventType,
+                    );
                   });
                 }
               },
@@ -1006,16 +1021,15 @@ class _InquirePageState extends State<InquirePage> {
               final now = DateTime.now();
               final pickedDate = await showDatePicker(
                 context: context,
-                initialDate:
-                    DateTime.tryParse(_dateController.text) ?? now,
+                initialDate: DateTime.tryParse(_dateController.text) ?? now,
                 firstDate: now,
                 lastDate: now.add(const Duration(days: 365 * 2)),
               );
               if (pickedDate != null) {
                 setState(() {
-                  _dateController.text = DateFormat('yyyy-MM-dd').format(
-                    pickedDate,
-                  );
+                  _dateController.text = DateFormat(
+                    'yyyy-MM-dd',
+                  ).format(pickedDate);
                   _fieldErrors.remove('date');
                 });
               }
@@ -1102,7 +1116,10 @@ class _InquirePageState extends State<InquirePage> {
                   children: [
                     Expanded(
                       child: RadioListTile<bool>(
-                        title: const Text('Yes', style: TextStyle(fontSize: 14)),
+                        title: const Text(
+                          'Yes',
+                          style: TextStyle(fontSize: 14),
+                        ),
                         value: true,
                         groupValue: _includeCateringService,
                         onChanged: (v) {
@@ -1146,7 +1163,10 @@ class _InquirePageState extends State<InquirePage> {
                     _fieldErrors['cateringService']!.isNotEmpty)
                   Text(
                     _fieldErrors['cateringService']!,
-                    style: const TextStyle(color: Color(0xFFFF4D4F), fontSize: 12),
+                    style: const TextStyle(
+                      color: Color(0xFFFF4D4F),
+                      fontSize: 12,
+                    ),
                   ),
                 const SizedBox(height: 16),
               ],
@@ -1166,10 +1186,12 @@ class _InquirePageState extends State<InquirePage> {
             selected: _menuPrefTabIndex == 0,
             selectedColor: AntdTokens.brandPrimary,
             labelStyle: TextStyle(
-              color: _menuPrefTabIndex == 0
-                  ? AntdTokens.brandOnPrimary
-                  : Colors.black87,
-              fontWeight: _menuPrefTabIndex == 0 ? FontWeight.w700 : FontWeight.normal,
+              color:
+                  _menuPrefTabIndex == 0
+                      ? AntdTokens.brandOnPrimary
+                      : Colors.black87,
+              fontWeight:
+                  _menuPrefTabIndex == 0 ? FontWeight.w700 : FontWeight.normal,
             ),
             onSelected: (_) => _switchMenuPrefTab(0),
           ),
@@ -1178,10 +1200,12 @@ class _InquirePageState extends State<InquirePage> {
             selected: _menuPrefTabIndex == 1,
             selectedColor: AntdTokens.brandPrimary,
             labelStyle: TextStyle(
-              color: _menuPrefTabIndex == 1
-                  ? AntdTokens.brandOnPrimary
-                  : Colors.black87,
-              fontWeight: _menuPrefTabIndex == 1 ? FontWeight.w700 : FontWeight.normal,
+              color:
+                  _menuPrefTabIndex == 1
+                      ? AntdTokens.brandOnPrimary
+                      : Colors.black87,
+              fontWeight:
+                  _menuPrefTabIndex == 1 ? FontWeight.w700 : FontWeight.normal,
             ),
             onSelected: (_) => _switchMenuPrefTab(1),
           ),
@@ -1364,9 +1388,10 @@ class _InquirePageState extends State<InquirePage> {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: selected
-              ? AntdTokens.brandPrimary.withValues(alpha: 0.12)
-              : Colors.white,
+          color:
+              selected
+                  ? AntdTokens.brandPrimary.withValues(alpha: 0.12)
+                  : Colors.white,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: selected ? AntdTokens.brandPrimary : Colors.grey.shade300,
@@ -1380,18 +1405,18 @@ class _InquirePageState extends State<InquirePage> {
               children: [
                 Icon(
                   icon,
-                  color: selected
-                      ? AntdTokens.brandOnPrimary
-                      : Colors.grey.shade700,
+                  color:
+                      selected
+                          ? AntdTokens.brandOnPrimary
+                          : Colors.grey.shade700,
                 ),
                 const Spacer(),
                 Icon(
                   selected
                       ? Icons.radio_button_checked
                       : Icons.radio_button_off,
-                  color: selected
-                      ? AntdTokens.brandPrimary
-                      : Colors.grey.shade500,
+                  color:
+                      selected ? AntdTokens.brandPrimary : Colors.grey.shade500,
                   size: 22,
                 ),
               ],
@@ -1424,7 +1449,8 @@ class _InquirePageState extends State<InquirePage> {
         _buildEventDesignModeCard(
           value: 'macrina',
           title: 'Have Macrina\'s design my event',
-          subtitle: 'Share your palette and theme; our team will propose a look.',
+          subtitle:
+              'Share your palette and theme; our team will propose a look.',
           icon: Icons.palette_outlined,
         ),
         const SizedBox(width: 12),
@@ -1460,7 +1486,8 @@ class _InquirePageState extends State<InquirePage> {
             _buildEventDesignModeCard(
               value: 'customer',
               title: 'I want to design my event',
-              subtitle: 'Use AI to explore styles, then submit with your inquiry.',
+              subtitle:
+                  'Use AI to explore styles, then submit with your inquiry.',
               icon: Icons.auto_awesome_outlined,
               expand: false,
             ),
@@ -1521,10 +1548,7 @@ class _InquirePageState extends State<InquirePage> {
           borderRadius: BorderRadius.circular(8),
           color: Colors.grey.shade50,
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: child,
-        ),
+        child: ClipRRect(borderRadius: BorderRadius.circular(8), child: child),
       );
       if (onTap == null) return framed;
       return _buildTappableImagePreview(
@@ -1549,12 +1573,13 @@ class _InquirePageState extends State<InquirePage> {
         if (hasGenerated) ...[
           previewBox(
             height: minHeight,
-            onTap: () => _openZoomableImage(
-              image: Image.network(
-                _generatedImageUrl!,
-                fit: BoxFit.contain,
-              ),
-            ),
+            onTap:
+                () => _openZoomableImage(
+                  image: Image.network(
+                    _generatedImageUrl!,
+                    fit: BoxFit.contain,
+                  ),
+                ),
             child: Image.network(
               _generatedImageUrl!,
               fit: BoxFit.cover,
@@ -1608,9 +1633,10 @@ class _InquirePageState extends State<InquirePage> {
                       width: 72,
                       decoration: BoxDecoration(
                         border: Border.all(
-                          color: selected
-                              ? const Color(0xFFFFC024)
-                              : Colors.grey.shade300,
+                          color:
+                              selected
+                                  ? const Color(0xFFFFC024)
+                                  : Colors.grey.shade300,
                           width: selected ? 2 : 1,
                         ),
                         borderRadius: BorderRadius.circular(6),
@@ -1623,8 +1649,7 @@ class _InquirePageState extends State<InquirePage> {
               ),
             ),
           ],
-        ]
-        else
+        ] else
           Container(
             height: minHeight,
             alignment: Alignment.center,
@@ -1647,10 +1672,7 @@ class _InquirePageState extends State<InquirePage> {
                   Text(
                     'Your AI concept will appear here after you generate.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade600,
-                    ),
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
                   ),
                 ],
               ),
@@ -1680,12 +1702,13 @@ class _InquirePageState extends State<InquirePage> {
           const SizedBox(height: 6),
           previewBox(
             height: 160,
-            onTap: () => _openZoomableImage(
-              image: Image.memory(
-                base64Decode(_venuePhotoBase64!),
-                fit: BoxFit.contain,
-              ),
-            ),
+            onTap:
+                () => _openZoomableImage(
+                  image: Image.memory(
+                    base64Decode(_venuePhotoBase64!),
+                    fit: BoxFit.contain,
+                  ),
+                ),
             child: Image.memory(
               base64Decode(_venuePhotoBase64!),
               fit: BoxFit.cover,
@@ -1864,20 +1887,21 @@ class _InquirePageState extends State<InquirePage> {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: (_submitting || _generatingDesign) ? null : _generateDesignPrompt,
-            icon: _generatingDesign
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.auto_fix_high),
+            onPressed:
+                (_submitting || _generatingDesign)
+                    ? null
+                    : _generateDesignPrompt,
+            icon:
+                _generatingDesign
+                    ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : const Icon(Icons.auto_fix_high),
             label: Text(
               _generatingDesign ? 'GENERATING…' : 'GENERATE EVENT DESIGN',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFFFC024),
@@ -1900,32 +1924,35 @@ class _InquirePageState extends State<InquirePage> {
             ? 'Generated event design'
             : 'Event design (AI)';
 
-    final layout = wide
-        ? Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(flex: 3, child: _buildAiDesignForm(context)),
-              const SizedBox(width: 24),
-              Expanded(
-                flex: 2,
-                child: _buildAiDesignPreviewPanel(minHeight: 360),
-              ),
-            ],
-          )
-        : Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_generatedImageUrl != null || _venuePhotoBase64 != null) ...[
-                _buildAiDesignPreviewPanel(minHeight: 220),
-                const SizedBox(height: 20),
+    final layout =
+        wide
+            ? Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 3, child: _buildAiDesignForm(context)),
+                const SizedBox(width: 24),
+                Expanded(
+                  flex: 2,
+                  child: _buildAiDesignPreviewPanel(minHeight: 360),
+                ),
               ],
-              _buildAiDesignForm(context),
-              if (_generatedImageUrl == null && _venuePhotoBase64 == null) ...[
-                const SizedBox(height: 20),
-                _buildAiDesignPreviewPanel(minHeight: 160),
+            )
+            : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_generatedImageUrl != null ||
+                    _venuePhotoBase64 != null) ...[
+                  _buildAiDesignPreviewPanel(minHeight: 220),
+                  const SizedBox(height: 20),
+                ],
+                _buildAiDesignForm(context),
+                if (_generatedImageUrl == null &&
+                    _venuePhotoBase64 == null) ...[
+                  const SizedBox(height: 20),
+                  _buildAiDesignPreviewPanel(minHeight: 160),
+                ],
               ],
-            ],
-          );
+            );
 
     return [
       _inquirySectionTitle(title),
@@ -2022,12 +2049,17 @@ class _InquirePageState extends State<InquirePage> {
                         width: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
                         ),
                       )
                       : const Text(
                         'SUBMIT INQUIRY',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
             ),
           ),
@@ -2050,63 +2082,67 @@ class _InquirePageState extends State<InquirePage> {
             child: CenteredViewportScroll(
               padding: websitePagePadding(context),
               child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 24),
-            Text(
-              'INQUIRE',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.getFont(
-                _primaryFont,
-                fontSize: 42,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF1E1E1E),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFC024),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'Inquire for Catering or Event',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1E1E1E),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 24),
+                  Text(
+                    'INQUIRE',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.getFont(
+                      _primaryFont,
+                      fontSize: 42,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF1E1E1E),
+                    ),
                   ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 32),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFC024),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'Inquire for Catering or Event',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E1E1E),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
 
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                  Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_formPhase == 0) ..._buildPhase0Content(context),
+                          if (_formPhase == 1 &&
+                              _serviceType == 'catering+event')
+                            ..._buildPhase1Content(),
+                          if (_formPhase == 2 &&
+                              _serviceType == 'catering+event')
+                            ..._buildPhase2Content(context),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (_formPhase == 0) ..._buildPhase0Content(context),
-                    if (_formPhase == 1 && _serviceType == 'catering+event') ..._buildPhase1Content(),
-                    if (_formPhase == 2 && _serviceType == 'catering+event') ..._buildPhase2Content(context),
-                  ],
-                ),
-              ),
-            ),
-          ],
             ),
           ),
-        ),
         ],
       ),
     );
@@ -2272,18 +2308,7 @@ class _InquirePageState extends State<InquirePage> {
 
   String _composeEventDesignPrompt() {
     final parts = <String>[];
-    final eventType = _resolvedCategory(
-      _selectedEventType,
-      _eventTypeOtherController,
-    );
-    final style = _resolvedCategory(_selectedStyle, _styleOtherController);
     final mood = _resolvedCategory(_selectedMood, _moodOtherController);
-    if (eventType != null && eventType.isNotEmpty) {
-      parts.add('Event type: $eventType');
-    }
-    if (style != null && style.isNotEmpty) {
-      parts.add('Style: $style');
-    }
     if (mood != null && mood.isNotEmpty) {
       parts.add('Mood: $mood');
     }
@@ -2304,10 +2329,26 @@ class _InquirePageState extends State<InquirePage> {
     final notes = _designPromptController.text.trim();
     if (notes.isNotEmpty) parts.add(notes);
     if (parts.isEmpty) {
-      return 'Decorate the existing venue in the reference photo, preserve room layout, elegant lighting';
+      return 'Decorate the existing venue in the reference photo, '
+          'preserve room layout and architecture, high quality realistic lighting';
     }
     return '${parts.join('. ')}. Decorate the existing venue in the reference photo, '
         'preserve room layout and architecture, high quality realistic lighting';
+  }
+
+  Map<String, dynamic> _eventDesignRunpodMeta() {
+    final eventType = _resolvedCategory(
+      _selectedEventType,
+      _eventTypeOtherController,
+    );
+    final style = _resolvedCategory(_selectedStyle, _styleOtherController);
+
+    return {
+      if (eventType != null && eventType.isNotEmpty)
+        'event_type': eventType.trim().toLowerCase(),
+      if (style != null && style.isNotEmpty) 'style': style.trim(),
+      'formality': _formality,
+    };
   }
 
   Future<void> _downloadVenuePhoto() async {
@@ -2317,7 +2358,11 @@ class _InquirePageState extends State<InquirePage> {
       await downloadImageBytes(base64Decode(b64), 'venue-reference.png');
     } catch (e) {
       if (mounted) {
-        showAntdMessage(context, 'Download failed: $e', type: AntdMessageType.error);
+        showAntdMessage(
+          context,
+          'Download failed: $e',
+          type: AntdMessageType.error,
+        );
       }
     }
   }
@@ -2333,7 +2378,11 @@ class _InquirePageState extends State<InquirePage> {
       }
     } catch (e) {
       if (mounted) {
-        showAntdMessage(context, 'Download failed: $e', type: AntdMessageType.error);
+        showAntdMessage(
+          context,
+          'Download failed: $e',
+          type: AntdMessageType.error,
+        );
       }
     }
   }
@@ -2355,8 +2404,9 @@ class _InquirePageState extends State<InquirePage> {
         _selectedDecor.isEmpty &&
         _designPromptController.text.isEmpty) {
       setState(
-        () => _genAiError =
-            'Please select at least one option or add instructions in the notes field.',
+        () =>
+            _genAiError =
+                'Please select at least one option or add instructions in the notes field.',
       );
       return;
     }
@@ -2364,8 +2414,9 @@ class _InquirePageState extends State<InquirePage> {
     final venueRaw = _venuePhotoBase64?.trim();
     if (venueRaw == null || venueRaw.isEmpty) {
       setState(
-        () => _genAiError =
-            'Upload a venue photo first — the AI uses it as the base image for your design.',
+        () =>
+            _genAiError =
+                'Upload a venue photo first — the AI uses it as the base image for your design.',
       );
       return;
     }
@@ -2393,33 +2444,7 @@ class _InquirePageState extends State<InquirePage> {
         initImageBase64: venueB64,
         strength: 0.52,
         numInferenceSteps: 18,
-        designMeta: {
-          if (_selectedEventType != null && _selectedEventType!.isNotEmpty)
-            'event_type': _selectedEventType,
-          if (_selectedStyle != null && _selectedStyle!.isNotEmpty)
-            'style': _selectedStyle,
-          if (_selectedMood != null && _selectedMood!.isNotEmpty)
-            'mood': _selectedMood,
-          if (_resolvedMultiSelectWithOther(
-            _selectedColors,
-            _colorOtherController,
-          ).isNotEmpty)
-            'colors':
-                _resolvedMultiSelectWithOther(
-                  _selectedColors,
-                  _colorOtherController,
-                ).join(', '),
-          if (_resolvedMultiSelectWithOther(
-            _selectedDecor,
-            _decorOtherController,
-          ).isNotEmpty)
-            'decor':
-                _resolvedMultiSelectWithOther(
-                  _selectedDecor,
-                  _decorOtherController,
-                ).join(', '),
-          'formality': _formality,
-        },
+        designMeta: _eventDesignRunpodMeta(),
       );
 
       if (imageUrl != null) {
@@ -2438,9 +2463,10 @@ class _InquirePageState extends State<InquirePage> {
       }
     } catch (e) {
       final raw = e.toString();
-      final msg = raw.contains('Exception:')
-          ? raw.split('Exception:').last.trim()
-          : raw;
+      final msg =
+          raw.contains('Exception:')
+              ? raw.split('Exception:').last.trim()
+              : raw;
       setState(() => _genAiError = msg);
     } finally {
       if (mounted) {

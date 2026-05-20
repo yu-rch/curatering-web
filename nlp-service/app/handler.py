@@ -60,7 +60,8 @@ Feedback:
 """.strip()
 
 
-def build_dashboard_prompt(data, alerts):
+def build_dashboard_prompt(data, alerts, user_prompt=""):
+    focus = str(user_prompt or "").strip()
     return f"""
 [INST] You are a business analyst AI for a catering and restaurant dashboard.
 
@@ -88,6 +89,10 @@ Rules:
 - Use double quotes only
 - No trailing commas
 - Each array should contain at most 5 items
+- If an analysis prompt is provided, use it as the main focus while still respecting the dashboard data
+
+Analysis prompt:
+{focus if focus else "Use the default dashboard analysis focus."}
 
 Dashboard data:
 {json.dumps(data, ensure_ascii=False)}
@@ -255,7 +260,11 @@ def handler(job):
 
     if isinstance(data.get("dashboard_data"), dict):
         raw_output, parsed = generate_json(
-            build_dashboard_prompt(data["dashboard_data"], data.get("alerts") or [])
+            build_dashboard_prompt(
+                data["dashboard_data"],
+                data.get("alerts") or [],
+                data.get("prompt") or data["dashboard_data"].get("prompt") or "",
+            )
         )
         result = normalize_dashboard_analysis(parsed)
         if not result:
