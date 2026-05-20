@@ -781,6 +781,7 @@ export async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS inventory (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      item_code TEXT UNIQUE,
       item_name TEXT NOT NULL,
       description TEXT,
       category TEXT NOT NULL,
@@ -811,7 +812,44 @@ export async function initDb() {
   `);
   await pool.query(`
     ALTER TABLE inventory
+    ADD COLUMN IF NOT EXISTS item_code TEXT;
+  `);
+  await pool.query(`
+    ALTER TABLE inventory
     ADD COLUMN IF NOT EXISTS image_base64 TEXT;
+  `);
+  await pool.query(`
+    WITH max_existing AS (
+      SELECT COALESCE(MAX(substring(item_code from '^ITM-([0-9]+)$')::integer), 0) AS mx
+      FROM inventory
+      WHERE item_code ~ '^ITM-[0-9]+$'
+    ),
+    numbered AS (
+      SELECT i.id, max_existing.mx + row_number() OVER (ORDER BY i.created_at, i.id) AS n
+      FROM inventory i
+      CROSS JOIN max_existing
+      WHERE i.item_code IS NULL OR trim(i.item_code) = ''
+    )
+    UPDATE inventory i
+    SET item_code = 'ITM-' || lpad(numbered.n::text, 4, '0')
+    FROM numbered
+    WHERE i.id = numbered.id;
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_item_code
+    ON inventory(item_code)
+    WHERE item_code IS NOT NULL;
+  `);
+  await pool.query(`
+    INSERT INTO id_counters (prefix, last_number, updated_at)
+    SELECT 'ITM',
+           COALESCE(MAX(substring(item_code from '^ITM-([0-9]+)$')::integer), 0),
+           now()
+    FROM inventory
+    WHERE item_code ~ '^ITM-[0-9]+$'
+    ON CONFLICT (prefix) DO UPDATE SET
+      last_number = GREATEST(id_counters.last_number, EXCLUDED.last_number),
+      updated_at = now();
   `);
 
   // Initialize ID counters

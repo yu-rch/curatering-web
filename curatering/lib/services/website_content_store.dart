@@ -18,10 +18,10 @@ class GalleryImageData {
   }) : tags = tags ?? [];
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'imageBase64': imageBase64,
-        'tags': tags,
-      };
+    'id': id,
+    'imageBase64': imageBase64,
+    'tags': tags,
+  };
 
   factory GalleryImageData.fromJson(dynamic raw) {
     if (raw is String) {
@@ -33,11 +33,16 @@ class GalleryImageData {
     final m = Map<String, dynamic>.from(raw as Map);
     final tagsRaw = m['tags'];
     return GalleryImageData(
-      id: (m['id'] ?? 'img_${DateTime.now().microsecondsSinceEpoch}').toString(),
+      id:
+          (m['id'] ?? 'img_${DateTime.now().microsecondsSinceEpoch}')
+              .toString(),
       imageBase64: (m['imageBase64'] ?? m['image'] ?? '').toString(),
       tags:
           tagsRaw is List
-              ? tagsRaw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList()
+              ? tagsRaw
+                  .map((e) => e.toString().trim())
+                  .where((e) => e.isNotEmpty)
+                  .toList()
               : [],
     );
   }
@@ -56,6 +61,7 @@ class GalleryCategoryData {
   final String id;
   String label;
   final List<GalleryImageData> images;
+
   /// Applied to photos added via CMS before upload.
   List<String> defaultTagsForUpload = [];
 
@@ -76,10 +82,10 @@ class GalleryCategoryData {
   List<String> get imageBase64List => images.map((e) => e.imageBase64).toList();
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'label': label,
-        'images': images.map((e) => e.toJson()).toList(),
-      };
+    'id': id,
+    'label': label,
+    'images': images.map((e) => e.toJson()).toList(),
+  };
 
   factory GalleryCategoryData.fromJson(Map<String, dynamic> m) {
     final imgs = m['images'];
@@ -96,7 +102,10 @@ class GalleryCategoryData {
     );
   }
 
-  void addImagesFromBase64(List<String> base64List, {List<String> defaultTags = const []}) {
+  void addImagesFromBase64(
+    List<String> base64List, {
+    List<String> defaultTags = const [],
+  }) {
     for (final b64 in base64List) {
       images.add(GalleryImageData.fromBase64(b64, tags: defaultTags));
     }
@@ -116,13 +125,26 @@ class WebsiteContentStore extends ChangeNotifier {
       '<p>Macrina\'s Kitchen and Catering has been around servicing different types of events from birthday to company celebrations for more than 2 decades!</p>'
       '<p>Have an upcoming celebration? <strong>INQUIRE NOW!</strong> or checkout our event design works menu first.</p>';
   String redBannerText = '!!! WE CATER LUZON-WIDE !!!';
+  String latestEventSectionLabel = 'LATEST EVENT';
+  String popularDishesSectionLabel = 'POPULAR DISHES';
+  String popularDishesSubtitle = 'Our all-time most requested dishes!';
+  String eventDesignsSectionLabel = 'EVENT DESIGNS';
+  String eventDesignsSubtitle = 'From decorations to dinnerware!';
+  String galleryTitle = 'Gallery';
+  String galleryIntro =
+      'WE CATER TO MANY DIFFERENT TYPES OF EVENTS. TAKE A LOOK AT OUR WORK AND SEE SOME THINGS YOU MIGHT LIKE!';
+  String contactTitle = 'Contact Us';
+  String contactBannerText = 'WE\'D LOVE TO HEAR FROM YOU!';
+  String contactReachUsLabel = 'YOU CAN REACH US VIA:';
+  String footerPrivacyLabel = 'PRIVACY POLICY';
   final List<String> latestEventCollageBase64 = <String>[];
 
   final List<String> popularDishImageBase64 = <String>[];
   final List<String> popularDishLabels = <String>[];
 
   final List<String> eventDesignImageBase64 = <String>[];
-  final Map<String, Map<String, double>> imageAlignments = <String, Map<String, double>>{};
+  final Map<String, Map<String, double>> imageAlignments =
+      <String, Map<String, double>>{};
 
   final List<GalleryCategoryData> galleryCategories = [
     GalleryCategoryData(id: 'c1', label: 'FIRST BIRTHDAYS'),
@@ -140,7 +162,8 @@ class WebsiteContentStore extends ChangeNotifier {
   String contactEmail = 'MACRINA_CATERING@YAHOO.COM';
   String contactPageIntro =
       '<p>We\'d love to hear from you. Send us a message and we\'ll respond as soon as possible.</p>';
-  String footerCopyright = 'COPYRIGHT © 2026 MACRINA\'S KITCHEN AND CATERING. POWERED BY CURATERING.';
+  String footerCopyright =
+      'COPYRIGHT © 2026 MACRINA\'S KITCHEN AND CATERING. POWERED BY CURATERING.';
 
   bool _loaded = false;
 
@@ -225,9 +248,30 @@ class WebsiteContentStore extends ChangeNotifier {
   void _applyMap(Map<String, dynamic> map) {
     homeHeroImageBase64 = map['homeHeroImageBase64'] as String? ?? '';
     latestEventTitle = map['latestEventTitle'] as String? ?? latestEventTitle;
-    latestEventSubtitle = map['latestEventSubtitle'] as String? ?? latestEventSubtitle;
+    latestEventSubtitle =
+        map['latestEventSubtitle'] as String? ?? latestEventSubtitle;
     latestEventBody = map['latestEventBody'] as String? ?? latestEventBody;
     redBannerText = map['redBannerText'] as String? ?? redBannerText;
+    latestEventSectionLabel =
+        map['latestEventSectionLabel'] as String? ?? latestEventSectionLabel;
+    popularDishesSectionLabel =
+        map['popularDishesSectionLabel'] as String? ??
+        popularDishesSectionLabel;
+    popularDishesSubtitle =
+        map['popularDishesSubtitle'] as String? ?? popularDishesSubtitle;
+    eventDesignsSectionLabel =
+        map['eventDesignsSectionLabel'] as String? ?? eventDesignsSectionLabel;
+    eventDesignsSubtitle =
+        map['eventDesignsSubtitle'] as String? ?? eventDesignsSubtitle;
+    galleryTitle = map['galleryTitle'] as String? ?? galleryTitle;
+    galleryIntro = map['galleryIntro'] as String? ?? galleryIntro;
+    contactTitle = map['contactTitle'] as String? ?? contactTitle;
+    contactBannerText =
+        map['contactBannerText'] as String? ?? contactBannerText;
+    contactReachUsLabel =
+        map['contactReachUsLabel'] as String? ?? contactReachUsLabel;
+    footerPrivacyLabel =
+        map['footerPrivacyLabel'] as String? ?? footerPrivacyLabel;
     contactFacebook = map['contactFacebook'] as String? ?? contactFacebook;
     contactAddress = map['contactAddress'] as String? ?? contactAddress;
     contactHours = map['contactHours'] as String? ?? contactHours;
@@ -277,23 +321,34 @@ class WebsiteContentStore extends ChangeNotifier {
   }
 
   Map<String, dynamic> _toMap() => <String, dynamic>{
-        'homeHeroImageBase64': homeHeroImageBase64,
-        'latestEventTitle': latestEventTitle,
-        'latestEventSubtitle': latestEventSubtitle,
-        'latestEventBody': latestEventBody,
-        'redBannerText': redBannerText,
-        'latestEventCollageBase64': latestEventCollageBase64,
-        'popularDishImageBase64': popularDishImageBase64,
-        'popularDishLabels': popularDishLabels,
-        'eventDesignImageBase64': eventDesignImageBase64,
-        'imageAlignments': imageAlignments,
-        'galleryCategories': galleryCategories.map((e) => e.toJson()).toList(),
-        'contactFacebook': contactFacebook,
-        'contactAddress': contactAddress,
-        'contactHours': contactHours,
-        'contactPhone': contactPhone,
-        'contactEmail': contactEmail,
-        'contactPageIntro': contactPageIntro,
-        'footerCopyright': footerCopyright,
-      };
+    'homeHeroImageBase64': homeHeroImageBase64,
+    'latestEventTitle': latestEventTitle,
+    'latestEventSubtitle': latestEventSubtitle,
+    'latestEventBody': latestEventBody,
+    'redBannerText': redBannerText,
+    'latestEventSectionLabel': latestEventSectionLabel,
+    'popularDishesSectionLabel': popularDishesSectionLabel,
+    'popularDishesSubtitle': popularDishesSubtitle,
+    'eventDesignsSectionLabel': eventDesignsSectionLabel,
+    'eventDesignsSubtitle': eventDesignsSubtitle,
+    'galleryTitle': galleryTitle,
+    'galleryIntro': galleryIntro,
+    'contactTitle': contactTitle,
+    'contactBannerText': contactBannerText,
+    'contactReachUsLabel': contactReachUsLabel,
+    'footerPrivacyLabel': footerPrivacyLabel,
+    'latestEventCollageBase64': latestEventCollageBase64,
+    'popularDishImageBase64': popularDishImageBase64,
+    'popularDishLabels': popularDishLabels,
+    'eventDesignImageBase64': eventDesignImageBase64,
+    'imageAlignments': imageAlignments,
+    'galleryCategories': galleryCategories.map((e) => e.toJson()).toList(),
+    'contactFacebook': contactFacebook,
+    'contactAddress': contactAddress,
+    'contactHours': contactHours,
+    'contactPhone': contactPhone,
+    'contactEmail': contactEmail,
+    'contactPageIntro': contactPageIntro,
+    'footerCopyright': footerCopyright,
+  };
 }

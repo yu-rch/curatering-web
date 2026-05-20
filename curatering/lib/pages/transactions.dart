@@ -114,17 +114,21 @@ class _TransactionsState extends State<Transactions> {
       final orders = await cateringFuture;
       final restaurantOrders = await restaurantFuture;
 
-      final completedOnly = orders
-          .where((o) => o.status == 'completed' && o.finalStatus != 'cancelled')
-          .toList();
+      final completedOnly =
+          orders
+              .where(
+                (o) => o.status == 'completed' && o.finalStatus != 'cancelled',
+              )
+              .toList();
 
       final rows = <_HistoryRow>[];
 
       for (final o in completedOnly) {
         final totalCost = computeOrderTotalCost(o);
-        final points = o.totalCost > 0
-            ? computeLoyaltyPointsFromCost(o.totalCost)
-            : computeLoyaltyPointsFromCost(totalCost);
+        final points =
+            o.totalCost > 0
+                ? computeLoyaltyPointsFromCost(o.totalCost)
+                : computeLoyaltyPointsFromCost(totalCost);
         rows.add(
           _HistoryRow(
             orderNo: _displayOrderNo(o),
@@ -141,9 +145,7 @@ class _TransactionsState extends State<Transactions> {
               eventType: o.eventType,
             ),
             fulfilmentDateTime: formatFulfilmentDateTimeFromEvent(o),
-            totalCost: formatPesos(
-              o.totalCost > 0 ? o.totalCost : totalCost,
-            ),
+            totalCost: formatPesos(o.totalCost > 0 ? o.totalCost : totalCost),
             totalAmount: o.totalCost > 0 ? o.totalCost : totalCost,
             loyaltyRewards: '+$points pts',
             fulfilmentDate: fulfilmentDateOnlyFromEvent(o),
@@ -154,9 +156,10 @@ class _TransactionsState extends State<Transactions> {
       for (final o in restaurantOrders) {
         final total = _parseAmount(o['total_amount']);
         final pointsEarned = o['points_earned'];
-        final points = pointsEarned is num && pointsEarned > 0
-            ? pointsEarned.round()
-            : computeLoyaltyPointsFromCost(total);
+        final points =
+            pointsEarned is num && pointsEarned > 0
+                ? pointsEarned.round()
+                : computeLoyaltyPointsFromCost(total);
         rows.add(
           _HistoryRow(
             orderNo: formatRestaurantOrderNo(o),
@@ -164,8 +167,8 @@ class _TransactionsState extends State<Transactions> {
                 (o['customer_id'] ?? '').toString().trim().isEmpty
                     ? '—'
                     : (o['customer_id'] ?? '').toString().trim(),
-            customerName: (o['full_name'] ?? o['guest_contact_email'] ?? '—')
-                .toString(),
+            customerName:
+                (o['full_name'] ?? o['guest_contact_email'] ?? '—').toString(),
             eventTitle: '—',
             serviceType: serviceTypeDisplayLabel('restaurant'),
             eventType: historyEventTypeColumnValue(
@@ -235,7 +238,9 @@ class _TransactionsState extends State<Transactions> {
     return raw
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
-        .where((o) => (o['status'] ?? '').toString().toLowerCase() == 'delivered')
+        .where(
+          (o) => (o['status'] ?? '').toString().toLowerCase() == 'delivered',
+        )
         .toList();
   }
 
@@ -301,22 +306,24 @@ class _TransactionsState extends State<Transactions> {
     var filteredRows = _allRows.toList();
 
     if (_serviceTypeFilter.isNotEmpty) {
-      filteredRows = filteredRows
-          .where(
-            (r) =>
-                r.serviceType.trim().toLowerCase() ==
-                _serviceTypeFilter.toLowerCase(),
-          )
-          .toList();
+      filteredRows =
+          filteredRows
+              .where(
+                (r) =>
+                    r.serviceType.trim().toLowerCase() ==
+                    _serviceTypeFilter.toLowerCase(),
+              )
+              .toList();
     }
     if (_eventTypeFilter.isNotEmpty) {
-      filteredRows = filteredRows
-          .where(
-            (r) =>
-                r.eventType.trim().toLowerCase() ==
-                _eventTypeFilter.toLowerCase(),
-          )
-          .toList();
+      filteredRows =
+          filteredRows
+              .where(
+                (r) =>
+                    r.eventType.trim().toLowerCase() ==
+                    _eventTypeFilter.toLowerCase(),
+              )
+              .toList();
     }
     if (_completionYearFilter != null ||
         _completionMonthFilter != null ||
@@ -355,51 +362,54 @@ class _TransactionsState extends State<Transactions> {
     }
     if (_minPriceFilter != null) {
       filteredRows =
-          filteredRows
-              .where((r) => r.totalAmount >= _minPriceFilter!)
-              .toList();
+          filteredRows.where((r) => r.totalAmount >= _minPriceFilter!).toList();
     }
     if (_maxPriceFilter != null) {
       filteredRows =
-          filteredRows
-              .where((r) => r.totalAmount <= _maxPriceFilter!)
-              .toList();
+          filteredRows.where((r) => r.totalAmount <= _maxPriceFilter!).toList();
     }
     if (_searchQuery.isNotEmpty) {
-      filteredRows = filteredRows.where((r) {
-        final haystack =
-            '${r.orderNo} ${r.customerId} ${r.eventTitle} ${r.customerName} ${r.serviceType} ${r.eventType} ${r.fulfilmentDateTime}'
-                .toLowerCase();
-        return haystack.contains(_searchQuery);
-      }).toList();
+      filteredRows =
+          filteredRows.where((r) {
+            final haystack =
+                '${r.orderNo} ${r.customerId} ${r.eventTitle} ${r.customerName} ${r.serviceType} ${r.eventType} ${r.fulfilmentDateTime}'
+                    .toLowerCase();
+            return haystack.contains(_searchQuery);
+          }).toList();
     }
 
-    final completionYears = {
-      for (final r in _allRows)
-        if (r.fulfilmentDate != null) r.fulfilmentDate!.year,
-    }.toList()..sort((a, b) => b.compareTo(a));
-    final completionMonths = {
-      for (final r in _allRows)
-        if (r.fulfilmentDate != null &&
-            (_completionYearFilter == null ||
-                r.fulfilmentDate!.year == _completionYearFilter))
-          r.fulfilmentDate!.month,
-    }.toList()..sort();
-    final completionDays = {
-      for (final r in _allRows)
-        if (r.fulfilmentDate != null &&
-            (_completionYearFilter == null ||
-                r.fulfilmentDate!.year == _completionYearFilter) &&
-            (_completionMonthFilter == null ||
-                r.fulfilmentDate!.month == _completionMonthFilter))
-          r.fulfilmentDate!.day,
-    }.toList()..sort();
+    final completionYears =
+        {
+            for (final r in _allRows)
+              if (r.fulfilmentDate != null) r.fulfilmentDate!.year,
+          }.toList()
+          ..sort((a, b) => b.compareTo(a));
+    final completionMonths =
+        {
+            for (final r in _allRows)
+              if (r.fulfilmentDate != null &&
+                  (_completionYearFilter == null ||
+                      r.fulfilmentDate!.year == _completionYearFilter))
+                r.fulfilmentDate!.month,
+          }.toList()
+          ..sort();
+    final completionDays =
+        {
+            for (final r in _allRows)
+              if (r.fulfilmentDate != null &&
+                  (_completionYearFilter == null ||
+                      r.fulfilmentDate!.year == _completionYearFilter) &&
+                  (_completionMonthFilter == null ||
+                      r.fulfilmentDate!.month == _completionMonthFilter))
+                r.fulfilmentDate!.day,
+          }.toList()
+          ..sort();
 
     return AppScaffold(
       showSearch: true,
       searchController: _searchController,
-      onSearchChanged: (v) =>
-          setState(() => _searchQuery = v.trim().toLowerCase()),
+      onSearchChanged:
+          (v) => setState(() => _searchQuery = v.trim().toLowerCase()),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -449,14 +459,14 @@ class _TransactionsState extends State<Transactions> {
                         value: '',
                         child: Text('All service types'),
                       ),
-                      ...{
-                        for (final r in _allRows) r.serviceType.trim(),
-                      }.where((t) => t.isNotEmpty).map(
-                        (t) => DropdownMenuItem(value: t, child: Text(t)),
-                      ),
+                      ...{for (final r in _allRows) r.serviceType.trim()}
+                          .where((t) => t.isNotEmpty)
+                          .map(
+                            (t) => DropdownMenuItem(value: t, child: Text(t)),
+                          ),
                     ],
-                    onChanged: (v) =>
-                        setState(() => _serviceTypeFilter = v ?? ''),
+                    onChanged:
+                        (v) => setState(() => _serviceTypeFilter = v ?? ''),
                   ),
                 ),
                 SizedBox(
@@ -480,12 +490,10 @@ class _TransactionsState extends State<Transactions> {
                               r.eventType != 'N/A' &&
                               r.eventType != '—')
                             r.eventType.trim(),
-                      }.map(
-                        (t) => DropdownMenuItem(value: t, child: Text(t)),
-                      ),
+                      }.map((t) => DropdownMenuItem(value: t, child: Text(t))),
                     ],
-                    onChanged: (v) =>
-                        setState(() => _eventTypeFilter = v ?? ''),
+                    onChanged:
+                        (v) => setState(() => _eventTypeFilter = v ?? ''),
                   ),
                 ),
                 SizedBox(
@@ -504,10 +512,8 @@ class _TransactionsState extends State<Transactions> {
                         child: Text('All years'),
                       ),
                       ...completionYears.map(
-                        (y) => DropdownMenuItem<int?>(
-                          value: y,
-                          child: Text('$y'),
-                        ),
+                        (y) =>
+                            DropdownMenuItem<int?>(value: y, child: Text('$y')),
                       ),
                     ],
                     onChanged:
@@ -765,6 +771,7 @@ class _TransactionsState extends State<Transactions> {
                             else
                               Expanded(
                                 child: PagedDataTable(
+                                  title: 'Completed Order History',
                                   columns: const [
                                     DataColumn(label: Text('Order No.')),
                                     DataColumn(label: Text('Customer ID')),
@@ -778,21 +785,24 @@ class _TransactionsState extends State<Transactions> {
                                     DataColumn(label: Text('Total')),
                                     DataColumn(label: Text('Loyalty')),
                                   ],
-                                  rows: filteredRows.map((tx) {
-                                    return DataRow(
-                                      cells: [
-                                        DataCell(Text(tx.orderNo)),
-                                        DataCell(Text(tx.customerId)),
-                                        DataCell(Text(tx.customerName)),
-                                        DataCell(Text(tx.eventTitle)),
-                                        DataCell(Text(tx.serviceType)),
-                                        DataCell(Text(tx.eventType)),
-                                        DataCell(Text(tx.fulfilmentDateTime)),
-                                        DataCell(Text(tx.totalCost)),
-                                        DataCell(Text(tx.loyaltyRewards)),
-                                      ],
-                                    );
-                                  }).toList(),
+                                  rows:
+                                      filteredRows.map((tx) {
+                                        return DataRow(
+                                          cells: [
+                                            DataCell(Text(tx.orderNo)),
+                                            DataCell(Text(tx.customerId)),
+                                            DataCell(Text(tx.customerName)),
+                                            DataCell(Text(tx.eventTitle)),
+                                            DataCell(Text(tx.serviceType)),
+                                            DataCell(Text(tx.eventType)),
+                                            DataCell(
+                                              Text(tx.fulfilmentDateTime),
+                                            ),
+                                            DataCell(Text(tx.totalCost)),
+                                            DataCell(Text(tx.loyaltyRewards)),
+                                          ],
+                                        );
+                                      }).toList(),
                                 ),
                               ),
                           ],

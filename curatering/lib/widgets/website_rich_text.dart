@@ -26,7 +26,98 @@ class _MarkupState {
   }
 }
 
-final _markupExp = RegExp(r'\[(\/?)(b|i|u|size|color|link|font)(?:=([^\]]+))?\]');
+final _markupExp = RegExp(
+  r'\[(\/?)(b|i|u|size|color|link|font)(?:=([^\]]+))?\]',
+);
+
+String _decodeHtmlEntities(String value) {
+  return value
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'");
+}
+
+String _stripHtmlAttributes(String raw) {
+  return raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+}
+
+String _htmlToWebsiteMarkup(String html) {
+  var text = html;
+  text = text.replaceAll(RegExp(r'\r\n?'), '\n');
+  text = text.replaceAllMapped(
+    RegExp(
+      r"""<a\b[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>""",
+      caseSensitive: false,
+      dotAll: true,
+    ),
+    (m) => '[link=${m.group(1) ?? ''}]${m.group(2) ?? ''}[/link]',
+  );
+  text = text.replaceAllMapped(
+    RegExp(
+      r"""<span\b[^>]*style=["']([^"']+)["'][^>]*>(.*?)</span>""",
+      caseSensitive: false,
+      dotAll: true,
+    ),
+    (m) {
+      final style = (m.group(1) ?? '').toLowerCase();
+      var child = m.group(2) ?? '';
+      final color = RegExp(r'color\s*:\s*([^;]+)').firstMatch(style)?.group(1);
+      final size = RegExp(
+        r'font-size\s*:\s*([0-9.]+)',
+      ).firstMatch(style)?.group(1);
+      final font = RegExp(
+        r'font-family\s*:\s*([^;]+)',
+      ).firstMatch(style)?.group(1);
+      if (font != null && font.trim().isNotEmpty) {
+        child =
+            '[font=${_stripHtmlAttributes(font).replaceAll("'", '').replaceAll('"', '')}]$child[/font]';
+      }
+      if (size != null && size.trim().isNotEmpty) {
+        child = '[size=$size]$child[/size]';
+      }
+      if (color != null && color.trim().isNotEmpty) {
+        child = '[color=${_stripHtmlAttributes(color)}]$child[/color]';
+      }
+      return child;
+    },
+  );
+  text = text
+      .replaceAll(RegExp(r'<\s*(strong|b)\s*>', caseSensitive: false), '[b]')
+      .replaceAll(
+        RegExp(r'<\s*/\s*(strong|b)\s*>', caseSensitive: false),
+        '[/b]',
+      )
+      .replaceAll(RegExp(r'<\s*(em|i)\s*>', caseSensitive: false), '[i]')
+      .replaceAll(RegExp(r'<\s*/\s*(em|i)\s*>', caseSensitive: false), '[/i]')
+      .replaceAll(RegExp(r'<\s*u\s*>', caseSensitive: false), '[u]')
+      .replaceAll(RegExp(r'<\s*/\s*u\s*>', caseSensitive: false), '[/u]')
+      .replaceAll(RegExp(r'<\s*h1[^>]*>', caseSensitive: false), '[b][size=42]')
+      .replaceAll(
+        RegExp(r'<\s*/\s*h1\s*>', caseSensitive: false),
+        '[/size][/b]\n',
+      )
+      .replaceAll(RegExp(r'<\s*h2[^>]*>', caseSensitive: false), '[b][size=32]')
+      .replaceAll(
+        RegExp(r'<\s*/\s*h2\s*>', caseSensitive: false),
+        '[/size][/b]\n',
+      )
+      .replaceAll(RegExp(r'<\s*h3[^>]*>', caseSensitive: false), '[b][size=24]')
+      .replaceAll(
+        RegExp(r'<\s*/\s*h3\s*>', caseSensitive: false),
+        '[/size][/b]\n',
+      )
+      .replaceAll(RegExp(r'<\s*br\s*/?\s*>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'<\s*/\s*(p|div)\s*>', caseSensitive: false), '\n\n')
+      .replaceAll(RegExp(r'<\s*(p|div)[^>]*>', caseSensitive: false), '')
+      .replaceAll(RegExp(r'<\s*li[^>]*>', caseSensitive: false), '• ')
+      .replaceAll(RegExp(r'<\s*/\s*li\s*>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'<\s*/?\s*(ul|ol)[^>]*>', caseSensitive: false), '')
+      .replaceAll(RegExp(r'<[^>]+>'), '');
+  return _decodeHtmlEntities(text).trim();
+}
 
 Color? _parseMarkupColor(String raw) {
   final v = raw.trim();
@@ -64,7 +155,9 @@ TextStyle _activeStyle(TextStyle base, _MarkupState state) {
     );
   }
   final family = state.fontFamily?.trim();
-  if (family != null && family.isNotEmpty && family.toLowerCase() != 'default') {
+  if (family != null &&
+      family.isNotEmpty &&
+      family.toLowerCase() != 'default') {
     try {
       style = GoogleFonts.getFont(family, textStyle: style);
     } catch (_) {}
@@ -77,6 +170,9 @@ List<InlineSpan> buildWebsiteMarkupSpans(
   TextStyle baseStyle, {
   List<TapGestureRecognizer>? recognizers,
 }) {
+  if (text.contains('<') && text.contains('>')) {
+    text = _htmlToWebsiteMarkup(text);
+  }
   final spans = <InlineSpan>[];
   final stack = [_MarkupState()];
   var cursor = 0;
@@ -87,12 +183,13 @@ List<InlineSpan> buildWebsiteMarkupSpans(
     final style = _activeStyle(baseStyle, state);
     final link = state.linkUrl?.trim();
     if (link != null && link.isNotEmpty) {
-      final recognizer = TapGestureRecognizer()
-        ..onTap = () async {
-          final uri = Uri.tryParse(link);
-          if (uri == null) return;
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        };
+      final recognizer =
+          TapGestureRecognizer()
+            ..onTap = () async {
+              final uri = Uri.tryParse(link);
+              if (uri == null) return;
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            };
       recognizers?.add(recognizer);
       spans.add(TextSpan(text: chunk, style: style, recognizer: recognizer));
     } else {
@@ -224,7 +321,7 @@ const _editorColors = <Color>[
   Color(0xFFFFC024),
 ];
 
-/// Toolbar dialog for super-admin / live CMS rich text fields.
+/// Toolbar dialog for super-admin / live CMS HTML rich text fields.
 Future<String?> showWebsiteRichTextEditor({
   required BuildContext context,
   required String title,
@@ -232,10 +329,11 @@ Future<String?> showWebsiteRichTextEditor({
 }) async {
   return showDialog<String>(
     context: context,
-    builder: (ctx) => _WebsiteRichTextEditorDialog(
-      title: title,
-      initialValue: initialValue,
-    ),
+    builder:
+        (ctx) => _WebsiteRichTextEditorDialog(
+          title: title,
+          initialValue: initialValue,
+        ),
   );
 }
 
@@ -291,41 +389,43 @@ class _WebsiteRichTextEditorDialogState
     final urlCtrl = TextEditingController();
     final url = await showDialog<String>(
       context: context,
-      builder: (dCtx) => AlertDialog(
-        title: const Text('Insert link'),
-        content: TextField(
-          controller: urlCtrl,
-          decoration: const InputDecoration(
-            labelText: 'URL',
-            hintText: 'https://example.com',
-            border: OutlineInputBorder(),
+      builder:
+          (dCtx) => AlertDialog(
+            title: const Text('Insert link'),
+            content: TextField(
+              controller: urlCtrl,
+              decoration: const InputDecoration(
+                labelText: 'URL',
+                hintText: 'https://example.com',
+                border: OutlineInputBorder(),
+              ),
+              autofocus: true,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dCtx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dCtx, urlCtrl.text.trim()),
+                child: const Text('Insert'),
+              ),
+            ],
           ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dCtx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dCtx, urlCtrl.text.trim()),
-            child: const Text('Insert'),
-          ),
-        ],
-      ),
     );
     urlCtrl.dispose();
     if (url == null || url.isEmpty) return;
     final safe = url.contains(' ') ? url : url;
-    _wrap('[link=$safe]', '[/link]');
+    _wrap('<a href="$safe">', '</a>');
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       title: Text(widget.title),
       content: SizedBox(
-        width: 680,
+        width: 760,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -336,16 +436,24 @@ class _WebsiteRichTextEditorDialogState
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 OutlinedButton(
-                  onPressed: () => _wrap('[b]', '[/b]'),
+                  onPressed: () => _wrap('<strong>', '</strong>'),
                   child: const Text('Bold'),
                 ),
                 OutlinedButton(
-                  onPressed: () => _wrap('[i]', '[/i]'),
+                  onPressed: () => _wrap('<em>', '</em>'),
                   child: const Text('Italic'),
                 ),
                 OutlinedButton(
-                  onPressed: () => _wrap('[u]', '[/u]'),
+                  onPressed: () => _wrap('<u>', '</u>'),
                   child: const Text('Underline'),
+                ),
+                OutlinedButton(
+                  onPressed: () => _wrap('<p>', '</p>'),
+                  child: const Text('Paragraph'),
+                ),
+                OutlinedButton(
+                  onPressed: () => _wrap('<ul><li>', '</li></ul>'),
+                  child: const Text('Bullet list'),
                 ),
                 OutlinedButton.icon(
                   onPressed: _addLink,
@@ -362,7 +470,7 @@ class _WebsiteRichTextEditorDialogState
                   onChanged: (s) {
                     if (s == null) return;
                     setState(() => _previewSize = s);
-                    _wrap('[size=${s.toInt()}]', '[/size]');
+                    _wrap('<span style="font-size:${s.toInt()}px">', '</span>');
                   },
                 ),
                 DropdownButton<String>(
@@ -375,7 +483,7 @@ class _WebsiteRichTextEditorDialogState
                     if (f == null) return;
                     setState(() => _previewFont = f);
                     if (f == 'Default') return;
-                    _wrap('[font=$f]', '[/font]');
+                    _wrap('<span style="font-family:$f">', '</span>');
                   },
                 ),
                 PopupMenuButton<Color>(
@@ -384,34 +492,35 @@ class _WebsiteRichTextEditorDialogState
                     avatar: Icon(Icons.palette, size: 16),
                     label: Text('Color'),
                   ),
-                  itemBuilder: (ctx) => [
-                    for (final c in _editorColors)
-                      PopupMenuItem(
-                        value: c,
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 18,
-                              height: 18,
-                              decoration: BoxDecoration(
-                                color: c,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.grey),
-                              ),
+                  itemBuilder:
+                      (ctx) => [
+                        for (final c in _editorColors)
+                          PopupMenuItem(
+                            value: c,
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 18,
+                                  height: 18,
+                                  decoration: BoxDecoration(
+                                    color: c,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.grey),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '#${c.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '#${c.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
+                          ),
+                      ],
                   onSelected: (c) {
                     final hex =
                         '#${(c.value & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
-                    _wrap('[color=$hex]', '[/color]');
+                    _wrap('<span style="color:$hex">', '</span>');
                   },
                 ),
               ],
@@ -419,16 +528,18 @@ class _WebsiteRichTextEditorDialogState
             const SizedBox(height: 8),
             TextField(
               controller: _ctrl,
-              maxLines: 8,
+              maxLines: 10,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                hintText: 'Select text, then use toolbar for formatting',
+                labelText: 'HTML content',
+                hintText:
+                    '<p>Select text, then use toolbar for formatting.</p>',
               ),
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
             const Text(
-              'Preview',
+              'HTML preview',
               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
             ),
             const SizedBox(height: 4),

@@ -25,13 +25,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
       visualDensity: VisualDensity.compact,
     );
   }
-  List<EventOrderDto> get _downpaymentOrders => _processingOrdersDto
-      .where((o) => o.downPaymentStatus != 'paid')
-      .toList();
 
-  List<EventOrderDto> get _ongoingOrders => _processingOrdersDto
-      .where((o) => o.downPaymentStatus == 'paid')
-      .toList();
+  List<EventOrderDto> get _downpaymentOrders =>
+      _processingOrdersDto.where((o) => o.downPaymentStatus != 'paid').toList();
+
+  List<EventOrderDto> get _ongoingOrders =>
+      _processingOrdersDto.where((o) => o.downPaymentStatus == 'paid').toList();
 
   String _formatOrderSchedule(EventOrderDto dto) {
     if (dto.scheduleSlots.isEmpty) return '—';
@@ -40,10 +39,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
   }
 
   String _orderTypeColumnLabel(EventOrderDto dto) {
-    return orderTypeDisplayLabel(
-      dto.orderType,
-      eventTitle: dto.eventTitle,
-    );
+    return orderTypeDisplayLabel(dto.orderType, eventTitle: dto.eventTitle);
   }
 
   String _formatMenuLines(EventOrderDto dto) {
@@ -113,15 +109,18 @@ extension _ManageEventsTableExt on _ManageEventsState {
     final td = dto.themeDesign;
     final imageUrl = td.generatedImageUrl?.trim() ?? '';
     final picks =
-        td.picksBase64.where((s) => s.trim().isNotEmpty).map((s) => s.trim()).toList();
+        td.picksBase64
+            .where((s) => s.trim().isNotEmpty)
+            .map((s) => s.trim())
+            .toList();
 
     Widget imageFromSource(String source, {BoxFit fit = BoxFit.cover}) {
       if (source.startsWith('http://') || source.startsWith('https://')) {
         return Image.network(
           source,
           fit: fit,
-          errorBuilder: (_, __, ___) =>
-              const Center(child: Icon(Icons.broken_image)),
+          errorBuilder:
+              (_, __, ___) => const Center(child: Icon(Icons.broken_image)),
         );
       }
       try {
@@ -204,7 +203,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
     final cols = screenWidth < 700 ? 1 : 3;
     final total =
         dto.totalCost > 0 ? dto.totalCost : computeOrderTotalCost(dto);
-  return [
+    return [
       AntdDescriptionItem(
         label: 'Service type',
         value: _orderTypeColumnLabel(dto),
@@ -219,7 +218,10 @@ extension _ManageEventsTableExt on _ManageEventsState {
         value: dto.eventTitle.isEmpty ? '—' : dto.eventTitle,
         span: cols >= 2 ? 2 : 1,
       ),
-      AntdDescriptionItem(label: 'Event type', value: dto.eventType.isEmpty ? '—' : dto.eventType),
+      AntdDescriptionItem(
+        label: 'Event type',
+        value: dto.eventType.isEmpty ? '—' : dto.eventType,
+      ),
       AntdDescriptionItem(
         label: 'Formality',
         value: dto.formalityLevel.isEmpty ? '—' : dto.formalityLevel,
@@ -240,11 +242,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
       ),
       AntdDescriptionItem(
         label: 'Schedule',
-        value: dto.scheduleSlots.isEmpty
-            ? '—'
-            : dto.scheduleSlots
-                .map((s) => '${s.date} ${s.startTime}–${s.endTime}')
-                .join('\n'),
+        value:
+            dto.scheduleSlots.isEmpty
+                ? '—'
+                : dto.scheduleSlots
+                    .map((s) => '${s.date} ${s.startTime}–${s.endTime}')
+                    .join('\n'),
         span: cols >= 2 ? 2 : 1,
       ),
       AntdDescriptionItem(
@@ -262,10 +265,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         value: _themeExtrasLine(dto),
         span: cols >= 2 ? 2 : 1,
       ),
-      AntdDescriptionItem(
-        label: 'Total cost',
-        value: formatPesos(total),
-      ),
+      AntdDescriptionItem(label: 'Total cost', value: formatPesos(total)),
       AntdDescriptionItem(
         label: 'Down payment',
         value:
@@ -297,9 +297,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
     EventOrderDto full = dto;
     await showAntdModal<void>(
       context: context,
-      title: dto.eventTitle.isEmpty
-          ? dto.customerName
-          : dto.eventTitle,
+      title: dto.eventTitle.isEmpty ? dto.customerName : dto.eventTitle,
       maxWidth: 800,
       body: FutureBuilder<EventOrderDto>(
         future: _loadOrderForDetail(dto),
@@ -381,14 +379,10 @@ extension _ManageEventsTableExt on _ManageEventsState {
     required EventOrderDto order,
     required TextEditingController laborController,
     required TextEditingController travelController,
-    required VoidCallback onFieldsChanged,
   }) {
     double parseCost(TextEditingController c) =>
         double.tryParse(c.text.trim()) ?? 0.0;
     final dishCost = _dishCostForFinalize(order);
-    final laborCost = parseCost(laborController);
-    final travelCost = parseCost(travelController);
-    final totalCost = dishCost + laborCost + travelCost;
 
     return Container(
       margin: const EdgeInsets.only(top: 16),
@@ -405,10 +399,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
           ),
           const SizedBox(height: 10),
-          _buildLabeledReadonlyCost(
-            'Dish cost (from menu)',
-            dishCost,
-          ),
+          _buildLabeledReadonlyCost('Dish cost (from menu)', dishCost),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -418,7 +409,6 @@ extension _ManageEventsTableExt on _ManageEventsState {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  onChanged: (_) => onFieldsChanged(),
                   decoration: const InputDecoration(
                     labelText: 'Labor cost',
                     prefixText: 'PHP ',
@@ -434,7 +424,6 @@ extension _ManageEventsTableExt on _ManageEventsState {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  onChanged: (_) => onFieldsChanged(),
                   decoration: const InputDecoration(
                     labelText: 'Travel cost',
                     prefixText: 'PHP ',
@@ -446,7 +435,18 @@ extension _ManageEventsTableExt on _ManageEventsState {
             ],
           ),
           const SizedBox(height: 8),
-          _buildLabeledReadonlyCost('Total estimated cost', totalCost),
+          AnimatedBuilder(
+            animation: Listenable.merge([laborController, travelController]),
+            builder: (context, _) {
+              final laborCost = parseCost(laborController);
+              final travelCost = parseCost(travelController);
+              final totalCost = dishCost + laborCost + travelCost;
+              return _buildLabeledReadonlyCost(
+                'Total estimated cost',
+                totalCost,
+              );
+            },
+          ),
           const SizedBox(height: 8),
           Text(
             'Post changes sends the updated estimate to the customer without moving the inquiry.',
@@ -484,9 +484,9 @@ extension _ManageEventsTableExt on _ManageEventsState {
     Navigator.of(dialogContext).pop();
     await _refreshOrders();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(successMessage)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(successMessage)));
   }
 
   Future<void> _openFinalizeOnlineInquiryDialog(EventOrderDto order) async {
@@ -496,167 +496,158 @@ extension _ManageEventsTableExt on _ManageEventsState {
     final travelCostController = TextEditingController(
       text: (order.themeDesign.travelCost ?? 0).toStringAsFixed(2),
     );
+    final detailFuture = _loadOrderForDetail(order);
 
     try {
       await showAntdModal<void>(
         context: context,
-        title:
-            order.eventTitle.isEmpty ? order.customerName : order.eventTitle,
+        title: order.eventTitle.isEmpty ? order.customerName : order.eventTitle,
         maxWidth: 800,
         barrierDismissible: false,
-        body: StatefulBuilder(
-          builder: (dialogContext, setModalState) {
-            return FutureBuilder<EventOrderDto>(
-              future: _loadOrderForDetail(order),
-              builder: (context, snap) {
-                final full = snap.data ?? order;
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
+        body: FutureBuilder<EventOrderDto>(
+          future: detailFuture,
+          builder: (dialogContext, snap) {
+            final full = snap.data ?? order;
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
 
-                final w = MediaQuery.sizeOf(context).width;
+            final w = MediaQuery.sizeOf(dialogContext).width;
 
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AntdDescriptions(
+                  column: w < 700 ? 1 : 3,
+                  labelColor: Colors.grey.shade600,
+                  valueColor: Colors.black87,
+                  items: _orderDetailDescriptionItems(full, screenWidth: w),
+                ),
+                if (_orderHasEventDesign(full))
+                  _buildEventDesignDetailSection(full),
+                _buildFinalizeCostSection(
+                  order: full,
+                  laborController: laborCostController,
+                  travelController: travelCostController,
+                ),
+                const SizedBox(height: 20),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.end,
                   children: [
-                    AntdDescriptions(
-                      column: w < 700 ? 1 : 3,
-                      labelColor: Colors.grey.shade600,
-                      valueColor: Colors.black87,
-                      items: _orderDetailDescriptionItems(
-                        full,
-                        screenWidth: w,
+                    AntdCancelButton(
+                      label: 'Close',
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                    ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        try {
+                          await _submitFinalizeInquiryAction(
+                            dialogContext: dialogContext,
+                            order: full,
+                            laborController: laborCostController,
+                            travelController: travelCostController,
+                            action: 'post_changes',
+                            successMessage:
+                                'Changes posted. Customer can review updates in My Caterings.',
+                          );
+                        } catch (e) {
+                          if (!dialogContext.mounted) return;
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to post changes: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFF4511E),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                      ),
+                      child: const Text(
+                        'Post changes',
+                        style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
-                    if (_orderHasEventDesign(full))
-                      _buildEventDesignDetailSection(full),
-                    _buildFinalizeCostSection(
-                      order: full,
-                      laborController: laborCostController,
-                      travelController: travelCostController,
-                      onFieldsChanged: () => setModalState(() {}),
+                    ElevatedButton(
+                      onPressed: () async {
+                        try {
+                          await _submitFinalizeInquiryAction(
+                            dialogContext: dialogContext,
+                            order: full,
+                            laborController: laborCostController,
+                            travelController: travelCostController,
+                            action: 'confirm_inquiry',
+                            successMessage:
+                                'Order accepted and moved to For down payment.',
+                          );
+                        } catch (e) {
+                          if (!dialogContext.mounted) return;
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to accept order: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1DB954),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                      ),
+                      child: const Text(
+                        'Accept order',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
                     ),
-                    const SizedBox(height: 20),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.end,
-                      children: [
-                        AntdCancelButton(
-                          label: 'Close',
-                          onPressed: () => Navigator.of(dialogContext).pop(),
-                        ),
-                        ElevatedButton(
-                          onPressed: () async {
-                            try {
-                              await _submitFinalizeInquiryAction(
-                                dialogContext: dialogContext,
-                                order: full,
-                                laborController: laborCostController,
-                                travelController: travelCostController,
-                                action: 'post_changes',
-                                successMessage:
-                                    'Changes posted. Customer can review updates in My Caterings.',
-                              );
-                            } catch (e) {
-                              if (!dialogContext.mounted) return;
-                              ScaffoldMessenger.of(dialogContext).showSnackBar(
-                                SnackBar(
-                                  content: Text('Failed to post changes: $e'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFF4511E),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
+                    OutlinedButton(
+                      onPressed: () async {
+                        try {
+                          await _submitFinalizeInquiryAction(
+                            dialogContext: dialogContext,
+                            order: full,
+                            laborController: laborCostController,
+                            travelController: travelCostController,
+                            action: 'cancel_event',
+                            successMessage: 'Inquiry cancelled.',
+                          );
+                        } catch (e) {
+                          if (!dialogContext.mounted) return;
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to cancel: $e'),
+                              backgroundColor: Colors.red,
                             ),
-                          ),
-                          child: const Text(
-                            'Post changes',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
+                          );
+                        }
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.black87,
+                        side: const BorderSide(color: Color(0xFFFFC107)),
+                        backgroundColor: const Color(0xFFFFC107),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
                         ),
-                        ElevatedButton(
-                          onPressed: () async {
-                            try {
-                              await _submitFinalizeInquiryAction(
-                                dialogContext: dialogContext,
-                                order: full,
-                                laborController: laborCostController,
-                                travelController: travelCostController,
-                                action: 'confirm_inquiry',
-                                successMessage:
-                                    'Order accepted and moved to For down payment.',
-                              );
-                            } catch (e) {
-                              if (!dialogContext.mounted) return;
-                              ScaffoldMessenger.of(dialogContext).showSnackBar(
-                                SnackBar(
-                                  content: Text('Failed to accept order: $e'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1DB954),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                          ),
-                          child: const Text(
-                            'Accept order',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        OutlinedButton(
-                          onPressed: () async {
-                            try {
-                              await _submitFinalizeInquiryAction(
-                                dialogContext: dialogContext,
-                                order: full,
-                                laborController: laborCostController,
-                                travelController: travelCostController,
-                                action: 'cancel_event',
-                                successMessage:
-                                    'Inquiry cancelled.',
-                              );
-                            } catch (e) {
-                              if (!dialogContext.mounted) return;
-                              ScaffoldMessenger.of(dialogContext).showSnackBar(
-                                SnackBar(
-                                  content: Text('Failed to cancel: $e'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.black87,
-                            side: const BorderSide(color: Color(0xFFFFC107)),
-                            backgroundColor: const Color(0xFFFFC107),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                          ),
-                          child: const Text('Cancel order'),
-                        ),
-                      ],
+                      ),
+                      child: const Text('Cancel order'),
                     ),
                   ],
-                );
-              },
+                ),
+              ],
             );
           },
         ),
@@ -737,57 +728,56 @@ extension _ManageEventsTableExt on _ManageEventsState {
               )
             else
               PagedDataTable(
-                  headingRowColor: WidgetStateProperty.all(
-                    Colors.grey.shade100,
-                  ),
-                  columns: const [
-                    DataColumn(label: Text('Service type')),
-                    DataColumn(label: Text('Event / customer')),
-                    DataColumn(label: Text('Customer')),
-                    DataColumn(label: Text('Date')),
-                    DataColumn(label: Text('Guests')),
-                    DataColumn(label: Text('Total')),
-                    DataColumn(label: Text('Actions')),
-                  ],
-                  rows:
-                      filtered.map((dto) {
-                        final title =
-                            dto.eventTitle.isEmpty
-                                ? dto.customerName
-                                : dto.eventTitle;
-                        return DataRow(
-                          cells: [
-                            DataCell(Text(_orderTypeColumnLabel(dto))),
-                            DataCell(
-                              Text(
-                                title,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
+                title: title,
+                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                columns: const [
+                  DataColumn(label: Text('Service type')),
+                  DataColumn(label: Text('Event / customer')),
+                  DataColumn(label: Text('Customer')),
+                  DataColumn(label: Text('Date')),
+                  DataColumn(label: Text('Guests')),
+                  DataColumn(label: Text('Total')),
+                  DataColumn(label: Text('Actions')),
+                ],
+                rows:
+                    filtered.map((dto) {
+                      final title =
+                          dto.eventTitle.isEmpty
+                              ? dto.customerName
+                              : dto.eventTitle;
+                      return DataRow(
+                        cells: [
+                          DataCell(Text(_orderTypeColumnLabel(dto))),
+                          DataCell(
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                            DataCell(Text(dto.customerName)),
-                            DataCell(Text(_formatOrderSchedule(dto))),
-                            DataCell(Text('${dto.guestCount}')),
-                            DataCell(
-                              Text(
-                                formatPesos(
-                                  dto.totalCost > 0
-                                      ? dto.totalCost
-                                      : computeOrderTotalCost(dto),
-                                ),
+                          ),
+                          DataCell(Text(dto.customerName)),
+                          DataCell(Text(_formatOrderSchedule(dto))),
+                          DataCell(Text('${dto.guestCount}')),
+                          DataCell(
+                            Text(
+                              formatPesos(
+                                dto.totalCost > 0
+                                    ? dto.totalCost
+                                    : computeOrderTotalCost(dto),
                               ),
                             ),
-                            DataCell(
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: actionCells(dto),
-                              ),
+                          ),
+                          DataCell(
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: actionCells(dto),
                             ),
-                          ],
-                        );
-                      }).toList(),
-                ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+              ),
           ],
         ),
       ),
@@ -867,97 +857,96 @@ extension _ManageEventsTableExt on _ManageEventsState {
                 )
               else
                 PagedDataTable(
-                    headingRowColor: WidgetStateProperty.all(
-                      Colors.grey.shade100,
-                    ),
-                    columns: const [
-                      DataColumn(label: Text('Service type')),
-                      DataColumn(label: Text('Customer')),
-                      DataColumn(label: Text('Contact')),
-                      DataColumn(label: Text('Event type')),
-                      DataColumn(label: Text('Actions')),
-                    ],
-                    rows:
-                        filtered.map((dto) {
-                          return DataRow(
-                            cells: [
-                              DataCell(Text(_orderTypeColumnLabel(dto))),
-                              DataCell(Text(dto.customerName)),
-                              DataCell(Text(dto.contactPerson)),
-                              DataCell(
-                                Text(
-                                  dto.eventType.isEmpty ? '—' : dto.eventType,
-                                ),
-                              ),
-                              DataCell(
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _eventIconAction(
-                                      icon: Icons.visibility_outlined,
-                                      tooltip: 'View details',
-                                      permissionKey:
-                                          ActionPermissionKeys.manageEventsViewDetails,
-                                      onPressed: () async {
-                                        try {
-                                          final full =
-                                              await _resolveOrderForSelection(
-                                                dto,
-                                              );
-                                          if (!mounted) return;
-                                          await _showEventOrderDetailModal(
-                                            full,
-                                          );
-                                        } catch (e) {
-                                          if (!mounted) return;
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                'Could not load inquiry: $e',
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      },
-                                    ),
-                                    _eventIconAction(
-                                      icon: Icons.check_circle_outline,
-                                      tooltip: 'Finalize inquiry',
-                                      permissionKey:
-                                          ActionPermissionKeys.manageEventsFinalize,
-                                      onPressed: () async {
-                                        try {
-                                          final full =
-                                              await _resolveOrderForSelection(
-                                                dto,
-                                              );
-                                          if (!mounted) return;
-                                          await _openFinalizeOnlineInquiryDialog(
-                                            full,
-                                          );
-                                        } catch (e) {
-                                          if (!mounted) return;
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                'Could not open finalize: $e',
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          );
-                        }).toList(),
+                  title: 'Online Inquiries',
+                  headingRowColor: WidgetStateProperty.all(
+                    Colors.grey.shade100,
                   ),
+                  columns: const [
+                    DataColumn(label: Text('Service type')),
+                    DataColumn(label: Text('Customer')),
+                    DataColumn(label: Text('Contact')),
+                    DataColumn(label: Text('Event type')),
+                    DataColumn(label: Text('Actions')),
+                  ],
+                  rows:
+                      filtered.map((dto) {
+                        return DataRow(
+                          cells: [
+                            DataCell(Text(_orderTypeColumnLabel(dto))),
+                            DataCell(Text(dto.customerName)),
+                            DataCell(Text(dto.contactPerson)),
+                            DataCell(
+                              Text(dto.eventType.isEmpty ? '—' : dto.eventType),
+                            ),
+                            DataCell(
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _eventIconAction(
+                                    icon: Icons.visibility_outlined,
+                                    tooltip: 'View details',
+                                    permissionKey:
+                                        ActionPermissionKeys
+                                            .manageEventsViewDetails,
+                                    onPressed: () async {
+                                      try {
+                                        final full =
+                                            await _resolveOrderForSelection(
+                                              dto,
+                                            );
+                                        if (!mounted) return;
+                                        await _showEventOrderDetailModal(full);
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Could not load inquiry: $e',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  _eventIconAction(
+                                    icon: Icons.check_circle_outline,
+                                    tooltip: 'Finalize inquiry',
+                                    permissionKey:
+                                        ActionPermissionKeys
+                                            .manageEventsFinalize,
+                                    onPressed: () async {
+                                      try {
+                                        final full =
+                                            await _resolveOrderForSelection(
+                                              dto,
+                                            );
+                                        if (!mounted) return;
+                                        await _openFinalizeOnlineInquiryDialog(
+                                          full,
+                                        );
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Could not open finalize: $e',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      }).toList(),
+                ),
             ],
           ),
         ),
@@ -982,7 +971,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
               _eventIconAction(
                 icon: Icons.payments_outlined,
                 tooltip: 'Confirm downpayment',
-                permissionKey: ActionPermissionKeys.manageEventsConfirmDownpayment,
+                permissionKey:
+                    ActionPermissionKeys.manageEventsConfirmDownpayment,
                 onPressed: () => _showConfirmDownpaymentDialog(dto),
               ),
             ],
@@ -1105,9 +1095,9 @@ extension _ManageEventsTableExt on _ManageEventsState {
               }
             } catch (e) {
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Failed: $e')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('Failed: $e')));
               }
             } finally {
               if (mounted) _mutateTableState(() => _postAnalysisSaving = false);

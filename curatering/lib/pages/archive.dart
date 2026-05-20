@@ -74,9 +74,7 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
   Future<void> _loadArchivedUsers() async {
     setState(() => _loadingUsers = true);
     try {
-      final users = await SuperAdminApi.instance.listUsers(
-        archived: true,
-      );
+      final users = await SuperAdminApi.instance.listUsers(archived: true);
       setState(() => _archivedUsers = users);
     } catch (e) {
       // Handle error
@@ -88,9 +86,10 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
   List<ArchivedDish> _archivedDishesFromStore() {
     return MenuStore.instance.archivedDishes.map((d) {
       final archivedAt = d.archivedAt;
-      final archiveDate = archivedAt == null
-          ? ''
-          : '${archivedAt.month.toString().padLeft(2, '0')} ${archivedAt.day} ${archivedAt.year} ${archivedAt.hour.toString().padLeft(2, '0')}:${archivedAt.minute.toString().padLeft(2, '0')}';
+      final archiveDate =
+          archivedAt == null
+              ? ''
+              : '${archivedAt.month.toString().padLeft(2, '0')} ${archivedAt.day} ${archivedAt.year} ${archivedAt.hour.toString().padLeft(2, '0')}:${archivedAt.minute.toString().padLeft(2, '0')}';
       return ArchivedDish(
         dishNo: d.id,
         dishName: d.name,
@@ -123,6 +122,7 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
   }
 
   Widget _buildTable<T>({
+    String title = 'Archive Table',
     required List<DataColumn> columns,
     required List<DataRow> rows,
     Widget? emptyMessage,
@@ -142,7 +142,7 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: PagedDataTable(columns: columns, rows: rows),
+        child: PagedDataTable(title: title, columns: columns, rows: rows),
       ),
     );
   }
@@ -162,18 +162,21 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
               DataColumn(label: Text('Price')),
               DataColumn(label: Text('Archive Date')),
             ],
-            rows: archivedDishes
-                .map(
-                  (d) => DataRow(cells: [
-                    DataCell(Text(d.dishNo)),
-                    DataCell(Text(d.dishName)),
-                    DataCell(const Text('Menu')),
-                    DataCell(Text(d.variants)),
-                    DataCell(Text(d.price)),
-                    DataCell(Text(d.archiveDate)),
-                  ]),
-                )
-                .toList(),
+            rows:
+                archivedDishes
+                    .map(
+                      (d) => DataRow(
+                        cells: [
+                          DataCell(Text(d.dishNo)),
+                          DataCell(Text(d.dishName)),
+                          DataCell(const Text('Menu')),
+                          DataCell(Text(d.variants)),
+                          DataCell(Text(d.price)),
+                          DataCell(Text(d.archiveDate)),
+                        ],
+                      ),
+                    )
+                    .toList(),
             emptyMessage: const Text('No archived menu items found.'),
           ),
         );
@@ -229,17 +232,22 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
           DataColumn(label: Text('Role')),
           DataColumn(label: Text('Archive Date')),
         ],
-        rows: _archivedUsers
-            .map(
-              (u) => DataRow(cells: [
-                DataCell(Text(u.id)),
-                DataCell(Text(u.fullName)),
-                DataCell(Text(u.email)),
-                DataCell(Text(u.role.displayName)),
-                const DataCell(Text('-')), // Archive date not available in UserDto
-              ]),
-            )
-            .toList(),
+        rows:
+            _archivedUsers
+                .map(
+                  (u) => DataRow(
+                    cells: [
+                      DataCell(Text(u.id)),
+                      DataCell(Text(u.fullName)),
+                      DataCell(Text(u.email)),
+                      DataCell(Text(u.role.displayName)),
+                      const DataCell(
+                        Text('-'),
+                      ), // Archive date not available in UserDto
+                    ],
+                  ),
+                )
+                .toList(),
         emptyMessage: const Text('No archived accounts found.'),
       ),
     );
@@ -265,18 +273,18 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
-                  children: [
-                    _buildTabButton('Menu', 0),
-                    const SizedBox(width: 8),
-                    _buildTabButton('Loyalty Rewards', 1),
-                    const SizedBox(width: 8),
-                    _buildTabButton('Events', 2),
-                    const SizedBox(width: 8),
-                    _buildTabButton('Accounts', 3),
-                    const SizedBox(width: 8),
-                    _buildTabButton('Inventory', 4),
-                  ],
-                ),
+                    children: [
+                      _buildTabButton('Menu', 0),
+                      const SizedBox(width: 8),
+                      _buildTabButton('Loyalty Rewards', 1),
+                      const SizedBox(width: 8),
+                      _buildTabButton('Events', 2),
+                      const SizedBox(width: 8),
+                      _buildTabButton('Accounts', 3),
+                      const SizedBox(width: 8),
+                      _buildTabButton('Inventory', 4),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 16),
                 // Tab content
@@ -383,9 +391,9 @@ class _ArchiveInventoryTabState extends State<ArchiveInventoryTab> {
       );
       await _load();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Restored "${item.name}"')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Restored "${item.name}"')));
       }
     } catch (e) {
       if (mounted) {
@@ -421,9 +429,9 @@ class _ArchiveInventoryTabState extends State<ArchiveInventoryTab> {
       await ApiClient.instance.delete('/api/inventory/${item.id}');
       await _load();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Item deleted')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Item deleted')));
       }
     } catch (e) {
       if (mounted) {
@@ -468,6 +476,7 @@ class _ArchiveInventoryTabState extends State<ArchiveInventoryTab> {
                     ),
                   )
                   : PagedDataTable(
+                    title: 'Archived Inventory',
                     headingRowColor: const WidgetStatePropertyAll(
                       Color(0xFFF5F7F9),
                     ),

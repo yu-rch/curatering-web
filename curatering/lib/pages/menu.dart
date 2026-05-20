@@ -309,7 +309,8 @@ class _MenuState extends State<Menu> {
     _editingImageBase64 = dish.imageBase64;
     _editingType = _normalizeRestaurantMealType(dish.effectiveMealType);
     if (dish.category == 'restaurant' &&
-        (_editingType.isEmpty || !_restaurantMealTypes.contains(_editingType))) {
+        (_editingType.isEmpty ||
+            !_restaurantMealTypes.contains(_editingType))) {
       _editingType = 'others';
     }
     _typeController.text = _editingType;
@@ -566,7 +567,9 @@ class _MenuState extends State<Menu> {
                       ),
                       const SizedBox(height: 12),
                       AllergenSelectorField(
-                        key: ValueKey('allergens_${dish?.id ?? 'new'}_$category'),
+                        key: ValueKey(
+                          'allergens_${dish?.id ?? 'new'}_$category',
+                        ),
                         initialSerialized: _allergensController.text,
                         onChanged: (s) => _allergensController.text = s,
                       ),
@@ -754,9 +757,9 @@ class _MenuState extends State<Menu> {
     if (confirmed != true || !mounted) return;
     final price = priceCtrl.text.trim();
     if (price.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a price')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enter a price')));
       return;
     }
     final dishes =
@@ -1252,7 +1255,10 @@ class _MenuState extends State<Menu> {
                                   ? Color(0xFFFFC107)
                                   : Colors.grey.shade100,
                         ),
-                        child: Text(option, style: const TextStyle(fontSize: 11)),
+                        child: Text(
+                          option,
+                          style: const TextStyle(fontSize: 11),
+                        ),
                       );
                     }).toList(),
               ),
@@ -1440,200 +1446,198 @@ class _MenuState extends State<Menu> {
     return Card(
       margin: const EdgeInsets.all(16),
       child: PagedDataTable(
-          columns: [
-            const DataColumn(label: Text('Name')),
-            const DataColumn(label: Text('Price')),
-            if (!isCatering) const DataColumn(label: Text('Pax Options')),
-            if (!isCatering) const DataColumn(label: Text('Sauces')),
-            const DataColumn(label: Text('Status')),
-            const DataColumn(label: Text('Actions')),
-          ],
-          rows:
-              dishes.map((dish) {
-                return DataRow(
-                  cells: [
-                    DataCell(
-                      Row(
-                        children: [
-                          if (dish.imageBase64 != null &&
-                              dish.imageBase64!.isNotEmpty)
-                            Container(
-                              width: 40,
-                              height: 40,
-                              margin: const EdgeInsets.only(right: 8),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(4),
+        title: isCatering ? 'Catering Menu Dishes' : 'Restaurant Menu Dishes',
+        columns: [
+          const DataColumn(label: Text('Name')),
+          const DataColumn(label: Text('Price')),
+          if (!isCatering) const DataColumn(label: Text('Pax Options')),
+          if (!isCatering) const DataColumn(label: Text('Sauces')),
+          const DataColumn(label: Text('Status')),
+          const DataColumn(label: Text('Actions')),
+        ],
+        rows:
+            dishes.map((dish) {
+              return DataRow(
+                cells: [
+                  DataCell(
+                    Row(
+                      children: [
+                        if (dish.imageBase64 != null &&
+                            dish.imageBase64!.isNotEmpty)
+                          Container(
+                            width: 40,
+                            height: 40,
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(4),
+                              color: Colors.grey.shade200,
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: CachedBase64Image(
+                              base64String: dish.imageBase64,
+                              fit: BoxFit.cover,
+                              placeholder: Container(
                                 color: Colors.grey.shade200,
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              child: CachedBase64Image(
-                                base64String: dish.imageBase64,
-                                fit: BoxFit.cover,
-                                placeholder: Container(
-                                  color: Colors.grey.shade200,
-                                  child: const Icon(
-                                    Icons.fastfood,
-                                    color: Colors.grey,
-                                    size: 20,
-                                  ),
+                                child: const Icon(
+                                  Icons.fastfood,
+                                  color: Colors.grey,
+                                  size: 20,
                                 ),
                               ),
                             ),
-                          Expanded(
-                            child: Text(
-                              dish.name,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
                           ),
-                        ],
+                        Expanded(
+                          child: Text(
+                            dish.name,
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DataCell(Text('PHP${dish.price}')),
+                  if (!isCatering)
+                    DataCell(
+                      Wrap(
+                        spacing: 4,
+                        children:
+                            dish.paxOptions.map((pax) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color:
+                                      pax == '1 pax'
+                                          ? const Color(0xFFFFC107)
+                                          : Colors.grey.shade200,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  pax,
+                                  style: const TextStyle(fontSize: 10),
+                                ),
+                              );
+                            }).toList(),
                       ),
                     ),
-                    DataCell(Text('PHP${dish.price}')),
-                    if (!isCatering)
-                      DataCell(
-                        Wrap(
-                          spacing: 4,
-                          children:
-                              dish.paxOptions.map((pax) {
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        pax == '1 pax'
-                                            ? const Color(0xFFFFC107)
-                                            : Colors.grey.shade200,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    pax,
-                                    style: const TextStyle(fontSize: 10),
-                                  ),
-                                );
-                              }).toList(),
-                        ),
-                      ),
-                    if (!isCatering)
-                      DataCell(
-                        dish.sauces.isEmpty
-                            ? const Text(
-                              'None',
-                              style: TextStyle(color: Colors.grey),
-                            )
-                            : Wrap(
-                              spacing: 4,
-                              children:
-                                  dish.sauces.take(2).map((sauce) {
-                                    return Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFFFC107),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        sauce,
-                                        style: const TextStyle(fontSize: 10),
-                                      ),
-                                    );
-                                  }).toList(),
-                            ),
-                      ),
+                  if (!isCatering)
                     DataCell(
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
+                      dish.sauces.isEmpty
+                          ? const Text(
+                            'None',
+                            style: TextStyle(color: Colors.grey),
+                          )
+                          : Wrap(
+                            spacing: 4,
+                            children:
+                                dish.sauces.take(2).map((sauce) {
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFC107),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      sauce,
+                                      style: const TextStyle(fontSize: 10),
+                                    ),
+                                  );
+                                }).toList(),
+                          ),
+                    ),
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color:
+                            dish.available
+                                ? Colors.green.shade100
+                                : Colors.red.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        dish.available ? 'Available' : 'Unavailable',
+                        style: TextStyle(
                           color:
                               dish.available
-                                  ? Colors.green.shade100
-                                  : Colors.red.shade100,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          dish.available ? 'Available' : 'Unavailable',
-                          style: TextStyle(
-                            color:
-                                dish.available
-                                    ? Colors.green.shade700
-                                    : Colors.red.shade700,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
+                                  ? Colors.green.shade700
+                                  : Colors.red.shade700,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
-                    DataCell(
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            onPressed:
-                                () => _showIngredientsDialog(dish),
-                            icon: const Icon(Icons.list_alt, size: 16),
-                            tooltip: 'Ingredients',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 32,
-                              minHeight: 32,
-                            ),
+                  ),
+                  DataCell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          onPressed: () => _showIngredientsDialog(dish),
+                          icon: const Icon(Icons.list_alt, size: 16),
+                          tooltip: 'Ingredients',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
                           ),
-                          IconButton(
-                            onPressed:
-                                () => _openDishDialog(
-                                  dish: dish,
-                                  category: dish.category,
-                                ),
-                            icon: const Icon(Icons.edit, size: 16),
-                            tooltip: 'Edit dish',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 32,
-                              minHeight: 32,
-                            ),
+                        ),
+                        IconButton(
+                          onPressed:
+                              () => _openDishDialog(
+                                dish: dish,
+                                category: dish.category,
+                              ),
+                          icon: const Icon(Icons.edit, size: 16),
+                          tooltip: 'Edit dish',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
                           ),
-                          IconButton(
-                            onPressed: () => _toggleDishAvailability(dish),
-                            icon: Icon(
+                        ),
+                        IconButton(
+                          onPressed: () => _toggleDishAvailability(dish),
+                          icon: Icon(
+                            dish.available
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            size: 16,
+                          ),
+                          tooltip:
                               dish.available
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
-                              size: 16,
-                            ),
-                            tooltip:
-                                dish.available
-                                    ? 'Make unavailable'
-                                    : 'Make available',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 32,
-                              minHeight: 32,
-                            ),
+                                  ? 'Make unavailable'
+                                  : 'Make available',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
                           ),
-                          IconButton(
-                            onPressed: () => _confirmArchiveDish(dish),
-                            icon: const Icon(Icons.archive_outlined, size: 16),
-                            tooltip: 'Archive',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 32,
-                              minHeight: 32,
-                            ),
+                        ),
+                        IconButton(
+                          onPressed: () => _confirmArchiveDish(dish),
+                          icon: const Icon(Icons.archive_outlined, size: 16),
+                          tooltip: 'Archive',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
-                );
-              }).toList(),
+                  ),
+                ],
+              );
+            }).toList(),
       ),
     );
   }

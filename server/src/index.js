@@ -278,7 +278,8 @@ app.use(
     optionsSuccessStatus: 204,
   }),
 );
-app.use(express.json({ limit: "50mb" }));
+const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || "100mb";
+app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
 
 const publicRateLimit = createPublicRateLimiter();
 app.use("/api/public/events/theme-design", publicRateLimit);
@@ -1148,7 +1149,7 @@ app.get(
     }
   },
 );
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
+app.use(express.urlencoded({ limit: REQUEST_BODY_LIMIT, extended: true }));
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-change-me";
@@ -4096,11 +4097,15 @@ app.put(
       }
 
       await writeWebsiteContent(content);
-      await logAction({
-        userId: req.user.id,
-        feature: "Website Content",
-        action: "updated website content",
-      });
+      try {
+        await logAction({
+          userId: req.user.id,
+          feature: "Website Content",
+          action: "updated website content",
+        });
+      } catch (logError) {
+        console.warn("[website-content] content saved, but audit log failed:", logError.message);
+      }
       return res.json({ ok: true, content });
     } catch (e) {
       console.error(e);
@@ -7725,6 +7730,30 @@ async function registerRoutesAfterDbInit() {
         const restParams = [rangeStart, rangeEnd];
         const orderSource = String(req.query.orderSource || 'ALL').trim().toUpperCase();
         const orderStatus = String(req.query.orderStatus || 'ALL').trim().toUpperCase();
+        const businessSide = String(req.query.businessSide || 'ALL').trim().toUpperCase();
+        const cateringStyle = String(req.query.cateringStyle || 'ALL').trim().toUpperCase();
+        const includeRestaurant = businessSide !== 'CATERING';
+        const includeCatering = businessSide !== 'RESTAURANT';
+        const includeCateringOnly = cateringStyle !== 'CATERING_WITH_EVENT';
+        const includeEventCatering = cateringStyle !== 'CATERING_ONLY';
+        const cateringSourceFilter = (() => {
+          if (!orderSource || orderSource === 'ALL') return 'TRUE';
+          if (orderSource === 'WEB_APP') {
+            return `lower(coalesce(source, '')) IN ('web', 'web_app', 'new_event', 'online_inquiry', 'customer_website')`;
+          }
+          return 'FALSE';
+        })();
+        const cateringUnionParts = [
+          includeCateringOnly
+            ? `SELECT status, down_payment_status, full_payment_status, total_cost, created_at, updated_at, source, 'catering' AS style FROM catering_orders`
+            : null,
+          includeEventCatering
+            ? `SELECT status, down_payment_status, full_payment_status, total_cost, created_at, updated_at, source, 'catering_with_event' AS style FROM event_orders`
+            : null,
+        ].filter(Boolean);
+        const cateringUnionSql = cateringUnionParts.length
+          ? cateringUnionParts.join(' UNION ALL ')
+          : `SELECT NULL::text AS status, NULL::text AS down_payment_status, NULL::text AS full_payment_status, 0::numeric AS total_cost, now() AS created_at, now() AS updated_at, NULL::text AS source, NULL::text AS style WHERE FALSE`;
         if (orderSource && orderSource !== 'ALL') {
           restParams.push(orderSource);
           restFilters.push(`order_source = $${restParams.length}`);
@@ -7750,7 +7779,7 @@ async function registerRoutesAfterDbInit() {
            ${restWhere}`,
           restParams,
         );
-        const r = restToday.rows[0] || {};
+        const r = includeRestaurant ? (restToday.rows[0] || {}) : {};
 
         const cateringMetrics = await pool.query(
           `SELECT
@@ -7783,13 +7812,8 @@ async function registerRoutesAfterDbInit() {
                WHERE status = 'completed'
                  AND created_at >= $1 AND created_at < $2
              ), 0)::float AS sales_year
-           FROM (
-             SELECT status, down_payment_status, full_payment_status, total_cost, created_at
-             FROM catering_orders
-             UNION ALL
-             SELECT status, down_payment_status, full_payment_status, total_cost, created_at
-             FROM event_orders
-           ) combined`,
+           FROM (${cateringUnionSql}) combined
+           WHERE ${includeCatering ? cateringSourceFilter : 'FALSE'}`,
           [rangeStart, rangeEnd],
         );
         const c = cateringMetrics.rows[0] || {};
@@ -7822,13 +7846,10 @@ async function registerRoutesAfterDbInit() {
              EXTRACT(MONTH FROM created_at)::int AS month,
              COUNT(*)::int AS orders,
              COALESCE(SUM(total_cost) FILTER (WHERE status = 'completed'), 0)::float AS sales
-           FROM (
-             SELECT status, total_cost, created_at FROM catering_orders
-             UNION ALL
-             SELECT status, total_cost, created_at FROM event_orders
-           ) combined
+           FROM (${cateringUnionSql}) combined
            WHERE status != 'cancelled'
              AND created_at >= $1 AND created_at < $2
+             AND ${includeCatering ? cateringSourceFilter : 'FALSE'}
            GROUP BY 1
            ORDER BY 1`,
           [yearStart, nextYear],
@@ -7854,14 +7875,19 @@ async function registerRoutesAfterDbInit() {
              COALESCE(SUM(complaints), 0)::int AS complaint_count
            FROM (
              SELECT COALESCE((post_analysis->>'complaints')::int, 0) AS complaints,
-                    COALESCE(updated_at, created_at) AS feedback_at
+                    COALESCE(updated_at, created_at) AS feedback_at,
+                    source
              FROM event_orders
+             ${includeEventCatering ? '' : 'WHERE FALSE'}
              UNION ALL
              SELECT COALESCE((post_analysis->>'complaints')::int, 0) AS complaints,
-                    COALESCE(updated_at, created_at) AS feedback_at
+                    COALESCE(updated_at, created_at) AS feedback_at,
+                    source
              FROM catering_orders
+             ${includeCateringOnly ? '' : 'WHERE FALSE'}
            ) feedback
-           WHERE feedback_at >= $1 AND feedback_at < $2`,
+           WHERE feedback_at >= $1 AND feedback_at < $2
+             AND ${includeCatering ? cateringSourceFilter : 'FALSE'}`,
           [rangeStart, rangeEnd],
         );
         const rf = restaurantFeedback.rows[0] || {};
@@ -7874,14 +7900,14 @@ async function registerRoutesAfterDbInit() {
           cateringSales: 0,
           cateringOrders: 0,
         }));
-        for (const row of restaurantMonthlySales.rows) {
+        if (includeRestaurant) for (const row of restaurantMonthlySales.rows) {
           const idx = Number(row.month) - 1;
           if (idx >= 0 && idx < 12) {
             monthly[idx].restaurantSales = Number(row.sales) || 0;
             monthly[idx].restaurantOrders = Number(row.orders) || 0;
           }
         }
-        for (const row of cateringMonthlySales.rows) {
+        if (includeCatering) for (const row of cateringMonthlySales.rows) {
           const idx = Number(row.month) - 1;
           if (idx >= 0 && idx < 12) {
             monthly[idx].cateringSales = Number(row.sales) || 0;
@@ -8543,6 +8569,7 @@ async function registerRoutesAfterDbInit() {
       const min = row.min_stock_level != null ? Number(row.min_stock_level) : 0;
       return {
         id: row.id,
+        itemCode: row.item_code,
         name: row.item_name,
         category: row.category,
         quantity: qty,
@@ -8551,6 +8578,8 @@ async function registerRoutesAfterDbInit() {
         notes: row.description,
         lastUpdated: row.updated_at,
         lowStock: min > 0 ? qty <= min : false,
+        available: String(row.status || 'active').toLowerCase() === 'active',
+        status: row.status || 'active',
         archived: row.archived === true,
       };
     };
@@ -8582,10 +8611,12 @@ async function registerRoutesAfterDbInit() {
         const unitCost = b.unitCost != null && b.unitCost !== '' ? Number(b.unitCost) : null;
         const notes = b.notes != null ? String(b.notes) : null;
         const minStock = b.minStockLevel != null ? Number(b.minStockLevel) : 0;
+        const status = b.available === false ? 'inactive' : 'active';
+        const itemCode = await generateSequentialId('ITM', 4);
         const r = await pool.query(
-          `INSERT INTO inventory (item_name, description, category, quantity, unit, unit_cost, min_stock_level, archived)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,FALSE) RETURNING *`,
-          [name, notes, category, quantity, unit, unitCost, minStock],
+          `INSERT INTO inventory (item_code, item_name, description, category, quantity, unit, unit_cost, min_stock_level, status, archived)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,FALSE) RETURNING *`,
+          [itemCode, name, notes, category, quantity, unit, unitCost, minStock, status],
         );
         res.status(201).json({ item: inventoryRowToJson(r.rows[0]) });
       } catch (e) {
@@ -8608,6 +8639,7 @@ async function registerRoutesAfterDbInit() {
         const unitCost = b.unitCost != null && b.unitCost !== '' ? Number(b.unitCost) : null;
         const notes = b.notes != null ? String(b.notes) : null;
         const minStock = b.minStockLevel != null ? Number(b.minStockLevel) : 0;
+        const status = b.available === false ? 'inactive' : 'active';
         const r = await pool.query(
           `UPDATE inventory SET
             item_name = $1,
@@ -8617,10 +8649,11 @@ async function registerRoutesAfterDbInit() {
             unit = $5,
             unit_cost = $6,
             min_stock_level = $7,
+            status = $8,
             updated_at = now()
-           WHERE id = $8::uuid AND archived = FALSE
+           WHERE id = $9::uuid AND archived = FALSE
            RETURNING *`,
-          [name, notes, category, quantity, unit, unitCost, minStock, id],
+          [name, notes, category, quantity, unit, unitCost, minStock, status, id],
         );
         if (r.rowCount === 0) {
           return res.status(404).json({ error: 'Item not found or is archived' });

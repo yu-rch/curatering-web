@@ -26,9 +26,7 @@ class MonthlyReportSnapshot {
 
   String get popularDish {
     if (dishCounts.isEmpty) return 'N/A';
-    return dishCounts.entries
-        .reduce((a, b) => a.value >= b.value ? a : b)
-        .key;
+    return dishCounts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
   }
 
   String get mostFrequentEventType {
@@ -39,8 +37,8 @@ class MonthlyReportSnapshot {
   }
 
   List<MapEntry<String, int>> get topDishes {
-    final list = dishCounts.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+    final list =
+        dishCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
     return list;
   }
 }
@@ -63,7 +61,8 @@ MonthlyReportSnapshot buildMonthlyReportSnapshot({
     final et = o.eventType.trim().isEmpty ? 'Unspecified' : o.eventType;
     eventTypeCounts[et] = (eventTypeCounts[et] ?? 0) + 1;
     for (final item in o.menu) {
-      final name = item.dishName.trim().isEmpty ? 'Unknown dish' : item.dishName;
+      final name =
+          item.dishName.trim().isEmpty ? 'Unknown dish' : item.dishName;
       dishCounts[name] = (dishCounts[name] ?? 0) + 1;
     }
   }
@@ -95,16 +94,10 @@ String _monthLabel(DateTime month) {
   return '${names[month.month - 1]} ${month.year}';
 }
 
-String _orderDateLabel(EventOrderDto order) {
-  if (order.scheduleSlots.isEmpty) return '—';
-  final d = DateTime.tryParse(order.scheduleSlots.first.date);
-  if (d == null) return order.scheduleSlots.first.date;
-  return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-}
-
 Future<Uint8List> buildMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
   final doc = pw.Document(
-    title: "Macrina's Kitchen and Catering Report — ${_monthLabel(snapshot.month)}",
+    title:
+        "Macrina's Kitchen and Catering Report — ${_monthLabel(snapshot.month)}",
     author: "Macrina's Kitchen and Catering",
   );
 
@@ -142,13 +135,14 @@ Future<Uint8List> buildMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
     pw.MultiPage(
       pageFormat: PdfPageFormat.a4,
       margin: const pw.EdgeInsets.all(40),
-      footer: (ctx) => pw.Align(
-        alignment: pw.Alignment.centerRight,
-        child: pw.Text(
-          'Page ${ctx.pageNumber} of ${ctx.pagesCount}',
-          style: subStyle,
-        ),
-      ),
+      footer:
+          (ctx) => pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Page ${ctx.pageNumber} of ${ctx.pagesCount}',
+              style: subStyle,
+            ),
+          ),
       build: (context) {
         final blocks = <pw.Widget>[
           pw.Text("Macrina's Kitchen and Catering", style: headerStyle),
@@ -167,10 +161,7 @@ Future<Uint8List> buildMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
             style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
           ),
           pw.SizedBox(height: 8),
-          summaryRow(
-            'Completed orders',
-            '${snapshot.orders.length}',
-          ),
+          summaryRow('Completed orders', '${snapshot.orders.length}'),
           summaryRow('Total sales', formatPhp(snapshot.totalSales)),
           summaryRow('Most popular dish', snapshot.popularDish),
           summaryRow(
@@ -186,7 +177,9 @@ Future<Uint8List> buildMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
         ];
 
         if (snapshot.topDishes.isEmpty) {
-          blocks.add(pw.Text('No dish data for this period.', style: cellStyle));
+          blocks.add(
+            pw.Text('No dish data for this period.', style: cellStyle),
+          );
         } else {
           blocks.add(
             pw.Table(
@@ -286,7 +279,11 @@ Future<Uint8List> buildOperationsReportPdf({
     title: "Macrina's Kitchen and Catering Report",
     author: "Macrina's Kitchen and Catering",
   );
-  final headerStyle = pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold);
+  final generatedAt = DateTime.now();
+  final headerStyle = pw.TextStyle(
+    fontSize: 16,
+    fontWeight: pw.FontWeight.bold,
+  );
   final subStyle = pw.TextStyle(fontSize: 10, color: PdfColors.grey700);
   final cellStyle = const pw.TextStyle(fontSize: 9);
   final headerCellStyle = pw.TextStyle(
@@ -294,18 +291,100 @@ Future<Uint8List> buildOperationsReportPdf({
     fontWeight: pw.FontWeight.bold,
   );
 
-  pw.Widget line(String label, String value) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.only(bottom: 5),
-      child: pw.Row(
-        children: [
-          pw.Expanded(flex: 2, child: pw.Text(label, style: cellStyle)),
-          pw.Expanded(
-            flex: 3,
-            child: pw.Text(value, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-          ),
-        ],
-      ),
+  pw.Widget summaryTable(String title, List<List<String>> rows) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.SizedBox(height: 10),
+        pw.Text(
+          title,
+          style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 6),
+        pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+          columnWidths: const {
+            0: pw.FlexColumnWidth(2),
+            1: pw.FlexColumnWidth(3),
+          },
+          children: [
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+              children: [
+                pw.Padding(
+                  padding: const pw.EdgeInsets.all(6),
+                  child: pw.Text('Metric', style: headerCellStyle),
+                ),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.all(6),
+                  child: pw.Text('Value', style: headerCellStyle),
+                ),
+              ],
+            ),
+            for (final row in rows)
+              pw.TableRow(
+                children: [
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Text(row[0], style: cellStyle),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Text(row[1], style: cellStyle),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  pw.Widget chartBars(String title, List<ReportRankItem> items) {
+    final top = items.take(8).toList();
+    final max = top.fold<int>(1, (m, e) => e.count > m ? e.count : m);
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.SizedBox(height: 12),
+        pw.Text(
+          title,
+          style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 6),
+        if (top.isEmpty)
+          pw.Text('No chart data.', style: cellStyle)
+        else
+          for (final e in top)
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 5),
+              child: pw.Row(
+                children: [
+                  pw.SizedBox(
+                    width: 120,
+                    child: pw.Text(e.name, style: cellStyle),
+                  ),
+                  pw.SizedBox(
+                    width: 180,
+                    child: pw.Container(
+                      height: 10,
+                      color: PdfColors.grey200,
+                      child: pw.Align(
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Container(
+                          width: 180 * e.count / max,
+                          height: 10,
+                          color: PdfColors.blue600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(width: 8),
+                  pw.Text('${e.count}', style: cellStyle),
+                ],
+              ),
+            ),
+      ],
     );
   }
 
@@ -314,7 +393,10 @@ Future<Uint8List> buildOperationsReportPdf({
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
         pw.SizedBox(height: 12),
-        pw.Text(title, style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+        pw.Text(
+          title,
+          style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+        ),
         pw.SizedBox(height: 6),
         if (items.isEmpty)
           pw.Text('No data.', style: cellStyle)
@@ -366,71 +448,71 @@ Future<Uint8List> buildOperationsReportPdf({
       'Period: ${_periodLabel(annual: annual, year: year, month: month)}',
       style: subStyle,
     ),
+    pw.Text(
+      'As of ${generatedAt.year}-${generatedAt.month.toString().padLeft(2, '0')}-${generatedAt.day.toString().padLeft(2, '0')} ${generatedAt.hour.toString().padLeft(2, '0')}:${generatedAt.minute.toString().padLeft(2, '0')}',
+      style: subStyle,
+    ),
     pw.SizedBox(height: 16),
   ];
 
   if (scope != 'restaurant') {
     blocks.add(pw.Text('Catering / Events — Summary', style: headerStyle));
-    blocks.add(line('Completed orders', '${data.catering.orderCount}'));
-    blocks.add(line('Total sales', formatPhp(data.catering.totalSales)));
     blocks.add(
-      line(
-        'Average guest count',
-        data.catering.averageGuestCount.toStringAsFixed(1),
-      ),
+      summaryTable('Catering Summary Table', [
+        ['Completed orders', '${data.catering.orderCount}'],
+        ['Total sales', formatPhp(data.catering.totalSales)],
+        [
+          'Average guest count',
+          data.catering.averageGuestCount.toStringAsFixed(1),
+        ],
+        [
+          'Catering feedback complaints',
+          '${data.catering.feedback.complaintCount}',
+        ],
+        ['Events with complaints', '${data.catering.feedback.count}'],
+      ]),
     );
     blocks.add(
-      line(
-        'Catering feedback complaints',
-        '${data.catering.feedback.complaintCount}',
-      ),
+      chartBars('Top Requested Dishes Chart', data.catering.topDishes),
     );
-    blocks.add(
-      line(
-        'Events with complaints',
-        '${data.catering.feedback.count}',
-      ),
-    );
+    blocks.add(chartBars('Event Types Chart', data.catering.topEventTypes));
     blocks.add(rankTable('Top requested dishes', data.catering.topDishes));
-    blocks.add(rankTable('Most frequent event type', data.catering.topEventTypes));
+    blocks.add(
+      rankTable('Most frequent event type', data.catering.topEventTypes),
+    );
   }
 
   if (scope != 'catering') {
     blocks.add(pw.SizedBox(height: 8));
     blocks.add(pw.Text('Restaurant — Summary', style: headerStyle));
-    blocks.add(line('Orders', '${data.restaurant.orderCount}'));
-    blocks.add(line('Total sales', formatPhp(data.restaurant.totalSales)));
     blocks.add(
-      line(
-        'Average orders per day',
-        data.restaurant.averageOrdersPerDay.toStringAsFixed(2),
-      ),
-    );
-    blocks.add(line('Web page views', '${data.restaurant.webPageViews}'));
-    blocks.add(line('Mobile page views', '${data.restaurant.mobilePageViews}'));
-    blocks.add(
-      line('Customer accounts (web)', '${data.restaurant.customerAccountsWeb}'),
-    );
-    blocks.add(
-      line(
-        'Customer accounts (mobile)',
-        '${data.restaurant.customerAccountsMobile}',
-      ),
-    );
-    blocks.add(
-      line('Feedback submissions', '${data.restaurant.feedback.count}'),
-    );
-    blocks.add(
-      line(
-        'Average feedback rating',
-        '${data.restaurant.feedback.averageStars.toStringAsFixed(1)} / 5',
-      ),
+      summaryTable('Restaurant Summary Table', [
+        ['Orders', '${data.restaurant.orderCount}'],
+        ['Total sales', formatPhp(data.restaurant.totalSales)],
+        [
+          'Average orders per day',
+          data.restaurant.averageOrdersPerDay.toStringAsFixed(2),
+        ],
+        ['Web page views', '${data.restaurant.webPageViews}'],
+        ['Mobile page views', '${data.restaurant.mobilePageViews}'],
+        ['Customer accounts (web)', '${data.restaurant.customerAccountsWeb}'],
+        [
+          'Customer accounts (mobile)',
+          '${data.restaurant.customerAccountsMobile}',
+        ],
+        ['Feedback submissions', '${data.restaurant.feedback.count}'],
+        [
+          'Average feedback rating',
+          '${data.restaurant.feedback.averageStars.toStringAsFixed(1)} / 5',
+        ],
+        [
+          'Positive / Neutral / Negative',
+          '${data.restaurant.feedback.positiveCount} / ${data.restaurant.feedback.neutralCount} / ${data.restaurant.feedback.negativeCount}',
+        ],
+      ]),
     );
     blocks.add(
-      line(
-        'Positive / Neutral / Negative',
-        '${data.restaurant.feedback.positiveCount} / ${data.restaurant.feedback.neutralCount} / ${data.restaurant.feedback.negativeCount}',
-      ),
+      chartBars('Most Ordered Dishes Chart', data.restaurant.topDishes),
     );
     blocks.add(rankTable('Most ordered dishes', data.restaurant.topDishes));
   }
@@ -439,11 +521,42 @@ Future<Uint8List> buildOperationsReportPdf({
     pw.MultiPage(
       pageFormat: PdfPageFormat.a4,
       margin: const pw.EdgeInsets.all(40),
+      footer:
+          (ctx) => pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Page ${ctx.pageNumber} of ${ctx.pagesCount}',
+              style: subStyle,
+            ),
+          ),
       build: (_) => blocks,
     ),
   );
 
   return doc.save();
+}
+
+Future<void> previewOperationsReportPdf({
+  required ReportsSummaryData data,
+  required String scope,
+  required bool annual,
+  required int year,
+  int? month,
+}) async {
+  await Printing.layoutPdf(
+    onLayout:
+        (_) => buildOperationsReportPdf(
+          data: data,
+          scope: scope,
+          annual: annual,
+          year: year,
+          month: month,
+        ),
+    name:
+        annual
+            ? 'macrinas-report-$year.pdf'
+            : 'macrinas-report-$year-${(month ?? 1).toString().padLeft(2, '0')}.pdf',
+  );
 }
 
 Future<void> downloadOperationsReportPdf({
@@ -460,8 +573,9 @@ Future<void> downloadOperationsReportPdf({
     year: year,
     month: month,
   );
-  final name = annual
-      ? 'macrinas-report-$year.pdf'
-      : 'macrinas-report-$year-${month.toString().padLeft(2, '0')}.pdf';
+  final name =
+      annual
+          ? 'macrinas-report-$year.pdf'
+          : 'macrinas-report-$year-${month.toString().padLeft(2, '0')}.pdf';
   await Printing.sharePdf(bytes: bytes, filename: name);
 }

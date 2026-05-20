@@ -63,11 +63,7 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage>
       );
     } catch (e) {
       if (!mounted) return;
-      showAntdMessage(
-        context,
-        'Save failed: $e',
-        type: AntdMessageType.error,
-      );
+      showAntdMessage(context, 'Save failed: $e', type: AntdMessageType.error);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -233,6 +229,16 @@ class _HomepageEditorTab extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               _sectionTitle('Latest event block'),
+              _textField(
+                label: 'Section label',
+                value: w.latestEventSectionLabel,
+                onChanged: (v) {
+                  w.latestEventSectionLabel = v;
+                  onChanged();
+                  w.touch();
+                },
+              ),
+              const SizedBox(height: 12),
               _richTextField(
                 context: context,
                 label: 'Title',
@@ -283,6 +289,28 @@ class _HomepageEditorTab extends StatelessWidget {
                 },
               ),
               const SizedBox(height: 24),
+              _sectionTitle('Popular dishes text'),
+              _textField(
+                label: 'Section label',
+                value: w.popularDishesSectionLabel,
+                onChanged: (v) {
+                  w.popularDishesSectionLabel = v;
+                  onChanged();
+                  w.touch();
+                },
+              ),
+              const SizedBox(height: 12),
+              _richTextField(
+                context: context,
+                label: 'Subtitle',
+                value: w.popularDishesSubtitle,
+                onChanged: (v) {
+                  w.popularDishesSubtitle = v;
+                  onChanged();
+                  w.touch();
+                },
+              ),
+              const SizedBox(height: 16),
               _multiImageList(
                 title: 'Popular dishes carousel',
                 images: w.popularDishImageBase64,
@@ -291,7 +319,9 @@ class _HomepageEditorTab extends StatelessWidget {
                   if (imgs.isEmpty) return;
                   w.popularDishImageBase64.addAll(imgs);
                   for (var i = 0; i < imgs.length; i++) {
-                    w.popularDishLabels.add('Dish ${w.popularDishLabels.length + 1}');
+                    w.popularDishLabels.add(
+                      'Dish ${w.popularDishLabels.length + 1}',
+                    );
                   }
                   onChanged();
                   w.touch();
@@ -330,6 +360,28 @@ class _HomepageEditorTab extends StatelessWidget {
                 }),
               ],
               const SizedBox(height: 24),
+              _sectionTitle('Event designs text'),
+              _textField(
+                label: 'Section label',
+                value: w.eventDesignsSectionLabel,
+                onChanged: (v) {
+                  w.eventDesignsSectionLabel = v;
+                  onChanged();
+                  w.touch();
+                },
+              ),
+              const SizedBox(height: 12),
+              _richTextField(
+                context: context,
+                label: 'Subtitle',
+                value: w.eventDesignsSubtitle,
+                onChanged: (v) {
+                  w.eventDesignsSubtitle = v;
+                  onChanged();
+                  w.touch();
+                },
+              ),
+              const SizedBox(height: 16),
               _multiImageList(
                 title: 'Event design showcase',
                 images: w.eventDesignImageBase64,
@@ -348,6 +400,16 @@ class _HomepageEditorTab extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               _sectionTitle('Footer'),
+              _textField(
+                label: 'Privacy policy label',
+                value: w.footerPrivacyLabel,
+                onChanged: (v) {
+                  w.footerPrivacyLabel = v;
+                  onChanged();
+                  w.touch();
+                },
+              ),
+              const SizedBox(height: 12),
               _richTextField(
                 context: context,
                 label: 'Copyright line',
@@ -382,6 +444,29 @@ class _GalleryEditorTab extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              _sectionTitle('Gallery page text'),
+              _richTextField(
+                context: context,
+                label: 'Gallery title',
+                value: w.galleryTitle,
+                onChanged: (v) {
+                  w.galleryTitle = v;
+                  onChanged();
+                  w.touch();
+                },
+              ),
+              const SizedBox(height: 12),
+              _richTextField(
+                context: context,
+                label: 'Gallery intro',
+                value: w.galleryIntro,
+                onChanged: (v) {
+                  w.galleryIntro = v;
+                  onChanged();
+                  w.touch();
+                },
+              ),
+              const SizedBox(height: 20),
               Row(
                 children: [
                   const Expanded(
@@ -438,7 +523,10 @@ class _GalleryEditorTab extends StatelessWidget {
                                 border: const OutlineInputBorder(),
                               ),
                               onChanged:
-                                  (v) => cat.defaultTagsForUpload = parseTagsInput(v),
+                                  (v) =>
+                                      cat.defaultTagsForUpload = parseTagsInput(
+                                        v,
+                                      ),
                             ),
                             const SizedBox(height: 12),
                             ...cat.images.asMap().entries.map((imgEntry) {
@@ -449,7 +537,8 @@ class _GalleryEditorTab extends StatelessWidget {
                                 child: Padding(
                                   padding: const EdgeInsets.all(12),
                                   child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       ClipRRect(
                                         borderRadius: BorderRadius.circular(8),
@@ -471,20 +560,24 @@ class _GalleryEditorTab extends StatelessWidget {
                                               Wrap(
                                                 spacing: 4,
                                                 runSpacing: 4,
-                                                children: img.tags
-                                                    .map(
-                                                      (t) => Chip(
-                                                        label: Text(
-                                                          t,
-                                                          style: const TextStyle(
-                                                            fontSize: 11,
+                                                children:
+                                                    img.tags
+                                                        .map(
+                                                          (t) => Chip(
+                                                            label: Text(
+                                                              t,
+                                                              style:
+                                                                  const TextStyle(
+                                                                    fontSize:
+                                                                        11,
+                                                                  ),
+                                                            ),
+                                                            visualDensity:
+                                                                VisualDensity
+                                                                    .compact,
                                                           ),
-                                                        ),
-                                                        visualDensity:
-                                                            VisualDensity.compact,
-                                                      ),
-                                                    )
-                                                    .toList(),
+                                                        )
+                                                        .toList(),
                                               )
                                             else
                                               Text(
@@ -496,44 +589,69 @@ class _GalleryEditorTab extends StatelessWidget {
                                               ),
                                             TextButton.icon(
                                               onPressed: () async {
-                                                final ctrl = TextEditingController(
-                                                  text: img.tags.join(', '),
-                                                );
-                                                final saved = await showDialog<bool>(
+                                                final ctrl =
+                                                    TextEditingController(
+                                                      text: img.tags.join(', '),
+                                                    );
+                                                final saved = await showDialog<
+                                                  bool
+                                                >(
                                                   context: context,
-                                                  builder: (ctx) => AlertDialog(
-                                                    title: const Text('Photo tags'),
-                                                    content: TextField(
-                                                      controller: ctrl,
-                                                      decoration: InputDecoration(
-                                                        hintText: galleryTagsHint(),
+                                                  builder:
+                                                      (ctx) => AlertDialog(
+                                                        title: const Text(
+                                                          'Photo tags',
+                                                        ),
+                                                        content: TextField(
+                                                          controller: ctrl,
+                                                          decoration:
+                                                              InputDecoration(
+                                                                hintText:
+                                                                    galleryTagsHint(),
+                                                              ),
+                                                          maxLines: 2,
+                                                        ),
+                                                        actions: [
+                                                          TextButton(
+                                                            onPressed:
+                                                                () =>
+                                                                    Navigator.pop(
+                                                                      ctx,
+                                                                      false,
+                                                                    ),
+                                                            child: const Text(
+                                                              'Cancel',
+                                                            ),
+                                                          ),
+                                                          FilledButton(
+                                                            onPressed:
+                                                                () =>
+                                                                    Navigator.pop(
+                                                                      ctx,
+                                                                      true,
+                                                                    ),
+                                                            child: const Text(
+                                                              'Save',
+                                                            ),
+                                                          ),
+                                                        ],
                                                       ),
-                                                      maxLines: 2,
-                                                    ),
-                                                    actions: [
-                                                      TextButton(
-                                                        onPressed:
-                                                            () => Navigator.pop(ctx, false),
-                                                        child: const Text('Cancel'),
-                                                      ),
-                                                      FilledButton(
-                                                        onPressed:
-                                                            () => Navigator.pop(ctx, true),
-                                                        child: const Text('Save'),
-                                                      ),
-                                                    ],
-                                                  ),
                                                 );
                                                 if (saved == true) {
                                                   img.tags
                                                     ..clear()
-                                                    ..addAll(parseTagsInput(ctrl.text));
+                                                    ..addAll(
+                                                      parseTagsInput(ctrl.text),
+                                                    );
                                                   onChanged();
                                                   w.touch();
                                                 }
                                                 ctrl.dispose();
                                               },
-                                              icon: const Icon(Icons.label_outline, size: 18),
+                                              icon: const Icon(
+                                                Icons.label_outline,
+                                                size: 18,
+                                              ),
                                               label: const Text('Edit tags'),
                                             ),
                                           ],
@@ -620,6 +738,39 @@ class _ContactEditorTab extends StatelessWidget {
                 style: TextStyle(color: AntdTokens.labelMuted),
               ),
               const SizedBox(height: 20),
+              _richTextField(
+                context: context,
+                label: 'Contact page title',
+                value: w.contactTitle,
+                onChanged: (v) {
+                  w.contactTitle = v;
+                  onChanged();
+                  w.touch();
+                },
+              ),
+              const SizedBox(height: 12),
+              _richTextField(
+                context: context,
+                label: 'Contact banner',
+                value: w.contactBannerText,
+                onChanged: (v) {
+                  w.contactBannerText = v;
+                  onChanged();
+                  w.touch();
+                },
+              ),
+              const SizedBox(height: 12),
+              _richTextField(
+                context: context,
+                label: 'Contact reach-us label',
+                value: w.contactReachUsLabel,
+                onChanged: (v) {
+                  w.contactReachUsLabel = v;
+                  onChanged();
+                  w.touch();
+                },
+              ),
+              const SizedBox(height: 12),
               _richTextField(
                 context: context,
                 label: 'Contact page intro',

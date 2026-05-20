@@ -5,20 +5,23 @@ class DashboardFilters {
     this.start,
     this.end,
     this.orderSource = 'ALL',
-    this.orderStatus = 'ALL',
+    this.businessSide = 'ALL',
+    this.cateringStyle = 'ALL',
   });
 
   final DateTime? start;
   final DateTime? end;
   final String orderSource;
-  final String orderStatus;
+  final String businessSide;
+  final String cateringStyle;
 
   Map<String, String> toQuery() {
     final query = <String, String>{};
     if (start != null) query['start'] = _date(start!);
     if (end != null) query['end'] = _date(end!);
     if (orderSource != 'ALL') query['orderSource'] = orderSource;
-    if (orderStatus != 'ALL') query['orderStatus'] = orderStatus;
+    if (businessSide != 'ALL') query['businessSide'] = businessSide;
+    if (cateringStyle != 'ALL') query['cateringStyle'] = cateringStyle;
     return query;
   }
 
@@ -159,8 +162,7 @@ class FeedbackDashboardMetrics {
   final int complaintCount;
 
   factory FeedbackDashboardMetrics.fromJson(Map<String, dynamic> json) {
-    double d(dynamic v) =>
-        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double d(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     int i(dynamic v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
     return FeedbackDashboardMetrics(
       count: i(json['count']),

@@ -42,6 +42,7 @@ class CartAPI {
   }
 
   static async syncCart(req, res) {
+    let client;
     try {
       const customerId = requireCustomerId(req, res);
       if (!customerId) return;
@@ -52,9 +53,10 @@ class CartAPI {
         return res.status(400).json({ error: "device_id is required" });
       }
 
-      await pool.query("BEGIN");
+      client = await pool.connect();
+      await client.query("BEGIN");
 
-      let sessionResult = await pool.query(
+      let sessionResult = await client.query(
         `
         SELECT id FROM cart_sessions 
         WHERE customer_token = $1 AND device_id = $2
@@ -66,7 +68,7 @@ class CartAPI {
 
       let sessionId;
       if (sessionResult.rows.length === 0) {
-        const newSession = await pool.query(
+        const newSession = await client.query(
           `
           INSERT INTO cart_sessions (customer_token, device_id)
           VALUES ($1, $2)
@@ -80,7 +82,7 @@ class CartAPI {
         sessionId = sessionResult.rows[0].id;
       }
 
-      await pool.query(
+      await client.query(
         `
         DELETE FROM cart_items 
         WHERE session_id = $1
@@ -93,7 +95,7 @@ class CartAPI {
         const placeholders = cart
           .map((_, rowIdx) => {
             const o = rowIdx * cols;
-            return `($${o + 1}, $${o + 2}, $${o + 3}, $${o + 4}, $${o + 5}, $${o + 6}, $${o + 7}, $${o + 8})`;
+            return `($${o + 1}, $${o + 2}, $${o + 3}, $${o + 4}, $${o + 5}, $${o + 6}, $${o + 7}, $${o + 8}, NOW())`;
           })
           .join(", ");
 
@@ -111,7 +113,7 @@ class CartAPI {
           );
         }
 
-        await pool.query(
+        await client.query(
           `
           INSERT INTO cart_items (session_id, dish_id, dish_name, dish_price, dish_category, dish_type, quantity, selected_sauce, updated_at)
           VALUES ${placeholders}
@@ -120,7 +122,7 @@ class CartAPI {
         );
       }
 
-      await pool.query(
+      await client.query(
         `
         UPDATE cart_sessions 
         SET updated_at = NOW()
@@ -129,7 +131,7 @@ class CartAPI {
         [sessionId],
       );
 
-      await pool.query("COMMIT");
+      await client.query("COMMIT");
 
       res.json({
         success: true,
@@ -137,9 +139,13 @@ class CartAPI {
         timestamp: timestamp ?? null,
       });
     } catch (error) {
-      await pool.query("ROLLBACK").catch(() => {});
+      if (client) {
+        await client.query("ROLLBACK").catch(() => {});
+      }
       console.error("Error syncing cart:", error);
       res.status(500).json({ error: "Failed to sync cart" });
+    } finally {
+      client?.release();
     }
   }
 

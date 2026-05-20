@@ -85,10 +85,7 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
       await SuperAdminApi.instance.resolveHelpRequest(requestId: req.id);
 
       if (!mounted) return;
-      showAntdMessage(
-        context,
-        'Help request resolved; notification sent.',
-      );
+      showAntdMessage(context, 'Help request resolved; notification sent.');
       await _fetch();
     } catch (e) {
       if (!mounted) return;
@@ -125,11 +122,12 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
               children: [
                 DropdownButton<String>(
                   value: _statusFilter,
-                  items: _statusOptions
-                      .map(
-                        (s) => DropdownMenuItem(value: s, child: Text(s)),
-                      )
-                      .toList(),
+                  items:
+                      _statusOptions
+                          .map(
+                            (s) => DropdownMenuItem(value: s, child: Text(s)),
+                          )
+                          .toList(),
                   onChanged: (value) {
                     if (value == null) return;
                     setState(() => _statusFilter = value);
@@ -140,24 +138,33 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
                 if (_loading)
                   const Padding(
                     padding: EdgeInsets.only(top: 10),
-                    child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                   ),
                 if (_error != null) ...[
                   const SizedBox(width: 12),
-                  Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
                 ],
               ],
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: _filtered.isEmpty
-                  ? Center(
-                      child: Text(
-                        _loading ? 'Loading...' : 'No help requests found.',
-                        style: TextStyle(color: Colors.grey.shade600),
-                      ),
-                    )
-                  : PagedDataTable(
+              child:
+                  _filtered.isEmpty
+                      ? Center(
+                        child: Text(
+                          _loading ? 'Loading...' : 'No help requests found.',
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      )
+                      : PagedDataTable(
+                        title: 'Help Requests',
                         columns: const [
                           DataColumn(label: Text('Feature')),
                           DataColumn(label: Text('Problem')),
@@ -166,39 +173,52 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
                           DataColumn(label: Text('Status')),
                           DataColumn(label: Text('Action')),
                         ],
-                        rows: _filtered.map((r) {
-                          final isUnresolved = r.status == HelpRequestStatus.unresolved;
-                          return DataRow(
-                            cells: [
-                              DataCell(Text(r.feature)),
-                              DataCell(Text(r.problem)),
-                              DataCell(Text(r.request)),
-                              DataCell(Text(r.createdAt.toString())),
-                              DataCell(
-                                Text(
-                                  r.status == HelpRequestStatus.unresolved ? 'Unresolved' : 'Resolved',
-                                  style: TextStyle(
-                                    color: isUnresolved ? Colors.red : Colors.green,
-                                    fontWeight: FontWeight.w600,
+                        rows:
+                            _filtered.map((r) {
+                              final isUnresolved =
+                                  r.status == HelpRequestStatus.unresolved;
+                              return DataRow(
+                                cells: [
+                                  DataCell(Text(r.feature)),
+                                  DataCell(Text(r.problem)),
+                                  DataCell(Text(r.request)),
+                                  DataCell(Text(r.createdAt.toString())),
+                                  DataCell(
+                                    Text(
+                                      r.status == HelpRequestStatus.unresolved
+                                          ? 'Unresolved'
+                                          : 'Resolved',
+                                      style: TextStyle(
+                                        color:
+                                            isUnresolved
+                                                ? Colors.red
+                                                : Colors.green,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                              DataCell(
-                                isUnresolved
-                                    ? ElevatedButton(
-                                        onPressed: () => _resolve(r),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.green,
-                                          foregroundColor: Colors.white,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  DataCell(
+                                    isUnresolved
+                                        ? ElevatedButton(
+                                          onPressed: () => _resolve(r),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.green,
+                                            foregroundColor: Colors.white,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                          child: const Text('Resolve'),
+                                        )
+                                        : const Text(
+                                          '-',
+                                          style: TextStyle(color: Colors.grey),
                                         ),
-                                        child: const Text('Resolve'),
-                                      )
-                                    : const Text('-', style: TextStyle(color: Colors.grey)),
-                              ),
-                            ],
-                          );
-                        }).toList(),
+                                  ),
+                                ],
+                              );
+                            }).toList(),
                       ),
             ),
           ],
@@ -207,4 +227,3 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
     );
   }
 }
-

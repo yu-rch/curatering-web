@@ -3,10 +3,7 @@ import '../models/event_order.dart';
 double _parseDoubleLoose(String raw) {
   // Removes any non-numeric separators except '.' and '-' so we can parse
   // strings like "₱100.00" or "100.00".
-  final cleaned = raw
-      .replaceAll('₱', '')
-      .replaceAll(',', '')
-      .trim();
+  final cleaned = raw.replaceAll('₱', '').replaceAll(',', '').trim();
   return double.tryParse(cleaned) ?? 0.0;
 }
 
@@ -49,8 +46,7 @@ String formatPesos(double amount) {
   return '₱${amount.toStringAsFixed(2)}';
 }
 
-/// Reports and PDFs use PHP prefix per business requirement.
+/// Shared peso formatter for UI and report/PDF summaries.
 String formatPhp(double amount) {
-  return 'PHP ${amount.toStringAsFixed(2)}';
+  return formatPesos(amount);
 }
-

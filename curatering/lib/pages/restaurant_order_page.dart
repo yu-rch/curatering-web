@@ -407,18 +407,6 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      dish.effectiveMealType.isNotEmpty
-                          ? dish.effectiveMealType
-                          : 'Restaurant',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
                     const Spacer(),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -456,6 +444,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
       ),
     );
   }
+
   void _showDishDetails(MenuDish dish) {
     showDialog<void>(
       context: context,

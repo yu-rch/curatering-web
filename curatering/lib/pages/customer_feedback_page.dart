@@ -149,8 +149,7 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
                 ),
                 const SizedBox(width: 8),
                 FilledButton.icon(
-                  onPressed:
-                      _analyzing || filtered.isEmpty ? null : _analyze,
+                  onPressed: _analyzing || filtered.isEmpty ? null : _analyze,
                   icon:
                       _analyzing
                           ? const SizedBox(
@@ -246,6 +245,7 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
                         ),
                       )
                       : PagedDataTable(
+                        title: 'Restaurant Customer Feedback',
                         headingRowColor: WidgetStateProperty.all(
                           Colors.grey.shade100,
                         ),

@@ -46,6 +46,7 @@ class _MapPickerState extends State<MapPicker> {
   bool _isGettingLocation = false;
   String? _error;
   List<String> _suggestions = const [];
+  int _pickRequestId = 0;
 
   @override
   void initState() {
@@ -79,7 +80,10 @@ class _MapPickerState extends State<MapPicker> {
 
   Future<void> _initializeLocation() async {
     if (widget.initialLatitude != null && widget.initialLongitude != null) {
-      _selectedLocation = LatLng(widget.initialLatitude!, widget.initialLongitude!);
+      _selectedLocation = LatLng(
+        widget.initialLatitude!,
+        widget.initialLongitude!,
+      );
       _address = widget.initialAddress?.trim() ?? '';
       if (_address.isEmpty) await _resolveAddress();
       setState(() {});
@@ -102,7 +106,7 @@ class _MapPickerState extends State<MapPicker> {
     setState(() {});
   }
 
-  Future<void> _resolveAddress() async {
+  Future<void> _resolveAddress({int? requestId}) async {
     final loc = _selectedLocation;
     if (loc == null) return;
     setState(() => _isLoading = true);
@@ -110,19 +114,32 @@ class _MapPickerState extends State<MapPicker> {
       final resolved = await NominatimService.instance.reverseGeocode(
         GeoPin(lat: loc.latitude, lng: loc.longitude),
       );
-      if (mounted) setState(() => _address = resolved);
+      if (!mounted) return;
+      if (requestId != null && requestId != _pickRequestId) return;
+      final current = _selectedLocation;
+      if (current == null ||
+          current.latitude != loc.latitude ||
+          current.longitude != loc.longitude) {
+        return;
+      }
+      setState(() => _address = resolved);
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && (requestId == null || requestId == _pickRequestId)) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   Future<void> _onPick(LatLng location) async {
+    final requestId = ++_pickRequestId;
     setState(() {
       _selectedLocation = location;
+      _address = '';
       _error = null;
+      _suggestions = const [];
     });
     _mapController.move(location, _mapController.camera.zoom);
-    await _resolveAddress();
+    await _resolveAddress(requestId: requestId);
   }
 
   Future<void> _applySearch(String query) async {
@@ -169,7 +186,9 @@ class _MapPickerState extends State<MapPicker> {
     final loc = _selectedLocation;
     if (loc == null) return;
     if (widget.enforceDeliveryRadius &&
-        !isWithinDeliveryRadius(GeoPin(lat: loc.latitude, lng: loc.longitude))) {
+        !isWithinDeliveryRadius(
+          GeoPin(lat: loc.latitude, lng: loc.longitude),
+        )) {
       setState(() {
         _error =
             'Delivery must be within ${deliveryMaxDistanceKm.toStringAsFixed(0)} km of our restaurant.';
@@ -187,7 +206,8 @@ class _MapPickerState extends State<MapPicker> {
 
   @override
   Widget build(BuildContext context) {
-    final center = _selectedLocation ?? const LatLng(defaultMapLat, defaultMapLng);
+    final center =
+        _selectedLocation ?? const LatLng(defaultMapLat, defaultMapLng);
 
     return Scaffold(
       appBar: AppBar(
@@ -223,18 +243,23 @@ class _MapPickerState extends State<MapPicker> {
                     elevation: 2,
                     child: ListView(
                       shrinkWrap: true,
-                      children: _suggestions
-                          .map(
-                            (s) => ListTile(
-                              dense: true,
-                              title: Text(s, style: const TextStyle(fontSize: 13)),
-                              onTap: () {
-                                _searchController.text = s;
-                                _applySearch(s);
-                              },
-                            ),
-                          )
-                          .toList(),
+                      children:
+                          _suggestions
+                              .map(
+                                (s) => ListTile(
+                                  dense: true,
+                                  title: Text(
+                                    s,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                  onTap: () {
+                                    _searchController.text = s;
+                                    setState(() => _suggestions = const []);
+                                    _applySearch(s);
+                                  },
+                                ),
+                              )
+                              .toList(),
                     ),
                   ),
               ],
@@ -254,7 +279,9 @@ class _MapPickerState extends State<MapPicker> {
                   const LinearProgressIndicator()
                 else
                   Text(
-                    _address.isNotEmpty ? _address : 'Tap the map to place the pin',
+                    _address.isNotEmpty
+                        ? _address
+                        : 'Tap the map to place the pin',
                     style: GoogleFonts.poppins(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
@@ -280,7 +307,10 @@ class _MapPickerState extends State<MapPicker> {
               options: MapOptions(
                 initialCenter: center,
                 initialZoom: 16,
-                onTap: (_, point) => _onPick(point),
+                onTap: (_, point) {
+                  FocusScope.of(context).unfocus();
+                  _onPick(point);
+                },
               ),
               children: [
                 TileLayer(
@@ -313,7 +343,8 @@ class _MapPickerState extends State<MapPicker> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: _isGettingLocation ? null : _getCurrentLocation,
+                      onPressed:
+                          _isGettingLocation ? null : _getCurrentLocation,
                       icon: const Icon(Icons.my_location, size: 18),
                       label: const Text('Use my location'),
                     ),
@@ -348,12 +379,13 @@ Future<MapPickerResult?> showMapPicker({
 }) {
   return Navigator.of(context).push<MapPickerResult>(
     MaterialPageRoute(
-      builder: (context) => MapPicker(
-        initialLatitude: initialLatitude,
-        initialLongitude: initialLongitude,
-        initialAddress: initialAddress,
-        enforceDeliveryRadius: enforceDeliveryRadius,
-      ),
+      builder:
+          (context) => MapPicker(
+            initialLatitude: initialLatitude,
+            initialLongitude: initialLongitude,
+            initialAddress: initialAddress,
+            enforceDeliveryRadius: enforceDeliveryRadius,
+          ),
     ),
   );
 }

@@ -1,6 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../auth/auth_session.dart';
 import '../services/dashboard_api.dart';
@@ -16,21 +19,31 @@ class Dashboard extends StatefulWidget {
 }
 
 class _DashboardState extends State<Dashboard> {
+  final TextEditingController _searchController = TextEditingController();
   bool _isLoading = false;
   bool _isInsightLoading = false;
+  bool _isPrintingPdf = false;
   String? _errorMessage;
   String? _insightError;
   DashboardSummary? _summary;
   DashboardInsight? _insight;
   String _range = 'year';
   String _orderSource = 'ALL';
-  String _orderStatus = 'ALL';
+  String _businessSide = 'ALL';
+  String _cateringStyle = 'ALL';
+  String _dashboardSearch = '';
 
   @override
   void initState() {
     super.initState();
     _load();
     _loadInsight();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _load({bool forceRefresh = false}) async {
@@ -131,77 +144,98 @@ class _DashboardState extends State<Dashboard> {
       start: start,
       end: end,
       orderSource: _orderSource,
-      orderStatus: _orderStatus,
+      businessSide: _businessSide,
+      cateringStyle: _cateringStyle,
     );
   }
 
   Widget _filterBar() {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: AntdTokens.borderSubtle),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            const Text(
-              'Filters',
-              style: TextStyle(fontWeight: FontWeight.w700),
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        SizedBox(
+          width: 260,
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              labelText: 'Search dashboard',
+              isDense: true,
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon:
+                  _dashboardSearch.isEmpty
+                      ? null
+                      : IconButton(
+                        tooltip: 'Clear search',
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _dashboardSearch = '');
+                        },
+                        icon: const Icon(Icons.close),
+                      ),
+              border: const OutlineInputBorder(),
             ),
-            _filterDropdown(
-              value: _range,
-              label: 'Range',
-              items: const {
-                'today': 'Today',
-                'month': 'This month',
-                'year': 'This year',
-                'all': 'All time',
-              },
-              onChanged: (v) {
-                setState(() => _range = v);
-                _load(forceRefresh: true);
-                _loadInsight();
-              },
-            ),
-            _filterDropdown(
-              value: _orderSource,
-              label: 'Source',
-              items: const {
-                'ALL': 'All sources',
-                'WEB_APP': 'Web',
-                'MOBILE_APP': 'Mobile',
-                'POS_WEB': 'POS web',
-                'POS_MOBILE': 'POS mobile',
-              },
-              onChanged: (v) {
-                setState(() => _orderSource = v);
-                _load(forceRefresh: true);
-              },
-            ),
-            _filterDropdown(
-              value: _orderStatus,
-              label: 'Restaurant status',
-              items: const {
-                'ALL': 'All statuses',
-                'PENDING_CASHIER': 'Pending cashier',
-                'IN_PREPARATION': 'In preparation',
-                'OUT_FOR_DELIVERY': 'Out for delivery',
-                'DELIVERED': 'Delivered',
-                'CANCELLED': 'Cancelled',
-              },
-              onChanged: (v) {
-                setState(() => _orderStatus = v);
-                _load(forceRefresh: true);
-              },
-            ),
-          ],
+            onChanged:
+                (v) =>
+                    setState(() => _dashboardSearch = v.trim().toLowerCase()),
+          ),
         ),
-      ),
+        _filterDropdown(
+          value: _range,
+          label: 'Range',
+          items: const {
+            'today': 'Today',
+            'month': 'This month',
+            'year': 'This year',
+            'all': 'All time',
+          },
+          onChanged: (v) {
+            setState(() => _range = v);
+            _load(forceRefresh: true);
+            _loadInsight();
+          },
+        ),
+        _filterDropdown(
+          value: _businessSide,
+          label: 'Business side',
+          items: const {
+            'ALL': 'All',
+            'RESTAURANT': 'Restaurant',
+            'CATERING': 'Catering',
+          },
+          onChanged: (v) {
+            setState(() => _businessSide = v);
+            _load(forceRefresh: true);
+          },
+        ),
+        _filterDropdown(
+          value: _cateringStyle,
+          label: 'Catering style',
+          items: const {
+            'ALL': 'All catering',
+            'CATERING_ONLY': 'Catering only',
+            'CATERING_WITH_EVENT': 'Catering + event styling',
+          },
+          onChanged: (v) {
+            setState(() => _cateringStyle = v);
+            _load(forceRefresh: true);
+          },
+        ),
+        _filterDropdown(
+          value: _orderSource,
+          label: 'Source',
+          items: const {
+            'ALL': 'All sources',
+            'WEB_APP': 'Web',
+            'POS_WEB': 'POS web',
+          },
+          onChanged: (v) {
+            setState(() => _orderSource = v);
+            _load(forceRefresh: true);
+          },
+        ),
+      ],
     );
   }
 
@@ -237,18 +271,25 @@ class _DashboardState extends State<Dashboard> {
     Color color, {
     String? subtitle,
     List<_DetailRow> details = const [],
+    IconData? icon,
+    String? routeName,
   }) {
     final hasDetails = details.isNotEmpty || subtitle != null;
     return SizedBox(
-      width: 220,
+      width: 236,
       child: Card(
         elevation: 0,
-        color: color,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AntdTokens.borderSubtle),
+        ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap:
-              hasDetails
+              routeName != null
+                  ? () => Navigator.of(context).pushNamed(routeName)
+                  : hasDetails
                   ? () => _showDashboardDetails(
                     title: title,
                     subtitle: subtitle,
@@ -258,39 +299,63 @@ class _DashboardState extends State<Dashboard> {
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: SizedBox(
-              height: 82,
+              height: 106,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
                     children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          icon ?? Icons.analytics_outlined,
+                          color: color,
+                          size: 18,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           title,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
                             fontWeight: FontWeight.w600,
                             fontSize: 12,
                           ),
                         ),
                       ),
                       if (hasDetails)
-                        const Icon(
+                        Icon(
                           Icons.info_outline,
-                          color: Colors.white70,
+                          color: Colors.grey.shade500,
                           size: 16,
                         ),
                     ],
                   ),
                   Text(
                     value,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 24,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  if (subtitle != null && subtitle.trim().isNotEmpty)
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AntdTokens.labelMuted,
+                        fontSize: 11,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -310,12 +375,166 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
+  Widget _businessSection({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color accent,
+    required List<Widget> children,
+  }) {
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: AntdTokens.borderSubtle),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: accent),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AntdTokens.valueDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: AntdTokens.labelMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _metricsRow(children),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _websiteAnalyticsCard() {
+    return _dashboardCard(
+      title: 'Website Analytics',
+      subtitle: 'Vercel Analytics tracking status',
+      details: const [
+        _DetailRow('Provider', 'Vercel Analytics'),
+        _DetailRow('Tracked surface', 'Customer website and public pages'),
+        _DetailRow('Metric source', 'Vercel project dashboard'),
+      ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: AntdTokens.blue.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.query_stats, color: AntdTokens.blue),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Tracking enabled',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: AntdTokens.valueDark,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Visits and page views are collected by Vercel after deployment.',
+                      style: TextStyle(
+                        color: AntdTokens.labelMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: const [
+              _AnalyticsPill(label: 'Page views'),
+              _AnalyticsPill(label: 'Visitors'),
+              _AnalyticsPill(label: 'Referrers'),
+              _AnalyticsPill(label: 'Top pages'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _metricsRow(List<Widget> children) {
     return Wrap(spacing: 12, runSpacing: 12, children: children);
   }
 
   int _percent(int value, int total) =>
       total <= 0 ? 0 : ((value / total) * 100).round();
+
+  bool _matchesDashboardSearch(String text) {
+    final q = _dashboardSearch.trim().toLowerCase();
+    return q.isEmpty || text.toLowerCase().contains(q);
+  }
+
+  bool _showRestaurantSection() {
+    return _businessSide != 'CATERING' &&
+        _matchesDashboardSearch(
+          'restaurant orders kitchen cashier delivery ratings sales feedback pending delivered cancelled',
+        );
+  }
+
+  bool _showCateringSection() {
+    return _businessSide != 'RESTAURANT' &&
+        _matchesDashboardSearch(
+          'catering orders events inquiries bookings payment completed complaints sales feedback',
+        );
+  }
+
+  bool _showBusinessOverview() {
+    return _matchesDashboardSearch(
+      'business overview order outcomes performance mix financial data monthly sales revenue channel',
+    );
+  }
 
   List<MonthlyDashboardSales> _monthlySeries(DashboardSummary s) {
     if (s.monthlySales.length == 12) return s.monthlySales;
@@ -378,6 +597,146 @@ class _DashboardState extends State<Dashboard> {
             ],
           ),
     );
+  }
+
+  Future<void> _printDashboardPdf(DashboardSummary summary) async {
+    if (_isPrintingPdf) return;
+    setState(() => _isPrintingPdf = true);
+    try {
+      final generatedAt = DateTime.now();
+      final doc = pw.Document(title: 'Manager Dashboard');
+      final monthly = _monthlySeries(summary);
+      final visibleRows = <List<String>>[
+        if (_businessSide != 'CATERING') ...[
+          ['Restaurant pending', '${summary.restaurant.pendingConfirmations}'],
+          ['Restaurant delivered', '${summary.restaurant.delivered}'],
+          ['Restaurant cancelled', '${summary.restaurant.cancelled}'],
+          ['Restaurant sales today', formatPhp(summary.restaurant.salesToday)],
+          [
+            'Restaurant feedback',
+            '${summary.restaurant.feedback.count} responses · ${summary.restaurant.feedback.averageStars.toStringAsFixed(1)} / 5',
+          ],
+        ],
+        if (_businessSide != 'RESTAURANT') ...[
+          ['Catering inquiries', '${summary.catering.inquiriesThisMonth}'],
+          ['Catering accepted', '${summary.catering.acceptedTransactions}'],
+          ['Catering completed', '${summary.catering.completed}'],
+          ['Catering sales today', formatPhp(summary.catering.salesToday)],
+          [
+            'Catering complaints',
+            '${summary.catering.feedback.complaintCount}',
+          ],
+        ],
+        ['Year-to-date total', formatPhp(summary.salesThisYear.all)],
+      ];
+
+      doc.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4.landscape,
+          margin: const pw.EdgeInsets.all(24),
+          footer:
+              (context) => pw.Align(
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text(
+                  'Page ${context.pageNumber} of ${context.pagesCount}',
+                  style: const pw.TextStyle(fontSize: 8),
+                ),
+              ),
+          build:
+              (context) => [
+                pw.Text(
+                  'Manager Dashboard',
+                  style: pw.TextStyle(
+                    fontSize: 18,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text("Macrina's Kitchen and Catering"),
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  'As of ${_formatInsightDate(generatedAt)} · Business side: $_businessSide · Source: $_orderSource',
+                  style: const pw.TextStyle(
+                    fontSize: 9,
+                    color: PdfColors.grey700,
+                  ),
+                ),
+                pw.SizedBox(height: 12),
+                pw.Text(
+                  'Dashboard Summary',
+                  style: pw.TextStyle(
+                    fontSize: 13,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 6),
+                pw.TableHelper.fromTextArray(
+                  headers: const ['Metric', 'Value'],
+                  data: visibleRows,
+                  headerDecoration: const pw.BoxDecoration(
+                    color: PdfColors.grey200,
+                  ),
+                  headerStyle: pw.TextStyle(
+                    fontWeight: pw.FontWeight.bold,
+                    fontSize: 9,
+                  ),
+                  cellStyle: const pw.TextStyle(fontSize: 8),
+                  cellAlignment: pw.Alignment.centerLeft,
+                  headerAlignment: pw.Alignment.centerLeft,
+                ),
+                pw.SizedBox(height: 16),
+                pw.Text(
+                  'Monthly Sales and Order Volume',
+                  style: pw.TextStyle(
+                    fontSize: 13,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 6),
+                pw.TableHelper.fromTextArray(
+                  headers: const [
+                    'Month',
+                    'Restaurant Sales',
+                    'Catering Sales',
+                    'Total Sales',
+                    'Restaurant Orders',
+                    'Catering Orders',
+                    'Total Orders',
+                  ],
+                  data: [
+                    for (final m in monthly)
+                      [
+                        _monthLabel(m.month),
+                        formatPhp(m.restaurantSales),
+                        formatPhp(m.cateringSales),
+                        formatPhp(m.totalSales),
+                        '${m.restaurantOrders}',
+                        '${m.cateringOrders}',
+                        '${m.totalOrders}',
+                      ],
+                  ],
+                  headerDecoration: const pw.BoxDecoration(
+                    color: PdfColors.grey200,
+                  ),
+                  headerStyle: pw.TextStyle(
+                    fontWeight: pw.FontWeight.bold,
+                    fontSize: 8,
+                  ),
+                  cellStyle: const pw.TextStyle(fontSize: 7),
+                  cellAlignment: pw.Alignment.centerLeft,
+                  headerAlignment: pw.Alignment.centerLeft,
+                ),
+              ],
+        ),
+      );
+
+      await Printing.layoutPdf(
+        onLayout: (_) => doc.save(),
+        name: 'manager-dashboard.pdf',
+      );
+    } finally {
+      if (mounted) setState(() => _isPrintingPdf = false);
+    }
   }
 
   Widget _detailLine(_DetailRow row) {
@@ -549,7 +908,10 @@ class _DashboardState extends State<Dashboard> {
             Text(
               'Range: $_insightRange'
               '${insight?.createdAt != null ? ' · Generated ${_formatInsightDate(insight!.createdAt!)}' : ''}',
-              style: const TextStyle(color: AntdTokens.labelMuted, fontSize: 12),
+              style: const TextStyle(
+                color: AntdTokens.labelMuted,
+                fontSize: 12,
+              ),
             ),
             if (_insightError != null) ...[
               const SizedBox(height: 12),
@@ -566,7 +928,9 @@ class _DashboardState extends State<Dashboard> {
               )
             else ...[
               Text(
-                insight.summary.isEmpty ? 'No summary returned.' : insight.summary,
+                insight.summary.isEmpty
+                    ? 'No summary returned.'
+                    : insight.summary,
                 style: const TextStyle(
                   color: AntdTokens.valueDark,
                   fontWeight: FontWeight.w600,
@@ -630,17 +994,17 @@ class _DashboardState extends State<Dashboard> {
           ),
           const SizedBox(height: 6),
           if (items.isEmpty)
-            const Text('No items.', style: TextStyle(color: AntdTokens.labelMuted))
+            const Text(
+              'No items.',
+              style: TextStyle(color: AntdTokens.labelMuted),
+            )
           else
             for (final item in items)
               Padding(
                 padding: const EdgeInsets.only(bottom: 5),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('• '),
-                    Expanded(child: Text(item)),
-                  ],
+                  children: [const Text('• '), Expanded(child: Text(item))],
                 ),
               ),
         ],
@@ -654,580 +1018,777 @@ class _DashboardState extends State<Dashboard> {
 
     return AppScaffold(
       showSearch: false,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Text(
-                  'Manager Dashboard',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed:
-                      _isLoading ? null : () => _load(forceRefresh: true),
-                  icon: const Icon(Icons.refresh),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            _filterBar(),
-            const SizedBox(height: 16),
-            if (_errorMessage != null)
-              Card(
-                color: Colors.red.shade50,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(
-                    _errorMessage!,
-                    style: TextStyle(color: Colors.red.shade800),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            elevation: 1,
+            color: Colors.white,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Manager Dashboard',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed:
+                            _isPrintingPdf || s == null
+                                ? null
+                                : () => _printDashboardPdf(s),
+                        icon:
+                            _isPrintingPdf
+                                ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                                : const Icon(Icons.picture_as_pdf),
+                        label: Text(
+                          _isPrintingPdf ? 'Preparing PDF' : 'Preview / Print',
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Refresh',
+                        onPressed:
+                            _isLoading ? null : () => _load(forceRefresh: true),
+                        icon: const Icon(Icons.refresh),
+                      ),
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  _filterBar(),
+                ],
               ),
-            if (_isLoading)
-              const Padding(
-                padding: EdgeInsets.all(48),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (s != null) ...[
-              _sectionTitle('Performance Metrics'),
-              _metricsRow([
-                _metricCard(
-                  'Pending confirmations',
-                  '${s.restaurant.pendingConfirmations}',
-                  Colors.orange.shade400,
-                  subtitle: 'Restaurant orders waiting for confirmation.',
-                  details: [
-                    _DetailRow(
-                      'Pending restaurant confirmations',
-                      '${s.restaurant.pendingConfirmations}',
-                    ),
-                    _DetailRow('Action', 'Review in Restaurant Orders'),
-                  ],
-                ),
-                _metricCard(
-                  'Successful orders',
-                  '${s.restaurant.delivered + s.catering.completed}',
-                  Colors.green.shade600,
-                  subtitle:
-                      'Delivered restaurant orders plus completed catering events.',
-                  details: [
-                    _DetailRow(
-                      'Restaurant delivered',
-                      '${s.restaurant.delivered}',
-                    ),
-                    _DetailRow('Catering completed', '${s.catering.completed}'),
-                    _DetailRow(
-                      'Total successful',
-                      '${s.restaurant.delivered + s.catering.completed}',
-                    ),
-                  ],
-                ),
-                _metricCard(
-                  'Cancelled orders',
-                  '${s.restaurant.cancelled + s.catering.cancelled}',
-                  Colors.red.shade400,
-                  subtitle: 'Cancelled work across restaurant and catering.',
-                  details: [
-                    _DetailRow(
-                      'Restaurant cancelled',
-                      '${s.restaurant.cancelled}',
-                    ),
-                    _DetailRow('Catering cancelled', '${s.catering.cancelled}'),
-                    _DetailRow(
-                      'Total cancelled',
-                      '${s.restaurant.cancelled + s.catering.cancelled}',
-                    ),
-                  ],
-                ),
-                _metricCard(
-                  'Catering accepted',
-                  '${s.catering.acceptedTransactions}',
-                  Colors.indigo.shade500,
-                  subtitle: 'Catering/events that moved beyond inquiry.',
-                  details: [
-                    _DetailRow(
-                      'Accepted transactions',
-                      '${s.catering.acceptedTransactions}',
-                    ),
-                    _DetailRow(
-                      'For down payment',
-                      '${s.catering.forDownPayment}',
-                    ),
-                    _DetailRow('Ongoing', '${s.catering.ongoing}'),
-                    _DetailRow(
-                      'For full payment',
-                      '${s.catering.forFullPayment}',
-                    ),
-                  ],
-                ),
-                _metricCard(
-                  'Restaurant feedback',
-                  '${s.restaurant.feedback.count}',
-                  AntdTokens.blue,
-                  subtitle:
-                      'Average rating ${s.restaurant.feedback.averageStars.toStringAsFixed(1)} / 5.',
-                  details: [
-                    _DetailRow(
-                      'Average stars',
-                      s.restaurant.feedback.averageStars.toStringAsFixed(1),
-                    ),
-                    _DetailRow('Positive', '${s.restaurant.feedback.positiveCount}'),
-                    _DetailRow('Neutral', '${s.restaurant.feedback.neutralCount}'),
-                    _DetailRow('Negative', '${s.restaurant.feedback.negativeCount}'),
-                  ],
-                ),
-                _metricCard(
-                  'Catering feedback',
-                  '${s.catering.feedback.complaintCount}',
-                  Colors.deepPurple.shade400,
-                  subtitle: 'Complaint count recorded in post-event analysis.',
-                  details: [
-                    _DetailRow(
-                      'Events with complaints',
-                      '${s.catering.feedback.count}',
-                    ),
-                    _DetailRow(
-                      'Total complaints',
-                      '${s.catering.feedback.complaintCount}',
-                    ),
-                  ],
-                ),
-              ]),
-              const SizedBox(height: 16),
-              _chartGrid([
-                _dashboardCard(
-                  title: 'Order Outcomes',
-                  subtitle: 'Restaurant and catering results',
-                  details: [
-                    _DetailRow(
-                      'Pending confirmations',
-                      '${s.restaurant.pendingConfirmations}',
-                    ),
-                    _DetailRow(
-                      'Restaurant delivered',
-                      '${s.restaurant.delivered}',
-                    ),
-                    _DetailRow('Catering completed', '${s.catering.completed}'),
-                    _DetailRow(
-                      'Cancelled total',
-                      '${s.restaurant.cancelled + s.catering.cancelled}',
-                    ),
-                  ],
-                  child: SizedBox(
-                    height: 260,
-                    child: _DashboardBarChart(
-                      valueFormatter: (v) => v.toInt().toString(),
-                      points: [
-                        _ChartPoint(
-                          'Pending',
-                          s.restaurant.pendingConfirmations.toDouble(),
-                          Colors.orange.shade400,
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_errorMessage != null)
+                    Card(
+                      color: Colors.red.shade50,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(color: Colors.red.shade800),
                         ),
-                        _ChartPoint(
-                          'Delivered',
-                          s.restaurant.delivered.toDouble(),
-                          AntdTokens.success,
-                        ),
-                        _ChartPoint(
-                          'Completed',
-                          s.catering.completed.toDouble(),
-                          Colors.teal.shade500,
-                        ),
-                        _ChartPoint(
-                          'Cancelled',
-                          (s.restaurant.cancelled + s.catering.cancelled)
-                              .toDouble(),
-                          AntdTokens.error,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                _dashboardCard(
-                  title: 'Performance Mix',
-                  subtitle: 'Success vs. open/cancelled work',
-                  details: [
-                    _DetailRow(
-                      'Success rate',
-                      '${_percent(s.restaurant.delivered + s.catering.completed, s.restaurant.pendingConfirmations + s.restaurant.delivered + s.restaurant.cancelled + s.catering.completed + s.catering.cancelled)}%',
-                    ),
-                    _DetailRow(
-                      'Successful',
-                      '${s.restaurant.delivered + s.catering.completed}',
-                    ),
-                    _DetailRow(
-                      'Open',
-                      '${s.restaurant.pendingConfirmations + s.catering.acceptedTransactions}',
-                    ),
-                    _DetailRow(
-                      'Cancelled',
-                      '${s.restaurant.cancelled + s.catering.cancelled}',
-                    ),
-                  ],
-                  child: SizedBox(
-                    height: 260,
-                    child: _DashboardDonutChart(
-                      centerLabel:
-                          '${_percent(s.restaurant.delivered + s.catering.completed, s.restaurant.pendingConfirmations + s.restaurant.delivered + s.restaurant.cancelled + s.catering.completed + s.catering.cancelled)}%',
-                      centerCaption: 'success',
-                      points: [
-                        _ChartPoint(
-                          'Successful',
-                          (s.restaurant.delivered + s.catering.completed)
-                              .toDouble(),
-                          AntdTokens.success,
-                        ),
-                        _ChartPoint(
-                          'Open',
-                          (s.restaurant.pendingConfirmations +
-                                  s.catering.acceptedTransactions)
-                              .toDouble(),
-                          AntdTokens.warning,
-                        ),
-                        _ChartPoint(
-                          'Cancelled',
-                          (s.restaurant.cancelled + s.catering.cancelled)
-                              .toDouble(),
-                          AntdTokens.error,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ]),
-              const SizedBox(height: 20),
-              _sectionTitle('Financial Data'),
-              _metricsRow([
-                _metricCard(
-                  'Restaurant sales today',
-                  formatPhp(s.restaurant.salesToday),
-                  Colors.blue.shade700,
-                  subtitle:
-                      'Restaurant revenue recorded today, excluding cancelled orders.',
-                  details: [
-                    _DetailRow('Today', formatPhp(s.restaurant.salesToday)),
-                    _DetailRow(
-                      'Year to date',
-                      formatPhp(s.salesThisYear.restaurant),
-                    ),
-                  ],
-                ),
-                _metricCard(
-                  'Catering sales today',
-                  formatPhp(s.catering.salesToday),
-                  Colors.blueGrey.shade600,
-                  subtitle: 'Completed catering/event revenue recorded today.',
-                  details: [
-                    _DetailRow('Today', formatPhp(s.catering.salesToday)),
-                    _DetailRow(
-                      'Year to date',
-                      formatPhp(s.salesThisYear.catering),
-                    ),
-                  ],
-                ),
-                _metricCard(
-                  'Sales this year',
-                  formatPhp(s.salesThisYear.all),
-                  const Color(0xFF2E7D32),
-                  subtitle:
-                      'Combined restaurant and catering revenue this year.',
-                  details: [
-                    _DetailRow(
-                      'Restaurant',
-                      formatPhp(s.salesThisYear.restaurant),
-                    ),
-                    _DetailRow(
-                      'Catering / Events',
-                      formatPhp(s.salesThisYear.catering),
-                    ),
-                    _DetailRow('All sales', formatPhp(s.salesThisYear.all)),
-                  ],
-                ),
-                _metricCard(
-                  'Restaurant share',
-                  '${_percent(s.salesThisYear.restaurant.round(), s.salesThisYear.all.round())}%',
-                  const Color(0xFF1E1E1E),
-                  subtitle: 'Restaurant portion of total year-to-date sales.',
-                  details: [
-                    _DetailRow(
-                      'Restaurant',
-                      formatPhp(s.salesThisYear.restaurant),
-                    ),
-                    _DetailRow('All sales', formatPhp(s.salesThisYear.all)),
-                    _DetailRow(
-                      'Share',
-                      '${_percent(s.salesThisYear.restaurant.round(), s.salesThisYear.all.round())}%',
-                    ),
-                  ],
-                ),
-              ]),
-              const SizedBox(height: 16),
-              _chartGrid([
-                _dashboardCard(
-                  title: 'Monthly Sales Trend',
-                  subtitle: 'Restaurant + catering revenue for this year',
-                  details: [
-                    _DetailRow(
-                      'Year-to-date total',
-                      formatPhp(s.salesThisYear.all),
-                    ),
-                    _DetailRow(
-                      'Restaurant',
-                      formatPhp(s.salesThisYear.restaurant),
-                    ),
-                    _DetailRow(
-                      'Catering / Events',
-                      formatPhp(s.salesThisYear.catering),
-                    ),
-                    _DetailRow(
-                      'Best month',
-                      _bestMonthLabel(
-                        _monthlySeries(s),
-                        (m) => m.totalSales,
-                        formatPhp,
                       ),
                     ),
-                  ],
-                  child: SizedBox(
-                    height: 260,
-                    child: _DashboardLineChart(
-                      points:
-                          _monthlySeries(s)
-                              .map(
-                                (m) => _ChartPoint(
-                                  _monthLabel(m.month),
-                                  m.totalSales,
-                                  AntdTokens.blue,
+                  if (_isLoading)
+                    const Padding(
+                      padding: EdgeInsets.all(48),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (s != null) ...[
+                    if (_showRestaurantSection()) ...[
+                      _businessSection(
+                        title: 'Restaurant Orders',
+                        subtitle:
+                            'Kitchen order flow, cashier confirmation, delivery, and customer ratings.',
+                        icon: Icons.restaurant_menu,
+                        accent: AntdTokens.blue,
+                        children: [
+                          _metricCard(
+                            'Pending confirmations',
+                            '${s.restaurant.pendingConfirmations}',
+                            Colors.orange.shade600,
+                            icon: Icons.pending_actions,
+                            routeName: '/restaurant-orders',
+                            subtitle: 'Needs cashier review',
+                            details: [
+                              _DetailRow(
+                                'Pending restaurant confirmations',
+                                '${s.restaurant.pendingConfirmations}',
+                              ),
+                              _DetailRow(
+                                'Action',
+                                'Review in Restaurant Orders',
+                              ),
+                            ],
+                          ),
+                          _metricCard(
+                            'Delivered orders',
+                            '${s.restaurant.delivered}',
+                            AntdTokens.success,
+                            icon: Icons.delivery_dining,
+                            routeName: '/restaurant-orders',
+                            subtitle: 'Completed restaurant service',
+                            details: [
+                              _DetailRow(
+                                'Delivered',
+                                '${s.restaurant.delivered}',
+                              ),
+                              _DetailRow(
+                                'Cancelled',
+                                '${s.restaurant.cancelled}',
+                              ),
+                            ],
+                          ),
+                          _metricCard(
+                            'Cancelled orders',
+                            '${s.restaurant.cancelled}',
+                            AntdTokens.error,
+                            icon: Icons.cancel_outlined,
+                            routeName: '/restaurant-orders',
+                            subtitle: 'Restaurant cancellations',
+                            details: [
+                              _DetailRow(
+                                'Cancelled',
+                                '${s.restaurant.cancelled}',
+                              ),
+                              _DetailRow(
+                                'Total restaurant outcomes',
+                                '${s.restaurant.delivered + s.restaurant.cancelled}',
+                              ),
+                            ],
+                          ),
+                          _metricCard(
+                            'Restaurant sales today',
+                            formatPhp(s.restaurant.salesToday),
+                            Colors.blue.shade700,
+                            icon: Icons.payments_outlined,
+                            routeName: '/reports',
+                            subtitle: 'Revenue excluding cancelled orders',
+                            details: [
+                              _DetailRow(
+                                'Today',
+                                formatPhp(s.restaurant.salesToday),
+                              ),
+                              _DetailRow(
+                                'Year to date',
+                                formatPhp(s.salesThisYear.restaurant),
+                              ),
+                            ],
+                          ),
+                          _metricCard(
+                            'Restaurant feedback',
+                            '${s.restaurant.feedback.count}',
+                            Colors.indigo.shade500,
+                            icon: Icons.star_rate,
+                            routeName: '/customer-feedback',
+                            subtitle:
+                                'Average ${s.restaurant.feedback.averageStars.toStringAsFixed(1)} / 5',
+                            details: [
+                              _DetailRow(
+                                'Average stars',
+                                s.restaurant.feedback.averageStars
+                                    .toStringAsFixed(1),
+                              ),
+                              _DetailRow(
+                                'Positive',
+                                '${s.restaurant.feedback.positiveCount}',
+                              ),
+                              _DetailRow(
+                                'Neutral',
+                                '${s.restaurant.feedback.neutralCount}',
+                              ),
+                              _DetailRow(
+                                'Negative',
+                                '${s.restaurant.feedback.negativeCount}',
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (_showCateringSection()) ...[
+                      _businessSection(
+                        title: 'Catering Orders',
+                        subtitle:
+                            'Event inquiries, booking pipeline, payment milestones, completion, and post-event feedback.',
+                        icon: Icons.celebration,
+                        accent: Colors.deepPurple.shade500,
+                        children: [
+                          _metricCard(
+                            'Inquiries this month',
+                            '${s.catering.inquiriesThisMonth}',
+                            Colors.deepPurple.shade400,
+                            icon: Icons.contact_mail_outlined,
+                            routeName: '/manage-events',
+                            subtitle: 'New event leads',
+                            details: [
+                              _DetailRow(
+                                'This month',
+                                '${s.catering.inquiriesThisMonth}',
+                              ),
+                              _DetailRow(
+                                'Accepted transactions',
+                                '${s.catering.acceptedTransactions}',
+                              ),
+                            ],
+                          ),
+                          _metricCard(
+                            'Accepted bookings',
+                            '${s.catering.acceptedTransactions}',
+                            Colors.indigo.shade500,
+                            icon: Icons.event_available,
+                            routeName: '/manage-events',
+                            subtitle: 'Moved beyond inquiry',
+                            details: [
+                              _DetailRow(
+                                'Accepted transactions',
+                                '${s.catering.acceptedTransactions}',
+                              ),
+                              _DetailRow('Ongoing', '${s.catering.ongoing}'),
+                            ],
+                          ),
+                          _metricCard(
+                            'Payment follow-ups',
+                            '${s.catering.forDownPayment + s.catering.forFullPayment}',
+                            Colors.amber.shade800,
+                            icon: Icons.request_quote_outlined,
+                            routeName: '/manage-events',
+                            subtitle: 'Down payment and balance queues',
+                            details: [
+                              _DetailRow(
+                                'For down payment',
+                                '${s.catering.forDownPayment}',
+                              ),
+                              _DetailRow(
+                                'For full payment',
+                                '${s.catering.forFullPayment}',
+                              ),
+                            ],
+                          ),
+                          _metricCard(
+                            'Completed events',
+                            '${s.catering.completed}',
+                            AntdTokens.success,
+                            icon: Icons.task_alt,
+                            routeName: '/manage-events',
+                            subtitle: 'Finished catering services',
+                            details: [
+                              _DetailRow(
+                                'Completed',
+                                '${s.catering.completed}',
+                              ),
+                              _DetailRow(
+                                'Cancelled',
+                                '${s.catering.cancelled}',
+                              ),
+                            ],
+                          ),
+                          _metricCard(
+                            'Catering sales today',
+                            formatPhp(s.catering.salesToday),
+                            Colors.teal.shade600,
+                            icon: Icons.point_of_sale,
+                            routeName: '/reports',
+                            subtitle: 'Completed event revenue',
+                            details: [
+                              _DetailRow(
+                                'Today',
+                                formatPhp(s.catering.salesToday),
+                              ),
+                              _DetailRow(
+                                'Year to date',
+                                formatPhp(s.salesThisYear.catering),
+                              ),
+                            ],
+                          ),
+                          _metricCard(
+                            'Catering complaints',
+                            '${s.catering.feedback.complaintCount}',
+                            Colors.deepPurple.shade400,
+                            icon: Icons.feedback_outlined,
+                            routeName: '/reports',
+                            subtitle: 'Post-event analysis flags',
+                            details: [
+                              _DetailRow(
+                                'Events with complaints',
+                                '${s.catering.feedback.count}',
+                              ),
+                              _DetailRow(
+                                'Total complaints',
+                                '${s.catering.feedback.complaintCount}',
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (_showBusinessOverview()) ...[
+                      _chartGrid([_websiteAnalyticsCard()]),
+                      const SizedBox(height: 20),
+                      _sectionTitle('Business Overview'),
+                      _chartGrid([
+                        _dashboardCard(
+                          title: 'Order Outcomes',
+                          subtitle: 'Restaurant and catering results',
+                          details: [
+                            _DetailRow(
+                              'Pending confirmations',
+                              '${s.restaurant.pendingConfirmations}',
+                            ),
+                            _DetailRow(
+                              'Restaurant delivered',
+                              '${s.restaurant.delivered}',
+                            ),
+                            _DetailRow(
+                              'Catering completed',
+                              '${s.catering.completed}',
+                            ),
+                            _DetailRow(
+                              'Cancelled total',
+                              '${s.restaurant.cancelled + s.catering.cancelled}',
+                            ),
+                          ],
+                          child: SizedBox(
+                            height: 260,
+                            child: _DashboardBarChart(
+                              valueFormatter: (v) => v.toInt().toString(),
+                              points: [
+                                _ChartPoint(
+                                  'Pending',
+                                  s.restaurant.pendingConfirmations.toDouble(),
+                                  Colors.orange.shade400,
                                 ),
-                              )
-                              .toList(),
-                      valueFormatter: formatPhp,
-                    ),
-                  ),
-                ),
-                _dashboardCard(
-                  title: 'Revenue by Channel',
-                  subtitle: 'Year-to-date sales split',
-                  details: [
-                    _DetailRow(
-                      'Restaurant',
-                      formatPhp(s.salesThisYear.restaurant),
-                    ),
-                    _DetailRow(
-                      'Catering / Events',
-                      formatPhp(s.salesThisYear.catering),
-                    ),
-                    _DetailRow('Total', formatPhp(s.salesThisYear.all)),
-                    _DetailRow(
-                      'Restaurant share',
-                      '${_percent(s.salesThisYear.restaurant.round(), s.salesThisYear.all.round())}%',
-                    ),
-                  ],
-                  child: SizedBox(
-                    height: 260,
-                    child: _DashboardBarChart(
-                      valueFormatter: formatPhp,
-                      points: [
-                        _ChartPoint(
-                          'Restaurant',
-                          s.salesThisYear.restaurant,
-                          AntdTokens.blue,
-                        ),
-                        _ChartPoint(
-                          'Catering',
-                          s.salesThisYear.catering,
-                          Colors.deepPurple.shade400,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ]),
-              const SizedBox(height: 20),
-              _sectionTitle('Operational Insights'),
-              _aiInsightsPanel(),
-              const SizedBox(height: 16),
-              _metricsRow([
-                _metricCard(
-                  'Inquiries this month',
-                  '${s.catering.inquiriesThisMonth}',
-                  Colors.deepPurple.shade300,
-                  subtitle: 'New online catering/event inquiries this month.',
-                  details: [
-                    _DetailRow(
-                      'This month',
-                      '${s.catering.inquiriesThisMonth}',
-                    ),
-                    _DetailRow(
-                      'Accepted transactions',
-                      '${s.catering.acceptedTransactions}',
-                    ),
-                  ],
-                ),
-                _metricCard(
-                  'For down payment',
-                  '${s.catering.forDownPayment}',
-                  Colors.amber.shade700,
-                  subtitle: 'Accepted events still waiting for down payment.',
-                  details: [
-                    _DetailRow(
-                      'For down payment',
-                      '${s.catering.forDownPayment}',
-                    ),
-                    _DetailRow(
-                      'Accepted transactions',
-                      '${s.catering.acceptedTransactions}',
-                    ),
-                  ],
-                ),
-                _metricCard(
-                  'Ongoing',
-                  '${s.catering.ongoing}',
-                  Colors.teal.shade600,
-                  subtitle: 'Paid down-payment jobs currently being processed.',
-                  details: [
-                    _DetailRow('Ongoing', '${s.catering.ongoing}'),
-                    _DetailRow(
-                      'For full payment',
-                      '${s.catering.forFullPayment}',
-                    ),
-                  ],
-                ),
-                _metricCard(
-                  'For full payment',
-                  '${s.catering.forFullPayment}',
-                  Colors.cyan.shade700,
-                  subtitle:
-                      'Events waiting for remaining balance or final payment.',
-                  details: [
-                    _DetailRow(
-                      'For full payment',
-                      '${s.catering.forFullPayment}',
-                    ),
-                    _DetailRow('Completed', '${s.catering.completed}'),
-                  ],
-                ),
-              ]),
-              const SizedBox(height: 16),
-              _chartGrid([
-                _dashboardCard(
-                  title: 'Catering Pipeline',
-                  subtitle: 'Event operations by current status',
-                  details: [
-                    _DetailRow(
-                      'Inquiries this month',
-                      '${s.catering.inquiriesThisMonth}',
-                    ),
-                    _DetailRow(
-                      'Accepted transactions',
-                      '${s.catering.acceptedTransactions}',
-                    ),
-                    _DetailRow(
-                      'For down payment',
-                      '${s.catering.forDownPayment}',
-                    ),
-                    _DetailRow('Ongoing', '${s.catering.ongoing}'),
-                    _DetailRow(
-                      'For full payment',
-                      '${s.catering.forFullPayment}',
-                    ),
-                  ],
-                  child: SizedBox(
-                    height: 260,
-                    child: _DashboardBarChart(
-                      valueFormatter: (v) => v.toInt().toString(),
-                      points: [
-                        _ChartPoint(
-                          'Inquiries',
-                          s.catering.inquiriesThisMonth.toDouble(),
-                          Colors.deepPurple.shade300,
-                        ),
-                        _ChartPoint(
-                          'Accepted',
-                          s.catering.acceptedTransactions.toDouble(),
-                          Colors.indigo.shade400,
-                        ),
-                        _ChartPoint(
-                          'Down pay',
-                          s.catering.forDownPayment.toDouble(),
-                          Colors.amber.shade700,
-                        ),
-                        _ChartPoint(
-                          'Ongoing',
-                          s.catering.ongoing.toDouble(),
-                          Colors.teal.shade600,
-                        ),
-                        _ChartPoint(
-                          'Full pay',
-                          s.catering.forFullPayment.toDouble(),
-                          Colors.cyan.shade700,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                _dashboardCard(
-                  title: 'Monthly Order Volume',
-                  subtitle: 'Restaurant + catering orders created this year',
-                  details: [
-                    _DetailRow(
-                      'Total orders this year',
-                      '${_monthlySeries(s).fold<int>(0, (sum, m) => sum + m.totalOrders)}',
-                    ),
-                    _DetailRow(
-                      'Restaurant orders',
-                      '${_monthlySeries(s).fold<int>(0, (sum, m) => sum + m.restaurantOrders)}',
-                    ),
-                    _DetailRow(
-                      'Catering/Event orders',
-                      '${_monthlySeries(s).fold<int>(0, (sum, m) => sum + m.cateringOrders)}',
-                    ),
-                    _DetailRow(
-                      'Busiest month',
-                      _bestMonthLabel(
-                        _monthlySeries(s),
-                        (m) => m.totalOrders.toDouble(),
-                        (v) => v.toInt().toString(),
-                      ),
-                    ),
-                  ],
-                  child: SizedBox(
-                    height: 260,
-                    child: _DashboardLineChart(
-                      points:
-                          _monthlySeries(s)
-                              .map(
-                                (m) => _ChartPoint(
-                                  _monthLabel(m.month),
-                                  m.totalOrders.toDouble(),
+                                _ChartPoint(
+                                  'Delivered',
+                                  s.restaurant.delivered.toDouble(),
+                                  AntdTokens.success,
+                                ),
+                                _ChartPoint(
+                                  'Completed',
+                                  s.catering.completed.toDouble(),
                                   Colors.teal.shade500,
                                 ),
-                              )
-                              .toList(),
-                      valueFormatter: (v) => v.toInt().toString(),
-                    ),
-                  ),
-                ),
-              ]),
-              const SizedBox(height: 16),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed:
-                      () =>
-                          Navigator.of(context).pushNamed('/restaurant-orders'),
-                  icon: const Icon(Icons.receipt_long),
-                  label: const Text('Restaurant orders'),
-                ),
+                                _ChartPoint(
+                                  'Cancelled',
+                                  (s.restaurant.cancelled +
+                                          s.catering.cancelled)
+                                      .toDouble(),
+                                  AntdTokens.error,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        _dashboardCard(
+                          title: 'Performance Mix',
+                          subtitle: 'Success vs. open/cancelled work',
+                          details: [
+                            _DetailRow(
+                              'Success rate',
+                              '${_percent(s.restaurant.delivered + s.catering.completed, s.restaurant.pendingConfirmations + s.restaurant.delivered + s.restaurant.cancelled + s.catering.completed + s.catering.cancelled)}%',
+                            ),
+                            _DetailRow(
+                              'Successful',
+                              '${s.restaurant.delivered + s.catering.completed}',
+                            ),
+                            _DetailRow(
+                              'Open',
+                              '${s.restaurant.pendingConfirmations + s.catering.acceptedTransactions}',
+                            ),
+                            _DetailRow(
+                              'Cancelled',
+                              '${s.restaurant.cancelled + s.catering.cancelled}',
+                            ),
+                          ],
+                          child: SizedBox(
+                            height: 260,
+                            child: _DashboardDonutChart(
+                              centerLabel:
+                                  '${_percent(s.restaurant.delivered + s.catering.completed, s.restaurant.pendingConfirmations + s.restaurant.delivered + s.restaurant.cancelled + s.catering.completed + s.catering.cancelled)}%',
+                              centerCaption: 'success',
+                              points: [
+                                _ChartPoint(
+                                  'Successful',
+                                  (s.restaurant.delivered +
+                                          s.catering.completed)
+                                      .toDouble(),
+                                  AntdTokens.success,
+                                ),
+                                _ChartPoint(
+                                  'Open',
+                                  (s.restaurant.pendingConfirmations +
+                                          s.catering.acceptedTransactions)
+                                      .toDouble(),
+                                  AntdTokens.warning,
+                                ),
+                                _ChartPoint(
+                                  'Cancelled',
+                                  (s.restaurant.cancelled +
+                                          s.catering.cancelled)
+                                      .toDouble(),
+                                  AntdTokens.error,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 20),
+                      _sectionTitle('Financial Data'),
+                      _metricsRow([
+                        _metricCard(
+                          'Restaurant sales today',
+                          formatPhp(s.restaurant.salesToday),
+                          Colors.blue.shade700,
+                          subtitle:
+                              'Restaurant revenue recorded today, excluding cancelled orders.',
+                          details: [
+                            _DetailRow(
+                              'Today',
+                              formatPhp(s.restaurant.salesToday),
+                            ),
+                            _DetailRow(
+                              'Year to date',
+                              formatPhp(s.salesThisYear.restaurant),
+                            ),
+                          ],
+                        ),
+                        _metricCard(
+                          'Catering sales today',
+                          formatPhp(s.catering.salesToday),
+                          Colors.blueGrey.shade600,
+                          subtitle:
+                              'Completed catering/event revenue recorded today.',
+                          details: [
+                            _DetailRow(
+                              'Today',
+                              formatPhp(s.catering.salesToday),
+                            ),
+                            _DetailRow(
+                              'Year to date',
+                              formatPhp(s.salesThisYear.catering),
+                            ),
+                          ],
+                        ),
+                        _metricCard(
+                          'Sales this year',
+                          formatPhp(s.salesThisYear.all),
+                          const Color(0xFF2E7D32),
+                          subtitle:
+                              'Combined restaurant and catering revenue this year.',
+                          details: [
+                            _DetailRow(
+                              'Restaurant',
+                              formatPhp(s.salesThisYear.restaurant),
+                            ),
+                            _DetailRow(
+                              'Catering / Events',
+                              formatPhp(s.salesThisYear.catering),
+                            ),
+                            _DetailRow(
+                              'All sales',
+                              formatPhp(s.salesThisYear.all),
+                            ),
+                          ],
+                        ),
+                        _metricCard(
+                          'Restaurant share',
+                          '${_percent(s.salesThisYear.restaurant.round(), s.salesThisYear.all.round())}%',
+                          const Color(0xFF1E1E1E),
+                          subtitle:
+                              'Restaurant portion of total year-to-date sales.',
+                          details: [
+                            _DetailRow(
+                              'Restaurant',
+                              formatPhp(s.salesThisYear.restaurant),
+                            ),
+                            _DetailRow(
+                              'All sales',
+                              formatPhp(s.salesThisYear.all),
+                            ),
+                            _DetailRow(
+                              'Share',
+                              '${_percent(s.salesThisYear.restaurant.round(), s.salesThisYear.all.round())}%',
+                            ),
+                          ],
+                        ),
+                      ]),
+                      const SizedBox(height: 16),
+                      _chartGrid([
+                        _dashboardCard(
+                          title: 'Monthly Sales Trend',
+                          subtitle:
+                              'Restaurant + catering revenue for this year',
+                          details: [
+                            _DetailRow(
+                              'Year-to-date total',
+                              formatPhp(s.salesThisYear.all),
+                            ),
+                            _DetailRow(
+                              'Restaurant',
+                              formatPhp(s.salesThisYear.restaurant),
+                            ),
+                            _DetailRow(
+                              'Catering / Events',
+                              formatPhp(s.salesThisYear.catering),
+                            ),
+                            _DetailRow(
+                              'Best month',
+                              _bestMonthLabel(
+                                _monthlySeries(s),
+                                (m) => m.totalSales,
+                                formatPhp,
+                              ),
+                            ),
+                          ],
+                          child: SizedBox(
+                            height: 260,
+                            child: _DashboardLineChart(
+                              points:
+                                  _monthlySeries(s)
+                                      .map(
+                                        (m) => _ChartPoint(
+                                          _monthLabel(m.month),
+                                          m.totalSales,
+                                          AntdTokens.blue,
+                                        ),
+                                      )
+                                      .toList(),
+                              valueFormatter: formatPhp,
+                            ),
+                          ),
+                        ),
+                        _dashboardCard(
+                          title: 'Revenue by Channel',
+                          subtitle: 'Year-to-date sales split',
+                          details: [
+                            _DetailRow(
+                              'Restaurant',
+                              formatPhp(s.salesThisYear.restaurant),
+                            ),
+                            _DetailRow(
+                              'Catering / Events',
+                              formatPhp(s.salesThisYear.catering),
+                            ),
+                            _DetailRow('Total', formatPhp(s.salesThisYear.all)),
+                            _DetailRow(
+                              'Restaurant share',
+                              '${_percent(s.salesThisYear.restaurant.round(), s.salesThisYear.all.round())}%',
+                            ),
+                          ],
+                          child: SizedBox(
+                            height: 260,
+                            child: _DashboardBarChart(
+                              valueFormatter: formatPhp,
+                              points: [
+                                _ChartPoint(
+                                  'Restaurant',
+                                  s.salesThisYear.restaurant,
+                                  AntdTokens.blue,
+                                ),
+                                _ChartPoint(
+                                  'Catering',
+                                  s.salesThisYear.catering,
+                                  Colors.deepPurple.shade400,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 20),
+                      _sectionTitle('Operational Insights'),
+                      _aiInsightsPanel(),
+                      const SizedBox(height: 16),
+                      _metricsRow([
+                        _metricCard(
+                          'Inquiries this month',
+                          '${s.catering.inquiriesThisMonth}',
+                          Colors.deepPurple.shade300,
+                          subtitle:
+                              'New online catering/event inquiries this month.',
+                          details: [
+                            _DetailRow(
+                              'This month',
+                              '${s.catering.inquiriesThisMonth}',
+                            ),
+                            _DetailRow(
+                              'Accepted transactions',
+                              '${s.catering.acceptedTransactions}',
+                            ),
+                          ],
+                        ),
+                        _metricCard(
+                          'For down payment',
+                          '${s.catering.forDownPayment}',
+                          Colors.amber.shade700,
+                          subtitle:
+                              'Accepted events still waiting for down payment.',
+                          details: [
+                            _DetailRow(
+                              'For down payment',
+                              '${s.catering.forDownPayment}',
+                            ),
+                            _DetailRow(
+                              'Accepted transactions',
+                              '${s.catering.acceptedTransactions}',
+                            ),
+                          ],
+                        ),
+                        _metricCard(
+                          'Ongoing',
+                          '${s.catering.ongoing}',
+                          Colors.teal.shade600,
+                          subtitle:
+                              'Paid down-payment jobs currently being processed.',
+                          details: [
+                            _DetailRow('Ongoing', '${s.catering.ongoing}'),
+                            _DetailRow(
+                              'For full payment',
+                              '${s.catering.forFullPayment}',
+                            ),
+                          ],
+                        ),
+                        _metricCard(
+                          'For full payment',
+                          '${s.catering.forFullPayment}',
+                          Colors.cyan.shade700,
+                          subtitle:
+                              'Events waiting for remaining balance or final payment.',
+                          details: [
+                            _DetailRow(
+                              'For full payment',
+                              '${s.catering.forFullPayment}',
+                            ),
+                            _DetailRow('Completed', '${s.catering.completed}'),
+                          ],
+                        ),
+                      ]),
+                      const SizedBox(height: 16),
+                      _chartGrid([
+                        _dashboardCard(
+                          title: 'Catering Pipeline',
+                          subtitle: 'Event operations by current status',
+                          details: [
+                            _DetailRow(
+                              'Inquiries this month',
+                              '${s.catering.inquiriesThisMonth}',
+                            ),
+                            _DetailRow(
+                              'Accepted transactions',
+                              '${s.catering.acceptedTransactions}',
+                            ),
+                            _DetailRow(
+                              'For down payment',
+                              '${s.catering.forDownPayment}',
+                            ),
+                            _DetailRow('Ongoing', '${s.catering.ongoing}'),
+                            _DetailRow(
+                              'For full payment',
+                              '${s.catering.forFullPayment}',
+                            ),
+                          ],
+                          child: SizedBox(
+                            height: 260,
+                            child: _DashboardBarChart(
+                              valueFormatter: (v) => v.toInt().toString(),
+                              points: [
+                                _ChartPoint(
+                                  'Inquiries',
+                                  s.catering.inquiriesThisMonth.toDouble(),
+                                  Colors.deepPurple.shade300,
+                                ),
+                                _ChartPoint(
+                                  'Accepted',
+                                  s.catering.acceptedTransactions.toDouble(),
+                                  Colors.indigo.shade400,
+                                ),
+                                _ChartPoint(
+                                  'Down pay',
+                                  s.catering.forDownPayment.toDouble(),
+                                  Colors.amber.shade700,
+                                ),
+                                _ChartPoint(
+                                  'Ongoing',
+                                  s.catering.ongoing.toDouble(),
+                                  Colors.teal.shade600,
+                                ),
+                                _ChartPoint(
+                                  'Full pay',
+                                  s.catering.forFullPayment.toDouble(),
+                                  Colors.cyan.shade700,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        _dashboardCard(
+                          title: 'Monthly Order Volume',
+                          subtitle:
+                              'Restaurant + catering orders created this year',
+                          details: [
+                            _DetailRow(
+                              'Total orders this year',
+                              '${_monthlySeries(s).fold<int>(0, (sum, m) => sum + m.totalOrders)}',
+                            ),
+                            _DetailRow(
+                              'Restaurant orders',
+                              '${_monthlySeries(s).fold<int>(0, (sum, m) => sum + m.restaurantOrders)}',
+                            ),
+                            _DetailRow(
+                              'Catering/Event orders',
+                              '${_monthlySeries(s).fold<int>(0, (sum, m) => sum + m.cateringOrders)}',
+                            ),
+                            _DetailRow(
+                              'Busiest month',
+                              _bestMonthLabel(
+                                _monthlySeries(s),
+                                (m) => m.totalOrders.toDouble(),
+                                (v) => v.toInt().toString(),
+                              ),
+                            ),
+                          ],
+                          child: SizedBox(
+                            height: 260,
+                            child: _DashboardLineChart(
+                              points:
+                                  _monthlySeries(s)
+                                      .map(
+                                        (m) => _ChartPoint(
+                                          _monthLabel(m.month),
+                                          m.totalOrders.toDouble(),
+                                          Colors.teal.shade500,
+                                        ),
+                                      )
+                                      .toList(),
+                              valueFormatter: (v) => v.toInt().toString(),
+                            ),
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 16),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed:
+                              () => Navigator.of(
+                                context,
+                              ).pushNamed('/restaurant-orders'),
+                          icon: const Icon(Icons.receipt_long),
+                          label: const Text('Restaurant orders'),
+                        ),
+                      ),
+                    ],
+                  ],
+                ],
               ),
-            ],
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1286,6 +1847,32 @@ class _DetailRow {
 
   final String label;
   final String value;
+}
+
+class _AnalyticsPill extends StatelessWidget {
+  const _AnalyticsPill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F7FA),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AntdTokens.borderSubtle),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: AntdTokens.valueDark,
+        ),
+      ),
+    );
+  }
 }
 
 class _DashboardBarChart extends StatelessWidget {

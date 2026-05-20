@@ -3,15 +3,27 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+const int _websiteImageMaxDimension = 1600;
+const int _websiteImageQuality = 82;
+
 Future<String?> pickWebsiteImageBase64() async {
-  final x = await ImagePicker().pickImage(source: ImageSource.gallery);
+  final x = await ImagePicker().pickImage(
+    source: ImageSource.gallery,
+    maxWidth: _websiteImageMaxDimension.toDouble(),
+    maxHeight: _websiteImageMaxDimension.toDouble(),
+    imageQuality: _websiteImageQuality,
+  );
   if (x == null) return null;
   final bytes = await x.readAsBytes();
   return base64Encode(bytes);
 }
 
 Future<List<String>> pickMultipleWebsiteImagesBase64() async {
-  final picked = await ImagePicker().pickMultiImage();
+  final picked = await ImagePicker().pickMultiImage(
+    maxWidth: _websiteImageMaxDimension.toDouble(),
+    maxHeight: _websiteImageMaxDimension.toDouble(),
+    imageQuality: _websiteImageQuality,
+  );
   if (picked.isEmpty) return const [];
   final out = <String>[];
   for (final x in picked) {

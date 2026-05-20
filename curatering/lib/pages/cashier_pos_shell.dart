@@ -251,10 +251,6 @@ class _CashierPosShellState extends State<CashierPosShell>
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Chip(
-                    label: Text('AntD layout'),
-                    visualDensity: VisualDensity.compact,
-                  ),
                   const Spacer(),
                   FilledButton.icon(
                     style: FilledButton.styleFrom(

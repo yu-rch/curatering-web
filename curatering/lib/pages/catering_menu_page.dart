@@ -51,13 +51,15 @@ class CateringMenuPage extends StatefulWidget {
 
 class _CateringMenuPageState extends State<CateringMenuPage> {
   String _mealTypeFilter = '';
+  String _setMenuFilterId = '';
 
   @override
   void initState() {
     super.initState();
     MenuStore.instance.addListener(_onMenuChanged);
     SetMenuStore.instance.addListener(_onMenuChanged);
-    if (MenuStore.instance.activeDishes.isEmpty && !MenuStore.instance.isLoading) {
+    if (MenuStore.instance.activeDishes.isEmpty &&
+        !MenuStore.instance.isLoading) {
       MenuStore.instance.loadDishes();
     }
     SetMenuStore.instance.loadSetMenus();
@@ -90,10 +92,58 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
   }
 
   List<MenuDish> _filteredCateringDishes(List<MenuDish> dishes) {
-    if (_mealTypeFilter.isEmpty) return dishes;
-    return dishes
-        .where((d) => cateringMealTypeMatches(d.effectiveMealType, _mealTypeFilter))
+    var filtered = dishes;
+    if (_setMenuFilterId.isNotEmpty) {
+      SetMenu? selectedSet;
+      for (final set in SetMenuStore.instance.activeSetMenus) {
+        if (set.id == _setMenuFilterId) {
+          selectedSet = set;
+          break;
+        }
+      }
+      final dishIds = selectedSet?.dishIds.toSet() ?? const <String>{};
+      filtered = filtered.where((dish) => dishIds.contains(dish.id)).toList();
+    }
+    if (_mealTypeFilter.isEmpty) return filtered;
+    return filtered
+        .where(
+          (d) => cateringMealTypeMatches(d.effectiveMealType, _mealTypeFilter),
+        )
         .toList();
+  }
+
+  Widget _setMenuDropdown(List<SetMenu> setMenus) {
+    if (setMenus.isEmpty) return const SizedBox.shrink();
+    final validValue =
+        setMenus.any((set) => set.id == _setMenuFilterId)
+            ? _setMenuFilterId
+            : '';
+    if (validValue != _setMenuFilterId) {
+      _setMenuFilterId = validValue;
+    }
+    return SizedBox(
+      width: 320,
+      child: DropdownButtonFormField<String>(
+        value: validValue,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: 'Set menu filter',
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 12,
+          ),
+        ),
+        items: [
+          const DropdownMenuItem(value: '', child: Text('All catering dishes')),
+          for (final set in setMenus)
+            DropdownMenuItem(value: set.id, child: Text(set.name)),
+        ],
+        onChanged: (value) => setState(() => _setMenuFilterId = value ?? ''),
+      ),
+    );
   }
 
   Widget _mealTypeChips() {
@@ -111,7 +161,8 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
         for (final t in kCateringMealTypes)
           FilterChip(
             label: Text(mealTypeDisplayLabel(t)),
-            selected: cateringMealTypeMatches(_mealTypeFilter, t) &&
+            selected:
+                cateringMealTypeMatches(_mealTypeFilter, t) &&
                 _mealTypeFilter.trim().isNotEmpty,
             onSelected: (_) => setState(() => _mealTypeFilter = t),
             selectedColor: const Color(0xFFFFC024),
@@ -125,9 +176,8 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
     final allDishes = MenuStore.instance.activeDishes;
     final cateringDishes =
         allDishes.where((d) => d.category == 'catering').toList();
-    final visibleDishes = _filteredCateringDishes(cateringDishes);
-    final dishById = {for (final dish in visibleDishes) dish.id: dish};
     final setMenus = SetMenuStore.instance.activeSetMenus;
+    final visibleDishes = _filteredCateringDishes(cateringDishes);
 
     // Show loading state if dishes are empty or currently loading
     if (MenuStore.instance.isLoading || allDishes.isEmpty) {
@@ -221,7 +271,10 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                   ),
                   child: ElevatedButton.icon(
                     onPressed: () => MenuStore.instance.loadDishes(),
-                    icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                    icon: const Icon(
+                      Icons.refresh_rounded,
+                      color: Colors.white,
+                    ),
                     label: Text(
                       'Reload Page',
                       style: GoogleFonts.inter(
@@ -289,7 +342,13 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                _mealTypeChips(),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [_setMenuDropdown(setMenus), _mealTypeChips()],
+                ),
                 const SizedBox(height: 24),
                 Card(
                   elevation: 4,
@@ -317,12 +376,7 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                             ),
                           )
                         else
-                          ..._buildCategorizedMenuSections(
-                            context,
-                            visibleDishes,
-                            dishById,
-                            setMenus,
-                          ),
+                          _dishGrid(context, visibleDishes),
                       ],
                     ),
                   ),
@@ -331,49 +385,6 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  List<Widget> _buildCategorizedMenuSections(
-    BuildContext context,
-    List<MenuDish> visibleDishes,
-    Map<String, MenuDish> dishById,
-    List<SetMenu> setMenus,
-  ) {
-    final shown = <String>{};
-    final sections = <Widget>[];
-    for (final set in setMenus) {
-      final dishes =
-          set.dishIds
-              .map((id) => dishById[id])
-              .whereType<MenuDish>()
-              .toList();
-      if (dishes.isEmpty) continue;
-      shown.addAll(dishes.map((d) => d.id));
-      sections.add(_menuSection(context, set.name, dishes));
-    }
-    final uncategorized =
-        visibleDishes.where((dish) => !shown.contains(dish.id)).toList();
-    if (uncategorized.isNotEmpty) {
-      sections.add(_menuSection(context, 'Individual Catering Dishes', uncategorized));
-    }
-    return sections;
-  }
-
-  Widget _menuSection(BuildContext context, String title, List<MenuDish> dishes) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          _dishGrid(context, dishes),
-        ],
       ),
     );
   }
@@ -435,18 +446,6 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                           fontSize: 12,
                         ),
                       ),
-                      if (d.mealType.trim().isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            d.mealType,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                 ),

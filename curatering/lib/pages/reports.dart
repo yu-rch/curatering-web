@@ -13,6 +13,13 @@ import '../widgets/paginated_data_table.dart';
 
 enum _ReportScope { catering, restaurant, combined }
 
+class _DetailRow {
+  const _DetailRow(this.label, this.value);
+
+  final String label;
+  final String value;
+}
+
 class Reports extends StatefulWidget {
   const Reports({super.key});
 
@@ -82,7 +89,7 @@ class _ReportsState extends State<Reports> {
         .toList();
   }
 
-  Future<void> _downloadPdf() async {
+  Future<void> _previewPdf() async {
     final data = _data;
     if (data == null) return;
 
@@ -93,7 +100,7 @@ class _ReportsState extends State<Reports> {
         _ReportScope.restaurant => 'restaurant',
         _ => 'combined',
       };
-      await downloadOperationsReportPdf(
+      await previewOperationsReportPdf(
         data: data,
         scope: scopeLabel,
         annual: _annualMode,
@@ -103,7 +110,7 @@ class _ReportsState extends State<Reports> {
       if (!mounted) return;
       showAntdMessage(
         context,
-        'PDF download started.',
+        'PDF preview opened.',
         type: AntdMessageType.success,
       );
     } catch (e) {
@@ -145,6 +152,7 @@ class _ReportsState extends State<Reports> {
             Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),
             PagedDataTable(
+              title: title,
               columns: const [
                 DataColumn(label: Text('Name')),
                 DataColumn(label: Text('Count')),
@@ -165,23 +173,125 @@ class _ReportsState extends State<Reports> {
     );
   }
 
-  Widget _summaryLine(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 2,
-            child: Text(label, style: const TextStyle(color: AntdTokens.labelMuted)),
-          ),
-          Expanded(
-            flex: 3,
-            child: Text(
-              value,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+  Widget _summaryTable(String title, List<_DetailRow> rows) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: AntdTokens.borderSubtle),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            Table(
+              columnWidths: const {
+                0: FlexColumnWidth(2),
+                1: FlexColumnWidth(3),
+              },
+              border: TableBorder.all(color: AntdTokens.borderSubtle),
+              children: [
+                const TableRow(
+                  decoration: BoxDecoration(color: Color(0xFFF5F7F9)),
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Text(
+                        'Metric',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Text(
+                        'Value',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+                for (final row in rows)
+                  TableRow(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Text(row.label),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Text(
+                          row.value,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
             ),
-          ),
-        ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _rankChart(String title, List<ReportRankItem> items) {
+    final filtered = _filteredRank(items).take(8).toList();
+    final max = filtered.fold<int>(1, (m, e) => e.count > m ? e.count : m);
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: AntdTokens.borderSubtle),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            if (filtered.isEmpty)
+              Text(
+                'No chart data.',
+                style: TextStyle(color: Colors.grey.shade600),
+              )
+            else
+              for (final item in filtered)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 160,
+                        child: Text(
+                          item.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            minHeight: 10,
+                            value: item.count / max,
+                            backgroundColor: Colors.grey.shade200,
+                            color: AntdTokens.blue,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text('${item.count}'),
+                    ],
+                  ),
+                ),
+          ],
+        ),
       ),
     );
   }
@@ -189,15 +299,13 @@ class _ReportsState extends State<Reports> {
   @override
   Widget build(BuildContext context) {
     final data = _data;
-    final periodLabel = _annualMode
-        ? 'Year $_selectedYear'
-        : '${_selectedMonth.month.toString().padLeft(2, '0')} / ${_selectedMonth.year}';
+    final periodLabel =
+        _annualMode
+            ? 'Year $_selectedYear'
+            : '${_selectedMonth.month.toString().padLeft(2, '0')} / ${_selectedMonth.year}';
 
     return AppScaffold(
-      showSearch: true,
-      searchController: _searchController,
-      onSearchChanged: (v) =>
-          setState(() => _searchQuery = v.trim().toLowerCase()),
+      showSearch: false,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -225,9 +333,9 @@ class _ReportsState extends State<Reports> {
                   ),
                 ),
                 AntdPrimaryButton(
-                  label: 'Download PDF',
+                  label: 'Preview / Print PDF',
                   loading: _exportingPdf,
-                  onPressed: _exportingPdf || data == null ? null : _downloadPdf,
+                  onPressed: _exportingPdf || data == null ? null : _previewPdf,
                 ),
                 const SizedBox(width: 8),
                 IconButton(
@@ -279,11 +387,7 @@ class _ReportsState extends State<Reports> {
                     onChanged: (m) {
                       if (m == null) return;
                       setState(() {
-                        _selectedMonth = DateTime(
-                          _selectedMonth.year,
-                          m,
-                          1,
-                        );
+                        _selectedMonth = DateTime(_selectedMonth.year, m, 1);
                       });
                       _load();
                     },
@@ -308,6 +412,22 @@ class _ReportsState extends State<Reports> {
                     if (v == null) return;
                     setState(() => _scope = v);
                   },
+                ),
+                SizedBox(
+                  width: 260,
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: const InputDecoration(
+                      labelText: 'Search report tables',
+                      prefixIcon: Icon(Icons.search),
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged:
+                        (v) => setState(
+                          () => _searchQuery = v.trim().toLowerCase(),
+                        ),
+                  ),
                 ),
                 Text(
                   periodLabel,
@@ -346,41 +466,35 @@ class _ReportsState extends State<Reports> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Summary',
-                                style: TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 8),
-                              _summaryLine(
-                                'Completed orders',
-                                '${data.catering.orderCount}',
-                              ),
-                              _summaryLine(
-                                'Total sales',
-                                formatPhp(data.catering.totalSales),
-                              ),
-                              _summaryLine(
-                                'Average guest count',
-                                data.catering.averageGuestCount
-                                    .toStringAsFixed(1),
-                              ),
-                              _summaryLine(
-                                'Catering feedback complaints',
-                                '${data.catering.feedback.complaintCount}',
-                              ),
-                              _summaryLine(
-                                'Events with complaints',
-                                '${data.catering.feedback.count}',
-                              ),
-                            ],
-                          ),
+                      _summaryTable('Catering / Events Summary', [
+                        _DetailRow(
+                          'Completed orders',
+                          '${data.catering.orderCount}',
                         ),
+                        _DetailRow(
+                          'Total sales',
+                          formatPhp(data.catering.totalSales),
+                        ),
+                        _DetailRow(
+                          'Average guest count',
+                          data.catering.averageGuestCount.toStringAsFixed(1),
+                        ),
+                        _DetailRow(
+                          'Catering feedback complaints',
+                          '${data.catering.feedback.complaintCount}',
+                        ),
+                        _DetailRow(
+                          'Events with complaints',
+                          '${data.catering.feedback.count}',
+                        ),
+                      ]),
+                      _rankChart(
+                        'Top requested dishes chart',
+                        data.catering.topDishes,
+                      ),
+                      _rankChart(
+                        'Event type chart',
+                        data.catering.topEventTypes,
                       ),
                       _rankTable(
                         'Top requested dishes',
@@ -400,61 +514,50 @@ class _ReportsState extends State<Reports> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Summary',
-                                style: TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 8),
-                              _summaryLine(
-                                'Orders',
-                                '${data.restaurant.orderCount}',
-                              ),
-                              _summaryLine(
-                                'Total sales',
-                                formatPhp(data.restaurant.totalSales),
-                              ),
-                              _summaryLine(
-                                'Avg. orders per day',
-                                data.restaurant.averageOrdersPerDay
-                                    .toStringAsFixed(2),
-                              ),
-                              _summaryLine(
-                                'Web page views',
-                                '${data.restaurant.webPageViews}',
-                              ),
-                              _summaryLine(
-                                'Mobile page views',
-                                '${data.restaurant.mobilePageViews}',
-                              ),
-                              _summaryLine(
-                                'Customer accounts (web)',
-                                '${data.restaurant.customerAccountsWeb}',
-                              ),
-                              _summaryLine(
-                                'Customer accounts (mobile)',
-                                '${data.restaurant.customerAccountsMobile}',
-                              ),
-                              _summaryLine(
-                                'Feedback submissions',
-                                '${data.restaurant.feedback.count}',
-                              ),
-                              _summaryLine(
-                                'Average feedback rating',
-                                '${data.restaurant.feedback.averageStars.toStringAsFixed(1)} / 5',
-                              ),
-                              _summaryLine(
-                                'Positive / Neutral / Negative',
-                                '${data.restaurant.feedback.positiveCount} / ${data.restaurant.feedback.neutralCount} / ${data.restaurant.feedback.negativeCount}',
-                              ),
-                            ],
+                      _summaryTable('Restaurant Summary', [
+                        _DetailRow('Orders', '${data.restaurant.orderCount}'),
+                        _DetailRow(
+                          'Total sales',
+                          formatPhp(data.restaurant.totalSales),
+                        ),
+                        _DetailRow(
+                          'Avg. orders per day',
+                          data.restaurant.averageOrdersPerDay.toStringAsFixed(
+                            2,
                           ),
                         ),
+                        _DetailRow(
+                          'Web page views',
+                          '${data.restaurant.webPageViews}',
+                        ),
+                        _DetailRow(
+                          'Mobile page views',
+                          '${data.restaurant.mobilePageViews}',
+                        ),
+                        _DetailRow(
+                          'Customer accounts (web)',
+                          '${data.restaurant.customerAccountsWeb}',
+                        ),
+                        _DetailRow(
+                          'Customer accounts (mobile)',
+                          '${data.restaurant.customerAccountsMobile}',
+                        ),
+                        _DetailRow(
+                          'Feedback submissions',
+                          '${data.restaurant.feedback.count}',
+                        ),
+                        _DetailRow(
+                          'Average feedback rating',
+                          '${data.restaurant.feedback.averageStars.toStringAsFixed(1)} / 5',
+                        ),
+                        _DetailRow(
+                          'Positive / Neutral / Negative',
+                          '${data.restaurant.feedback.positiveCount} / ${data.restaurant.feedback.neutralCount} / ${data.restaurant.feedback.negativeCount}',
+                        ),
+                      ]),
+                      _rankChart(
+                        'Most ordered dishes chart',
+                        data.restaurant.topDishes,
                       ),
                       _rankTable(
                         'Most ordered dishes',

@@ -68,15 +68,17 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
   List<ActionLogDto> get _filtered {
     final q = _searchQuery.trim().toLowerCase();
     return _logs.where((l) {
-      final matchesFeature = _featureFilter == 'All' || l.feature == _featureFilter;
-      final matchesSearch = q.isEmpty
-          ? true
-          : [
-              l.userName,
-              l.feature,
-              l.action,
-              l.other,
-            ].any((v) => v.toLowerCase().contains(q));
+      final matchesFeature =
+          _featureFilter == 'All' || l.feature == _featureFilter;
+      final matchesSearch =
+          q.isEmpty
+              ? true
+              : [
+                l.userName,
+                l.feature,
+                l.action,
+                l.other,
+              ].any((v) => v.toLowerCase().contains(q));
       return matchesFeature && matchesSearch;
     }).toList();
   }
@@ -106,9 +108,12 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
               children: [
                 DropdownButton<String>(
                   value: _featureFilter,
-                  items: _features
-                      .map((f) => DropdownMenuItem(value: f, child: Text(f)))
-                      .toList(),
+                  items:
+                      _features
+                          .map(
+                            (f) => DropdownMenuItem(value: f, child: Text(f)),
+                          )
+                          .toList(),
                   onChanged: (v) {
                     if (v == null) return;
                     setState(() => _featureFilter = v);
@@ -126,20 +131,25 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
                   ),
                 if (_error != null) ...[
                   const SizedBox(width: 12),
-                  Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
                 ],
               ],
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: _filtered.isEmpty
-                  ? Center(
-                      child: Text(
-                        _loading ? 'Loading...' : 'No action logs found.',
-                        style: TextStyle(color: Colors.grey.shade600),
-                      ),
-                    )
-                  : PagedDataTable(
+              child:
+                  _filtered.isEmpty
+                      ? Center(
+                        child: Text(
+                          _loading ? 'Loading...' : 'No action logs found.',
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      )
+                      : PagedDataTable(
+                        title: 'Action Logs',
                         columns: const [
                           DataColumn(label: Text('User')),
                           DataColumn(label: Text('Feature')),
@@ -147,17 +157,18 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
                           DataColumn(label: Text('Date & Time')),
                           DataColumn(label: Text('Other')),
                         ],
-                        rows: _filtered.map((l) {
-                          return DataRow(
-                            cells: [
-                              DataCell(Text(l.userName)),
-                              DataCell(Text(l.feature)),
-                              DataCell(Text(l.action)),
-                              DataCell(Text(l.createdAt.toString())),
-                              DataCell(Text(l.other)),
-                            ],
-                          );
-                        }).toList(),
+                        rows:
+                            _filtered.map((l) {
+                              return DataRow(
+                                cells: [
+                                  DataCell(Text(l.userName)),
+                                  DataCell(Text(l.feature)),
+                                  DataCell(Text(l.action)),
+                                  DataCell(Text(l.createdAt.toString())),
+                                  DataCell(Text(l.other)),
+                                ],
+                              );
+                            }).toList(),
                       ),
             ),
           ],
@@ -166,4 +177,3 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
     );
   }
 }
-

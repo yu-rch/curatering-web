@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:async';
@@ -64,7 +64,8 @@ class ManageEventsOrdersCache {
       required List<EventOrderDto> processing,
       required List<EventOrderDto> postAnalysis,
       required List<EventOrderDto> completed,
-    }) onData,
+    })
+    onData,
   }) {
     if (_fetchedAt == null || _role != role) return false;
     if (DateTime.now().difference(_fetchedAt!) > _ttl) return false;
@@ -434,7 +435,7 @@ class _ManageEventsState extends State<ManageEvents>
       },
     );
     if (!restored) {
-    _refreshOrders();
+      _refreshOrders();
     }
   }
 
@@ -1551,11 +1552,12 @@ class _ManageEventsState extends State<ManageEvents>
 
   Widget _buildOnlineInquiryEventDesign(EventOrderDto order) {
     final generatedUrl = order.themeDesign.generatedImageUrl?.trim() ?? '';
-    final designPrompt = (order.themeDesign.customInstructions ??
-            order.themeDesign.colorPrompt ??
-            order.themeDesign.customerThemeRequest ??
-            '')
-        .trim();
+    final designPrompt =
+        (order.themeDesign.customInstructions ??
+                order.themeDesign.colorPrompt ??
+                order.themeDesign.customerThemeRequest ??
+                '')
+            .trim();
     final previewSources =
         order.themeDesign.picksBase64
             .where((s) => s.trim().isNotEmpty)
@@ -3245,10 +3247,7 @@ class _ManageEventsState extends State<ManageEvents>
 
   /// Staff “catering + event” rows: DB uses `catering_event`; some APIs use `event` or omit type when an event title exists.
   bool _isCateringPlusEventOrder(EventOrderDto o) {
-    return isCateringPlusEventOrderType(
-      o.orderType,
-      eventTitle: o.eventTitle,
-    );
+    return isCateringPlusEventOrderType(o.orderType, eventTitle: o.eventTitle);
   }
 
   Widget _buildProcessingSeatingSection() {
@@ -3258,10 +3257,7 @@ class _ManageEventsState extends State<ManageEvents>
     }
     final o = _selectedProcessingOrderDto!;
     if (!_isCateringPlusEventOrder(o)) return const SizedBox.shrink();
-    return ProcessingSeatingSection(
-      order: o,
-      onSaved: _refreshOrders,
-    );
+    return ProcessingSeatingSection(order: o, onSaved: _refreshOrders);
   }
 
   Widget _buildProcessingMenuSection() {
@@ -3505,245 +3501,247 @@ class _ManageEventsState extends State<ManageEvents>
     final confirmLabel = isDownpayment ? 'Confirm' : 'Finalize';
 
     try {
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, dialogSetState) {
-            final amount =
-                isDownpayment
-                    ? resolvedDownpaymentAmount()
-                    : resolvedFullPaymentAmount();
-            return AlertDialog(
-              title: Text(title),
-              content: SizedBox(
-                width: 440,
-                child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                      if (isDownpayment) ...[
-                        const Text(
-                          'Downpayment amount',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 8),
-                        DropdownButtonFormField<DownpaymentAmountOption>(
-                          value: downpaymentOption,
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            border: OutlineInputBorder(),
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, dialogSetState) {
+              final amount =
+                  isDownpayment
+                      ? resolvedDownpaymentAmount()
+                      : resolvedFullPaymentAmount();
+              return AlertDialog(
+                title: Text(title),
+                content: SizedBox(
+                  width: 440,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (isDownpayment) ...[
+                          const Text(
+                            'Downpayment amount',
+                            style: TextStyle(fontWeight: FontWeight.w600),
                           ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: DownpaymentAmountOption.percent50,
-                              child: Text('50% downpayment'),
-                            ),
-                            DropdownMenuItem(
-                              value: DownpaymentAmountOption.custom,
-                              child: Text('Custom amount'),
-                            ),
-                            DropdownMenuItem(
-                              value: DownpaymentAmountOption.fullPayment,
-                              child: Text('Full payment (100%)'),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              dialogSetState(() => downpaymentOption = value);
-                            }
-                          },
-                        ),
-                        if (downpaymentOption ==
-                            DownpaymentAmountOption.custom) ...[
-                    const SizedBox(height: 12),
-                          TextField(
-                            controller: customAmountController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<DownpaymentAmountOption>(
+                            value: downpaymentOption,
+                            isExpanded: true,
                             decoration: const InputDecoration(
-                              labelText: 'Custom amount (₱)',
                               border: OutlineInputBorder(),
                             ),
-                            onChanged: (_) => dialogSetState(() {}),
-                          ),
-                        ],
-                        const SizedBox(height: 16),
-                      ] else ...[
-                        const Text(
-                          'Amount to pay',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 8),
-                        DropdownButtonFormField<FullPaymentAmountOption>(
-                          value: fullPaymentOption,
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            border: OutlineInputBorder(),
-                          ),
-                          items: [
-                            DropdownMenuItem(
-                              value: FullPaymentAmountOption.remainingBalance,
-                              child: Text(
-                                'Remaining balance (${formatPesos(remainingBalance)})',
+                            items: const [
+                              DropdownMenuItem(
+                                value: DownpaymentAmountOption.percent50,
+                                child: Text('50% downpayment'),
                               ),
-                            ),
-                            DropdownMenuItem(
-                              value: FullPaymentAmountOption.fullTotal,
-                              child: Text(
-                                'Full order total (${formatPesos(orderTotal)})',
+                              DropdownMenuItem(
+                                value: DownpaymentAmountOption.custom,
+                                child: Text('Custom amount'),
                               ),
-                            ),
-                            const DropdownMenuItem(
-                              value: FullPaymentAmountOption.custom,
-                              child: Text('Custom amount'),
+                              DropdownMenuItem(
+                                value: DownpaymentAmountOption.fullPayment,
+                                child: Text('Full payment (100%)'),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              if (value != null) {
+                                dialogSetState(() => downpaymentOption = value);
+                              }
+                            },
+                          ),
+                          if (downpaymentOption ==
+                              DownpaymentAmountOption.custom) ...[
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: customAmountController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: const InputDecoration(
+                                labelText: 'Custom amount (₱)',
+                                border: OutlineInputBorder(),
+                              ),
+                              onChanged: (_) => dialogSetState(() {}),
                             ),
                           ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              dialogSetState(() => fullPaymentOption = value);
-                            }
-                          },
-                        ),
-                        if (fullPaymentOption ==
-                            FullPaymentAmountOption.custom) ...[
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: customAmountController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
+                          const SizedBox(height: 16),
+                        ] else ...[
+                          const Text(
+                            'Amount to pay',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<FullPaymentAmountOption>(
+                            value: fullPaymentOption,
+                            isExpanded: true,
                             decoration: const InputDecoration(
-                              labelText: 'Custom amount (₱)',
                               border: OutlineInputBorder(),
                             ),
-                            onChanged: (_) => dialogSetState(() {}),
-                          ),
-                        ],
-                        const SizedBox(height: 16),
-                      ],
-                      const SizedBox(height: 8),
-                    Text(
-                      formatPesos(amount),
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFFF4511E),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    const Text(
-                        'Payment method',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<PaymentService>(
-                      value: selectedPaymentService,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                      ),
-                      items:
-                          PaymentService.values.map((service) {
-                            return DropdownMenuItem(
-                              value: service,
-                              child: Text(service.displayName),
-                            );
-                          }).toList(),
-                      onChanged: (value) {
-                        if (value != null) {
-                          dialogSetState(() {
-                            selectedPaymentService = value;
-                          });
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                        'Reference number',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: referenceController,
-                      decoration: const InputDecoration(
-                        hintText: 'Enter reference number',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Center(
-                      child: TextButton(
-                        onPressed: () => _showOrderSummaryDialog(order),
-                          child: const Text('View order summary'),
-                      ),
-                    ),
-                  ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed:
-                      _paymentDialogLoading
-                          ? null
-                          : () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed:
-                      _paymentDialogLoading
-                          ? null
-                          : () async {
-                            final payAmount =
-                                isDownpayment
-                                    ? resolvedDownpaymentAmount()
-                                    : resolvedFullPaymentAmount();
-                            if (payAmount <= 0) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Enter a valid amount.'),
+                            items: [
+                              DropdownMenuItem(
+                                value: FullPaymentAmountOption.remainingBalance,
+                                child: Text(
+                                  'Remaining balance (${formatPesos(remainingBalance)})',
                                 ),
-                              );
-                              return;
-                            }
-                            final confirmed = await _confirmOrderPayment(
-                              order,
-                              mode,
-                              selectedPaymentService,
-                              referenceController.text.trim(),
-                              amount: payAmount,
-                            );
-                            if (confirmed && mounted) {
-                              Navigator.of(context).pop();
+                              ),
+                              DropdownMenuItem(
+                                value: FullPaymentAmountOption.fullTotal,
+                                child: Text(
+                                  'Full order total (${formatPesos(orderTotal)})',
+                                ),
+                              ),
+                              const DropdownMenuItem(
+                                value: FullPaymentAmountOption.custom,
+                                child: Text('Custom amount'),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              if (value != null) {
+                                dialogSetState(() => fullPaymentOption = value);
+                              }
+                            },
+                          ),
+                          if (fullPaymentOption ==
+                              FullPaymentAmountOption.custom) ...[
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: customAmountController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: const InputDecoration(
+                                labelText: 'Custom amount (₱)',
+                                border: OutlineInputBorder(),
+                              ),
+                              onChanged: (_) => dialogSetState(() {}),
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                        ],
+                        const SizedBox(height: 8),
+                        Text(
+                          formatPesos(amount),
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFF4511E),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        const Text(
+                          'Payment method',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<PaymentService>(
+                          value: selectedPaymentService,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                          ),
+                          items:
+                              PaymentService.values.map((service) {
+                                return DropdownMenuItem(
+                                  value: service,
+                                  child: Text(service.displayName),
+                                );
+                              }).toList(),
+                          onChanged: (value) {
+                            if (value != null) {
+                              dialogSetState(() {
+                                selectedPaymentService = value;
+                              });
                             }
                           },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1DB954),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Reference number',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: referenceController,
+                          decoration: const InputDecoration(
+                            hintText: 'Enter reference number',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Center(
+                          child: TextButton(
+                            onPressed: () => _showOrderSummaryDialog(order),
+                            child: const Text('View order summary'),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  child:
-                      _paymentDialogLoading
-                          ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white,
-                              ),
-                            ),
-                          )
-                          : Text(confirmLabel),
                 ),
-              ],
-            );
-          },
-        );
-      },
-    );
+                actions: [
+                  TextButton(
+                    onPressed:
+                        _paymentDialogLoading
+                            ? null
+                            : () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    onPressed:
+                        _paymentDialogLoading
+                            ? null
+                            : () async {
+                              final payAmount =
+                                  isDownpayment
+                                      ? resolvedDownpaymentAmount()
+                                      : resolvedFullPaymentAmount();
+                              if (payAmount <= 0) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Enter a valid amount.'),
+                                  ),
+                                );
+                                return;
+                              }
+                              final confirmed = await _confirmOrderPayment(
+                                order,
+                                mode,
+                                selectedPaymentService,
+                                referenceController.text.trim(),
+                                amount: payAmount,
+                              );
+                              if (confirmed && mounted) {
+                                Navigator.of(context).pop();
+                              }
+                            },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1DB954),
+                    ),
+                    child:
+                        _paymentDialogLoading
+                            ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
+                            : Text(confirmLabel),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
     } finally {
       referenceController.dispose();
       customAmountController.dispose();
@@ -3761,8 +3759,7 @@ class _ManageEventsState extends State<ManageEvents>
   Future<void> _showPaymentConfirmationDialog(
     EventOrderDto order,
     PaymentConfirmationMode mode,
-  ) =>
-      _showDownpaymentConfirmationDialog(order, mode: mode);
+  ) => _showDownpaymentConfirmationDialog(order, mode: mode);
 
   Future<void> _showOrderSummaryDialog(EventOrderDto order) async {
     final orderTotal = computeOrderTotalCost(order);
@@ -3779,33 +3776,34 @@ class _ManageEventsState extends State<ManageEvents>
               children: [
                 Expanded(
                   child: PagedDataTable(
-                      headingRowColor: WidgetStateProperty.all(
-                        Colors.grey.shade200,
-                      ),
-                      columns: const [
-                        DataColumn(label: Text('Item')),
-                        DataColumn(label: Text('Qty')),
-                        DataColumn(label: Text('Unit Cost')),
-                        DataColumn(label: Text('Total')),
-                      ],
-                      rows:
-                          order.menu.map((m) {
-                            final item = m as dynamic;
-                            final dishName = item.dishName ?? 'Item';
-                            final qty = item.paxOption ?? '1 pax';
-                            final price =
-                                item.price is num
-                                    ? (item.price as num).toDouble()
-                                    : 0.0;
-                            return DataRow(
-                              cells: [
-                                DataCell(Text(dishName)),
-                                DataCell(Text('$qty')),
-                                DataCell(Text(formatPesos(price))),
-                                DataCell(Text(formatPesos(price))),
-                              ],
-                            );
-                          }).toList(),
+                    title: 'Order Summary Items',
+                    headingRowColor: WidgetStateProperty.all(
+                      Colors.grey.shade200,
+                    ),
+                    columns: const [
+                      DataColumn(label: Text('Item')),
+                      DataColumn(label: Text('Qty')),
+                      DataColumn(label: Text('Unit Cost')),
+                      DataColumn(label: Text('Total')),
+                    ],
+                    rows:
+                        order.menu.map((m) {
+                          final item = m as dynamic;
+                          final dishName = item.dishName ?? 'Item';
+                          final qty = item.paxOption ?? '1 pax';
+                          final price =
+                              item.price is num
+                                  ? (item.price as num).toDouble()
+                                  : 0.0;
+                          return DataRow(
+                            cells: [
+                              DataCell(Text(dishName)),
+                              DataCell(Text('$qty')),
+                              DataCell(Text(formatPesos(price))),
+                              DataCell(Text(formatPesos(price))),
+                            ],
+                          );
+                        }).toList(),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -3921,287 +3919,283 @@ class _ManageEventsState extends State<ManageEvents>
                   children: [
                     Expanded(
                       child: PagedDataTable(
-                          key: ValueKey(editableItems.length),
-                          headingRowColor: WidgetStateProperty.all(
-                            Colors.grey.shade200,
-                          ),
-                          columns: [
-                            DataColumn(label: Text('Item')),
-                            DataColumn(label: Text('Description')),
-                            DataColumn(label: Text('Quantity')),
-                            if (_isManager) ...[
-                              DataColumn(label: Text('Price/1')),
-                              DataColumn(label: Text('Total Price')),
-                            ] else ...[
-                              DataColumn(label: Text('Cost')),
-                            ],
-                            DataColumn(label: Text('Status')),
-                            if (_isManager) ...[
-                              DataColumn(label: Text('Actions')),
-                            ],
+                        title: 'Event Checklist',
+                        key: ValueKey(editableItems.length),
+                        headingRowColor: WidgetStateProperty.all(
+                          Colors.grey.shade200,
+                        ),
+                        columns: [
+                          DataColumn(label: Text('Item')),
+                          DataColumn(label: Text('Description')),
+                          DataColumn(label: Text('Quantity')),
+                          if (_isManager) ...[
+                            DataColumn(label: Text('Price/1')),
+                            DataColumn(label: Text('Total Price')),
+                          ] else ...[
+                            DataColumn(label: Text('Cost')),
                           ],
-                          rows:
-                              editableItems.asMap().entries.map((entry) {
-                                final index = entry.key;
-                                final item = entry.value;
-                                return DataRow(
-                                  cells: [
-                                    DataCell(
-                                      _isManager
-                                          ? TextFormField(
-                                            initialValue: item.item,
-                                            decoration: const InputDecoration(
-                                              border: OutlineInputBorder(),
-                                              contentPadding: EdgeInsets.all(8),
-                                            ),
-                                            onChanged: (value) {
-                                              dialogSetState(() {
-                                                editableItems[index] =
-                                                    ChecklistItem(
-                                                      item: value,
-                                                      description:
-                                                          item.description,
-                                                      quantity: item.quantity,
-                                                      cost: item.cost,
-                                                      isCompleted:
-                                                          item.isCompleted,
-                                                    );
-                                              });
-                                            },
-                                          )
-                                          : Text(item.item),
-                                    ),
-                                    DataCell(
-                                      _isManager
-                                          ? TextFormField(
-                                            initialValue: item.description,
-                                            decoration: const InputDecoration(
-                                              border: OutlineInputBorder(),
-                                              contentPadding: EdgeInsets.all(8),
-                                            ),
-                                            onChanged: (value) {
-                                              dialogSetState(() {
-                                                editableItems[index] =
-                                                    ChecklistItem(
-                                                      item: item.item,
-                                                      description: value,
-                                                      quantity: item.quantity,
-                                                      cost: item.cost,
-                                                      isCompleted:
-                                                          item.isCompleted,
-                                                    );
-                                              });
-                                            },
-                                          )
-                                          : Text(item.description),
-                                    ),
-                                    DataCell(
-                                      _isManager
-                                          ? TextFormField(
-                                            initialValue:
-                                                item.quantity.toString(),
-                                            decoration: const InputDecoration(
-                                              border: OutlineInputBorder(),
-                                              contentPadding: EdgeInsets.all(8),
-                                            ),
-                                            keyboardType: TextInputType.number,
-                                            onChanged: (value) {
-                                              final newQuantity =
-                                                  int.tryParse(value) ??
-                                                  item.quantity;
-                                              dialogSetState(() {
-                                                editableItems[index] =
-                                                    ChecklistItem(
-                                                      item: item.item,
-                                                      description:
-                                                          item.description,
-                                                      quantity: newQuantity,
-                                                      cost: item.cost,
-                                                      isCompleted:
-                                                          item.isCompleted,
-                                                    );
-                                              });
-                                            },
-                                          )
-                                          : Text('${item.quantity}'),
-                                    ),
-                                    if (_isManager) ...[
-                                      DataCell(
-                                        TextFormField(
-                                          initialValue: item.cost
-                                              .toStringAsFixed(2),
+                          DataColumn(label: Text('Status')),
+                          if (_isManager) ...[
+                            DataColumn(label: Text('Actions')),
+                          ],
+                        ],
+                        rows:
+                            editableItems.asMap().entries.map((entry) {
+                              final index = entry.key;
+                              final item = entry.value;
+                              return DataRow(
+                                cells: [
+                                  DataCell(
+                                    _isManager
+                                        ? TextFormField(
+                                          initialValue: item.item,
                                           decoration: const InputDecoration(
                                             border: OutlineInputBorder(),
                                             contentPadding: EdgeInsets.all(8),
-                                            prefixText: 'PHP ',
+                                          ),
+                                          onChanged: (value) {
+                                            dialogSetState(() {
+                                              editableItems[index] =
+                                                  ChecklistItem(
+                                                    item: value,
+                                                    description:
+                                                        item.description,
+                                                    quantity: item.quantity,
+                                                    cost: item.cost,
+                                                    isCompleted:
+                                                        item.isCompleted,
+                                                  );
+                                            });
+                                          },
+                                        )
+                                        : Text(item.item),
+                                  ),
+                                  DataCell(
+                                    _isManager
+                                        ? TextFormField(
+                                          initialValue: item.description,
+                                          decoration: const InputDecoration(
+                                            border: OutlineInputBorder(),
+                                            contentPadding: EdgeInsets.all(8),
+                                          ),
+                                          onChanged: (value) {
+                                            dialogSetState(() {
+                                              editableItems[index] =
+                                                  ChecklistItem(
+                                                    item: item.item,
+                                                    description: value,
+                                                    quantity: item.quantity,
+                                                    cost: item.cost,
+                                                    isCompleted:
+                                                        item.isCompleted,
+                                                  );
+                                            });
+                                          },
+                                        )
+                                        : Text(item.description),
+                                  ),
+                                  DataCell(
+                                    _isManager
+                                        ? TextFormField(
+                                          initialValue:
+                                              item.quantity.toString(),
+                                          decoration: const InputDecoration(
+                                            border: OutlineInputBorder(),
+                                            contentPadding: EdgeInsets.all(8),
                                           ),
                                           keyboardType: TextInputType.number,
                                           onChanged: (value) {
-                                            final newCost =
-                                                double.tryParse(value) ??
-                                                item.cost;
+                                            final newQuantity =
+                                                int.tryParse(value) ??
+                                                item.quantity;
                                             dialogSetState(() {
                                               editableItems[index] =
                                                   ChecklistItem(
                                                     item: item.item,
                                                     description:
                                                         item.description,
-                                                    quantity: item.quantity,
-                                                    cost: newCost,
+                                                    quantity: newQuantity,
+                                                    cost: item.cost,
                                                     isCompleted:
                                                         item.isCompleted,
                                                   );
                                             });
                                           },
-                                        ),
-                                      ),
-                                      DataCell(
-                                        Text(
-                                          'PHP ${(item.cost * item.quantity).toStringAsFixed(2)}',
-                                        ),
-                                        // style: const TextStyle(fontWeight: FontWeight.w600),
-                                      ),
-                                    ] else ...[
-                                      DataCell(Text(formatPesos(item.cost))),
-                                    ],
+                                        )
+                                        : Text('${item.quantity}'),
+                                  ),
+                                  if (_isManager) ...[
                                     DataCell(
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
+                                      TextFormField(
+                                        initialValue: item.cost.toStringAsFixed(
+                                          2,
                                         ),
-                                        decoration: BoxDecoration(
+                                        decoration: const InputDecoration(
+                                          border: OutlineInputBorder(),
+                                          contentPadding: EdgeInsets.all(8),
+                                          prefixText: 'PHP ',
+                                        ),
+                                        keyboardType: TextInputType.number,
+                                        onChanged: (value) {
+                                          final newCost =
+                                              double.tryParse(value) ??
+                                              item.cost;
+                                          dialogSetState(() {
+                                            editableItems[index] =
+                                                ChecklistItem(
+                                                  item: item.item,
+                                                  description: item.description,
+                                                  quantity: item.quantity,
+                                                  cost: newCost,
+                                                  isCompleted: item.isCompleted,
+                                                );
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                    DataCell(
+                                      Text(
+                                        'PHP ${(item.cost * item.quantity).toStringAsFixed(2)}',
+                                      ),
+                                      // style: const TextStyle(fontWeight: FontWeight.w600),
+                                    ),
+                                  ] else ...[
+                                    DataCell(Text(formatPesos(item.cost))),
+                                  ],
+                                  DataCell(
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            item.isCompleted
+                                                ? Colors.green.shade50
+                                                : Colors.red.shade50,
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(
                                           color:
                                               item.isCompleted
-                                                  ? Colors.green.shade50
-                                                  : Colors.red.shade50,
-                                          borderRadius: BorderRadius.circular(
-                                            4,
+                                                  ? Colors.green
+                                                  : Colors.red,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: DropdownButtonHideUnderline(
+                                        child: DropdownButton<bool>(
+                                          value: item.isCompleted,
+                                          isDense: true,
+                                          icon: const Icon(
+                                            Icons.keyboard_arrow_down,
+                                            size: 18,
                                           ),
-                                          border: Border.all(
+                                          style: TextStyle(
                                             color:
                                                 item.isCompleted
                                                     ? Colors.green
                                                     : Colors.red,
-                                            width: 1,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 12,
                                           ),
-                                        ),
-                                        child: DropdownButtonHideUnderline(
-                                          child: DropdownButton<bool>(
-                                            value: item.isCompleted,
-                                            isDense: true,
-                                            icon: const Icon(
-                                              Icons.keyboard_arrow_down,
-                                              size: 18,
-                                            ),
-                                            style: TextStyle(
-                                              color:
-                                                  item.isCompleted
-                                                      ? Colors.green
-                                                      : Colors.red,
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 12,
-                                            ),
-                                            items: [
-                                              DropdownMenuItem(
-                                                value: true,
-                                                child: Text(
-                                                  'completed',
-                                                  style: TextStyle(
-                                                    color: Colors.green,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
+                                          items: [
+                                            DropdownMenuItem(
+                                              value: true,
+                                              child: Text(
+                                                'completed',
+                                                style: TextStyle(
+                                                  color: Colors.green,
+                                                  fontWeight: FontWeight.w600,
                                                 ),
-                                              ),
-                                              DropdownMenuItem(
-                                                value: false,
-                                                child: Text(
-                                                  'not done',
-                                                  style: TextStyle(
-                                                    color: Colors.red,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                            onChanged: (value) {
-                                              if (value != null) {
-                                                dialogSetState(() {
-                                                  editableItems[index] =
-                                                      ChecklistItem(
-                                                        item: item.item,
-                                                        description:
-                                                            item.description,
-                                                        quantity: item.quantity,
-                                                        cost: item.cost,
-                                                        isCompleted: value,
-                                                      );
-                                                });
-                                              }
-                                            },
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    if (_isManager) ...[
-                                      DataCell(
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            // Edit button
-                                            Container(
-                                              width: 28,
-                                              height: 28,
-                                              margin: const EdgeInsets.only(
-                                                right: 4,
-                                              ),
-                                              decoration: const BoxDecoration(
-                                                color: Colors.red,
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: IconButton(
-                                                padding: EdgeInsets.zero,
-                                                icon: const Icon(
-                                                  Icons.edit,
-                                                  color: Colors.white,
-                                                  size: 16,
-                                                ),
-                                                onPressed: () {
-                                                  // Edit is handled inline via TextFormField
-                                                },
                                               ),
                                             ),
-                                            // Delete button
-                                            Container(
-                                              width: 28,
-                                              height: 28,
-                                              decoration: const BoxDecoration(
-                                                color: Colors.red,
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: IconButton(
-                                                padding: EdgeInsets.zero,
-                                                icon: const Icon(
-                                                  Icons.remove,
-                                                  color: Colors.white,
-                                                  size: 16,
+                                            DropdownMenuItem(
+                                              value: false,
+                                              child: Text(
+                                                'not done',
+                                                style: TextStyle(
+                                                  color: Colors.red,
+                                                  fontWeight: FontWeight.w600,
                                                 ),
-                                                onPressed: () {
-                                                  dialogSetState(() {
-                                                    editableItems.removeAt(
-                                                      index,
-                                                    );
-                                                  });
-                                                },
                                               ),
                                             ),
                                           ],
+                                          onChanged: (value) {
+                                            if (value != null) {
+                                              dialogSetState(() {
+                                                editableItems[index] =
+                                                    ChecklistItem(
+                                                      item: item.item,
+                                                      description:
+                                                          item.description,
+                                                      quantity: item.quantity,
+                                                      cost: item.cost,
+                                                      isCompleted: value,
+                                                    );
+                                              });
+                                            }
+                                          },
                                         ),
                                       ),
-                                    ],
+                                    ),
+                                  ),
+                                  if (_isManager) ...[
+                                    DataCell(
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          // Edit button
+                                          Container(
+                                            width: 28,
+                                            height: 28,
+                                            margin: const EdgeInsets.only(
+                                              right: 4,
+                                            ),
+                                            decoration: const BoxDecoration(
+                                              color: Colors.red,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: IconButton(
+                                              padding: EdgeInsets.zero,
+                                              icon: const Icon(
+                                                Icons.edit,
+                                                color: Colors.white,
+                                                size: 16,
+                                              ),
+                                              onPressed: () {
+                                                // Edit is handled inline via TextFormField
+                                              },
+                                            ),
+                                          ),
+                                          // Delete button
+                                          Container(
+                                            width: 28,
+                                            height: 28,
+                                            decoration: const BoxDecoration(
+                                              color: Colors.red,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: IconButton(
+                                              padding: EdgeInsets.zero,
+                                              icon: const Icon(
+                                                Icons.remove,
+                                                color: Colors.white,
+                                                size: 16,
+                                              ),
+                                              onPressed: () {
+                                                dialogSetState(() {
+                                                  editableItems.removeAt(index);
+                                                });
+                                              },
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ],
-                                );
-                              }).toList(),
+                                ],
+                              );
+                            }).toList(),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -4232,7 +4226,8 @@ class _ManageEventsState extends State<ManageEvents>
                           ),
                         ],
                       ),
-                      if (showInventoryPicker && inventoryOptions.isNotEmpty) ...[
+                      if (showInventoryPicker &&
+                          inventoryOptions.isNotEmpty) ...[
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
                           isExpanded: true,
@@ -4633,9 +4628,9 @@ class _ManageEventsState extends State<ManageEvents>
             (_) => const CustomerWebsiteScreen(
               showStaffChrome: false,
               staffThemeStudioMode: true,
-                    ),
-                  ),
-                );
+            ),
+      ),
+    );
     if (result == null || !mounted) return;
 
     setState(() {
@@ -4656,7 +4651,7 @@ class _ManageEventsState extends State<ManageEvents>
           if (s.isEmpty) continue;
           try {
             final bytes = base64Decode(s);
-                  final key = _themeImageKey(bytes);
+            final key = _themeImageKey(bytes);
             if (!_themePickHashes.contains(key)) {
               _themePicks.add(bytes);
               _themePickHashes.add(key);
@@ -6955,16 +6950,16 @@ class _ManageEventsState extends State<ManageEvents>
                     child: Row(
                       children: [
                         if (!_isSupervisor) ...[
-                        _buildEventTabButton('New Event', 0),
-                        const SizedBox(width: 2),
-                        _buildEventTabButton('Online Inquiries', 1),
-                        const SizedBox(width: 2),
+                          _buildEventTabButton('New Event', 0),
+                          const SizedBox(width: 2),
+                          _buildEventTabButton('Online Inquiries', 1),
+                          const SizedBox(width: 2),
                           _buildEventTabButton('For Downpayment', 2),
-                        const SizedBox(width: 2),
+                          const SizedBox(width: 2),
                         ],
                         _buildEventTabButton('Ongoing', 3),
                         if (!_isSupervisor) ...[
-                        const SizedBox(width: 2),
+                          const SizedBox(width: 2),
                           _buildEventTabButton('For Full Payment', 4),
                           const SizedBox(width: 2),
                           _buildEventTabButton('Completed', 5),
@@ -7068,21 +7063,21 @@ class _ManageEventsState extends State<ManageEvents>
                     children: [
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextField(
-                  controller: _foodSearchController,
-                  decoration: InputDecoration(
-                    hintText: 'Search dish',
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey.shade100,
-                  ),
-                  onChanged: (_) => setState(() {}),
-                ),
+                        children: [
+                          TextField(
+                            controller: _foodSearchController,
+                            decoration: InputDecoration(
+                              hintText: 'Search dish',
+                              prefixIcon: const Icon(Icons.search),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: BorderSide.none,
+                              ),
+                              filled: true,
+                              fillColor: Colors.grey.shade100,
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             '${_menuItems.length}/8 dishes selected (min 4)',
@@ -7096,30 +7091,30 @@ class _ManageEventsState extends State<ManageEvents>
                             child:
                                 filtered.isEmpty
                                     ? Center(
-                      child: Text(
-                        'No dishes match your search.',
+                                      child: Text(
+                                        'No dishes match your search.',
                                         style: TextStyle(
                                           color: Colors.grey.shade600,
-                      ),
-                    ),
-                  )
+                                        ),
+                                      ),
+                                    )
                                     : ListView(
-                      children:
+                                      children:
                                           filtered
-                              .map(
-                                (dish) => Padding(
+                                              .map(
+                                                (dish) => Padding(
                                                   padding:
                                                       const EdgeInsets.only(
                                                         bottom: 12,
                                                       ),
-                                  child: _buildDishCard(dish),
-                                ),
-                              )
-                              .toList(),
-                    ),
-                  ),
-              ],
-            ),
+                                                  child: _buildDishCard(dish),
+                                                ),
+                                              )
+                                              .toList(),
+                                    ),
+                          ),
+                        ],
+                      ),
                       ListView.builder(
                         itemCount: sets.length,
                         itemBuilder: (context, i) {
@@ -7443,21 +7438,21 @@ class _ManageEventsState extends State<ManageEvents>
         orderId: order.id,
         deductInventory: _isCateringPlusEventOrder(order),
         items:
-              editableItems
-                  .map(
-                    (item) => {
-                      'item': item.item,
+            editableItems
+                .map(
+                  (item) => {
+                    'item': item.item,
                     'title': item.item,
-                      'description': item.description,
-                      'quantity': item.quantity,
-                      'cost': item.cost,
+                    'description': item.description,
+                    'quantity': item.quantity,
+                    'cost': item.cost,
                     'price': item.cost,
-                      'isCompleted': item.isCompleted,
+                    'isCompleted': item.isCompleted,
                     if (item.inventoryId != null)
                       'inventoryId': item.inventoryId,
-                    },
-                  )
-                  .toList(),
+                  },
+                )
+                .toList(),
       );
 
       ScaffoldMessenger.of(context).showSnackBar(

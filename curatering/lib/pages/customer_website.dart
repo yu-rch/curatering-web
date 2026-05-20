@@ -1139,9 +1139,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 children: [
                   TextButton(
                     onPressed: () {},
-                    child: const Text(
-                      'PRIVACY POLICY',
-                      style: TextStyle(color: Colors.black),
+                    child: Text(
+                      w.footerPrivacyLabel,
+                      style: const TextStyle(color: Colors.black),
                     ),
                   ),
                   WebsiteRichText(
@@ -1651,7 +1651,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _homeSectionTag('LATEST EVENT'),
+                  _homeSectionTag(w.latestEventSectionLabel),
                   const SizedBox(height: 12),
                   WebsiteRichText(
                     value: w.latestEventTitle,
@@ -1908,10 +1908,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _homeSectionTag('POPULAR DISHES'),
+        _homeSectionTag(w.popularDishesSectionLabel),
         const SizedBox(height: 8),
-        Text(
-          'Our all-time most requested dishes!',
+        WebsiteRichText(
+          value: w.popularDishesSubtitle,
           style: websiteHeaderStyle(fontSize: 18),
         ),
         const SizedBox(height: 12),
@@ -1943,10 +1943,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           ),
         ),
         const SizedBox(height: 28),
-        _homeSectionTag('EVENT DESIGNS'),
+        _homeSectionTag(w.eventDesignsSectionLabel),
         const SizedBox(height: 8),
-        Text(
-          'From decorations to dinnerware!',
+        WebsiteRichText(
+          value: w.eventDesignsSubtitle,
           style: websiteHeaderStyle(fontSize: 18),
         ),
         const SizedBox(height: 12),
@@ -2358,17 +2358,19 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               ),
               child: Column(
                 children: [
-                  Text(
-                    'Gallery',
+                  WebsiteRichText(
+                    value: w.galleryTitle,
                     style: websiteHeaderStyle(
                       fontSize: 42,
                       color: Colors.red.shade400,
                     ),
+                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'WE CATER TO MANY DIFFERENT TYPES OF EVENTS. TAKE A LOOK AT OUR WORK AND SEE SOME THINGS YOU MIGHT LIKE!',
+                  WebsiteRichText(
+                    value: w.galleryIntro,
                     textAlign: TextAlign.center,
+                    style: const TextStyle(height: 1.35),
                   ),
                   const SizedBox(height: 18),
                   TextField(
@@ -4238,12 +4240,13 @@ class _ContactSectionState extends State<_ContactSection> {
               ),
               child: Column(
                 children: [
-                  Text(
-                    'Contact Us',
+                  WebsiteRichText(
+                    value: widget.store.contactTitle,
                     style: websiteHeaderStyle(
                       fontSize: 42,
                       color: Colors.red.shade400,
                     ),
+                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 16),
                   Container(
@@ -4252,15 +4255,27 @@ class _ContactSectionState extends State<_ContactSection> {
                       border: Border.all(color: const Color(0xFFFFC024)),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text(
-                      'WE\'D LOVE TO HEAR FROM YOU!',
+                    child: WebsiteRichText(
+                      value: widget.store.contactBannerText,
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.2,
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                   const SizedBox(height: 24),
+                  if (widget.store.contactPageIntro.trim().isNotEmpty) ...[
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: WebsiteRichText(
+                        value: widget.store.contactPageIntro,
+                        style: const TextStyle(fontSize: 15, height: 1.45),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
@@ -4270,7 +4285,10 @@ class _ContactSectionState extends State<_ContactSection> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('YOU CAN REACH US VIA:'),
+                        WebsiteRichText(
+                          value: widget.store.contactReachUsLabel,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
                         const SizedBox(height: 16),
                         _contactRow(
                           Icons.facebook,

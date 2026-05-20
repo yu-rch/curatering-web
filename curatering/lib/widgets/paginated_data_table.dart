@@ -99,6 +99,12 @@ class PagedDataTable extends StatefulWidget {
     this.enablePrint = true,
     this.filters = const [],
     this.maxTableHeight = 560,
+    this.pdfExcludedColumnIndexes = const {},
+    this.fullWidth = false,
+    this.dataRowMinHeight,
+    this.dataRowMaxHeight,
+    this.headingRowHeight,
+    this.horizontalMargin,
   });
 
   final List<DataColumn> columns;
@@ -112,6 +118,12 @@ class PagedDataTable extends StatefulWidget {
   final bool enablePrint;
   final List<Widget> filters;
   final double maxTableHeight;
+  final Set<int> pdfExcludedColumnIndexes;
+  final bool fullWidth;
+  final double? dataRowMinHeight;
+  final double? dataRowMaxHeight;
+  final double? headingRowHeight;
+  final double? horizontalMargin;
 
   @override
   State<PagedDataTable> createState() => _PagedDataTableState();
@@ -154,11 +166,26 @@ class _PagedDataTableState extends State<PagedDataTable> {
       rows: pageRows,
       headingRowColor: widget.headingRowColor,
       columnSpacing: widget.columnSpacing,
+      dataRowMinHeight: widget.dataRowMinHeight,
+      dataRowMaxHeight: widget.dataRowMaxHeight,
+      headingRowHeight: widget.headingRowHeight,
+      horizontalMargin: widget.horizontalMargin,
     );
 
-    Widget tableScroll = SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: table,
+    Widget tableScroll = LayoutBuilder(
+      builder: (context, constraints) {
+        final child =
+            widget.fullWidth
+                ? ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                  child: table,
+                )
+                : table;
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: child,
+        );
+      },
     );
 
     if (widget.showVerticalScrollbar && pageRows.length > 12) {
@@ -215,12 +242,24 @@ class _PagedDataTableState extends State<PagedDataTable> {
   }
 
   Future<void> _printFilteredRows(List<DataRow> rows) async {
-    final headers = widget.columns.map((c) => _widgetText(c.label)).toList();
+    final includedIndexes = <int>[
+      for (var i = 0; i < widget.columns.length; i++)
+        if (!widget.pdfExcludedColumnIndexes.contains(i) &&
+            !_isActionHeader(_widgetText(widget.columns[i].label)))
+          i,
+    ];
+    final headers =
+        includedIndexes
+            .map((i) => _widgetText(widget.columns[i].label))
+            .toList();
     final data =
         rows
             .map(
               (row) =>
-                  row.cells.map((cell) => _widgetText(cell.child)).toList(),
+                  includedIndexes
+                      .where((i) => i < row.cells.length)
+                      .map((i) => _widgetText(row.cells[i].child))
+                      .toList(),
             )
             .toList();
     final doc = pw.Document(title: widget.title);
@@ -243,6 +282,14 @@ class _PagedDataTableState extends State<PagedDataTable> {
                 widget.title,
                 style: pw.TextStyle(
                   fontSize: 16,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                'Macrina\'s Kitchen and Catering',
+                style: pw.TextStyle(
+                  fontSize: 13,
                   fontWeight: pw.FontWeight.bold,
                 ),
               ),
@@ -278,6 +325,11 @@ class _PagedDataTableState extends State<PagedDataTable> {
       name: '${widget.title}.pdf',
     );
   }
+}
+
+bool _isActionHeader(String raw) {
+  final text = raw.trim().toLowerCase();
+  return text == 'action' || text == 'actions';
 }
 
 class _TableToolbar extends StatelessWidget {
@@ -343,7 +395,7 @@ class _TableToolbar extends StatelessWidget {
               icon: const Icon(Icons.filter_list),
               label: const Text('Filters'),
             )
-          else
+          else if (enableSearch)
             OutlinedButton.icon(
               onPressed:
                   search.text.isEmpty
