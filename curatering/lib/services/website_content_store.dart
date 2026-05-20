@@ -115,9 +115,8 @@ class WebsiteContentStore extends ChangeNotifier {
   String latestEventBody =
       '<p>Macrina\'s Kitchen and Catering has been around servicing different types of events from birthday to company celebrations for more than 2 decades!</p>'
       '<p>Have an upcoming celebration? <strong>INQUIRE NOW!</strong> or checkout our event design works menu first.</p>';
-  final List<String> latestEventCollageBase64 = <String>[];
-
   String redBannerText = '!!! WE CATER LUZON-WIDE !!!';
+  final List<String> latestEventCollageBase64 = <String>[];
 
   final List<String> popularDishImageBase64 = <String>[];
   final List<String> popularDishLabels = <String>[];

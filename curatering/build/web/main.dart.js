@@ -14550,8 +14550,8 @@ _.a=""
 _.b="Maria Shiloh @ 1"
 _.c="BY MACRINA'S KITCHEN AND CATERING"
 _.d="<p>Macrina's Kitchen and Catering has been around servicing different types of events from birthday to company celebrations for more than 2 decades!</p><p>Have an upcoming celebration? <strong>INQUIRE NOW!</strong> or checkout our event design works menu first.</p>"
-_.e=a
-_.f="!!! WE CATER LUZON-WIDE !!!"
+_.e="!!! WE CATER LUZON-WIDE !!!"
+_.f=a
 _.r=b
 _.w=c
 _.x=d
@@ -41978,8 +41978,8 @@ s=b.h(0,a)
 if(s==null)return!0
 if(A.Ob(s))return s
 return!0},
-cdi(){return"dummy"},
-cdh(){return"dummy"},
+cdi(){return""},
+cdh(){return""},
 ccF(){var s=window.location.hostname
 if(s==null)s=""
 return s.toLowerCase()},
@@ -69547,14 +69547,14 @@ return A.dz(B.bE,m,B.D,B.bQ,n)},
 a43(a){var s,r=null,q=this.c
 q.toString
 q=A.a7S(q)
-s=a.f
+s=a.e
 s=A.b([A.a0o(A.Pu(B.cg,22,B.ar),B.b6,s)],t.p)
 if(this.a.c)s.push(A.P2(B.ED,B.biz,new A.blC(this,a)))
 return A.a1(r,A.bf(new A.cP(new A.ar(0,q,0,1/0),A.F(s,B.y,B.o,B.t,0,B.x),r),r,r),B.C,B.F,r,r,r,r,r,B.oT,r,r,1/0)},
 JT(a){return this.aQh(a)},
 aQh(a){var s=0,r=A.r(t.H),q,p=this,o
 var $async$JT=A.t(function(b,c){if(b===1)return A.o(c,r)
-for(;;)switch(s){case 0:o=a.e
+for(;;)switch(s){case 0:o=a.f
 if(o.length===0){p.c.N(t.q).f.am(B.b77)
 s=1
 break}s=3
@@ -70050,10 +70050,10 @@ l=m.c
 l.toString
 o=p.b
 s=3
-return A.j(A.a1n(l,o.f,"Edit red banner text"),$async$$0)
+return A.j(A.a1n(l,o.e,"Edit red banner text"),$async$$0)
 case 3:n=b
 if(n==null||n.length===0){s=1
-break}o.f=n
+break}o.e=n
 s=4
 return A.j(o.cN(0),$async$$0)
 case 4:m.p(new A.blB())
@@ -70064,7 +70064,7 @@ A.blB.prototype={
 $0(){},
 $S:1}
 A.bls.prototype={
-$2(a,b){var s=null,r=(b.b-10)/2,q=new A.blw(this.b.e),p=this.a,o=t.p
+$2(a,b){var s=null,r=(b.b-10)/2,q=new A.blw(this.b.f),p=this.a,o=t.p
 return A.F(A.b([A.X(A.b([p.HJ(q.$1(0),170,r),new A.ac(10,s,s,s),p.HJ(q.$1(1),170,r)],o),B.y,B.o,B.t,0,s),B.eh,A.X(A.b([p.HJ(q.$1(2),170,r),new A.ac(10,s,s,s),p.HJ(q.$1(3),170,r)],o),B.y,B.o,B.t,0,s)],o),B.y,B.o,B.t,0,B.x)},
 $S:353}
 A.blw.prototype={
@@ -70083,7 +70083,7 @@ return A.j(l.tY(),$async$$0)
 case 3:k=b
 if(k==null){s=1
 break}o=p.b
-n=o.e
+n=o.f
 m=n.length
 if(m<4)n.push(k)
 else n[m-1]=k
@@ -82106,7 +82106,7 @@ A.aBL.prototype={
 J(a){var s=this,r=null,q=$.Ng(),p=A.f("Hero image",r,r,r,r,B.d5,r,r,r),o=q.a,n=A.ez(A.C(8),A.c3Q(o,200),B.be),m=t.p,l=A.b([A.fL(B.ab4,B.biM,new A.bsz(s,q),r),B.aT],m)
 if(o.length!==0)l.push(A.c7(!1,B.Xu,r,r,!0,r,r,new A.bsA(s,q),r,r))
 o=q.r
-l=A.b([new A.T(B.cT,p,r),A.F(A.b([n,B.a1,A.X(l,B.y,B.o,B.t,0,r)],m),B.aL,B.o,B.t,0,B.x),B.aC,new A.T(B.cT,A.f("Red banner text",r,r,r,r,B.d5,r,r,r),r),A.amK(a,"Banner",new A.bsB(s,q),q.f),B.aC,new A.T(B.cT,A.f("Latest event block",r,r,r,r,B.d5,r,r,r),r),A.amK(a,"Title",new A.bsF(s,q),q.b),B.a7,A.amK(a,"Subtitle",new A.bsG(s,q),q.c),B.a7,A.amK(a,"Body",new A.bsH(s,q),q.d),B.a0,A.c2M(q.e,new A.bsI(s,q),new A.bsJ(s,q),"Event collage images"),B.aC,A.c2M(o,new A.bsK(s,q),new A.bsL(s,q),"Popular dishes carousel")],m)
+l=A.b([new A.T(B.cT,p,r),A.F(A.b([n,B.a1,A.X(l,B.y,B.o,B.t,0,r)],m),B.aL,B.o,B.t,0,B.x),B.aC,new A.T(B.cT,A.f("Red banner text",r,r,r,r,B.d5,r,r,r),r),A.amK(a,"Banner",new A.bsB(s,q),q.e),B.aC,new A.T(B.cT,A.f("Latest event block",r,r,r,r,B.d5,r,r,r),r),A.amK(a,"Title",new A.bsF(s,q),q.b),B.a7,A.amK(a,"Subtitle",new A.bsG(s,q),q.c),B.a7,A.amK(a,"Body",new A.bsH(s,q),q.d),B.a0,A.c2M(q.f,new A.bsI(s,q),new A.bsJ(s,q),"Event collage images"),B.aC,A.c2M(o,new A.bsK(s,q),new A.bsL(s,q),"Popular dishes carousel")],m)
 if(o.length!==0){p=A.b([B.a7],m)
 B.h.C(p,A.OH(o.length,new A.bsM(s,q),!0,t.l))
 B.h.C(l,p)}l.push(B.aC)
@@ -82137,7 +82137,7 @@ s.a_()},
 $S:1}
 A.bsB.prototype={
 $1(a){var s=this.b
-s.f=a
+s.e=a
 this.a.c.$0()
 s.a_()},
 $S:4}
@@ -82167,7 +82167,7 @@ return A.j(A.a1k(),$async$$0)
 case 3:n=b
 if(J.f3(n)){s=1
 break}o=p.b
-B.h.C(o.e,n)
+B.h.C(o.f,n)
 p.a.c.$0()
 o.a_()
 case 1:return A.p(q,r)}})
@@ -82175,7 +82175,7 @@ return A.q($async$$0,r)},
 $S:3}
 A.bsJ.prototype={
 $1(a){var s=this.b
-B.h.dq(s.e,a)
+B.h.dq(s.f,a)
 this.a.c.$0()
 s.a_()},
 $S:18}
@@ -84858,7 +84858,7 @@ l.c=i==null?l.c:i
 i=A.aO(j.h(a,"latestEventBody"))
 l.d=i==null?l.d:i
 i=A.aO(j.h(a,"redBannerText"))
-l.f=i==null?l.f:i
+l.e=i==null?l.e:i
 i=A.aO(j.h(a,"contactFacebook"))
 l.Q=i==null?l.Q:i
 i=A.aO(j.h(a,"contactAddress"))
@@ -84874,7 +84874,7 @@ l.ch=i==null?l.ch:i
 i=A.aO(j.h(a,"footerCopyright"))
 l.CW=i==null?l.CW:i
 s=new A.bdu(a)
-s.$2("latestEventCollageBase64",l.e)
+s.$2("latestEventCollageBase64",l.f)
 s.$2("popularDishImageBase64",l.r)
 s.$2("popularDishLabels",l.w)
 s.$2("eventDesignImageBase64",l.x)
@@ -84889,9 +84889,9 @@ for(p=J.b7(q),o=t.N,n=t.z;p.B();){m=p.gT(p)
 if(i.b(m))j.push(A.ckz(A.bX(m,o,n)))}}j=l.z
 if(j.length===0){B.h.U(j)
 B.h.C(j,A.b([A.Nx("c1",k,"FIRST BIRTHDAYS"),A.Nx("c2",k,"18TH BIRTHDAYS"),A.Nx("c3",k,"50TH BIRTHDAYS"),A.Nx("c4",k,"CASUAL CELEBRATIONS"),A.Nx("c5",k,"WEDDING RECEPTIONS"),A.Nx("c6",k,"COMPANY CELEBRATIONS")],t.g4))}},
-Vt(){var s=this,r=s.a,q=s.b,p=s.c,o=s.d,n=s.f,m=s.z,l=A.I(m).i("D<1,ad<m,@>>")
+Vt(){var s=this,r=s.a,q=s.b,p=s.c,o=s.d,n=s.e,m=s.z,l=A.I(m).i("D<1,ad<m,@>>")
 m=A.E(new A.D(m,new A.bdw(),l),l.i("ab.E"))
-return A.c(["homeHeroImageBase64",r,"latestEventTitle",q,"latestEventSubtitle",p,"latestEventBody",o,"redBannerText",n,"latestEventCollageBase64",s.e,"popularDishImageBase64",s.r,"popularDishLabels",s.w,"eventDesignImageBase64",s.x,"imageAlignments",s.y,"galleryCategories",m,"contactFacebook",s.Q,"contactAddress",s.as,"contactHours",s.at,"contactPhone",s.ax,"contactEmail",s.ay,"contactPageIntro",s.ch,"footerCopyright",s.CW],t.N,t.z)}}
+return A.c(["homeHeroImageBase64",r,"latestEventTitle",q,"latestEventSubtitle",p,"latestEventBody",o,"redBannerText",n,"latestEventCollageBase64",s.f,"popularDishImageBase64",s.r,"popularDishLabels",s.w,"eventDesignImageBase64",s.x,"imageAlignments",s.y,"galleryCategories",m,"contactFacebook",s.Q,"contactAddress",s.as,"contactHours",s.at,"contactPhone",s.ax,"contactEmail",s.ay,"contactPageIntro",s.ch,"footerCopyright",s.CW],t.N,t.z)}}
 A.bdu.prototype={
 $2(a,b){var s=J.B(this.a,a)
 if(t.j.b(s)){B.h.U(b)
