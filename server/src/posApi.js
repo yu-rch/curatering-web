@@ -7,8 +7,16 @@ import {
   restaurantOrderItemsInsertSql,
   parseRestaurantOrderTrayItems,
   normalizeRestaurantOrderStatus,
+  ensureCateringEventOrdersCanonicalColumns,
+  buildStaffEventsOrdersListSql,
+  buildStaffEventOrderByIdQueries,
+  normalizeStaffEventOrderRow,
 } from "./order_schema.js";
-import { getTableColumnNames } from "./db.js";
+import {
+  allocateCateringTransactionId,
+  ensureOrderCateringIdColumns,
+  getTableColumnNames,
+} from "./db.js";
 
 /**
  * Mobile-compatible POS API (/api/mobile/pos/*) and staff JWT aliases (/api/cashier/pos/*).
@@ -231,6 +239,231 @@ function posAuthMiddleware(pool) {
   };
 }
 
+function posStaffRole(req) {
+  return String(req.posStaff?.role || "").trim().toLowerCase();
+}
+
+function requirePosRoles(req, res, roles) {
+  const role = posStaffRole(req);
+  if (roles.includes(role) || role === "admin" || role === "super_admin") {
+    return true;
+  }
+  res.status(403).json({ error: "invalid staff role for this POS action" });
+  return false;
+}
+
+function normalizeMobileCateringStage(stage) {
+  const s = String(stage || "new_event").trim().toLowerCase();
+  if (s === "for_downpayment") return "for_down_payment";
+  if (s === "for_ongoing" || s === "ongoing") return "on_going";
+  if (s === "for_processing" || s === "for_post_analysis") return "on_going";
+  if (s === "new_event") return "new_event";
+  return s;
+}
+
+async function listStaffCateringOrders(pool, stage, { compact = false } = {}) {
+  await ensureOrderCateringIdColumns();
+  await ensureCateringEventOrdersCanonicalColumns();
+  const status = normalizeMobileCateringStage(stage);
+  const cateringCols = await getTableColumnNames("catering_orders");
+  const eventCols = await getTableColumnNames("event_orders");
+  const listSql = buildStaffEventsOrdersListSql(cateringCols, eventCols, {
+    compact,
+  });
+  const result = await pool.query(listSql, [status]);
+  return Promise.all(
+    result.rows.map((row) => normalizeStaffEventOrderRow(row)),
+  );
+}
+
+async function getStaffCateringOrder(pool, id, orderKind) {
+  await ensureOrderCateringIdColumns();
+  await ensureCateringEventOrdersCanonicalColumns();
+  const cateringCols = await getTableColumnNames("catering_orders");
+  const eventCols = await getTableColumnNames("event_orders");
+  const { cateringSql, eventSql } = buildStaffEventOrderByIdQueries(
+    cateringCols,
+    eventCols,
+  );
+  const kind = String(orderKind || "").trim().toLowerCase();
+  const queries =
+    kind === "catering"
+      ? [cateringSql]
+      : kind === "event"
+        ? [eventSql]
+        : [eventSql, cateringSql];
+
+  for (const sql of queries) {
+    const result = await pool.query(sql, [id]);
+    if (result.rowCount > 0) {
+      return normalizeStaffEventOrderRow(result.rows[0], { enrichMenu: true });
+    }
+  }
+  return null;
+}
+
+async function resolveCateringOrderTable(pool, id, orderKind) {
+  const kind = String(orderKind || "").trim().toLowerCase();
+  const candidates =
+    kind === "catering"
+      ? ["catering_orders"]
+      : kind === "event"
+        ? ["event_orders"]
+        : ["event_orders", "catering_orders"];
+  for (const table of candidates) {
+    const result = await pool.query(
+      `SELECT 1 FROM ${table} WHERE id::text = $1 LIMIT 1`,
+      [String(id)],
+    );
+    if (result.rowCount > 0) return table;
+  }
+  return null;
+}
+
+async function patchCateringOrder(pool, id, orderKind, body, { requireStatus = false } = {}) {
+  await ensureOrderCateringIdColumns();
+  await ensureCateringEventOrdersCanonicalColumns();
+  const table = await resolveCateringOrderTable(pool, id, orderKind);
+  if (!table) return null;
+
+  const cols = await getTableColumnNames(table);
+  const sets = [];
+  const values = [];
+  const addSet = (col, value, cast = "") => {
+    if (!cols.has(col) || value === undefined) return;
+    values.push(value);
+    sets.push(`${col} = $${values.length}${cast}`);
+  };
+  const status =
+    body?.status != null ? normalizeMobileCateringStage(body.status) : null;
+  if (status) addSet("status", status);
+  else if (requireStatus) return { error: "status is required" };
+
+  addSet("event_title", body?.event_title);
+  addSet("event_type", body?.event_type);
+  addSet("formality_level", body?.formality_level);
+  addSet("customer_name", body?.customer_name);
+  addSet("contact_person", body?.contact_person);
+  addSet("contact_number", body?.contact_number);
+  addSet("email_address", body?.email_address);
+  addSet("address", body?.address);
+  addSet("guest_count", body?.guest_count);
+  addSet("pax_buffer", body?.pax_buffer);
+  addSet("payment_method", body?.payment_method);
+  addSet("down_payment_amount", body?.down_payment_amount);
+  addSet("down_payment_status", body?.down_payment_status);
+  addSet("full_payment_amount", body?.full_payment_amount);
+  addSet("full_payment_status", body?.full_payment_status);
+  addSet("total_cost", body?.total_cost);
+  addSet("labor_cost", body?.labor_cost);
+  addSet("travel_cost", body?.travel_cost);
+  addSet("theme_design_cost", body?.theme_design_cost);
+  addSet("allergens", body?.allergens);
+
+  if (Array.isArray(body?.menu)) {
+    addSet("menu", JSON.stringify(body.menu), "::jsonb");
+  }
+  if (Array.isArray(body?.schedule_slots)) {
+    addSet("schedule_slots", JSON.stringify(body.schedule_slots), "::jsonb");
+  }
+  if (body?.theme_design && typeof body.theme_design === "object") {
+    addSet("theme_design", JSON.stringify(body.theme_design), "::jsonb");
+  }
+  if (body?.seating_plan && typeof body.seating_plan === "object") {
+    addSet("seating_plan", JSON.stringify(body.seating_plan), "::jsonb");
+  }
+  if (Array.isArray(body?.actual_event_images)) {
+    addSet("actual_event_images", JSON.stringify(body.actual_event_images), "::jsonb");
+  }
+  if (cols.has("stage_entered_at") && status) {
+    sets.push("stage_entered_at = now()");
+  }
+  if (cols.has("updated_at")) {
+    sets.push("updated_at = now()");
+  }
+  if (sets.length === 0) return { table };
+
+  values.push(String(id));
+  await pool.query(
+    `UPDATE ${table} SET ${sets.join(", ")} WHERE id::text = $${values.length}`,
+    values,
+  );
+  return { table };
+}
+
+async function createStaffCateringOrder(pool, body) {
+  await ensureOrderCateringIdColumns();
+  await ensureCateringEventOrdersCanonicalColumns();
+  const kind = String(body?.order_kind || body?.order_type || "event")
+    .trim()
+    .toLowerCase();
+  const table = kind === "catering" ? "catering_orders" : "event_orders";
+  const cols = await getTableColumnNames(table);
+  const txNo = await allocateCateringTransactionId();
+  const columns = [];
+  const placeholders = [];
+  const values = [];
+  const add = (col, value, cast = "") => {
+    if (!cols.has(col) || value === undefined) return;
+    values.push(value);
+    columns.push(col);
+    placeholders.push(`$${values.length}${cast}`);
+  };
+
+  add("source", "new_event");
+  add("status", "for_processing");
+  add("catering_id", txNo);
+  add("event_id", txNo);
+  add("event_title", body?.event_title ?? body?.eventTitle ?? "");
+  add("order_type", kind === "catering" ? "catering" : "catering_event");
+  add("event_type", body?.event_type ?? body?.eventType ?? "");
+  add("formality_level", body?.formality_level ?? body?.formalityLevel ?? "");
+  add("customer_name", body?.customer_name ?? body?.customerName ?? "");
+  add("contact_person", body?.contact_person ?? body?.contactPerson ?? "");
+  add("contact_number", body?.contact_number ?? body?.contactNumber ?? "");
+  add("email_address", body?.email_address ?? body?.emailAddress ?? "");
+  add("address", body?.address ?? "");
+  add("guest_count", Number(body?.guest_count ?? body?.guestCount ?? 0) || 0);
+  add("pax_buffer", Number(body?.pax_buffer ?? body?.paxBuffer ?? 0) || 0);
+  add("payment_method", body?.payment_method ?? body?.paymentMethod ?? "cash");
+  add("total_cost", Number(body?.total_cost ?? body?.totalCost ?? 0) || 0);
+  add("labor_cost", Number(body?.labor_cost ?? body?.laborCost ?? 0) || 0);
+  add("travel_cost", Number(body?.travel_cost ?? body?.travelCost ?? 0) || 0);
+  add("allergens", body?.allergens ?? "");
+  add("menu", JSON.stringify(Array.isArray(body?.menu) ? body.menu : []), "::jsonb");
+  add(
+    "schedule_slots",
+    JSON.stringify(Array.isArray(body?.schedule_slots) ? body.schedule_slots : []),
+    "::jsonb",
+  );
+  add(
+    "theme_design",
+    JSON.stringify(
+      body?.theme_design && typeof body.theme_design === "object"
+        ? body.theme_design
+        : {},
+    ),
+    "::jsonb",
+  );
+  add(
+    "seating_plan",
+    JSON.stringify(
+      body?.seating_plan && typeof body.seating_plan === "object"
+        ? body.seating_plan
+        : {},
+    ),
+    "::jsonb",
+  );
+
+  const result = await pool.query(
+    `INSERT INTO ${table} (${columns.join(", ")})
+     VALUES (${placeholders.join(", ")})
+     RETURNING id`,
+    values,
+  );
+  return { id: result.rows[0]?.id, transaction_no: txNo, order_kind: table === "catering_orders" ? "catering" : "event" };
+}
+
 const CASHIER_ONLINE_ORDER_WHERE = `
   (COALESCE(order_source, 'WEB_APP') IN ('WEB_APP', 'MOBILE_APP'))
   AND (
@@ -291,6 +524,17 @@ export function registerPosRoutes(app, {
     } catch (e) {
       console.error("[pos] online-orders/list", e);
       res.status(500).json({ error: "Failed to load orders" });
+    }
+  });
+
+  register("post", "/api/mobile/pos/online-orders/:orderId/detail", async (req, res) => {
+    try {
+      const order = await getOrderById(pool, req.params.orderId);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+      res.json(mapRestaurantOrderRowForPosApi(order));
+    } catch (e) {
+      console.error("[pos] online-orders/detail", e);
+      res.status(500).json({ error: "Failed to load order detail" });
     }
   });
 
@@ -609,6 +853,200 @@ export function registerPosRoutes(app, {
     } catch (e) {
       console.error("[pos] order-history", e);
       res.status(500).json({ error: "Failed to load order history" });
+    }
+  });
+
+  register("post", "/api/mobile/pos/catering/list", async (req, res) => {
+    if (!requirePosRoles(req, res, ["manager", "supervisor"])) return;
+    try {
+      const orders = await listStaffCateringOrders(pool, req.body?.stage, {
+        compact: Boolean(req.body?.summary || req.body?.compact),
+      });
+      res.json(orders);
+    } catch (e) {
+      console.error("[pos] catering/list", e);
+      res.status(500).json({ error: "Failed to load catering orders" });
+    }
+  });
+
+  register("post", "/api/mobile/pos/catering/item", async (req, res) => {
+    if (!requirePosRoles(req, res, ["manager", "supervisor"])) return;
+    try {
+      const id = String(req.body?.id || "").trim();
+      const orderKind = String(req.body?.order_kind || "").trim().toLowerCase();
+      if (!id) return res.status(400).json({ error: "id is required" });
+      const order = await getStaffCateringOrder(pool, id, orderKind);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+      res.json(order);
+    } catch (e) {
+      console.error("[pos] catering/item", e);
+      res.status(500).json({ error: "Failed to load catering order" });
+    }
+  });
+
+  register("post", "/api/mobile/pos/catering/new-event", async (req, res) => {
+    if (!requirePosRoles(req, res, ["manager"])) return;
+    try {
+      const created = await createStaffCateringOrder(pool, req.body || {});
+      res.status(201).json({
+        id: created.id,
+        transaction_no: created.transaction_no,
+        order_kind: created.order_kind,
+      });
+    } catch (e) {
+      console.error("[pos] catering/new-event", e);
+      res.status(500).json({ error: "Failed to create catering event" });
+    }
+  });
+
+  register("patch", "/api/mobile/pos/catering/:orderId/stage", async (req, res) => {
+    if (!requirePosRoles(req, res, ["manager", "supervisor"])) return;
+    const role = posStaffRole(req);
+    const nextStatus = normalizeMobileCateringStage(req.body?.status);
+    if (role === "supervisor" && nextStatus === "completed") {
+      return res.status(403).json({ error: "supervisor cannot complete orders" });
+    }
+    try {
+      const result = await patchCateringOrder(
+        pool,
+        req.params.orderId,
+        req.body?.order_kind,
+        req.body,
+        { requireStatus: true },
+      );
+      if (!result) return res.status(404).json({ error: "Order not found" });
+      if (result.error) return res.status(400).json({ error: result.error });
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[pos] catering/stage", e);
+      res.status(500).json({ error: "Failed to update catering stage" });
+    }
+  });
+
+  register("patch", "/api/mobile/pos/catering/:orderId/draft", async (req, res) => {
+    if (!requirePosRoles(req, res, ["manager", "supervisor"])) return;
+    try {
+      const result = await patchCateringOrder(
+        pool,
+        req.params.orderId,
+        req.body?.order_kind,
+        req.body,
+      );
+      if (!result) return res.status(404).json({ error: "Order not found" });
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[pos] catering/draft", e);
+      res.status(500).json({ error: "Failed to save catering draft" });
+    }
+  });
+
+  register("patch", "/api/mobile/pos/catering/:orderId/post-analysis-patch", async (req, res) => {
+    if (!requirePosRoles(req, res, ["manager", "supervisor"])) return;
+    try {
+      const id = String(req.params.orderId || "").trim();
+      const table = await resolveCateringOrderTable(pool, id, req.body?.order_kind);
+      if (!table) return res.status(404).json({ error: "Order not found" });
+      const patch = req.body?.patch;
+      if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+        return res.status(400).json({ error: "patch object is required" });
+      }
+      const cols = await getTableColumnNames(table);
+      if (cols.has("post_analysis")) {
+        await pool.query(
+          `UPDATE ${table}
+           SET post_analysis = COALESCE(post_analysis, '{}'::jsonb) || $2::jsonb,
+               updated_at = now()
+           WHERE id::text = $1`,
+          [id, JSON.stringify(patch)],
+        );
+      } else {
+        await patchCateringOrder(pool, id, req.body?.order_kind, {
+          updated_at: new Date().toISOString(),
+        });
+      }
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[pos] catering/post-analysis-patch", e);
+      res.status(500).json({ error: "Failed to update post-analysis" });
+    }
+  });
+
+  register("post", "/api/mobile/pos/catering/:orderId/switch-order-kind", async (req, res) => {
+    if (!requirePosRoles(req, res, ["manager", "supervisor"])) return;
+    try {
+      const id = String(req.params.orderId || "").trim();
+      const toKind = String(req.body?.to_order_kind || "").trim().toLowerCase();
+      const table = await resolveCateringOrderTable(pool, id, req.body?.from_order_kind);
+      if (!table) return res.status(404).json({ error: "Order not found" });
+      const cols = await getTableColumnNames(table);
+      if (cols.has("order_type") && (toKind === "catering" || toKind === "event")) {
+        await pool.query(
+          `UPDATE ${table}
+           SET order_type = $2, updated_at = now()
+           WHERE id::text = $1`,
+          [id, toKind === "catering" ? "catering" : "catering_event"],
+        );
+      }
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[pos] catering/switch-order-kind", e);
+      res.status(500).json({ error: "Failed to switch order kind" });
+    }
+  });
+
+  register("post", "/api/mobile/pos/catering/send-order-summary-email", async (req, res) => {
+    if (!requirePosRoles(req, res, ["manager", "supervisor"])) return;
+    try {
+      const to = String(req.body?.customer_email || "").trim().toLowerCase();
+      const pdfBase64 = String(req.body?.pdf_base64 || "").trim();
+      if (!to.includes("@") || !pdfBase64) {
+        return res.status(400).json({ error: "customer_email and pdf_base64 are required" });
+      }
+      await sendCustomerNotificationEmail({
+        to,
+        subject: "Curatering order summary",
+        text: "Attached is your Curatering order summary.",
+        attachments: [
+          {
+            filename: "curatering-order-summary.pdf",
+            content: Buffer.from(pdfBase64, "base64"),
+            contentType: "application/pdf",
+          },
+        ],
+      });
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[pos] catering/send-order-summary-email", e);
+      res.status(500).json({ error: "Failed to send order summary" });
+    }
+  });
+
+  app.get("/api/mobile/pos/catering/:orderId/invoice-preview", async (req, res) => {
+    try {
+      const order = await getStaffCateringOrder(
+        pool,
+        req.params.orderId,
+        req.query?.order_kind,
+      );
+      if (!order) return res.status(404).json({ error: "Order not found" });
+      res.json({
+        ...order,
+        printable_summary: {
+          transaction_no: order.cateringId || order.transaction_no || "",
+          customer: order.customerName || "",
+          event_title: order.eventTitle || "",
+          menu: order.menu || [],
+          checklist: order.checklist || [],
+          totals: {
+            subtotal: Number(order.totalCost || 0),
+            downpayment: Number(order.downPaymentAmount || 0),
+            fullpayment: Number(order.fullPaymentAmount || 0),
+          },
+        },
+      });
+    } catch (e) {
+      console.error("[pos] catering/invoice-preview", e);
+      res.status(500).json({ error: "Failed to load invoice preview" });
     }
   });
 

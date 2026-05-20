@@ -727,7 +727,7 @@ class _ManageEventsState extends State<ManageEvents>
             compact: true,
           ),
           EventsApi.instance.listOrders(
-            status: 'for_post_analysis',
+            status: 'for_full_payment',
             roleType: 'supervisor',
             compact: true,
           ),
@@ -774,7 +774,7 @@ class _ManageEventsState extends State<ManageEvents>
             compact: true,
           ),
           EventsApi.instance.listOrders(
-            status: 'for_post_analysis',
+            status: 'for_full_payment',
             roleType: 'manager',
             compact: true,
           ),
@@ -2593,7 +2593,9 @@ class _ManageEventsState extends State<ManageEvents>
 
     // For processing and post analysis tabs, always show PENDING
     // For completed tab, show COMPLETED/CANCELLED based on finalStatus
-    if (dto.status == 'for_processing' || dto.status == 'for_post_analysis') {
+    if (dto.status == 'for_processing' ||
+        dto.status == 'for_full_payment' ||
+        dto.status == 'for_post_analysis') {
       statusColor = Colors.orange;
       statusText = 'PENDING';
     } else if (dto.finalStatus == 'cancelled') {

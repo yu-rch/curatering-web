@@ -2304,10 +2304,10 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   String _composeEventDesignPrompt() {
-    final parts = <String>[];
+    final requirements = <String>[];
     final mood = _resolvedCategory(_selectedMood, _moodOtherController);
     if (mood != null && mood.isNotEmpty) {
-      parts.add('Mood: $mood');
+      requirements.add('Mood and lighting: $mood');
     }
     final colors = _resolvedMultiSelectWithOther(
       _selectedColors,
@@ -2318,19 +2318,55 @@ class _InquirePageState extends State<InquirePage> {
       _decorOtherController,
     );
     if (colors.isNotEmpty) {
-      parts.add('Colors: ${colors.join(', ')}');
+      requirements.add('Color palette: ${colors.join(', ')}');
     }
     if (decor.isNotEmpty) {
-      parts.add('Decor: ${decor.join(', ')}');
+      requirements.add('Decor elements to add: ${decor.join(', ')}');
     }
     final notes = _designPromptController.text.trim();
-    if (notes.isNotEmpty) parts.add(notes);
-    if (parts.isEmpty) {
-      return 'Decorate the existing venue in the reference photo, '
-          'preserve room layout and architecture, high quality realistic lighting';
+    if (notes.isNotEmpty) {
+      requirements.add('Customer notes: $notes');
     }
-    return '${parts.join('. ')}. Decorate the existing venue in the reference photo, '
-        'preserve room layout and architecture, high quality realistic lighting';
+    final requirementText =
+        requirements.isEmpty
+            ? 'Use the separate event_type, style, and formality request fields as the primary event direction'
+            : requirements.join('; ');
+
+    final sections = <String>[
+      'Objective: Create one photorealistic event venue decoration concept image based on the uploaded venue photo.',
+      'Venue lock: Treat the uploaded photo as the fixed architectural base image; preserve the exact room or tent shape, ceiling panels, floor layout, walls, stage or back wall, chandeliers, camera angle, perspective lines, and room proportions; do not redraw, bend, melt, stretch, duplicate, or replace structural elements.',
+      'Design requirements: $requirementText.',
+      'Placement rules: Add decorations as realistic physical overlays that fit the existing venue; place floral pieces, drapery, lighting, table styling, backdrops, and props only where they would physically belong; keep walkways, exits, aisles, floor edges, wall seams, stage edges, and ceiling lines clear and believable; keep existing lighting direction and reflections coherent with the venue photo.',
+      'Output quality: Clean high-end interior event photography, realistic materials, accurate shadows, sharp details, no text, no logos, no watermark.',
+      'Avoid: Warped architecture, melted surfaces, rippled floors, distorted ceiling panels, duplicated chandeliers, impossible reflections, fisheye distortion, cartoon look, CGI look.',
+    ];
+    return sections.join(' ');
+  }
+
+  String _eventDesignNegativePrompt() {
+    return [
+      'warped architecture',
+      'melted surfaces',
+      'distorted ceiling',
+      'rippled floor',
+      'bent walls',
+      'duplicated chandeliers',
+      'impossible reflections',
+      'fisheye distortion',
+      'stretched room',
+      'changed camera angle',
+      'extra doors',
+      'extra windows',
+      'collapsed perspective',
+      'blurry',
+      'low quality',
+      'artifacts',
+      'cartoon',
+      'cgi',
+      'text',
+      'logo',
+      'watermark',
+    ].join(', ');
   }
 
   Map<String, dynamic> _eventDesignRunpodMeta() {
@@ -2339,12 +2375,27 @@ class _InquirePageState extends State<InquirePage> {
       _eventTypeOtherController,
     );
     final style = _resolvedCategory(_selectedStyle, _styleOtherController);
+    final mood = _resolvedCategory(_selectedMood, _moodOtherController);
+    final colors = _resolvedMultiSelectWithOther(
+      _selectedColors,
+      _colorOtherController,
+    );
+    final decor = _resolvedMultiSelectWithOther(
+      _selectedDecor,
+      _decorOtherController,
+    );
 
     return {
       if (eventType != null && eventType.isNotEmpty)
         'event_type': eventType.trim().toLowerCase(),
       if (style != null && style.isNotEmpty) 'style': style.trim(),
+      if (mood != null && mood.isNotEmpty) 'mood': mood.trim(),
+      if (colors.isNotEmpty) 'color_palette': colors,
+      if (decor.isNotEmpty) 'decor_elements': decor,
+      if (_designPromptController.text.trim().isNotEmpty)
+        'custom_instructions': _designPromptController.text.trim(),
       'formality': _formality,
+      'negative_prompt': _eventDesignNegativePrompt(),
     };
   }
 
@@ -2439,7 +2490,7 @@ class _InquirePageState extends State<InquirePage> {
         prompt,
         user_id: runpodUserId,
         initImageBase64: venueB64,
-        strength: 0.52,
+        strength: 0.46,
         numInferenceSteps: 18,
         designMeta: _eventDesignRunpodMeta(),
       );

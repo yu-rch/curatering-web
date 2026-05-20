@@ -853,6 +853,10 @@ function staffCateringOrderSelectList(cateringCols) {
       '{}'::jsonb AS "seatingPlan",
       ${cateringSelectField(cateringCols, 'postAnalysis', ['post_analysis'], "'{}'::jsonb")},
       ${cateringSelectField(cateringCols, 'totalCost', ['total_cost'], '0')},
+      ${cateringSelectField(cateringCols, 'downPaymentAmount', ['down_payment_amount'], '0')},
+      ${cateringSelectField(cateringCols, 'downPaymentStatus', ['down_payment_status'], "'pending'")},
+      ${cateringSelectField(cateringCols, 'fullPaymentAmount', ['full_payment_amount'], '0')},
+      ${cateringSelectField(cateringCols, 'fullPaymentStatus', ['full_payment_status'], "'pending'")},
       ${cateringSelectField(cateringCols, 'finalStatus', ['final_status'], "'successful'")},
       ${cateringSelectField(cateringCols, 'created_at', ['created_at'], 'now()')},
       COALESCE(${sqlExpr(cateringCols, ['updated_at'], 'created_at')}, ${sqlExpr(cateringCols, ['created_at'], 'now()')}) AS "updatedAt"
@@ -887,6 +891,10 @@ function staffEventOrderSelectList(eventCols, themeColSql) {
       ${seating} AS "seatingPlan",
       ${cateringSelectField(eventCols, 'postAnalysis', ['post_analysis'], "'{}'::jsonb")},
       ${cateringSelectField(eventCols, 'totalCost', ['total_cost'], '0')},
+      ${cateringSelectField(eventCols, 'downPaymentAmount', ['down_payment_amount'], '0')},
+      ${cateringSelectField(eventCols, 'downPaymentStatus', ['down_payment_status'], "'pending'")},
+      ${cateringSelectField(eventCols, 'fullPaymentAmount', ['full_payment_amount'], '0')},
+      ${cateringSelectField(eventCols, 'fullPaymentStatus', ['full_payment_status'], "'pending'")},
       ${cateringSelectField(eventCols, 'finalStatus', ['final_status'], "'successful'")},
       ${cateringSelectField(eventCols, 'created_at', ['created_at'], 'now()')},
       COALESCE(${sqlExpr(eventCols, ['updated_at'], 'created_at')}, ${sqlExpr(eventCols, ['created_at'], 'now()')}) AS "updatedAt"
@@ -897,6 +905,9 @@ const STAFF_EVENTS_STATUS_WHERE = `
   WHERE
     status = $1
     OR ($1 = 'for_down_payment' AND status = 'for_downpayment')
+    OR ($1 = 'on_going' AND status IN ('ongoing', 'for_processing'))
+    OR ($1 = 'for_full_payment' AND status = 'for_post_analysis')
+    OR ($1 = 'for_post_analysis' AND status = 'for_full_payment')
     OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')`;
 
 /** Manager/supervisor list: catering_orders UNION event_orders by status. */
@@ -946,6 +957,10 @@ function staffEventOrderSelectById(eventCols) {
       ${seating} AS "seatingPlan",
       ${cateringSelectField(eventCols, 'postAnalysis', ['post_analysis'], "'{}'::jsonb")},
       ${cateringSelectField(eventCols, 'totalCost', ['total_cost'], '0')},
+      ${cateringSelectField(eventCols, 'downPaymentAmount', ['down_payment_amount'], '0')},
+      ${cateringSelectField(eventCols, 'downPaymentStatus', ['down_payment_status'], "'pending'")},
+      ${cateringSelectField(eventCols, 'fullPaymentAmount', ['full_payment_amount'], '0')},
+      ${cateringSelectField(eventCols, 'fullPaymentStatus', ['full_payment_status'], "'pending'")},
       ${cateringSelectField(eventCols, 'finalStatus', ['final_status'], "'successful'")},
       ${cateringSelectField(eventCols, 'created_at', ['created_at'], 'now()')},
       COALESCE(${sqlExpr(eventCols, ['updated_at'], 'created_at')}, ${sqlExpr(eventCols, ['created_at'], 'now()')}) AS "updatedAt"

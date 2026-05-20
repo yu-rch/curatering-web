@@ -6914,9 +6914,21 @@ async function registerRoutesAfterDbInit() {
           };
         });
 
+        const shouldAdvanceToFullPayment =
+          normalized.length > 0 && normalized.every((item) => item.isCompleted === true);
         const result = await pool.query(
-          `UPDATE ${tableName} SET checklist = $1::jsonb WHERE id = $2 RETURNING checklist`,
-          [JSON.stringify(normalized), orderId],
+          `UPDATE ${tableName}
+           SET checklist = $1::jsonb,
+               status = CASE
+                 WHEN $3::boolean
+                   AND status IN ('on_going', 'ongoing', 'for_processing')
+                   THEN 'for_full_payment'
+                 ELSE status
+               END,
+               updated_at = now()
+           WHERE id = $2
+           RETURNING checklist, status`,
+          [JSON.stringify(normalized), orderId, shouldAdvanceToFullPayment],
         );
 
         if (deductInventory === true) {
@@ -6933,7 +6945,7 @@ async function registerRoutesAfterDbInit() {
           }
         }
 
-        res.json({ checklist: result.rows[0].checklist });
+        res.json({ checklist: result.rows[0].checklist, status: result.rows[0].status });
       } catch (error) {
         console.error('Error replacing checklist:', error);
         res.status(500).json({ error: 'Failed to save checklist' });
@@ -7157,8 +7169,22 @@ async function registerRoutesAfterDbInit() {
         const amountColumn = paymentType === 'down_payment' ? 'down_payment_amount' : 'full_payment_amount';
 
         // Build update query with reference number if provided
-        let updateQuery = `UPDATE ${tableName} SET ${statusColumn} = $1`;
+        let updateQuery = `UPDATE ${tableName} SET ${statusColumn} = $1, updated_at = now()`;
         const queryParams = [status];
+
+        if (status === 'paid' && paymentType === 'down_payment') {
+          updateQuery += `,
+            status = CASE
+              WHEN status IN ('for_down_payment', 'for_downpayment') THEN 'on_going'
+              ELSE status
+            END`;
+        } else if (status === 'paid' && paymentType === 'full_payment') {
+          updateQuery += `,
+            status = CASE
+              WHEN status IN ('on_going', 'ongoing', 'for_processing') THEN 'for_full_payment'
+              ELSE status
+            END`;
+        }
 
         if (referenceNumber && referenceNumber.trim()) {
           const refColumn = paymentType === 'down_payment' ? 'down_payment_reference' : 'full_payment_reference';
