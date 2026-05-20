@@ -12,6 +12,8 @@ import '../utils/order_calculations.dart';
 import '../utils/order_display_utils.dart';
 import '../utils/order_type_utils.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/antd_buttons.dart';
+import '../widgets/antd_staff.dart';
 import '../widgets/paginated_data_table.dart';
 
 class _HistoryRow {
@@ -410,35 +412,19 @@ class _TransactionsState extends State<Transactions> {
       searchController: _searchController,
       onSearchChanged:
           (v) => setState(() => _searchQuery = v.trim().toLowerCase()),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
+      child: AntdPage(
+        title: 'Order History',
+        subtitle: 'Completed catering, event, and restaurant orders.',
+        actions: [
+          AntdSecondaryButton(
+            label: 'Refresh',
+            icon: Icons.refresh,
+            onPressed: _loadCompletedOrders,
+          ),
+        ],
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Order History',
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Text(
-                  'Completed catering, event, and restaurant orders.',
-                  style: TextStyle(color: Colors.grey.shade700),
-                ),
-                const Spacer(),
-                ElevatedButton.icon(
-                  onPressed: _loadCompletedOrders,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Refresh'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E1E1E),
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
             Wrap(
               spacing: 12,
               runSpacing: 8,
@@ -772,6 +758,7 @@ class _TransactionsState extends State<Transactions> {
                               Expanded(
                                 child: PagedDataTable(
                                   title: 'Completed Order History',
+                                  fullWidth: true,
                                   columns: const [
                                     DataColumn(label: Text('Order No.')),
                                     DataColumn(label: Text('Customer ID')),

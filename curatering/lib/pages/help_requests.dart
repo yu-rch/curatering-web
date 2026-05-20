@@ -5,8 +5,11 @@ import 'package:flutter/material.dart';
 import '../models/help_request.dart';
 import '../services/super_admin_api.dart';
 import '../widgets/app_scaffold.dart';
-import '../widgets/paginated_data_table.dart';
+import '../widgets/antd_buttons.dart';
 import '../widgets/antd_message.dart';
+import '../widgets/antd_staff.dart';
+import '../widgets/antd_tokens.dart';
+import '../widgets/paginated_data_table.dart';
 
 class HelpRequestsPage extends StatefulWidget {
   const HelpRequestsPage({super.key});
@@ -108,19 +111,15 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
           setState(() => _searchQuery = query);
         });
       },
-      child: Padding(
-        padding: const EdgeInsets.all(20),
+      child: AntdPage(
+        title: 'Help Requests Management',
+        subtitle: 'Review support requests and mark resolved items.',
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Help Requests Management',
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Row(
+            AntdToolbar(
               children: [
-                DropdownButton<String>(
+                AntdSelect<String>(
+                  label: 'Status',
                   value: _statusFilter,
                   items:
                       _statusOptions
@@ -134,37 +133,30 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
                     _fetch();
                   },
                 ),
-                const SizedBox(width: 12),
                 if (_loading)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 10),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
-                if (_error != null) ...[
-                  const SizedBox(width: 12),
-                  Text(
-                    _error!,
-                    style: const TextStyle(color: Colors.redAccent),
+                if (_error != null)
+                  const AntdStatusTag(
+                    label: 'Failed to load',
+                    color: AntdTokens.error,
                   ),
-                ],
               ],
             ),
             const SizedBox(height: 16),
             Expanded(
               child:
-                  _filtered.isEmpty
-                      ? Center(
-                        child: Text(
-                          _loading ? 'Loading...' : 'No help requests found.',
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
-                      )
+                  _loading
+                      ? const AntdLoadingState()
+                      : _filtered.isEmpty
+                      ? const AntdEmptyState(message: 'No help requests found.')
                       : PagedDataTable(
                         title: 'Help Requests',
+                        enableSearch: false,
+                        fullWidth: true,
                         columns: const [
                           DataColumn(label: Text('Feature')),
                           DataColumn(label: Text('Problem')),
@@ -184,36 +176,29 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
                                   DataCell(Text(r.request)),
                                   DataCell(Text(r.createdAt.toString())),
                                   DataCell(
-                                    Text(
-                                      r.status == HelpRequestStatus.unresolved
-                                          ? 'Unresolved'
-                                          : 'Resolved',
-                                      style: TextStyle(
-                                        color:
-                                            isUnresolved
-                                                ? Colors.red
-                                                : Colors.green,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                    AntdStatusTag(
+                                      label:
+                                          isUnresolved
+                                              ? 'Unresolved'
+                                              : 'Resolved',
+                                      color:
+                                          isUnresolved
+                                              ? AntdTokens.error
+                                              : AntdTokens.success,
                                     ),
                                   ),
                                   DataCell(
                                     isUnresolved
-                                        ? ElevatedButton(
+                                        ? AntdPrimaryButton(
+                                          label: 'Resolve',
+                                          icon: Icons.check,
                                           onPressed: () => _resolve(r),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.green,
-                                            foregroundColor: Colors.white,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                          ),
-                                          child: const Text('Resolve'),
                                         )
                                         : const Text(
                                           '-',
-                                          style: TextStyle(color: Colors.grey),
+                                          style: TextStyle(
+                                            color: AntdTokens.labelMuted,
+                                          ),
                                         ),
                                   ),
                                 ],

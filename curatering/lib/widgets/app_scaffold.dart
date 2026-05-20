@@ -7,6 +7,8 @@ import '../config/site_open_tab_stub.dart'
     if (dart.library.html) '../config/site_open_tab_web.dart';
 import '../config/site_routes.dart';
 import 'antd_profile_menu.dart';
+import 'antd_staff.dart';
+import 'antd_tokens.dart';
 
 void _staffSignOut(BuildContext context) {
   AuthSession.instance.clear();
@@ -73,6 +75,11 @@ class AppScaffold extends StatelessWidget {
 
   static const _superAdminSidebarItems = <_SidebarItemData>[
     _SidebarItemData(
+      icon: Icons.admin_panel_settings,
+      label: 'Super Admin Dashboard',
+      route: '/super-admin-dashboard',
+    ),
+    _SidebarItemData(
       icon: Icons.help_outline,
       label: 'Help Requests Management',
       route: '/help-requests',
@@ -104,7 +111,11 @@ class AppScaffold extends StatelessWidget {
     ),
   ];
 
-  static void _openRoute(BuildContext context, String route, {bool newTab = false}) {
+  static void _openRoute(
+    BuildContext context,
+    String route, {
+    bool newTab = false,
+  }) {
     if (newTab && kIsWeb) {
       openAppRouteInNewTab(staffSiteOrigin, route);
       return;
@@ -125,7 +136,8 @@ class AppScaffold extends StatelessWidget {
     final isActive = currentRoute == route;
 
     return GestureDetector(
-      onSecondaryTap: kIsWeb ? () => _openRoute(context, route, newTab: true) : null,
+      onSecondaryTap:
+          kIsWeb ? () => _openRoute(context, route, newTab: true) : null,
       onTap: () => _openRoute(context, route),
       child: Listener(
         onPointerDown: (e) {
@@ -134,36 +146,38 @@ class AppScaffold extends StatelessWidget {
           }
         },
         child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-        decoration: BoxDecoration(
-          color: isActive ? const Color(0xFFFFC024) : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              color:
-                  isActive ? const Color(0xFF1E1E1E) : const Color(0xFFF5F7F9),
-              size: 18,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  color:
-                      isActive
-                          ? const Color(0xFF1E1E1E)
-                          : const Color(0xFFF5F7F9),
-                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                  fontSize: 13,
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFFFFC024) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                color:
+                    isActive
+                        ? const Color(0xFF1E1E1E)
+                        : const Color(0xFFF5F7F9),
+                size: 18,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color:
+                        isActive
+                            ? const Color(0xFF1E1E1E)
+                            : const Color(0xFFF5F7F9),
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                    fontSize: 13,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -191,14 +205,11 @@ class AppScaffold extends StatelessWidget {
       ];
     }
     if (role == Role.superAdmin) {
-      return [
-        ..._superAdminSidebarItems,
-        ..._commonSidebarItems,
-      ];
+      return [..._superAdminSidebarItems, ..._commonSidebarItems];
     }
-    return _commonSidebarItems.where(
-      (item) => pageRouteAllowed(item.route, perms),
-    ).toList();
+    return _commonSidebarItems
+        .where((item) => pageRouteAllowed(item.route, perms))
+        .toList();
   }
 
   @override
@@ -206,7 +217,136 @@ class AppScaffold extends StatelessWidget {
     return ValueListenableBuilder<UserProfile?>(
       valueListenable: AuthSession.instance.currentUser,
       builder: (context, user, _) {
-        return _buildScaffold(context, user);
+        return Theme(
+          data: Theme.of(context).copyWith(
+            scaffoldBackgroundColor: AntdTokens.staffBg,
+            cardTheme: CardThemeData(
+              color: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AntdTokens.radiusLg),
+                side: const BorderSide(color: AntdTokens.borderSubtle),
+              ),
+            ),
+            dialogTheme: DialogThemeData(
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AntdTokens.radiusLg),
+              ),
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AntdTokens.brandPrimary,
+                foregroundColor: AntdTokens.brandOnPrimary,
+                disabledBackgroundColor: AntdTokens.brandPrimary.withValues(
+                  alpha: 0.45,
+                ),
+                disabledForegroundColor: AntdTokens.brandOnPrimary.withValues(
+                  alpha: 0.55,
+                ),
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
+                ),
+              ),
+            ),
+            filledButtonTheme: FilledButtonThemeData(
+              style: FilledButton.styleFrom(
+                backgroundColor: AntdTokens.brandPrimary,
+                foregroundColor: AntdTokens.brandOnPrimary,
+                disabledBackgroundColor: AntdTokens.brandPrimary.withValues(
+                  alpha: 0.45,
+                ),
+                disabledForegroundColor: AntdTokens.brandOnPrimary.withValues(
+                  alpha: 0.55,
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
+                ),
+              ),
+            ),
+            outlinedButtonTheme: OutlinedButtonThemeData(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AntdTokens.valueDark,
+                side: const BorderSide(color: AntdTokens.border),
+                backgroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
+                ),
+              ),
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: AntdTokens.blue,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
+                ),
+              ),
+            ),
+            iconButtonTheme: IconButtonThemeData(
+              style: IconButton.styleFrom(
+                foregroundColor: AntdTokens.valueDark,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
+                ),
+              ),
+            ),
+            chipTheme: ChipThemeData(
+              backgroundColor: Colors.white,
+              selectedColor: AntdTokens.brandPrimary,
+              disabledColor: AntdTokens.fillTertiary,
+              side: const BorderSide(color: AntdTokens.border),
+              labelStyle: const TextStyle(color: AntdTokens.valueDark),
+              secondaryLabelStyle: const TextStyle(
+                color: AntdTokens.brandOnPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            tabBarTheme: const TabBarThemeData(
+              labelColor: AntdTokens.brandOnPrimary,
+              unselectedLabelColor: AntdTokens.textSecondary,
+              indicatorColor: AntdTokens.brandPrimary,
+              dividerColor: AntdTokens.borderSubtle,
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
+                borderSide: const BorderSide(color: AntdTokens.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
+                borderSide: const BorderSide(color: AntdTokens.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
+                borderSide: const BorderSide(color: AntdTokens.blue),
+              ),
+            ),
+          ),
+          child: _buildScaffold(context, user),
+        );
       },
     );
   }
@@ -250,7 +390,7 @@ class AppScaffold extends StatelessWidget {
     ];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F3F3),
+      backgroundColor: AntdTokens.staffBg,
       body: Column(
         children: [
           // top bar
@@ -260,7 +400,7 @@ class AppScaffold extends StatelessWidget {
               color: const Color(0xFF111111),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
+                  color: Colors.black.withValues(alpha: 0.1),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -275,6 +415,19 @@ class AppScaffold extends StatelessWidget {
                   fit: BoxFit.contain,
                 ),
                 const Spacer(),
+                if (showSearch && searchController != null) ...[
+                  AntdSearchInput(
+                    controller: searchController!,
+                    hintText: 'Search staff pages',
+                    width: 320,
+                    onChanged: onSearchChanged,
+                    onClear: () {
+                      searchController!.clear();
+                      onSearchChanged?.call('');
+                    },
+                  ),
+                  const SizedBox(width: 12),
+                ],
                 AntdProfileMenu(
                   triggerLabel: userName,
                   leading: Image.asset(
@@ -301,7 +454,7 @@ class AppScaffold extends StatelessWidget {
                       color: const Color(0xFF0F0F0F),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
+                          color: Colors.black.withValues(alpha: 0.1),
                           blurRadius: 12,
                           offset: const Offset(2, 0),
                         ),

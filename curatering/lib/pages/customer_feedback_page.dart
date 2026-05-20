@@ -5,7 +5,10 @@ import 'package:flutter/material.dart';
 import '../models/customer_feedback.dart';
 import '../services/super_admin_api.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/antd_buttons.dart';
 import '../widgets/antd_message.dart';
+import '../widgets/antd_staff.dart';
+import '../widgets/antd_tokens.dart';
 import '../widgets/paginated_data_table.dart';
 
 class CustomerFeedbackPage extends StatefulWidget {
@@ -129,126 +132,97 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
           setState(() => _searchQuery = query);
         });
       },
-      child: Padding(
-        padding: const EdgeInsets.all(20),
+      child: AntdPage(
+        title: 'Customer Feedback',
+        subtitle:
+            'Feedback is submitted by customers on delivered restaurant orders.',
+        actions: [
+          AntdSecondaryButton(
+            label: 'Refresh',
+            icon: Icons.refresh,
+            onPressed: _loading ? null : _fetch,
+          ),
+          AntdPrimaryButton(
+            label: _analyzing ? 'Analyzing...' : 'AI summarize',
+            icon: Icons.auto_awesome,
+            loading: _analyzing,
+            onPressed: _analyzing || filtered.isEmpty ? null : _analyze,
+          ),
+        ],
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Customer Feedback',
-                    style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                FilledButton.icon(
-                  onPressed: _loading ? null : _fetch,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Refresh'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed: _analyzing || filtered.isEmpty ? null : _analyze,
-                  icon:
-                      _analyzing
-                          ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                          : const Icon(Icons.auto_awesome),
-                  label: Text(_analyzing ? 'Analyzing…' : 'AI summarize'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Feedback is submitted by customers on delivered restaurant orders. '
-              'Use AI summarize for themes, interpretation, and recommendations.',
-              style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
-            ),
             if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+              AntdStatusTag(label: _error!, color: AntdTokens.error),
+              const SizedBox(height: 12),
             ],
             if (_analysis != null) ...[
-              const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Text(
-                            'AI insights',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          const Spacer(),
-                          if (_analysis!.averageStars != null)
-                            Text(
-                              'Avg ${_analysis!.averageStars!.toStringAsFixed(1)} ★ · ${_analysis!.feedbackCount} reviews',
-                              style: TextStyle(color: Colors.grey.shade600),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _analysis!.summary,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(_analysis!.interpretation),
-                      if (_analysis!.recommendations.isNotEmpty) ...[
-                        const SizedBox(height: 12),
+              AntdCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
                         const Text(
-                          'Recommendations',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 6),
-                        ..._analysis!.recommendations.map(
-                          (r) => Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('• '),
-                                Expanded(child: Text(r)),
-                              ],
-                            ),
+                          'AI insights',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
                           ),
                         ),
+                        const Spacer(),
+                        if (_analysis!.averageStars != null)
+                          AntdStatusTag(
+                            label:
+                                'Avg ${_analysis!.averageStars!.toStringAsFixed(1)} stars · ${_analysis!.feedbackCount} reviews',
+                            color: AntdTokens.warning,
+                          ),
                       ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _analysis!.summary,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(_analysis!.interpretation),
+                    if (_analysis!.recommendations.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Recommendations',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 6),
+                      ..._analysis!.recommendations.map(
+                        (r) => Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('• '),
+                              Expanded(child: Text(r)),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
-                  ),
+                  ],
                 ),
               ),
+              const SizedBox(height: 16),
             ],
-            const SizedBox(height: 16),
             Expanded(
               child:
                   _loading
-                      ? const Center(child: CircularProgressIndicator())
+                      ? const AntdLoadingState()
                       : filtered.isEmpty
-                      ? Center(
-                        child: Text(
-                          'No customer feedback yet.',
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
+                      ? const AntdEmptyState(
+                        message: 'No customer feedback yet.',
                       )
                       : PagedDataTable(
                         title: 'Restaurant Customer Feedback',
-                        headingRowColor: WidgetStateProperty.all(
-                          Colors.grey.shade100,
-                        ),
+                        enableSearch: false,
+                        fullWidth: true,
                         columns: const [
                           DataColumn(label: Text('Order')),
                           DataColumn(label: Text('Customer')),

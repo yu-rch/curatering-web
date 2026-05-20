@@ -7,6 +7,7 @@ import '../services/reports_pdf_service.dart';
 import '../utils/order_calculations.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_message.dart';
+import '../widgets/antd_staff.dart';
 import '../widgets/antd_tokens.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/paginated_data_table.dart';
@@ -306,63 +307,40 @@ class _ReportsState extends State<Reports> {
 
     return AppScaffold(
       showSearch: false,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
+      child: AntdPage(
+        title: 'Reports',
+        subtitle: "Macrina's Kitchen and Catering — operations reports.",
+        actions: [
+          AntdPrimaryButton(
+            label: 'Preview / Print PDF',
+            icon: Icons.picture_as_pdf,
+            loading: _exportingPdf,
+            onPressed: _exportingPdf || data == null ? null : _previewPdf,
+          ),
+          AntdSecondaryButton(
+            label: 'Refresh',
+            icon: Icons.refresh,
+            onPressed: _isLoading ? null : _load,
+          ),
+        ],
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
+            AntdToolbar(
               children: [
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Reports',
-                        style: TextStyle(
-                          fontSize: 21,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        "Macrina's Kitchen and Catering — operations reports.",
-                        style: TextStyle(color: AntdTokens.labelMuted),
-                      ),
-                    ],
-                  ),
-                ),
-                AntdPrimaryButton(
-                  label: 'Preview / Print PDF',
-                  loading: _exportingPdf,
-                  onPressed: _exportingPdf || data == null ? null : _previewPdf,
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: _isLoading ? null : _load,
-                  icon: const Icon(Icons.refresh),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                FilterChip(
+                ChoiceChip(
                   label: const Text('Monthly'),
                   selected: !_annualMode,
                   onSelected: (_) => setState(() => _annualMode = false),
                 ),
-                FilterChip(
+                ChoiceChip(
                   label: const Text('Annual'),
                   selected: _annualMode,
                   onSelected: (_) => setState(() => _annualMode = true),
                 ),
                 if (_annualMode)
-                  DropdownButton<int>(
+                  AntdSelect<int>(
+                    label: 'Year',
                     value: _selectedYear,
                     items: List.generate(6, (i) {
                       final y = DateTime.now().year - i;
@@ -375,7 +353,8 @@ class _ReportsState extends State<Reports> {
                     },
                   )
                 else
-                  DropdownButton<int>(
+                  AntdSelect<int>(
+                    label: 'Month',
                     value: _selectedMonth.month,
                     items: List.generate(12, (i) {
                       final m = i + 1;
@@ -392,7 +371,8 @@ class _ReportsState extends State<Reports> {
                       _load();
                     },
                   ),
-                DropdownButton<_ReportScope>(
+                AntdSelect<_ReportScope>(
+                  label: 'Scope',
                   value: _scope,
                   items: const [
                     DropdownMenuItem(
@@ -413,26 +393,18 @@ class _ReportsState extends State<Reports> {
                     setState(() => _scope = v);
                   },
                 ),
-                SizedBox(
-                  width: 260,
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: const InputDecoration(
-                      labelText: 'Search report tables',
-                      prefixIcon: Icon(Icons.search),
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged:
-                        (v) => setState(
-                          () => _searchQuery = v.trim().toLowerCase(),
-                        ),
-                  ),
+                AntdSearchInput(
+                  controller: _searchController,
+                  hintText: 'Search report tables',
+                  onChanged:
+                      (v) =>
+                          setState(() => _searchQuery = v.trim().toLowerCase()),
+                  onClear: () {
+                    _searchController.clear();
+                    setState(() => _searchQuery = '');
+                  },
                 ),
-                Text(
-                  periodLabel,
-                  style: TextStyle(color: Colors.grey.shade700),
-                ),
+                AntdStatusTag(label: periodLabel, color: AntdTokens.blue),
               ],
             ),
             const SizedBox(height: 16),

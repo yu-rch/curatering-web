@@ -2723,6 +2723,75 @@ function requireSuperAdmin(req, res, next) {
   return next();
 }
 
+async function verifySuperAdminPassword(req) {
+  const rawPassword = req.body?.superAdminPassword;
+  const password =
+    typeof rawPassword === "string" ? rawPassword : String(rawPassword || "");
+  if (!password) return false;
+  const result = await pool.query(
+    `SELECT password_hash, role, archived
+     FROM users
+     WHERE id = $1
+     LIMIT 1`,
+    [req.user?.id],
+  );
+  if (result.rowCount === 0) return false;
+  const row = result.rows[0];
+  if (row.role !== "super_admin" || row.archived === true) return false;
+  return bcrypt.compare(password, row.password_hash);
+}
+
+async function requireSuperAdminPassword(req, res) {
+  const ok = await verifySuperAdminPassword(req);
+  if (!ok) {
+    res.status(403).json({ message: "Password confirmation failed" });
+    return false;
+  }
+  return true;
+}
+
+let superAdminTodosSchemaPromise = null;
+async function ensureSuperAdminTodosSchema() {
+  if (!superAdminTodosSchemaPromise) {
+    superAdminTodosSchemaPromise = pool
+      .query(
+        `CREATE TABLE IF NOT EXISTS super_admin_todos (
+           id TEXT PRIMARY KEY,
+           user_id TEXT NOT NULL,
+           title TEXT NOT NULL,
+           notes TEXT NOT NULL DEFAULT '',
+           completed BOOLEAN NOT NULL DEFAULT FALSE,
+           sort_order INTEGER NOT NULL DEFAULT 0,
+           created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+           updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+         )`,
+      )
+      .then(() =>
+        pool.query(
+          `CREATE INDEX IF NOT EXISTS idx_super_admin_todos_user
+           ON super_admin_todos (user_id, completed, sort_order, created_at DESC)`,
+        ),
+      )
+      .catch((err) => {
+        superAdminTodosSchemaPromise = null;
+        throw err;
+      });
+  }
+  return superAdminTodosSchemaPromise;
+}
+
+function serializeSuperAdminTodo(row) {
+  return {
+    id: String(row.id),
+    title: row.title || "",
+    notes: row.notes || "",
+    completed: row.completed === true,
+    sortOrder: Number(row.sort_order) || 0,
+    createdAt: row.created_at ? row.created_at.toISOString() : null,
+    updatedAt: row.updated_at ? row.updated_at.toISOString() : null,
+  };
+}
+
 function requireRoles(req, res, next, allowed) {
   const role = req.user?.role;
   if (role === "super_admin") return next();
@@ -2985,6 +3054,381 @@ app.post("/api/help-requests", authRequired, async (req, res) => {
   }
 });
 
+// Super Admin: Dashboard
+app.get(
+  "/api/super-admin/dashboard/summary",
+  authRequired,
+  requireSuperAdmin,
+  async (_req, res) => {
+    try {
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      const since30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const yearStart = new Date(now.getFullYear(), 0, 1);
+
+      const userStats = await pool.query(
+        `SELECT
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE archived = FALSE)::int AS active,
+           COUNT(*) FILTER (WHERE archived = TRUE)::int AS archived,
+           COUNT(*) FILTER (WHERE role = 'super_admin')::int AS super_admin,
+           COUNT(*) FILTER (WHERE role = 'admin')::int AS admin,
+           COUNT(*) FILTER (WHERE role = 'manager')::int AS manager,
+           COUNT(*) FILTER (WHERE role = 'supervisor')::int AS supervisor,
+           COUNT(*) FILTER (WHERE role = 'cashier')::int AS cashier
+         FROM users`,
+      );
+
+      const customerCols = await getTableColumnNames("customer_accounts");
+      const customerArchivedExpr = customerCols.has("archived") ? "archived" : "FALSE";
+      const customerCreatedExpr = customerCols.has("created_at") ? "created_at" : "now()";
+      const customerStats = await pool.query(
+        `SELECT
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE COALESCE(${customerArchivedExpr}, FALSE) = FALSE)::int AS active,
+           COUNT(*) FILTER (WHERE COALESCE(${customerArchivedExpr}, FALSE) = TRUE)::int AS archived,
+           COUNT(*) FILTER (WHERE ${customerCreatedExpr} >= $1 AND ${customerCreatedExpr} < $2)::int AS new_this_month
+         FROM customer_accounts`,
+        [monthStart, nextMonth],
+      );
+
+      const helpStats = await pool.query(
+        `SELECT
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE status = 'unresolved')::int AS unresolved,
+           COUNT(*) FILTER (WHERE status = 'resolved')::int AS resolved,
+           COUNT(*) FILTER (WHERE created_at >= $1)::int AS last30
+         FROM help_requests`,
+        [since30],
+      );
+
+      const recentHelp = await pool.query(
+        `SELECT hr.id, COALESCE(u.full_name, 'Public user') AS "userName",
+                hr.feature, hr.problem, hr.status, hr.created_at AS "createdAt"
+         FROM help_requests hr
+         LEFT JOIN users u ON u.id = hr.user_id
+         ORDER BY hr.created_at DESC
+         LIMIT 6`,
+      );
+
+      const recentActions = await pool.query(
+        `SELECT al.id, COALESCE(u.full_name, 'System') AS "userName",
+                al.feature, al.action, al.created_at AS "createdAt"
+         FROM action_logs al
+         LEFT JOIN users u ON u.id = al.user_id
+         ORDER BY al.created_at DESC
+         LIMIT 8`,
+      );
+
+      let feedback = {
+        count: 0,
+        averageStars: null,
+        complaints: 0,
+        positive: 0,
+      };
+      const roCols = await getTableColumnNames("restaurant_orders");
+      if (roCols.has("feedback_stars")) {
+        const feedbackResult = await pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE feedback_stars IS NOT NULL)::int AS count,
+             AVG(feedback_stars)::float AS average,
+             COUNT(*) FILTER (WHERE feedback_stars <= 2)::int AS complaints,
+             COUNT(*) FILTER (WHERE feedback_stars >= 4)::int AS positive
+           FROM restaurant_orders`,
+        );
+        const r = feedbackResult.rows[0] || {};
+        feedback = {
+          count: Number(r.count) || 0,
+          averageStars: r.average == null ? null : Number(r.average),
+          complaints: Number(r.complaints) || 0,
+          positive: Number(r.positive) || 0,
+        };
+      }
+
+      let websiteAnalytics = {
+        totalViews: 0,
+        last30Views: 0,
+        platformViews: [],
+        topPaths: [],
+        registrationsByPlatform: [],
+      };
+      const viewCols = await getTableColumnNames("site_page_views");
+      if (viewCols.size > 0) {
+        const [viewTotals, platformViews, topPaths, registrations] =
+          await Promise.all([
+            pool.query(
+              `SELECT COUNT(*)::int AS total,
+                      COUNT(*) FILTER (WHERE created_at >= $1)::int AS last30
+               FROM site_page_views`,
+              [since30],
+            ),
+            pool.query(
+              `SELECT COALESCE(platform, 'web') AS platform, COUNT(*)::int AS views
+               FROM site_page_views
+               WHERE created_at >= $1
+               GROUP BY platform
+               ORDER BY views DESC`,
+              [since30],
+            ),
+            pool.query(
+              `SELECT COALESCE(path, '/') AS path, COUNT(*)::int AS views
+               FROM site_page_views
+               WHERE created_at >= $1
+               GROUP BY path
+               ORDER BY views DESC
+               LIMIT 8`,
+              [since30],
+            ),
+            pool.query(
+              `SELECT COALESCE(registration_platform, 'web') AS platform,
+                      COUNT(*)::int AS accounts
+               FROM customer_accounts
+               WHERE created_at >= $1
+               GROUP BY registration_platform
+               ORDER BY accounts DESC`,
+              [since30],
+            ),
+          ]);
+        websiteAnalytics = {
+          totalViews: Number(viewTotals.rows[0]?.total) || 0,
+          last30Views: Number(viewTotals.rows[0]?.last30) || 0,
+          platformViews: platformViews.rows.map((r) => ({
+            platform: r.platform || "web",
+            views: Number(r.views) || 0,
+          })),
+          topPaths: topPaths.rows.map((r) => ({
+            path: r.path || "/",
+            views: Number(r.views) || 0,
+          })),
+          registrationsByPlatform: registrations.rows.map((r) => ({
+            platform: r.platform || "web",
+            accounts: Number(r.accounts) || 0,
+          })),
+        };
+      }
+
+      async function salesForTable(table, statusSql) {
+        const cols = await getTableColumnNames(table);
+        if (cols.size === 0 || !cols.has("total_cost")) {
+          return { totalSales: 0, monthSales: 0, yearSales: 0, orders: 0, completed: 0, pending: 0 };
+        }
+        const createdCol = cols.has("created_at") ? "created_at" : "now()";
+        const statusCol = cols.has("status")
+          ? "status"
+          : cols.has("order_status")
+            ? "order_status"
+            : null;
+        const statusExpr = statusCol ? `upper(COALESCE(${statusCol}::text, ''))` : "''";
+        const completedCondition = statusSql(statusExpr).completed;
+        const pendingCondition = statusSql(statusExpr).pending;
+        const result = await pool.query(
+          `SELECT
+             COALESCE(SUM(total_cost), 0)::float AS total_sales,
+             COALESCE(SUM(total_cost) FILTER (WHERE ${createdCol} >= $1 AND ${createdCol} < $2), 0)::float AS month_sales,
+             COALESCE(SUM(total_cost) FILTER (WHERE ${createdCol} >= $3), 0)::float AS year_sales,
+             COUNT(*)::int AS orders,
+             COUNT(*) FILTER (WHERE ${completedCondition})::int AS completed,
+             COUNT(*) FILTER (WHERE ${pendingCondition})::int AS pending
+           FROM ${table}`,
+          [monthStart, nextMonth, yearStart],
+        );
+        const r = result.rows[0] || {};
+        return {
+          totalSales: Number(r.total_sales) || 0,
+          monthSales: Number(r.month_sales) || 0,
+          yearSales: Number(r.year_sales) || 0,
+          orders: Number(r.orders) || 0,
+          completed: Number(r.completed) || 0,
+          pending: Number(r.pending) || 0,
+        };
+      }
+
+      const [restaurantSales, cateringSales, eventSales] = await Promise.all([
+        salesForTable("restaurant_orders", (s) => ({
+          completed: `${s} IN ('DELIVERED', 'COMPLETED')`,
+          pending: `${s} IN ('PENDING_CASHIER', 'IN_PREPARATION', 'OUT_FOR_DELIVERY', 'PENDING')`,
+        })),
+        salesForTable("catering_orders", (s) => ({
+          completed: `${s} = 'COMPLETED'`,
+          pending: `${s} NOT IN ('COMPLETED', 'CANCELLED')`,
+        })),
+        salesForTable("event_orders", (s) => ({
+          completed: `${s} = 'COMPLETED'`,
+          pending: `${s} NOT IN ('COMPLETED', 'CANCELLED')`,
+        })),
+      ]);
+
+      return res.json({
+        asOf: now.toISOString(),
+        analytics: {
+          website: websiteAnalytics,
+          feedback,
+          helpRequests: {
+            total: Number(helpStats.rows[0]?.total) || 0,
+            unresolved: Number(helpStats.rows[0]?.unresolved) || 0,
+            resolved: Number(helpStats.rows[0]?.resolved) || 0,
+            last30: Number(helpStats.rows[0]?.last30) || 0,
+          },
+          recentActions: recentActions.rows.map((r) => ({
+            id: String(r.id),
+            userName: r.userName || "System",
+            feature: r.feature || "",
+            action: r.action || "",
+            createdAt: r.createdAt ? r.createdAt.toISOString() : null,
+          })),
+          recentHelpRequests: recentHelp.rows.map((r) => ({
+            id: String(r.id),
+            userName: r.userName || "Public user",
+            feature: r.feature || "",
+            problem: r.problem || "",
+            status: r.status || "unresolved",
+            createdAt: r.createdAt ? r.createdAt.toISOString() : null,
+          })),
+        },
+        userManagement: {
+          staff: {
+            total: Number(userStats.rows[0]?.total) || 0,
+            active: Number(userStats.rows[0]?.active) || 0,
+            archived: Number(userStats.rows[0]?.archived) || 0,
+            roleCounts: {
+              superAdmin: Number(userStats.rows[0]?.super_admin) || 0,
+              admin: Number(userStats.rows[0]?.admin) || 0,
+              manager: Number(userStats.rows[0]?.manager) || 0,
+              supervisor: Number(userStats.rows[0]?.supervisor) || 0,
+              cashier: Number(userStats.rows[0]?.cashier) || 0,
+            },
+          },
+          customers: {
+            total: Number(customerStats.rows[0]?.total) || 0,
+            active: Number(customerStats.rows[0]?.active) || 0,
+            archived: Number(customerStats.rows[0]?.archived) || 0,
+            newThisMonth: Number(customerStats.rows[0]?.new_this_month) || 0,
+          },
+        },
+        sales: {
+          restaurant: restaurantSales,
+          catering: cateringSales,
+          events: eventSales,
+          combined: {
+            totalSales: restaurantSales.totalSales + cateringSales.totalSales + eventSales.totalSales,
+            monthSales: restaurantSales.monthSales + cateringSales.monthSales + eventSales.monthSales,
+            yearSales: restaurantSales.yearSales + cateringSales.yearSales + eventSales.yearSales,
+            orders: restaurantSales.orders + cateringSales.orders + eventSales.orders,
+            completed: restaurantSales.completed + cateringSales.completed + eventSales.completed,
+            pending: restaurantSales.pending + cateringSales.pending + eventSales.pending,
+          },
+        },
+      });
+    } catch (e) {
+      console.error("super admin dashboard summary", e);
+      return res.status(500).json({ message: "Failed to load super admin dashboard" });
+    }
+  },
+);
+
+app.get(
+  "/api/super-admin/todos",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    try {
+      await ensureSuperAdminTodosSchema();
+      const result = await pool.query(
+        `SELECT *
+         FROM super_admin_todos
+         WHERE user_id = $1
+         ORDER BY completed ASC, sort_order ASC, created_at DESC`,
+        [String(req.user.id)],
+      );
+      return res.json({ todos: result.rows.map(serializeSuperAdminTodo) });
+    } catch (e) {
+      console.error("super admin todos list", e);
+      return res.status(500).json({ message: "Failed to load to-do list" });
+    }
+  },
+);
+
+app.post(
+  "/api/super-admin/todos",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    try {
+      await ensureSuperAdminTodosSchema();
+      const title = String(req.body?.title || "").trim();
+      const notes = String(req.body?.notes || "").trim();
+      if (!title) return res.status(400).json({ message: "title is required" });
+      const result = await pool.query(
+        `INSERT INTO super_admin_todos (id, user_id, title, notes, sort_order)
+         VALUES ($1, $2, $3, $4, COALESCE((SELECT MAX(sort_order) + 1 FROM super_admin_todos WHERE user_id = $2), 0))
+         RETURNING *`,
+        [crypto.randomUUID(), String(req.user.id), title, notes],
+      );
+      return res.status(201).json({ todo: serializeSuperAdminTodo(result.rows[0]) });
+    } catch (e) {
+      console.error("super admin todo create", e);
+      return res.status(500).json({ message: "Failed to create to-do" });
+    }
+  },
+);
+
+app.patch(
+  "/api/super-admin/todos/:todoId",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    try {
+      await ensureSuperAdminTodosSchema();
+      const title =
+        req.body?.title === undefined ? null : String(req.body.title || "").trim();
+      const notes =
+        req.body?.notes === undefined ? null : String(req.body.notes || "").trim();
+      const completed =
+        req.body?.completed === undefined ? null : req.body.completed === true;
+      const result = await pool.query(
+        `UPDATE super_admin_todos
+         SET title = COALESCE($3, title),
+             notes = COALESCE($4, notes),
+             completed = COALESCE($5, completed),
+             updated_at = now()
+         WHERE id = $1 AND user_id = $2
+         RETURNING *`,
+        [req.params.todoId, String(req.user.id), title, notes, completed],
+      );
+      if (result.rowCount === 0) {
+        return res.status(404).json({ message: "To-do not found" });
+      }
+      return res.json({ todo: serializeSuperAdminTodo(result.rows[0]) });
+    } catch (e) {
+      console.error("super admin todo update", e);
+      return res.status(500).json({ message: "Failed to update to-do" });
+    }
+  },
+);
+
+app.delete(
+  "/api/super-admin/todos/:todoId",
+  authRequired,
+  requireSuperAdmin,
+  async (req, res) => {
+    try {
+      await ensureSuperAdminTodosSchema();
+      const result = await pool.query(
+        `DELETE FROM super_admin_todos WHERE id = $1 AND user_id = $2`,
+        [req.params.todoId, String(req.user.id)],
+      );
+      if (result.rowCount === 0) {
+        return res.status(404).json({ message: "To-do not found" });
+      }
+      return res.json({ ok: true });
+    } catch (e) {
+      console.error("super admin todo delete", e);
+      return res.status(500).json({ message: "Failed to delete to-do" });
+    }
+  },
+);
+
 // Super Admin: Users
 app.get(
   "/api/super-admin/users",
@@ -3100,6 +3544,7 @@ app.put(
 //create account
 app.post("/api/super-admin/users", authRequired, requireSuperAdmin, async (req, res) => {
     try {
+      if (!(await requireSuperAdminPassword(req, res))) return;
       const { email, password, fullName, role, birthday, contactNumber, employmentType } = req.body || {};
 
       if (!email || !password || !fullName || !role) {
@@ -3258,6 +3703,7 @@ app.post(
   requireSuperAdmin,
   async (req, res) => {
     try {
+      if (!(await requireSuperAdminPassword(req, res))) return;
       const { userId } = req.params;
       const { fullName, role, birthday, contactNumber, employmentType } = req.body || {};
       if (!fullName || !role) {
@@ -3339,6 +3785,7 @@ app.post(
   requireSuperAdmin,
   async (req, res) => {
     try {
+      if (!(await requireSuperAdminPassword(req, res))) return;
       const { userId } = req.params;
       const { archived } = req.body || {};
       const nextArchived = archived === true;
@@ -6136,6 +6583,9 @@ function runDatabaseBootstrap() {
     }))
     .then(() => ensureCustomerTrayDraftsSchema().catch((err) => {
       console.warn('[startup] customer_tray_drafts schema:', err?.message || err);
+    }))
+    .then(() => ensureSuperAdminTodosSchema().catch((err) => {
+      console.warn('[startup] super_admin_todos schema:', err?.message || err);
     }))
     .then(() => {
       dbReady = true;

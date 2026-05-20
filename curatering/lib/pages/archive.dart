@@ -7,6 +7,10 @@ import '../services/api_client.dart';
 import '../services/menu_store.dart';
 import '../services/super_admin_api.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/antd_buttons.dart';
+import '../widgets/antd_dialog.dart';
+import '../widgets/antd_staff.dart';
+import '../widgets/antd_tokens.dart';
 import '../widgets/paginated_data_table.dart';
 import 'inventory.dart';
 
@@ -102,22 +106,11 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
 
   Widget _buildTabButton(String label, int index) {
     final isSelected = _tabController.index == index;
-    return GestureDetector(
-      onTap: () => setState(() => _tabController.index = index),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFFFC024) : Colors.grey.shade200,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.black : Colors.grey.shade700,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-      ),
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      selectedColor: AntdTokens.brandPrimary,
+      onSelected: (_) => setState(() => _tabController.index = index),
     );
   }
 
@@ -128,22 +121,20 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
     Widget? emptyMessage,
   }) {
     if (rows.isEmpty) {
-      return Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Padding(
-          padding: const EdgeInsets.all(40.0),
+      return AntdCard(
+        child: SizedBox(
+          height: 180,
           child: Center(
             child: emptyMessage ?? const Text('No archived items found.'),
           ),
         ),
       );
     }
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: PagedDataTable(title: title, columns: columns, rows: rows),
-      ),
+    return PagedDataTable(
+      title: title,
+      fullWidth: true,
+      columns: columns,
+      rows: rows,
     );
   }
 
@@ -260,31 +251,20 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
       builder: (context, _) {
         return AppScaffold(
           showSearch: true,
-          child: Padding(
-            padding: const EdgeInsets.all(20),
+          child: AntdPage(
+            title: 'Archive',
+            subtitle: 'Review archived records and restore or delete items.',
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Archive',
-                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 16),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _buildTabButton('Menu', 0),
-                      const SizedBox(width: 8),
-                      _buildTabButton('Loyalty Rewards', 1),
-                      const SizedBox(width: 8),
-                      _buildTabButton('Events', 2),
-                      const SizedBox(width: 8),
-                      _buildTabButton('Accounts', 3),
-                      const SizedBox(width: 8),
-                      _buildTabButton('Inventory', 4),
-                    ],
-                  ),
+                AntdToolbar(
+                  children: [
+                    _buildTabButton('Menu', 0),
+                    _buildTabButton('Loyalty Rewards', 1),
+                    _buildTabButton('Events', 2),
+                    _buildTabButton('Accounts', 3),
+                    _buildTabButton('Inventory', 4),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 // Tab content
@@ -405,24 +385,21 @@ class _ArchiveInventoryTabState extends State<ArchiveInventoryTab> {
   }
 
   Future<void> _deleteForever(InventoryItem item) async {
-    final ok = await showDialog<bool>(
+    final ok = await showAntdModal<bool>(
       context: context,
-      builder:
-          (ctx) => AlertDialog(
-            title: const Text('Delete permanently'),
-            content: Text('Remove "${item.name}" forever?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Delete'),
-              ),
-            ],
-          ),
+      title: 'Delete permanently',
+      body: Text('Remove "${item.name}" forever?'),
+      actions: [
+        AntdSecondaryButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.pop(context, false),
+        ),
+        AntdDangerButton(
+          label: 'Delete',
+          icon: Icons.delete_forever,
+          onPressed: () => Navigator.pop(context, true),
+        ),
+      ],
     );
     if (ok != true || !mounted) return;
     try {
@@ -445,7 +422,7 @@ class _ArchiveInventoryTabState extends State<ArchiveInventoryTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const AntdLoadingState();
     }
 
     final rows = _filtered;
@@ -453,33 +430,29 @@ class _ArchiveInventoryTabState extends State<ArchiveInventoryTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextField(
+        AntdSearchInput(
           controller: _search,
-          decoration: InputDecoration(
-            hintText: 'Search archived inventory…',
-            prefixIcon: const Icon(Icons.search),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-            filled: true,
-            fillColor: Colors.grey.shade100,
-          ),
+          hintText: 'Search archived inventory',
+          width: 360,
+          onChanged: (_) => setState(() {}),
+          onClear: () {
+            _search.clear();
+            setState(() {});
+          },
         ),
         const SizedBox(height: 12),
         Expanded(
           child:
               rows.isEmpty
-                  ? Center(
-                    child: Text(
-                      _items.isEmpty
-                          ? 'No archived inventory items.'
-                          : 'No matches.',
-                      style: TextStyle(color: Colors.grey.shade600),
-                    ),
+                  ? AntdEmptyState(
+                    message:
+                        _items.isEmpty
+                            ? 'No archived inventory items.'
+                            : 'No matches.',
                   )
                   : PagedDataTable(
                     title: 'Archived Inventory',
-                    headingRowColor: const WidgetStatePropertyAll(
-                      Color(0xFFF5F7F9),
-                    ),
+                    fullWidth: true,
                     columns: const [
                       DataColumn(label: Text('Name')),
                       DataColumn(label: Text('Category')),
@@ -506,20 +479,16 @@ class _ArchiveInventoryTabState extends State<ArchiveInventoryTab> {
                                     ? Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        IconButton(
+                                        AntdIconActionButton(
                                           tooltip: 'Restore',
-                                          icon: const Icon(
-                                            Icons.unarchive,
-                                            color: Colors.blue,
-                                          ),
+                                          icon: Icons.unarchive,
                                           onPressed: () => _restore(item),
                                         ),
-                                        IconButton(
+                                        const SizedBox(width: 6),
+                                        AntdIconActionButton(
                                           tooltip: 'Delete',
-                                          icon: const Icon(
-                                            Icons.delete_forever,
-                                            color: Colors.red,
-                                          ),
+                                          icon: Icons.delete_forever,
+                                          destructive: true,
                                           onPressed: () => _deleteForever(item),
                                         ),
                                       ],

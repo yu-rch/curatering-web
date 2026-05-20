@@ -42,9 +42,7 @@ class ApiClient {
   }
 
   Map<String, String> _defaultHeaders() {
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-    };
+    final headers = <String, String>{'Content-Type': 'application/json'};
     final token = AuthSession.instance.token ?? _customerBearer;
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
@@ -79,15 +77,16 @@ class ApiClient {
       uri = uri.replace(queryParameters: queryParameters);
     }
 
-    final res = useCache
-        ? await ApiCache().get(
-            uri,
-            headers: _defaultHeaders(),
-            expiry: cacheExpiry ?? const Duration(minutes: 2),
-          )
-        : await http
-            .get(uri, headers: _defaultHeaders())
-            .timeout(_requestTimeout);
+    final res =
+        useCache
+            ? await ApiCache().get(
+              uri,
+              headers: _defaultHeaders(),
+              expiry: cacheExpiry ?? const Duration(minutes: 2),
+            )
+            : await http
+                .get(uri, headers: _defaultHeaders())
+                .timeout(_requestTimeout);
 
     return _handleResponse(res, uri);
   }
@@ -108,9 +107,10 @@ class ApiClient {
     final decoded = _parseResponse(res, uri);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw ApiError(
-        message: decoded is Map && decoded['message'] is String
-            ? decoded['message'] as String
-            : 'Request failed',
+        message:
+            decoded is Map && decoded['message'] is String
+                ? decoded['message'] as String
+                : 'Request failed',
         statusCode: res.statusCode,
       );
     }
@@ -140,6 +140,22 @@ class ApiClient {
     return decoded;
   }
 
+  Future<Map<String, dynamic>> patchJson(
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    final uri = Uri.parse(_resolveUrl(path));
+    final res = await http
+        .patch(
+          uri,
+          headers: _defaultHeaders(),
+          body: body == null ? null : jsonEncode(body),
+        )
+        .timeout(_requestTimeout);
+
+    return _handleResponse(res, uri);
+  }
+
   Future<Map<String, dynamic>> delete(
     String path, {
     Map<String, dynamic>? body,
@@ -165,7 +181,8 @@ class ApiClient {
         body.trim().startsWith('<html') ||
         contentType.contains('text/html')) {
       throw ApiError(
-        message: 'Server returned HTML error page. Status: ${res.statusCode}. URL: $uri',
+        message:
+            'Server returned HTML error page. Status: ${res.statusCode}. URL: $uri',
         statusCode: res.statusCode,
       );
     }
@@ -178,32 +195,33 @@ class ApiClient {
     final decoded = _parseResponse(res, uri);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       String buildMessage() {
-        final message = decoded is Map && decoded['message'] is String
-            ? decoded['message'] as String
-            : 'Request failed';
-        final code = decoded is Map && decoded['code'] is String
-            ? decoded['code'] as String
-            : null;
+        final message =
+            decoded is Map && decoded['message'] is String
+                ? decoded['message'] as String
+                : 'Request failed';
+        final code =
+            decoded is Map && decoded['code'] is String
+                ? decoded['code'] as String
+                : null;
         final details = decoded is Map ? decoded['details'] : null;
 
         // Keep message readable; include details when backend provides them.
         if (details != null) {
           final detailsStr = details is String ? details : details.toString();
-          final shortDetails = detailsStr.length > 500
-              ? '${detailsStr.substring(0, 500)}…'
-              : detailsStr;
-          return code != null ? '$message (code: $code). Details: $shortDetails' : '$message. Details: $shortDetails';
+          final shortDetails =
+              detailsStr.length > 500
+                  ? '${detailsStr.substring(0, 500)}…'
+                  : detailsStr;
+          return code != null
+              ? '$message (code: $code). Details: $shortDetails'
+              : '$message. Details: $shortDetails';
         }
         return code != null ? '$message (code: $code)' : message;
       }
 
-      throw ApiError(
-        message: buildMessage(),
-        statusCode: res.statusCode,
-      );
+      throw ApiError(message: buildMessage(), statusCode: res.statusCode);
     }
 
     return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
   }
 }
-

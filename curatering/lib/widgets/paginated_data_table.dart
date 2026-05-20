@@ -3,6 +3,11 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import 'antd_buttons.dart';
+import 'antd_dialog.dart';
+import 'antd_staff.dart';
+import 'antd_tokens.dart';
+
 /// Default page size for staff/admin data tables.
 const int kTablePageSize = 80;
 
@@ -47,36 +52,43 @@ class TablePaginationBar extends StatelessWidget {
     final start = safePage * pageSize + 1;
     final end = ((safePage + 1) * pageSize).clamp(0, totalItems);
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
+    return AntdCard(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
           Text(
             'Showing $start–$end of $totalItems · Page ${safePage + 1} of $pages',
-            style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+            style: const TextStyle(
+              color: AntdTokens.textSecondary,
+              fontSize: 13,
+            ),
           ),
           const Spacer(),
-          IconButton(
+          AntdIconActionButton(
             tooltip: 'First page',
             onPressed: safePage > 0 ? () => onPageChanged(0) : null,
-            icon: const Icon(Icons.first_page),
+            icon: Icons.first_page,
           ),
-          IconButton(
+          const SizedBox(width: 6),
+          AntdIconActionButton(
             tooltip: 'Previous page',
             onPressed: safePage > 0 ? () => onPageChanged(safePage - 1) : null,
-            icon: const Icon(Icons.chevron_left),
+            icon: Icons.chevron_left,
           ),
-          IconButton(
+          const SizedBox(width: 6),
+          AntdIconActionButton(
             tooltip: 'Next page',
             onPressed:
                 safePage < pages - 1 ? () => onPageChanged(safePage + 1) : null,
-            icon: const Icon(Icons.chevron_right),
+            icon: Icons.chevron_right,
           ),
-          IconButton(
+          const SizedBox(width: 6),
+          AntdIconActionButton(
             tooltip: 'Last page',
             onPressed:
                 safePage < pages - 1 ? () => onPageChanged(pages - 1) : null,
-            icon: const Icon(Icons.last_page),
+            icon: Icons.last_page,
           ),
         ],
       ),
@@ -161,15 +173,52 @@ class _PagedDataTableState extends State<PagedDataTable> {
       pageSize: widget.pageSize,
     );
 
-    final table = DataTable(
-      columns: widget.columns,
-      rows: pageRows,
-      headingRowColor: widget.headingRowColor,
-      columnSpacing: widget.columnSpacing,
-      dataRowMinHeight: widget.dataRowMinHeight,
-      dataRowMaxHeight: widget.dataRowMaxHeight,
-      headingRowHeight: widget.headingRowHeight,
-      horizontalMargin: widget.horizontalMargin,
+    final table = Theme(
+      data: Theme.of(context).copyWith(
+        dataTableTheme: DataTableThemeData(
+          headingTextStyle: const TextStyle(
+            color: AntdTokens.valueDark,
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+          ),
+          dataTextStyle: const TextStyle(
+            color: AntdTokens.valueDark,
+            fontSize: 13,
+          ),
+          dividerThickness: 0.7,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: AntdTokens.borderSubtle),
+            borderRadius: BorderRadius.circular(AntdTokens.radiusMd),
+          ),
+        ),
+      ),
+      child: DataTable(
+        columns: widget.columns,
+        rows: pageRows,
+        border: TableBorder(
+          horizontalInside: const BorderSide(color: AntdTokens.borderSubtle),
+          top: const BorderSide(color: AntdTokens.borderSubtle),
+          bottom: const BorderSide(color: AntdTokens.borderSubtle),
+          left: const BorderSide(color: AntdTokens.borderSubtle),
+          right: const BorderSide(color: AntdTokens.borderSubtle),
+          borderRadius: BorderRadius.circular(AntdTokens.radiusMd),
+        ),
+        headingRowColor:
+            widget.headingRowColor ??
+            WidgetStateProperty.all(AntdTokens.tableHeaderBg),
+        dataRowColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.hovered)
+                  ? AntdTokens.fillTertiary
+                  : Colors.white,
+        ),
+        columnSpacing: widget.columnSpacing ?? 28,
+        dataRowMinHeight: widget.dataRowMinHeight ?? 44,
+        dataRowMaxHeight: widget.dataRowMaxHeight ?? 64,
+        headingRowHeight: widget.headingRowHeight ?? 44,
+        horizontalMargin: widget.horizontalMargin ?? 16,
+      ),
     );
 
     Widget tableScroll = LayoutBuilder(
@@ -201,31 +250,37 @@ class _PagedDataTableState extends State<PagedDataTable> {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (widget.enableSearch ||
-            widget.enablePrint ||
-            widget.filters.isNotEmpty)
-          _TableToolbar(
-            title: widget.title,
-            search: _search,
-            enableSearch: widget.enableSearch,
-            enablePrint: widget.enablePrint,
-            filters: widget.filters,
-            filteredRows: filteredRows.length,
-            totalRows: widget.rows.length,
-            onSearchChanged: (_) => setState(() => _page = 0),
-            onPrint: () => _printFilteredRows(filteredRows),
+    return AntdCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.enableSearch ||
+              widget.enablePrint ||
+              widget.filters.isNotEmpty)
+            _TableToolbar(
+              title: widget.title,
+              search: _search,
+              enableSearch: widget.enableSearch,
+              enablePrint: widget.enablePrint,
+              filters: widget.filters,
+              filteredRows: filteredRows.length,
+              totalRows: widget.rows.length,
+              onSearchChanged: (_) => setState(() => _page = 0),
+              onPrint: () => _printFilteredRows(filteredRows),
+            ),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AntdTokens.radiusMd),
+            child: tableScroll,
           ),
-        tableScroll,
-        TablePaginationBar(
-          currentPage: _page,
-          totalItems: filteredRows.length,
-          pageSize: widget.pageSize,
-          onPageChanged: (p) => setState(() => _page = p),
-        ),
-      ],
+          TablePaginationBar(
+            currentPage: _page,
+            totalItems: filteredRows.length,
+            pageSize: widget.pageSize,
+            onPageChanged: (p) => setState(() => _page = p),
+          ),
+        ],
+      ),
     );
   }
 
@@ -359,44 +414,35 @@ class _TableToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        crossAxisAlignment: WrapCrossAlignment.center,
+      child: AntdToolbar(
+        padding: const EdgeInsets.all(10),
         children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: AntdTokens.valueDark,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           if (enableSearch)
-            SizedBox(
-              width: 280,
-              child: TextField(
-                controller: search,
-                decoration: InputDecoration(
-                  isDense: true,
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon:
-                      search.text.isEmpty
-                          ? null
-                          : IconButton(
-                            tooltip: 'Clear search',
-                            onPressed: () {
-                              search.clear();
-                              onSearchChanged('');
-                            },
-                            icon: const Icon(Icons.close),
-                          ),
-                  hintText: 'Search table',
-                  border: const OutlineInputBorder(),
-                ),
-                onChanged: onSearchChanged,
-              ),
+            AntdSearchInput(
+              controller: search,
+              hintText: 'Search table',
+              onChanged: onSearchChanged,
+              onClear: () {
+                search.clear();
+                onSearchChanged('');
+              },
             ),
           if (filters.isNotEmpty)
-            OutlinedButton.icon(
+            AntdSecondaryButton(
               onPressed: () => _showFilters(context),
-              icon: const Icon(Icons.filter_list),
-              label: const Text('Filters'),
+              icon: Icons.filter_list,
+              label: 'Filters',
             )
           else if (enableSearch)
-            OutlinedButton.icon(
+            AntdSecondaryButton(
               onPressed:
                   search.text.isEmpty
                       ? null
@@ -404,18 +450,18 @@ class _TableToolbar extends StatelessWidget {
                         search.clear();
                         onSearchChanged('');
                       },
-              icon: const Icon(Icons.filter_alt_off),
-              label: const Text('Clear filter'),
+              icon: Icons.filter_alt_off,
+              label: 'Clear filter',
             ),
           if (enablePrint)
-            OutlinedButton.icon(
+            AntdSecondaryButton(
               onPressed: onPrint,
-              icon: const Icon(Icons.picture_as_pdf),
-              label: const Text('Print PDF'),
+              icon: Icons.picture_as_pdf,
+              label: 'Print PDF',
             ),
-          Text(
-            '$filteredRows of $totalRows rows',
-            style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+          AntdStatusTag(
+            label: '$filteredRows of $totalRows rows',
+            color: AntdTokens.textSecondary,
           ),
         ],
       ),
@@ -423,25 +469,19 @@ class _TableToolbar extends StatelessWidget {
   }
 
   void _showFilters(BuildContext context) {
-    showDialog<void>(
+    showAntdModal<void>(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text('$title filters'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: filters,
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Done'),
-              ),
-            ],
-          ),
+      title: '$title filters',
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: filters,
+      ),
+      actions: antdModalActions(
+        context: context,
+        okLabel: 'Done',
+        onOk: () => Navigator.of(context).pop(),
+      ),
     );
   }
 }

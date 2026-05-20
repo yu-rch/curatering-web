@@ -38,6 +38,7 @@ import 'pages/customer_management.dart';
 import 'pages/website_admin_page.dart';
 import 'pages/restaurant_orders_route.dart';
 import 'pages/inventory.dart';
+import 'pages/super_admin_dashboard.dart';
 import 'data_store.dart';
 
 Future<void> main() async {
@@ -138,6 +139,14 @@ Route<dynamic>? _buildRouteForPath(String path) {
             ),
           ),
           '/dashboard',
+        ),
+    '/super-admin-dashboard':
+        (context) => _staffPage(
+          const RoleGuard(
+            requiredRole: Role.superAdmin,
+            child: SuperAdminDashboardPage(),
+          ),
+          '/super-admin-dashboard',
         ),
     '/manage-accounts':
         (context) => _staffPage(

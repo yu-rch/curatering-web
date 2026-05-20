@@ -9,6 +9,8 @@ import '../auth/roles.dart';
 import '../models/user.dart';
 import '../services/api_client.dart';
 import '../services/super_admin_api.dart';
+import '../widgets/antd_buttons.dart';
+import '../widgets/antd_dialog.dart';
 import '../widgets/app_scaffold.dart';
 
 class ManageAccounts extends StatefulWidget {
@@ -92,8 +94,7 @@ class _ManageAccountsState extends State<ManageAccounts> {
           Text(
             allowed ? 'Allowed' : 'Blocked',
             style: TextStyle(
-              color:
-                  allowed ? Colors.green.shade800 : Colors.red.shade700,
+              color: allowed ? Colors.green.shade800 : Colors.red.shade700,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -140,6 +141,76 @@ class _ManageAccountsState extends State<ManageAccounts> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<String?> _confirmSuperAdminPassword(String actionLabel) async {
+    final passwordCtrl = TextEditingController();
+    String? errorText;
+    final result = await showAntdModal<String>(
+      context: context,
+      title: 'Confirm password',
+      barrierDismissible: false,
+      body: StatefulBuilder(
+        builder: (context, setDialogState) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Enter your current super admin password to $actionLabel.'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: passwordCtrl,
+                obscureText: true,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Super admin password',
+                  errorText: errorText,
+                  prefixIcon: const Icon(Icons.lock_outline),
+                ),
+                onChanged: (_) {
+                  if (errorText != null) setDialogState(() => errorText = null);
+                },
+                onSubmitted: (_) {
+                  final value = passwordCtrl.text;
+                  if (value.isEmpty) {
+                    setDialogState(() => errorText = 'Password is required.');
+                    return;
+                  }
+                  Navigator.of(context).pop(value);
+                },
+              ),
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  AntdSecondaryButton(
+                    label: 'Cancel',
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(width: 8),
+                  AntdPrimaryButton(
+                    label: 'Confirm',
+                    icon: Icons.verified_user_outlined,
+                    onPressed: () {
+                      final value = passwordCtrl.text;
+                      if (value.isEmpty) {
+                        setDialogState(
+                          () => errorText = 'Password is required.',
+                        );
+                        return;
+                      }
+                      Navigator.of(context).pop(value);
+                    },
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    passwordCtrl.dispose();
+    if (result == null || result.isEmpty) return null;
+    return result;
   }
 
   Future<void> _createUser() async {
@@ -386,6 +457,11 @@ class _ManageAccountsState extends State<ManageAccounts> {
                     ElevatedButton(
                       onPressed: () async {
                         try {
+                          final superAdminPassword =
+                              await _confirmSuperAdminPassword(
+                                'create this account',
+                              );
+                          if (superAdminPassword == null) return;
                           await SuperAdminApi.instance.createUser(
                             email: emailCtrl.text.trim(),
                             password: passwordCtrl.text,
@@ -400,6 +476,7 @@ class _ManageAccountsState extends State<ManageAccounts> {
                                     ? null
                                     : contactNumberCtrl.text.trim(),
                             employmentType: employmentType,
+                            superAdminPassword: superAdminPassword,
                           );
                           if (!context.mounted) return;
                           Navigator.of(context).pop(true);
@@ -484,7 +561,10 @@ class _ManageAccountsState extends State<ManageAccounts> {
                     children: [
                       Text(
                         'Maximum active (non-archived) accounts per role. Leave blank for unlimited. Super admin is never capped.',
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade700,
+                        ),
                       ),
                       const SizedBox(height: 16),
                       _limitField('Admin', adminCtrl),
@@ -493,7 +573,10 @@ class _ManageAccountsState extends State<ManageAccounts> {
                       _limitField('Cashier', cashierCtrl),
                       if (err != null) ...[
                         const SizedBox(height: 12),
-                        Text(err!, style: const TextStyle(color: Colors.redAccent)),
+                        Text(
+                          err!,
+                          style: const TextStyle(color: Colors.redAccent),
+                        ),
                       ],
                     ],
                   ),
@@ -521,7 +604,11 @@ class _ManageAccountsState extends State<ManageAccounts> {
                       'cashier': parse(cashierCtrl.text),
                     };
                     if (limits.values.any((v) => v == -1)) {
-                      setDialog(() => err = 'Enter positive whole numbers or leave blank.');
+                      setDialog(
+                        () =>
+                            err =
+                                'Enter positive whole numbers or leave blank.',
+                      );
                       return;
                     }
                     for (final e in limits.entries) {
@@ -556,14 +643,16 @@ class _ManageAccountsState extends State<ManageAccounts> {
       try {
         await SuperAdminApi.instance.putRoleLimits(limits);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Role limits saved.')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Role limits saved.')));
         }
       } catch (e) {
         final msg = e is ApiError ? e.message : 'Failed to save limits.';
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(msg)));
         }
       }
     }
@@ -790,6 +879,11 @@ class _ManageAccountsState extends State<ManageAccounts> {
                     ElevatedButton(
                       onPressed: () async {
                         try {
+                          final superAdminPassword =
+                              await _confirmSuperAdminPassword(
+                                'modify this account',
+                              );
+                          if (superAdminPassword == null) return;
                           await SuperAdminApi.instance.updateUser(
                             userId: user.id,
                             fullName: fullNameCtrl.text.trim(),
@@ -803,14 +897,17 @@ class _ManageAccountsState extends State<ManageAccounts> {
                                     ? null
                                     : contactNumberCtrl.text.trim(),
                             employmentType: employmentType,
+                            superAdminPassword: superAdminPassword,
                           );
                           if (!context.mounted) return;
                           Navigator.of(context).pop(true);
-                        } catch (_) {
+                        } catch (e) {
                           if (!context.mounted) return;
-                          setStateDialog(
-                            () => errorMessage = 'Failed to update account.',
-                          );
+                          final msg =
+                              e is ApiError
+                                  ? e.message
+                                  : 'Failed to update account.';
+                          setStateDialog(() => errorMessage = msg);
                         }
                       },
                       style: ElevatedButton.styleFrom(
@@ -846,16 +943,25 @@ class _ManageAccountsState extends State<ManageAccounts> {
 
   Future<void> _toggleArchived(UserDto user, bool nextValue) async {
     try {
+      final password = await _confirmSuperAdminPassword(
+        nextValue ? 'archive this account' : 'unarchive this account',
+      );
+      if (password == null) return;
       await SuperAdminApi.instance.setUserArchived(
         userId: user.id,
         archived: nextValue,
+        superAdminPassword: password,
       );
       if (!mounted) return;
       await _fetch();
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to update archive status.')),
+        SnackBar(
+          content: Text(
+            e is ApiError ? e.message : 'Failed to update archive status.',
+          ),
+        ),
       );
     }
   }
@@ -888,10 +994,7 @@ class _ManageAccountsState extends State<ManageAccounts> {
             employmentType: prev.employmentType,
           );
         }
-        _selectedUser = _users.firstWhere(
-          (x) => x.id == u.id,
-          orElse: () => u,
-        );
+        _selectedUser = _users.firstWhere((x) => x.id == u.id, orElse: () => u);
         _pagePermissionDraft = Map<String, dynamic>.from(saved);
       });
       ScaffoldMessenger.of(
