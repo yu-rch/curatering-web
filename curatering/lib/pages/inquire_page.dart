@@ -29,7 +29,6 @@ import '../widgets/inquiry_menu_selection_dialog.dart';
 import '../widgets/map_picker.dart';
 import '../widgets/venue_autocomplete_field.dart';
 import '../widgets/event_venue_map_preview.dart';
-import '../utils/geo_utils.dart';
 import '../utils/inquiry_pricing.dart';
 import '../widgets/antd_dialog.dart';
 import '../utils/image_download.dart';
@@ -415,8 +414,6 @@ class _InquirePageState extends State<InquirePage> {
     if (guestCount < 1) err('guests', 'Enter a valid guest count (at least 1)');
     if (_address.text.trim().isEmpty) {
       err('address', 'Please enter the event address');
-    } else if (!isAllowedCateringAddress(_address.text)) {
-      err('address', cateringCoverageError);
     }
     if (_dateController.text.trim().isEmpty)
       err('date', 'Please select an event date');

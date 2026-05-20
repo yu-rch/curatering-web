@@ -5,7 +5,6 @@ import '../theme/website_header_font.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import '../services/cart_store.dart';
-import '../utils/geo_utils.dart';
 import '../services/customer_orders_cache.dart';
 import '../services/loyalty_rewards_store.dart';
 import '../config.dart';
@@ -158,7 +157,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
       initialLongitude: _deliveryLng,
       initialAddress:
           _addressController.text.isNotEmpty ? _addressController.text : null,
-      enforceDeliveryRadius: true,
     );
 
     if (result != null) {
@@ -192,17 +190,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final isGuest = _customerData == null;
     final phoneDigits = _phoneController.text.replaceAll(RegExp(r'\D'), '');
 
-    if (_deliveryLat == null ||
-        _deliveryLng == null ||
-        !isWithinDeliveryRadius(
-          GeoPin(lat: _deliveryLat!, lng: _deliveryLng!),
-        )) {
+    if (_deliveryLat == null || _deliveryLng == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Please pin your delivery location within '
-            '${deliveryMaxDistanceKm.toStringAsFixed(0)} km of our restaurant.',
-          ),
+        const SnackBar(
+          content: Text('Please pin your delivery location on the map.'),
         ),
       );
       return;
@@ -383,12 +374,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     if (_deliveryLat == null || _deliveryLng == null) {
       return 'Pin your delivery location on the map';
     }
-    final withinRadius = isWithinDeliveryRadius(
-      GeoPin(lat: _deliveryLat!, lng: _deliveryLng!),
-    );
-    return withinRadius
-        ? null
-        : 'Location must be within ${deliveryMaxDistanceKm.toStringAsFixed(0)} km';
+    return null;
   }
 
   @override

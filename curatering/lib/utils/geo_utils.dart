@@ -3,7 +3,7 @@ import 'dart:math' as math;
 /// OpenStreetMap / Nominatim user agent (required by usage policy).
 const String nominatimUserAgent = 'CurateringWeb/1.0 (support@macrina.local)';
 
-/// Restaurant anchor — Taguig (delivery radius).
+/// Restaurant anchor — Taguig. Kept for map defaults and distance utilities.
 const double restaurantLat = 14.513436;
 const double restaurantLng = 121.059198;
 const double deliveryMaxDistanceKm = 50;
@@ -14,9 +14,6 @@ const double defaultMapLng = 120.9842;
 /// Contact Us page map preview (Macrina's Kitchen).
 const double contactPageMapLat = 14.513537;
 const double contactPageMapLng = 121.061896;
-
-const String cateringCoverageError =
-    'Service area is limited to NCR, Bulacan, Cavite, Rizal, and Laguna (Philippines).';
 
 class GeoPin {
   final double lat;
@@ -40,15 +37,9 @@ double haversineKm(GeoPin a, GeoPin b) {
 double _deg2rad(double deg) => deg * math.pi / 180;
 
 bool isWithinDeliveryRadius(GeoPin pin) {
-  return haversineKm(
-        const GeoPin(lat: restaurantLat, lng: restaurantLng),
-        pin,
-      ) <=
-      deliveryMaxDistanceKm;
+  return true;
 }
 
 bool isAllowedCateringAddress(String address) {
-  final t = address.trim().toLowerCase();
-  if (t.isEmpty) return false;
-  return true;
+  return address.trim().isNotEmpty;
 }

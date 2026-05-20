@@ -185,16 +185,6 @@ class _MapPickerState extends State<MapPicker> {
   void _confirm() {
     final loc = _selectedLocation;
     if (loc == null) return;
-    if (widget.enforceDeliveryRadius &&
-        !isWithinDeliveryRadius(
-          GeoPin(lat: loc.latitude, lng: loc.longitude),
-        )) {
-      setState(() {
-        _error =
-            'Delivery must be within ${deliveryMaxDistanceKm.toStringAsFixed(0)} km of our restaurant.';
-      });
-      return;
-    }
     Navigator.of(context).pop(
       MapPickerResult(
         latitude: loc.latitude,
