@@ -1,8 +1,9 @@
 import { pool, ensureCustomerTrayDraftsSchema } from './db.js';
+import { customerIdFromRequest } from './customer_auth.js';
 import { parseRestaurantOrderTrayItems } from './order_schema.js';
 
 function customerIdFromReq(req) {
-  return req.customer?.id ? String(req.customer.id) : null;
+  return req.customer?.id ? String(req.customer.id) : customerIdFromRequest(req);
 }
 
 function parseItemsArray(raw) {

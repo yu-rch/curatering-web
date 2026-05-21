@@ -68,6 +68,7 @@ import {
   getTrayDraftItemsByCustomerId,
   clearTrayDraftForCustomer,
 } from "./tray_drafts_api.js";
+import { customerIdFromRequest } from "./customer_auth.js";
 import { createPublicRateLimiter } from "./public_rate_limit.js";
 import {
   ensureRestaurantPosColumns,
@@ -8014,44 +8015,26 @@ async function registerRoutesAfterDbInit() {
     }
 
     const customerAuthRequired = (req, res, next) => {
-      const token = req.headers.authorization?.replace('Bearer ', '');
-      
+      const token =
+        req.headers.authorization?.replace(/^Bearer\s+/i, '').trim() ||
+        String(req.headers.customer_token || '').trim();
+
       if (!token) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        if (decoded.role !== 'customer') {
-          console.log('Auth failed: role is', decoded.role, 'expected customer');
-          return res.status(403).json({ error: 'Customer access required' });
-        }
-        const cid = decoded.customerId ?? decoded.id ?? decoded.sub;
-        if (cid == null || String(cid).trim() === '') {
-          return res.status(401).json({ error: 'Invalid customer token' });
-        }
-        req.customer = { id: String(cid) };
-        next();
-      } catch (error) {
-        console.log('Token verification failed:', error.message);
-        return res.status(401).json({ error: 'Invalid or expired token', details: error.message });
+      const customerId = customerIdFromRequest(req);
+      if (!customerId) {
+        return res.status(401).json({ error: 'Invalid or expired token' });
       }
+      req.customer = { id: customerId };
+      next();
     };
 
     const optionalCustomerAuth = (req, res, next) => {
-      const token = req.headers.authorization?.replace('Bearer ', '');
-      if (token) {
-        try {
-          const decoded = jwt.verify(token, JWT_SECRET);
-          if (decoded.role === 'customer') {
-            const cid = decoded.customerId ?? decoded.id ?? decoded.sub;
-            if (cid != null && String(cid).trim() !== '') {
-              req.customer = { id: String(cid) };
-            }
-          }
-        } catch (_) {
-          /* guest checkout */
-        }
+      const customerId = customerIdFromRequest(req);
+      if (customerId) {
+        req.customer = { id: customerId };
       }
       next();
     };

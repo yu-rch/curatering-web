@@ -8,7 +8,12 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev-change-me";
  */
 export function customerIdFromRequest(req) {
   const bearer = req.headers.authorization?.replace(/^Bearer\s+/i, "").trim();
-  const legacy = String(req.headers.customer_token || "").trim();
+  const legacy = String(
+    req.headers.customer_token ||
+      req.headers["customer-token"] ||
+      req.headers["x-customer-token"] ||
+      "",
+  ).trim();
   const raw = bearer || legacy;
   if (!raw) return null;
   try {
