@@ -96,8 +96,17 @@ class EventsApi {
   }
 
   Future<void> acceptOrder({required String orderId}) async {
+    final encoded = Uri.encodeComponent(orderId);
     await ApiClient.instance.postJson(
-      '/api/events/orders/$orderId/accept',
+      '/api/events/orders/$encoded/accept',
+      body: {},
+    );
+  }
+
+  Future<void> postOrderChanges({required String orderId}) async {
+    final encoded = Uri.encodeComponent(orderId);
+    await ApiClient.instance.postJson(
+      '/api/events/orders/$encoded/post-changes',
       body: {},
     );
   }
@@ -133,10 +142,7 @@ class EventsApi {
     final encoded = Uri.encodeComponent(orderId);
     await ApiClient.instance.putJson(
       '/api/events/orders/$encoded/checklist',
-      body: {
-        'checklist': items,
-        if (deductInventory) 'deductInventory': true,
-      },
+      body: {'checklist': items, if (deductInventory) 'deductInventory': true},
     );
   }
 
@@ -148,10 +154,7 @@ class EventsApi {
     final encoded = Uri.encodeComponent(orderId);
     await ApiClient.instance.postJson(
       '/api/events/orders/$encoded/send-order-summary',
-      body: {
-        'pdfBase64': pdfBase64,
-        'paymentType': paymentType,
-      },
+      body: {'pdfBase64': pdfBase64, 'paymentType': paymentType},
     );
   }
 
@@ -443,26 +446,27 @@ class EventsApi {
     final costBreakdown = _toMap(
       themeRaw['costBreakdown'] ?? themeRaw['cost_breakdown'],
     );
-    final customInstructions = (themeRaw['customInstructions'] ??
-            themeRaw['custom_instructions'] ??
-            themeRaw['colorPrompt'] ??
-            themeRaw['color_prompt'])
-        ?.toString();
-    final macrinaPalette = (themeRaw['macrinaColorPalette'] ??
-            themeRaw['macrina_color_palette'])
-        ?.toString();
-    final macrinaTheme = (themeRaw['macrinaTheme'] ?? themeRaw['macrina_theme'])
-        ?.toString();
-    final generatedImageUrl = (themeRaw['generatedImageUrl'] ??
-            themeRaw['generated_image_url'])
-        ?.toString();
+    final customInstructions =
+        (themeRaw['customInstructions'] ??
+                themeRaw['custom_instructions'] ??
+                themeRaw['colorPrompt'] ??
+                themeRaw['color_prompt'])
+            ?.toString();
+    final macrinaPalette =
+        (themeRaw['macrinaColorPalette'] ?? themeRaw['macrina_color_palette'])
+            ?.toString();
+    final macrinaTheme =
+        (themeRaw['macrinaTheme'] ?? themeRaw['macrina_theme'])?.toString();
+    final generatedImageUrl =
+        (themeRaw['generatedImageUrl'] ?? themeRaw['generated_image_url'])
+            ?.toString();
     final eventDesignSource =
         (themeRaw['eventDesignSource'] ?? themeRaw['event_design_source'])
             ?.toString();
 
-    String? customerThemeRequest = (themeRaw['customerThemeRequest'] ??
-            themeRaw['customer_theme_request'])
-        ?.toString();
+    String? customerThemeRequest =
+        (themeRaw['customerThemeRequest'] ?? themeRaw['customer_theme_request'])
+            ?.toString();
     if ((customerThemeRequest == null || customerThemeRequest.trim().isEmpty) &&
         eventDesignSource == 'macrina') {
       final parts = <String>[];
@@ -560,12 +564,13 @@ class EventsApi {
 
     return EventOrderDto(
       id: (map['id'] ?? '').toString(),
-      cateringId: (map['cateringId'] ??
-              map['catering_id'] ??
-              map['inquiryId'] ??
-              map['inquiry_id'] ??
-              '')
-          .toString(),
+      cateringId:
+          (map['cateringId'] ??
+                  map['catering_id'] ??
+                  map['inquiryId'] ??
+                  map['inquiry_id'] ??
+                  '')
+              .toString(),
       customerId: (map['customerId'] ?? map['customer_id'] ?? '').toString(),
       source: (map['source'] ?? '').toString(),
       status: (map['status'] ?? '').toString(),

@@ -168,6 +168,10 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
     if (widget.initialSelections != oldWidget.initialSelections) {
       _restoreFromInitial(widget.initialSelections);
     }
+    if (widget.cateringDishes != oldWidget.cateringDishes &&
+        _sanitizeSelectionsForAvailableDishes()) {
+      _emitSelection();
+    }
   }
 
   void _restoreFromInitial(List<Map<String, dynamic>> blocks) {
@@ -175,6 +179,7 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
     _selectedSet = null;
     _selectedSetDishIds.clear();
     if (blocks.isEmpty) return;
+    final availableIds = _availableDishIds;
     final b = blocks.first;
     final kind = b['kind'] as String? ?? 'custom';
     if (kind == 'set') {
@@ -183,14 +188,18 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
         if (s.name == name) {
           _selectedSet = s;
           final ids = b['dishIds'] as List<dynamic>? ?? s.dishIds;
-          _selectedSetDishIds.addAll(ids.map((e) => e.toString()));
+          _selectedSetDishIds.addAll(
+            ids.map((e) => e.toString()).where(availableIds.contains),
+          );
           break;
         }
       }
       if (!widget.embedded) _tabController?.index = 1;
     } else {
       final ids = b['dishIds'] as List<dynamic>? ?? const [];
-      _customIds.addAll(ids.map((e) => e.toString()));
+      _customIds.addAll(
+        ids.map((e) => e.toString()).where(availableIds.contains),
+      );
       if (!widget.embedded) _tabController?.index = 0;
     }
   }
@@ -205,6 +214,32 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
   Map<String, String> get _dishNameById => {
     for (final d in widget.cateringDishes) d.id: d.name,
   };
+
+  Set<String> get _availableDishIds => {
+    for (final d in widget.cateringDishes) d.id,
+  };
+
+  List<String> _visibleSetDishIds(SetMenu set) {
+    final availableIds = _availableDishIds;
+    return set.dishIds.where(availableIds.contains).toList();
+  }
+
+  bool _sanitizeSelectionsForAvailableDishes() {
+    final availableIds = _availableDishIds;
+    final customBefore = _customIds.length;
+    final setBefore = _selectedSetDishIds.length;
+    final pickBefore = _pickDishId;
+
+    _customIds.removeWhere((id) => !availableIds.contains(id));
+    _selectedSetDishIds.removeWhere((id) => !availableIds.contains(id));
+    if (_pickDishId != null && !availableIds.contains(_pickDishId)) {
+      _pickDishId = null;
+    }
+
+    return customBefore != _customIds.length ||
+        setBefore != _selectedSetDishIds.length ||
+        pickBefore != _pickDishId;
+  }
 
   List<Map<String, dynamic>> _buildCurrentBlocks() {
     if (widget.mode == InquiryMenuPickerMode.setMenuSinglePickOnly) {
@@ -222,7 +257,9 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
 
     if (_activeTab == 0) {
       if (_customIds.isEmpty) return [];
-      final ids = _customIds.toList()..sort();
+      final availableIds = _availableDishIds;
+      final ids = _customIds.where(availableIds.contains).toList()..sort();
+      if (ids.isEmpty) return [];
       return [
         {
           'kind': 'custom',
@@ -234,7 +271,9 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
 
     final set = _selectedSet;
     if (set == null) return [];
-    final ids = _selectedSetDishIds.toList()..sort();
+    final availableIds = _availableDishIds;
+    final ids =
+        _selectedSetDishIds.where(availableIds.contains).toList()..sort();
     if (ids.isEmpty) return [];
     return [
       {
@@ -396,7 +435,9 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
       itemBuilder: (context, i) {
         final s = widget.setMenus[i];
         final selected = _selectedSet?.name == s.name;
-        final preview = s.dishIds
+        final visibleDishIds = _visibleSetDishIds(s);
+        final canSelect = visibleDishIds.isNotEmpty;
+        final preview = visibleDishIds
             .map((id) => _dishNameById[id] ?? id)
             .join(', ');
         return Card(
@@ -417,7 +458,9 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
               ),
             ),
             subtitle: Text(
-              s.dishIds.isEmpty ? 'No dishes' : preview,
+              visibleDishIds.isEmpty
+                  ? 'No dishes available for the selected allergens'
+                  : preview,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
             ),
@@ -425,27 +468,37 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
               value: s,
               groupValue: _selectedSet,
               activeColor: AntdTokens.brandPrimary,
-              onChanged: (v) {
-                setState(() {
-                  _selectedSet = v;
-                  _selectedSetDishIds
-                    ..clear()
-                    ..addAll(v?.dishIds ?? const []);
-                  _localError = null;
-                });
-                _emitSelection();
-              },
+              onChanged:
+                  canSelect
+                      ? (v) {
+                        setState(() {
+                          _selectedSet = v;
+                          _selectedSetDishIds
+                            ..clear()
+                            ..addAll(
+                              v == null
+                                  ? const <String>[]
+                                  : _visibleSetDishIds(v),
+                            );
+                          _localError = null;
+                        });
+                        _emitSelection();
+                      }
+                      : null,
             ),
-            onTap: () {
-              setState(() {
-                _selectedSet = s;
-                _selectedSetDishIds
-                  ..clear()
-                  ..addAll(s.dishIds);
-                _localError = null;
-              });
-              _emitSelection();
-            },
+            onTap:
+                canSelect
+                    ? () {
+                      setState(() {
+                        _selectedSet = s;
+                        _selectedSetDishIds
+                          ..clear()
+                          ..addAll(visibleDishIds);
+                        _localError = null;
+                      });
+                      _emitSelection();
+                    }
+                    : null,
           ),
         );
       },

@@ -5,7 +5,7 @@ import 'cart_store.dart';
 import '../models/menu_dish.dart';
 
 /// Service for synchronizing cart between mobile and web platforms.
-/// Canonical store: `customer_tray_drafts.tray_items` via `/api/tray-draft`.
+/// Canonical store: `customer_tray_drafts.tray_lines` + `tray_items`.
 class CartSyncService {
   static CartSyncService? _instance;
   static CartSyncService get instance => _instance ??= CartSyncService._();
@@ -15,22 +15,36 @@ class CartSyncService {
   static const String _cartKey = 'cart';
   static const String _lastSyncKey = 'cart_last_sync';
 
-  /// Extract line items from GET /api/tray-draft (prefers `tray_items`).
+  /// Extract line items from GET /api/tray-draft (prefers non-empty `tray_lines`,
+  /// then `tray_items` for web/mobile compatibility).
   static List<dynamic> _itemsListFromTrayDraftResponse(
     Map<String, dynamic> payload,
   ) {
-    final trayRaw = payload['tray_items'] ?? payload['trayItems'];
-    if (trayRaw != null) {
-      final fromTray = _itemsListFromTrayPayload(trayRaw);
-      if (fromTray.isNotEmpty) return fromTray;
+    final linesRaw = payload['tray_lines'] ?? payload['trayLines'];
+    final fromLines = _itemsListFromTrayPayload(linesRaw);
+    if (fromLines.isNotEmpty) return fromLines;
+
+    final itemsRaw = payload['tray_items'] ?? payload['trayItems'];
+    final fromItems = _itemsListFromTrayPayload(itemsRaw);
+    if (fromItems.isNotEmpty) return fromItems;
+
+    final items = _itemsListFromTrayPayload(payload['items']);
+    if (items.isNotEmpty) return items;
+
+    if (linesRaw != null) {
+      return fromLines;
     }
-    return _itemsListFromTrayPayload(payload['items']);
+    return fromItems;
   }
 
   static List<dynamic> _itemsListFromTrayPayload(dynamic payload) {
     if (payload is Map) {
       final nested =
-          payload['tray_items'] ?? payload['trayItems'] ?? payload['items'];
+          payload['tray_lines'] ??
+          payload['trayLines'] ??
+          payload['tray_items'] ??
+          payload['trayItems'] ??
+          payload['items'];
       return _itemsListFromTrayPayload(nested);
     }
     if (payload is List) return payload;
@@ -43,7 +57,7 @@ class CartSyncService {
     return [];
   }
 
-  /// JSON for `customer_tray_drafts.tray_items` (web + mobile compatible).
+  /// JSON for `customer_tray_drafts.tray_lines` / `tray_items`.
   static Map<String, dynamic> trayLineToJson(CartItem item) {
     final sauce = item.selectedSauce?.trim();
     final sauceVal = (sauce != null && sauce.isNotEmpty) ? sauce : '';
@@ -82,7 +96,7 @@ class CartSyncService {
     };
   }
 
-  /// Cart JSON from `customer_tray_drafts.tray_items`.
+  /// Cart JSON from `customer_tray_drafts.tray_lines` / `tray_items`.
   static CartItem? parseTrayLineItem(dynamic raw) {
     if (raw is! Map) return null;
     final map = Map<String, dynamic>.from(raw);
@@ -150,7 +164,7 @@ class CartSyncService {
     await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());
   }
 
-  /// Sync cart from server to local storage (`customer_tray_drafts.tray_items`).
+  /// Sync cart from server to local storage.
   Future<void> syncFromServer() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -192,7 +206,7 @@ class CartSyncService {
     }
   }
 
-  /// Sync local cart to `customer_tray_drafts.tray_items`.
+  /// Sync local cart to `customer_tray_drafts.tray_lines` and `tray_items`.
   Future<void> syncToServer() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -206,7 +220,7 @@ class CartSyncService {
           final trayData = cartItems.map(trayLineToJson).toList();
           await ApiClient.instance.putJson(
             '/api/tray-draft',
-            body: {'tray_items': trayData},
+            body: {'tray_lines': trayData, 'tray_items': trayData},
           );
 
           await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());

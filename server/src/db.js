@@ -1423,6 +1423,7 @@ async function createCustomerTrayDraftsTable(withFk) {
     CREATE TABLE customer_tray_drafts (
       customer_id TEXT PRIMARY KEY${fkClause},
       user_email TEXT,
+      tray_lines JSONB NOT NULL DEFAULT '[]'::jsonb,
       tray_items JSONB NOT NULL DEFAULT '[]'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
@@ -1433,19 +1434,23 @@ async function ensureCustomerTrayDraftsTrayItemsColumn() {
   const cols = await getTableColumnNames('customer_tray_drafts');
 
   await pool.query(
+    `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_lines JSONB NOT NULL DEFAULT '[]'::jsonb`,
+  );
+  await pool.query(
     `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_items JSONB NOT NULL DEFAULT '[]'::jsonb`,
   );
 
-  if (!cols.has('tray_items') && cols.has('items')) {
-    try {
-      await pool.query(`
-        UPDATE customer_tray_drafts
-        SET tray_items = COALESCE(NULLIF(tray_items, '[]'::jsonb), items, '[]'::jsonb)
-        WHERE tray_items IS NULL OR tray_items = '[]'::jsonb
-      `);
-    } catch (err) {
-      console.warn('[db] customer_tray_drafts tray_items backfill:', err.message);
-    }
+  try {
+    const legacyItemsExpr = cols.has('items') ? `, items` : '';
+    await pool.query(`
+      UPDATE customer_tray_drafts
+      SET tray_lines = COALESCE(NULLIF(tray_lines, '[]'::jsonb), tray_items${legacyItemsExpr}, '[]'::jsonb),
+          tray_items = COALESCE(NULLIF(tray_items, '[]'::jsonb), tray_lines${legacyItemsExpr}, '[]'::jsonb)
+      WHERE tray_lines IS NULL OR tray_lines = '[]'::jsonb
+         OR tray_items IS NULL OR tray_items = '[]'::jsonb
+    `);
+  } catch (err) {
+    console.warn('[db] customer_tray_drafts tray_lines/tray_items backfill:', err.message);
   }
 }
 
@@ -1491,6 +1496,9 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
       } catch (_) {}
     }
     await pool.query(
+      `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_lines JSONB NOT NULL DEFAULT '[]'::jsonb`,
+    );
+    await pool.query(
       `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_items JSONB NOT NULL DEFAULT '[]'::jsonb`,
     );
     await pool.query(
@@ -1509,6 +1517,9 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
         `ALTER TABLE customer_tray_drafts RENAME COLUMN ${legacyCol} TO customer_id`,
       );
       console.log(`[db] renamed customer_tray_drafts.${legacyCol} → customer_id`);
+      await pool.query(
+        `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_lines JSONB NOT NULL DEFAULT '[]'::jsonb`,
+      );
       await pool.query(
         `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_items JSONB NOT NULL DEFAULT '[]'::jsonb`,
       );

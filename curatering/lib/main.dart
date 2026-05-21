@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Placeholder;
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
@@ -26,6 +28,7 @@ import 'pages/inquire_page.dart';
 import 'pages/restaurant_order_page.dart';
 import 'pages/restaurant_feedback_public_page.dart';
 import 'pages/catering_menu_page.dart';
+import 'auth/auth_session.dart';
 import 'auth/page_permissions.dart';
 import 'auth/role_guard.dart';
 import 'auth/roles.dart';
@@ -347,8 +350,60 @@ Route<dynamic>? _buildRouteForPath(String path) {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  static const Duration _staffIdleTimeout = Duration(minutes: 5);
+
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  Timer? _staffIdleTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    AuthSession.instance.isLoggedIn.addListener(_handleSessionChanged);
+    _handleSessionChanged();
+  }
+
+  @override
+  void dispose() {
+    AuthSession.instance.isLoggedIn.removeListener(_handleSessionChanged);
+    _staffIdleTimer?.cancel();
+    super.dispose();
+  }
+
+  void _handleSessionChanged() {
+    if (AuthSession.instance.hasToken) {
+      _armStaffIdleTimer();
+    } else {
+      _staffIdleTimer?.cancel();
+      _staffIdleTimer = null;
+    }
+  }
+
+  void _recordStaffActivity() {
+    if (AuthSession.instance.hasToken) {
+      _armStaffIdleTimer();
+    }
+  }
+
+  void _armStaffIdleTimer() {
+    _staffIdleTimer?.cancel();
+    _staffIdleTimer = Timer(_staffIdleTimeout, _expireStaffSessionForIdle);
+  }
+
+  void _expireStaffSessionForIdle() {
+    if (!AuthSession.instance.hasToken) return;
+    AuthSession.instance.clear();
+    final nav = _navigatorKey.currentState;
+    if (nav == null) return;
+    nav.pushNamedAndRemoveUntil('/login', (_) => false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -357,7 +412,17 @@ class MyApp extends StatelessWidget {
       builder: (context, dark, _) {
         return MaterialApp(
           title: 'Curatering',
+          navigatorKey: _navigatorKey,
           navigatorObservers: [StaffPermissionRefreshObserver.instance],
+          builder:
+              (context, child) => Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: (_) => _recordStaffActivity(),
+                onPointerMove: (_) => _recordStaffActivity(),
+                onPointerHover: (_) => _recordStaffActivity(),
+                onPointerSignal: (_) => _recordStaffActivity(),
+                child: child ?? const SizedBox.shrink(),
+              ),
           theme: ThemeData(
             colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
             useMaterial3: true,
@@ -365,12 +430,12 @@ class MyApp extends StatelessWidget {
             textTheme: GoogleFonts.interTextTheme(),
             pageTransitionsTheme: const PageTransitionsTheme(
               builders: {
-                TargetPlatform.android: _NoTransitionsBuilder(),
-                TargetPlatform.iOS: _NoTransitionsBuilder(),
-                TargetPlatform.linux: _NoTransitionsBuilder(),
-                TargetPlatform.macOS: _NoTransitionsBuilder(),
-                TargetPlatform.windows: _NoTransitionsBuilder(),
-                TargetPlatform.fuchsia: _NoTransitionsBuilder(),
+                TargetPlatform.android: _SmoothPageTransitionsBuilder(),
+                TargetPlatform.iOS: _SmoothPageTransitionsBuilder(),
+                TargetPlatform.linux: _SmoothPageTransitionsBuilder(),
+                TargetPlatform.macOS: _SmoothPageTransitionsBuilder(),
+                TargetPlatform.windows: _SmoothPageTransitionsBuilder(),
+                TargetPlatform.fuchsia: _SmoothPageTransitionsBuilder(),
               },
             ),
             elevatedButtonTheme: ElevatedButtonThemeData(
@@ -700,9 +765,9 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Disables route transition animations for snappier staff navigation.
-class _NoTransitionsBuilder extends PageTransitionsBuilder {
-  const _NoTransitionsBuilder();
+/// Smooths route changes without making staff navigation feel slow.
+class _SmoothPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _SmoothPageTransitionsBuilder();
 
   @override
   Widget buildTransitions<T>(
@@ -712,6 +777,17 @@ class _NoTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    return child;
+    if (route.isFirst) return child;
+    final curved = animation.drive(CurveTween(curve: Curves.easeOutCubic));
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.0, end: 1.0).animate(curved),
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0.025, 0),
+          end: Offset.zero,
+        ).animate(curved),
+        child: child,
+      ),
+    );
   }
 }

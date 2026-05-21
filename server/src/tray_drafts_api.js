@@ -14,7 +14,7 @@ function asTrayObject(value) {
 }
 
 /**
- * Canonical tray line shape for web + mobile (stored in `tray_items` only).
+ * Canonical tray line shape for web + mobile (stored in `tray_lines` + `tray_items`).
  * Includes nested `dish` (web) and flat/snake fields (mobile).
  */
 export function normalizeTrayLineItem(raw) {
@@ -97,6 +97,8 @@ export function normalizeTrayItems(items) {
 
 function itemsFromRequestBody(body) {
   const b = body || {};
+  if (Array.isArray(b.tray_lines)) return b.tray_lines;
+  if (Array.isArray(b.trayLines)) return b.trayLines;
   if (Array.isArray(b.tray_items)) return b.tray_items;
   if (Array.isArray(b.trayItems)) return b.trayItems;
   if (Array.isArray(b.items)) return b.items;
@@ -107,9 +109,10 @@ async function upsertTrayDraftItems(customerId, items) {
   const normalized = normalizeTrayItems(items);
   const json = JSON.stringify(normalized);
   await pool.query(
-    `INSERT INTO customer_tray_drafts (customer_id, tray_items, updated_at)
-     VALUES ($1, $2::jsonb, now())
+    `INSERT INTO customer_tray_drafts (customer_id, tray_lines, tray_items, updated_at)
+     VALUES ($1, $2::jsonb, $2::jsonb, now())
      ON CONFLICT (customer_id) DO UPDATE SET
+       tray_lines = EXCLUDED.tray_lines,
        tray_items = EXCLUDED.tray_items,
        updated_at = now()`,
     [customerId, json],
@@ -122,11 +125,13 @@ export async function getTrayDraftItemsByCustomerId(customerId) {
   await ensureCustomerTrayDraftsSchema();
   const id = String(customerId);
   const result = await pool.query(
-    `SELECT tray_items FROM customer_tray_drafts WHERE customer_id = $1`,
+    `SELECT tray_lines, tray_items FROM customer_tray_drafts WHERE customer_id = $1`,
     [id],
   );
   if (result.rowCount === 0) return [];
-  return parseItemsArray(result.rows[0].tray_items);
+  const row = result.rows[0];
+  const lines = parseItemsArray(row.tray_lines);
+  return lines.length > 0 ? lines : parseItemsArray(row.tray_items);
 }
 
 export async function getTrayDraft(req, res) {
@@ -137,17 +142,26 @@ export async function getTrayDraft(req, res) {
       return res.status(401).json({ error: 'Authentication required' });
     }
     const result = await pool.query(
-      `SELECT tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
+      `SELECT tray_lines, tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
       [customerId],
     );
     if (result.rowCount === 0) {
-      return res.json({ success: true, items: [], tray_items: [], updatedAt: null });
+      return res.json({
+        success: true,
+        items: [],
+        tray_lines: [],
+        tray_items: [],
+        updatedAt: null,
+      });
     }
     const row = result.rows[0];
-    const items = parseItemsArray(row.tray_items);
+    const trayLines = parseItemsArray(row.tray_lines);
+    const trayItems = parseItemsArray(row.tray_items);
+    const items = trayLines.length > 0 ? trayLines : trayItems;
     return res.json({
       success: true,
       items,
+      tray_lines: trayLines.length > 0 ? trayLines : items,
       tray_items: items,
       updatedAt: row.updated_at?.toISOString?.() ?? row.updated_at,
     });
@@ -172,15 +186,18 @@ export async function saveTrayDraft(req, res) {
     }
     await upsertTrayDraftItems(customerId, items);
     const saved = await pool.query(
-      `SELECT tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
+      `SELECT tray_lines, tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
       [customerId],
     );
     const row = saved.rows[0];
+    const trayLines = row ? parseItemsArray(row.tray_lines) : [];
     const trayItems = row ? parseItemsArray(row.tray_items) : [];
+    const itemsSaved = trayLines.length > 0 ? trayLines : trayItems;
     res.json({
       success: true,
-      items: trayItems,
-      tray_items: trayItems,
+      items: itemsSaved,
+      tray_lines: trayLines.length > 0 ? trayLines : itemsSaved,
+      tray_items: itemsSaved,
       updatedAt: row?.updated_at?.toISOString?.() ?? row?.updated_at ?? null,
     });
   } catch (error) {

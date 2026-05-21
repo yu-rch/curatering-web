@@ -149,113 +149,127 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
             onPressed: _analyzing || filtered.isEmpty ? null : _analyze,
           ),
         ],
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_error != null) ...[
-              AntdStatusTag(label: _error!, color: AntdTokens.error),
-              const SizedBox(height: 12),
-            ],
-            if (_analysis != null) ...[
-              AntdCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Text(
-                          'AI insights',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                        const Spacer(),
-                        if (_analysis!.averageStars != null)
-                          AntdStatusTag(
-                            label:
-                                'Avg ${_analysis!.averageStars!.toStringAsFixed(1)} stars · ${_analysis!.feedbackCount} reviews',
-                            color: AntdTokens.warning,
-                          ),
-                      ],
-                    ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final tableHeight =
+                constraints.maxHeight.isFinite
+                    ? (constraints.maxHeight * 0.72).clamp(360.0, 720.0)
+                    : 620.0;
+            return SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_error != null) ...[
+                    AntdStatusTag(label: _error!, color: AntdTokens.error),
                     const SizedBox(height: 12),
-                    Text(
-                      _analysis!.summary,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(_analysis!.interpretation),
-                    if (_analysis!.recommendations.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Recommendations',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 6),
-                      ..._analysis!.recommendations.map(
-                        (r) => Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                  ],
+                  if (_analysis != null) ...[
+                    AntdCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                             children: [
-                              const Text('• '),
-                              Expanded(child: Text(r)),
+                              const Text(
+                                'AI insights',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const Spacer(),
+                              if (_analysis!.averageStars != null)
+                                AntdStatusTag(
+                                  label:
+                                      'Avg ${_analysis!.averageStars!.toStringAsFixed(1)} stars · ${_analysis!.feedbackCount} reviews',
+                                  color: AntdTokens.warning,
+                                ),
                             ],
                           ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-            Expanded(
-              child:
-                  _loading
-                      ? const AntdLoadingState()
-                      : filtered.isEmpty
-                      ? const AntdEmptyState(
-                        message: 'No customer feedback yet.',
-                      )
-                      : PagedDataTable(
-                        title: 'Customer Feedback',
-                        enableSearch: false,
-                        fullWidth: true,
-                        columns: const [
-                          DataColumn(label: Text('Order')),
-                          DataColumn(label: Text('Customer')),
-                          DataColumn(label: Text('Email')),
-                          DataColumn(label: Text('Rating')),
-                          DataColumn(label: Text('Remarks')),
-                          DataColumn(label: Text('Submitted')),
+                          const SizedBox(height: 12),
+                          Text(
+                            _analysis!.summary,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(_analysis!.interpretation),
+                          if (_analysis!.recommendations.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Recommendations',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 6),
+                            ..._analysis!.recommendations.map(
+                              (r) => Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('• '),
+                                    Expanded(child: Text(r)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
-                        rows:
-                            filtered.map((f) {
-                              return DataRow(
-                                cells: [
-                                  DataCell(Text(f.orderNo)),
-                                  DataCell(Text(f.customerName)),
-                                  DataCell(Text(f.customerEmail)),
-                                  DataCell(_starsCell(f.stars)),
-                                  DataCell(
-                                    SizedBox(
-                                      width: 280,
-                                      child: Text(
-                                        f.remarks.isEmpty ? '—' : f.remarks,
-                                        maxLines: 3,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ),
-                                  DataCell(Text(_fmt(f.submittedAt))),
-                                ],
-                              );
-                            }).toList(),
                       ),
-            ),
-          ],
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  SizedBox(
+                    height: tableHeight,
+                    child:
+                        _loading
+                            ? const AntdLoadingState()
+                            : filtered.isEmpty
+                            ? const AntdEmptyState(
+                              message: 'No customer feedback yet.',
+                            )
+                            : PagedDataTable(
+                              title: 'Customer Feedback',
+                              enableSearch: false,
+                              fullWidth: true,
+                              maxTableHeight: tableHeight,
+                              columns: const [
+                                DataColumn(label: Text('Order')),
+                                DataColumn(label: Text('Customer')),
+                                DataColumn(label: Text('Email')),
+                                DataColumn(label: Text('Rating')),
+                                DataColumn(label: Text('Remarks')),
+                                DataColumn(label: Text('Submitted')),
+                              ],
+                              rows:
+                                  filtered.map((f) {
+                                    return DataRow(
+                                      cells: [
+                                        DataCell(Text(f.orderNo)),
+                                        DataCell(Text(f.customerName)),
+                                        DataCell(Text(f.customerEmail)),
+                                        DataCell(_starsCell(f.stars)),
+                                        DataCell(
+                                          SizedBox(
+                                            width: 280,
+                                            child: Text(
+                                              f.remarks.isEmpty
+                                                  ? '—'
+                                                  : f.remarks,
+                                              maxLines: 3,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(Text(_fmt(f.submittedAt))),
+                                      ],
+                                    );
+                                  }).toList(),
+                            ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );

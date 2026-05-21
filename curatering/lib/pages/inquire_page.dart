@@ -621,6 +621,54 @@ class _InquirePageState extends State<InquirePage> {
     });
   }
 
+  Set<String> _selectedAllergenLabels() {
+    return _allergensSerialized
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .where((s) => s.isNotEmpty)
+        .toSet();
+  }
+
+  bool _dishConflictsSelectedAllergens(MenuDish dish, Set<String> allergens) {
+    if (allergens.isEmpty || dish.allergens.trim().isEmpty) return false;
+    return dish.allergens
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .where((s) => s.isNotEmpty)
+        .any(allergens.contains);
+  }
+
+  void _pruneMenuSelectionsForCurrentAllergens() {
+    final allowedDishes = _inquiryCateringDishes();
+    final allowedIds = allowedDishes.map((d) => d.id).toSet();
+    final dishNameById = {for (final d in allowedDishes) d.id: d.name};
+    final pruned = <Map<String, dynamic>>[];
+    final selectedIds = <String>{};
+
+    for (final block in _menuSelections) {
+      final ids =
+          (block['dishIds'] as List<dynamic>? ?? const [])
+              .map((id) => id.toString())
+              .where((id) => allowedIds.contains(id))
+              .toList();
+      if (ids.isEmpty) continue;
+
+      selectedIds.addAll(ids);
+      pruned.add({
+        ...Map<String, dynamic>.from(block),
+        'dishIds': ids,
+        'dishNames': ids.map((id) => dishNameById[id] ?? id).toList(),
+      });
+    }
+
+    _menuSelections
+      ..clear()
+      ..addAll(pruned);
+    _selectedDishIds
+      ..clear()
+      ..addAll(selectedIds);
+  }
+
   void _switchMenuPrefTab(int index) {
     setState(() {
       _menuPrefTabIndex = index;
@@ -631,12 +679,14 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   List<MenuDish> _inquiryCateringDishes() {
+    final selectedAllergens = _selectedAllergenLabels();
     return MenuStore.instance.activeDishes
         .where(
           (d) =>
               d.category.toLowerCase().trim() == 'catering' &&
               !d.archived &&
-              d.available,
+              d.available &&
+              !_dishConflictsSelectedAllergens(d, selectedAllergens),
         )
         .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
@@ -1245,7 +1295,13 @@ class _InquirePageState extends State<InquirePage> {
         label: 'Allergens',
         child: AllergenSelectorField(
           initialSerialized: _allergensSerialized,
-          onChanged: (s) => _allergensSerialized = s,
+          onChanged: (s) {
+            setState(() {
+              _allergensSerialized = s;
+              _pruneMenuSelectionsForCurrentAllergens();
+              _fieldErrors.remove('menu');
+            });
+          },
         ),
       ),
       const SizedBox(height: 24),
@@ -2325,7 +2381,9 @@ class _InquirePageState extends State<InquirePage> {
     }
     final notes = _designPromptController.text.trim();
     if (notes.isNotEmpty) {
-      requirements.add('Customer notes: $notes');
+      requirements.add(
+        'Mandatory customer custom instructions: $notes; visibly include these instructions as required design content; if a character, theme, object, or center placement is requested, make it a clear focal visual element using realistic decor, backdrop art, standee, centerpiece, prop, styling, or lighting, and do not omit it',
+      );
     }
     final requirementText =
         requirements.isEmpty
@@ -2336,7 +2394,7 @@ class _InquirePageState extends State<InquirePage> {
       'Objective: Create one photorealistic event venue decoration concept image based on the uploaded venue photo.',
       'Venue lock: Treat the uploaded photo as the fixed architectural base image; preserve the exact room or tent shape, ceiling panels, floor layout, walls, stage or back wall, chandeliers, camera angle, perspective lines, and room proportions; do not redraw, bend, melt, stretch, duplicate, or replace structural elements.',
       'Design requirements: $requirementText.',
-      'Placement rules: Add decorations as realistic physical overlays that fit the existing venue; place floral pieces, drapery, lighting, table styling, backdrops, and props only where they would physically belong; keep walkways, exits, aisles, floor edges, wall seams, stage edges, and ceiling lines clear and believable; keep existing lighting direction and reflections coherent with the venue photo.',
+      'Placement rules: Custom instructions have highest priority after venue preservation; add decorations as realistic physical overlays that fit the existing venue; place floral pieces, drapery, lighting, table styling, backdrops, characters, themed props, and focal elements only where they would physically belong; if the customer says center, place the requested visual element near the center of the event setup; keep walkways, exits, aisles, floor edges, wall seams, stage edges, and ceiling lines clear and believable; keep existing lighting direction and reflections coherent with the venue photo.',
       'Output quality: Clean high-end interior event photography, realistic materials, accurate shadows, sharp details, no text, no logos, no watermark.',
       'Avoid: Warped architecture, melted surfaces, rippled floors, distorted ceiling panels, duplicated chandeliers, impossible reflections, fisheye distortion, cartoon look, CGI look.',
     ];

@@ -307,6 +307,13 @@ extension _ManageEventsTableExt on _ManageEventsState {
   Future<void> _showEventOrderDetailModal(EventOrderDto dto) async {
     final w = MediaQuery.sizeOf(context).width;
     EventOrderDto full = dto;
+    final role = AuthSession.instance.currentRole;
+    final canPostChanges =
+        _isOngoingStatus(dto.status) &&
+        _isCateringPlusEventOrder(dto) &&
+        (role == Role.manager ||
+            role == Role.supervisor ||
+            role == Role.superAdmin);
     await showAntdModal<void>(
       context: context,
       title: dto.eventTitle.isEmpty ? dto.customerName : dto.eventTitle,
@@ -315,6 +322,13 @@ extension _ManageEventsTableExt on _ManageEventsState {
         future: _loadOrderForDetail(dto),
         builder: (context, snap) {
           full = snap.data ?? dto;
+          final role = AuthSession.instance.currentRole;
+          final canEditSeating =
+              _isOngoingStatus(full.status) &&
+              _isCateringPlusEventOrder(full) &&
+              (role == Role.manager ||
+                  role == Role.supervisor ||
+                  role == Role.superAdmin);
           if (snap.connectionState == ConnectionState.waiting) {
             return const Padding(
               padding: EdgeInsets.all(24),
@@ -333,19 +347,99 @@ extension _ManageEventsTableExt on _ManageEventsState {
                 ),
                 if (_orderHasEventDesign(full))
                   _buildEventDesignDetailSection(full),
+                if (canEditSeating) ...[
+                  const SizedBox(height: 16),
+                  ProcessingSeatingSection(
+                    order: full,
+                    onSaved: _refreshOrders,
+                  ),
+                ],
               ],
             ),
           );
         },
       ),
+      actions: [
+        AntdCancelButton(
+          label: 'Close',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        if (canPostChanges)
+          AntdPrimaryButton(
+            label: 'Post changes to customer',
+            onPressed: () async {
+              await _postOrderChangesToCustomer(full);
+              if (context.mounted) Navigator.of(context).pop();
+            },
+          ),
+        AntdPrimaryButton(
+          label: 'OK',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _postOrderChangesToCustomer(EventOrderDto order) async {
+    try {
+      await EventsApi.instance.postOrderChanges(orderId: order.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Changes posted to customer.'),
+          backgroundColor: Color(0xFF1DB954),
+        ),
+      );
+      await _refreshOrders();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to post changes: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _markOrderForFinalPayment(EventOrderDto order) async {
+    final ok = await showAntdModal<bool>(
+      context: context,
+      title: 'Mark for final payment',
+      maxWidth: 460,
+      body: Text(
+        'Move "${order.eventTitle.isEmpty ? order.customerName : order.eventTitle}" to For Full Payment?',
+      ),
       actions: antdModalActions(
         context: context,
-        cancelLabel: 'Close',
-        okLabel: 'OK',
-        onCancel: () => Navigator.of(context).pop(),
-        onOk: () => Navigator.of(context).pop(),
+        cancelLabel: 'Cancel',
+        okLabel: 'Mark for final payment',
+        onCancel: () => Navigator.of(context).pop(false),
+        onOk: () => Navigator.of(context).pop(true),
       ),
     );
+    if (ok != true) return;
+    try {
+      await EventsApi.instance.acceptOrder(orderId: order.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Order marked for final payment.'),
+          backgroundColor: Color(0xFF1DB954),
+        ),
+      );
+      await _refreshOrders();
+      if (!mounted) return;
+      setState(() => _selectedStatus = EventStatus.forFullPayment);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to mark for final payment: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   double _dishCostForFinalize(EventOrderDto order) {
@@ -1137,6 +1231,13 @@ extension _ManageEventsTableExt on _ManageEventsState {
                 tooltip: 'Checklist',
                 permissionKey: ActionPermissionKeys.manageEventsChecklist,
                 onPressed: () => _showChecklistDialog(dto),
+              ),
+              _eventIconAction(
+                icon: Icons.payments_outlined,
+                tooltip: 'Mark for final payment',
+                permissionKey: ActionPermissionKeys.manageEventsFinalize,
+                onPressed: () => _markOrderForFinalPayment(dto),
+                color: Colors.indigo.shade700,
               ),
             ],
       ),

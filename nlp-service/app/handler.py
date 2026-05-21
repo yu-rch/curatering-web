@@ -238,12 +238,12 @@ def mark_feedback(rows, status):
 def store_analysis(rows, feedbacks, analysis):
     batch_id = str(uuid.uuid4())
     feedback_ids = [str(row["id"]) for row in rows if row.get("id")]
-    original_feedback = "\n".join(feedbacks)
+    message = "\n".join(feedbacks)
 
     supabase.table("feedback_analysis").insert({
         "batch_id": batch_id,
         "feedback_ids": feedback_ids,
-        "original_feedback": original_feedback,
+        "message": message,
         "sentiment": analysis["sentiment"],
         "complaints": analysis["complaints"],
         "praises": analysis["praises"],

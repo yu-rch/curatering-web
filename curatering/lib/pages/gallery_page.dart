@@ -50,6 +50,8 @@ class GalleryPage extends StatefulWidget {
 class _GalleryPageState extends State<GalleryPage> {
   int? _galleryDetailIndex;
   String _gallerySearchQuery = '';
+  String _selectedGalleryCategoryId = 'ALL';
+  String _selectedGalleryTag = 'ALL';
 
   @override
   void initState() {
@@ -109,10 +111,73 @@ class _GalleryPageState extends State<GalleryPage> {
     );
   }
 
+  List<String> _allGalleryTags(Iterable<GalleryCategoryData> categories) {
+    final tags = <String>{};
+    for (final cat in categories) {
+      for (final image in cat.images) {
+        for (final tag in image.tags) {
+          final trimmed = tag.trim();
+          if (trimmed.isNotEmpty) tags.add(trimmed);
+        }
+      }
+    }
+    final sorted =
+        tags.toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return sorted;
+  }
+
+  bool _matchesSelectedCategory(GalleryCategoryData cat) {
+    return _selectedGalleryCategoryId == 'ALL' ||
+        cat.id == _selectedGalleryCategoryId;
+  }
+
+  bool _matchesSelectedTag(GalleryCategoryData cat) {
+    if (_selectedGalleryTag == 'ALL') return true;
+    final selected = _selectedGalleryTag.toLowerCase();
+    return cat.images.any(
+      (image) => image.tags.any((tag) => tag.toLowerCase() == selected),
+    );
+  }
+
+  List<GalleryImageData> _filteredGalleryImages(GalleryCategoryData cat) {
+    final bySearch = filterGalleryImages(cat, _gallerySearchQuery);
+    if (_selectedGalleryTag == 'ALL') return bySearch;
+    final selected = _selectedGalleryTag.toLowerCase();
+    return bySearch
+        .where(
+          (image) => image.tags.any((tag) => tag.toLowerCase() == selected),
+        )
+        .toList();
+  }
+
+  Widget _buildFilterChips({
+    required String title,
+    required List<Widget> chips,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 42,
+          child: ListView(scrollDirection: Axis.horizontal, children: chips),
+        ),
+      ],
+    );
+  }
+
   Widget _buildGallery(WebsiteContentStore w) {
+    final allTags = _allGalleryTags(w.galleryCategories);
     final categories =
         w.galleryCategories
             .where((c) => galleryCategoryMatchesSearch(c, _gallerySearchQuery))
+            .where(_matchesSelectedCategory)
+            .where(_matchesSelectedTag)
             .toList();
 
     return Column(
@@ -131,97 +196,171 @@ class _GalleryPageState extends State<GalleryPage> {
         const SizedBox(height: 16),
         TextField(
           onChanged:
-              (v) => setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
+              (v) =>
+                  setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
           decoration: InputDecoration(
             hintText: 'SEARCH BY TAG OR CATEGORY',
             prefixIcon: const Icon(Icons.search),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           ),
         ),
-        const SizedBox(height: 32),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount:
-                isMobile(context)
-                    ? 1
-                    : isTablet(context)
-                    ? 2
-                    : 3,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            childAspectRatio: 1.2,
-          ),
-          itemCount: categories.length,
-          itemBuilder: (context, index) {
-            final cat = categories[index];
-            final realIndex = w.galleryCategories.indexOf(cat);
-            final visibleCount = filterGalleryImages(cat, _gallerySearchQuery).length;
-
-            return GestureDetector(
-              onTap: () => setState(() => _galleryDetailIndex = realIndex),
-              child: Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+        const SizedBox(height: 16),
+        _buildFilterChips(
+          title: 'CATEGORIES',
+          chips: [
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilterChip(
+                label: const Text('ALL'),
+                selected: _selectedGalleryCategoryId == 'ALL',
+                onSelected:
+                    (_) => setState(() => _selectedGalleryCategoryId = 'ALL'),
+              ),
+            ),
+            ...w.galleryCategories.map(
+              (cat) => Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  label: Text(cat.label),
+                  selected: _selectedGalleryCategoryId == cat.id,
+                  onSelected:
+                      (_) => setState(() {
+                        _selectedGalleryCategoryId = cat.id;
+                        _galleryDetailIndex = null;
+                      }),
                 ),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (cat.images.isNotEmpty)
-                      Image.memory(
-                        base64Decode(cat.images.first.imageBase64),
-                        fit: BoxFit.cover,
-                      )
-                    else
-                      Container(color: Colors.grey.shade300),
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [
-                            Colors.black.withValues(alpha: 0.7),
-                            Colors.transparent,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _buildFilterChips(
+          title: 'TAGS',
+          chips: [
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilterChip(
+                label: const Text('ALL'),
+                selected: _selectedGalleryTag == 'ALL',
+                onSelected: (_) => setState(() => _selectedGalleryTag = 'ALL'),
+              ),
+            ),
+            ...allTags.map(
+              (tag) => Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  label: Text(tag),
+                  selected:
+                      _selectedGalleryTag.toLowerCase() == tag.toLowerCase(),
+                  onSelected: (_) => setState(() => _selectedGalleryTag = tag),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 32),
+        if (categories.isEmpty)
+          Center(
+            child: Column(
+              children: [
+                const SizedBox(height: 80),
+                Icon(
+                  Icons.image_search_outlined,
+                  size: 64,
+                  color: Colors.grey.shade400,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No gallery categories match these filters',
+                  style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          )
+        else
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount:
+                  isMobile(context)
+                      ? 1
+                      : isTablet(context)
+                      ? 2
+                      : 3,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              childAspectRatio: 1.2,
+            ),
+            itemCount: categories.length,
+            itemBuilder: (context, index) {
+              final cat = categories[index];
+              final realIndex = w.galleryCategories.indexOf(cat);
+              final visibleCount = _filteredGalleryImages(cat).length;
+
+              return GestureDetector(
+                onTap: () => setState(() => _galleryDetailIndex = realIndex),
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (cat.images.isNotEmpty)
+                        Image.memory(
+                          base64Decode(cat.images.first.imageBase64),
+                          fit: BoxFit.cover,
+                        )
+                      else
+                        Container(color: Colors.grey.shade300),
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          gradient: LinearGradient(
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.7),
+                              Colors.transparent,
+                            ],
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 16,
+                        left: 16,
+                        right: 16,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              cat.label,
+                              style: GoogleFonts.getFont(
+                                _primaryFont,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '$visibleCount images',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                    ),
-                    Positioned(
-                      bottom: 16,
-                      left: 16,
-                      right: 16,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            cat.label,
-                            style: GoogleFonts.getFont(
-                              _primaryFont,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '$visibleCount images',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
-        ),
+              );
+            },
+          ),
         const SizedBox(height: 48),
         const PexelsAttributionBadge(photographer: 'Curatering Gallery'),
       ],
@@ -229,7 +368,8 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   Widget _buildGalleryDetail(WebsiteContentStore w, GalleryCategoryData cat) {
-    final filteredImages = filterGalleryImages(cat, _gallerySearchQuery);
+    final filteredImages = _filteredGalleryImages(cat);
+    final allTags = _allGalleryTags([cat]);
 
     return Column(
       children: [
@@ -263,20 +403,54 @@ class _GalleryPageState extends State<GalleryPage> {
         const SizedBox(height: 24),
         TextField(
           onChanged:
-              (v) => setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
+              (v) =>
+                  setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
           decoration: InputDecoration(
             hintText: 'SEARCH BY TAG',
             prefixIcon: const Icon(Icons.search),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           ),
         ),
+        if (allTags.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _buildFilterChips(
+            title: 'TAGS',
+            chips: [
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  label: const Text('ALL'),
+                  selected: _selectedGalleryTag == 'ALL',
+                  onSelected:
+                      (_) => setState(() => _selectedGalleryTag = 'ALL'),
+                ),
+              ),
+              ...allTags.map(
+                (tag) => Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FilterChip(
+                    label: Text(tag),
+                    selected:
+                        _selectedGalleryTag.toLowerCase() == tag.toLowerCase(),
+                    onSelected:
+                        (_) => setState(() => _selectedGalleryTag = tag),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 32),
         if (filteredImages.isEmpty)
           Center(
             child: Column(
               children: [
                 const SizedBox(height: 100),
-                Icon(Icons.image_not_supported, size: 64, color: Colors.grey.shade400),
+                Icon(
+                  Icons.image_not_supported,
+                  size: 64,
+                  color: Colors.grey.shade400,
+                ),
                 const SizedBox(height: 16),
                 Text(
                   'No images found',
@@ -326,15 +500,21 @@ class _GalleryPageState extends State<GalleryPage> {
                         child: Wrap(
                           spacing: 4,
                           runSpacing: 4,
-                          children: imgData.tags
-                              .map(
-                                (t) => Chip(
-                                  label: Text(t, style: const TextStyle(fontSize: 10)),
-                                  visualDensity: VisualDensity.compact,
-                                  backgroundColor: Colors.white.withValues(alpha: 0.9),
-                                ),
-                              )
-                              .toList(),
+                          children:
+                              imgData.tags
+                                  .map(
+                                    (t) => Chip(
+                                      label: Text(
+                                        t,
+                                        style: const TextStyle(fontSize: 10),
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                      backgroundColor: Colors.white.withValues(
+                                        alpha: 0.9,
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
                         ),
                       ),
                     if (widget.contentEditable)

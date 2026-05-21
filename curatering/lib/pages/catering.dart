@@ -3319,7 +3319,9 @@ class _ManageEventsState extends State<ManageEvents>
 
   Widget _buildProcessingSeatingSection() {
     final role = AuthSession.instance.currentRole;
-    if (role != Role.manager && role != Role.superAdmin) {
+    if (role != Role.manager &&
+        role != Role.supervisor &&
+        role != Role.superAdmin) {
       return const SizedBox.shrink();
     }
     final o = _selectedProcessingOrderDto!;

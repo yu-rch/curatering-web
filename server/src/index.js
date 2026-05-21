@@ -2302,7 +2302,7 @@ function sendHttpError(res, error, fallbackMessage) {
 function signToken({ userId, role }) {
   return jwt.sign({ role }, JWT_SECRET, {
     subject: userId,
-    expiresIn: "30m",
+    expiresIn: process.env.STAFF_JWT_MAX_AGE || "12h",
   });
 }
 // OTP generation
@@ -6499,7 +6499,12 @@ app.post(
   "/api/events/orders/:orderId/accept",
   authRequired,
   (req, res, next) =>
-    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin"])),
+    requireRoles(
+      req,
+      res,
+      next,
+      new Set(["manager", "supervisor", "admin", "super_admin"]),
+    ),
   async (req, res) => {
     try {
       const { orderId } = req.params;
@@ -6511,7 +6516,7 @@ app.post(
            updated_by = $1,
            updated_at = now()
          WHERE id = $2
-           AND status IN ('on_going', 'for_processing')
+           AND status IN ('on_going', 'ongoing', 'for_ongoing', 'for_processing')
          RETURNING id;`,
         [req.user.id, orderId],
       );
@@ -6539,7 +6544,7 @@ app.post(
           subject: "Curatering: Order status updated",
           text:
             `Hello ${eventEmail.rows[0].customer_name || "Customer"},\n\n` +
-            `Your event order (${orderId}) status is now for post analysis.\n\n` +
+            `Your event order (${orderId}) is now marked for final payment.\n\n` +
             `- Curatering Team`,
         });
       }
@@ -6548,6 +6553,64 @@ app.post(
     } catch (e) {
       console.error(e);
       return res.status(500).json({ message: "Failed to accept order" });
+    }
+  },
+);
+
+app.post(
+  "/api/events/orders/:orderId/post-changes",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(
+      req,
+      res,
+      next,
+      new Set(["manager", "supervisor", "admin", "super_admin"]),
+    ),
+  async (req, res) => {
+    try {
+      const { orderId } = req.params;
+      const result = await pool.query(
+        `SELECT id, email_address, customer_name, event_title, status
+         FROM event_orders
+         WHERE id = $1
+           AND status IN ('on_going', 'ongoing', 'for_ongoing', 'for_processing', 'for_full_payment')
+         LIMIT 1;`,
+        [orderId],
+      );
+      if (result.rowCount === 0) {
+        return res
+          .status(404)
+          .json({ message: "Event order not found or not publishable" });
+      }
+
+      const order = result.rows[0];
+      const customerEmail = String(order.email_address || "").trim();
+      if (!customerEmail) {
+        return res.status(400).json({ message: "Customer email is missing" });
+      }
+
+      await logAction({
+        userId: req.user.id,
+        feature: "Events",
+        action: "posted order changes to customer",
+        other: { orderId },
+      });
+
+      await sendCustomerNotificationEmail({
+        to: customerEmail,
+        subject: "Curatering: Your event order has been updated",
+        text:
+          `Hello ${order.customer_name || "Customer"},\n\n` +
+          `Your event order (${order.event_title || orderId}) has updated details from our team. ` +
+          `Please review your order in Curatering, including the seating layout if one is available.\n\n` +
+          `- Curatering Team`,
+      });
+
+      return res.json({ ok: true });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ message: "Failed to post order changes" });
     }
   },
 );
@@ -7288,7 +7351,12 @@ async function registerRoutesAfterDbInit() {
       '/api/events/orders/:orderId/seating',
       authRequired,
       (req, res, next) =>
-        requireRoles(req, res, next, new Set(['manager', 'super_admin', 'admin'])),
+        requireRoles(
+          req,
+          res,
+          next,
+          new Set(['manager', 'supervisor', 'super_admin', 'admin']),
+        ),
       async (req, res) => {
         try {
           const { orderId } = req.params;
@@ -7301,14 +7369,14 @@ async function registerRoutesAfterDbInit() {
             `UPDATE event_orders
              SET seating_plan = $1::jsonb, updated_by = $2, updated_at = now()
              WHERE id = $3::uuid
-               AND status = 'for_processing'
+               AND status IN ('for_processing', 'on_going', 'ongoing', 'for_ongoing')
              RETURNING id`,
             [JSON.stringify(n.plan), req.user.id, orderId],
           );
           if (result.rowCount === 0) {
             return res.status(404).json({
               message:
-                'Event order not found, not in for_processing, or order is not in event_orders.',
+                'Event order not found, not ongoing, or order is not in event_orders.',
             });
           }
           await logAction({
