@@ -1,9 +1,26 @@
 import { pool, ensureCustomerTrayDraftsSchema } from "./db.js";
 import { requireCustomerId } from "./customer_auth.js";
+import { normalizeTrayItems } from "./tray_drafts_api.js";
+
+function itemsArrayFromPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return null;
+  for (const key of [
+    "tray_lines",
+    "trayLines",
+    "tray_items",
+    "trayItems",
+    "items",
+    "cart",
+  ]) {
+    const nested = itemsArrayFromPayload(payload[key]);
+    if (nested) return nested;
+  }
+  return null;
+}
 
 function cartItemsFromBody(body) {
-  const raw = body?.cart ?? body?.items ?? body?.tray_items ?? [];
-  return Array.isArray(raw) ? raw : [];
+  return itemsArrayFromPayload(body) ?? [];
 }
 
 function parseTrayItems(raw) {
@@ -17,6 +34,10 @@ function parseTrayItems(raw) {
     }
   }
   return [];
+}
+
+function normalizedTrayItems(raw) {
+  return normalizeTrayItems(parseTrayItems(raw));
 }
 
 async function customerEmail(customerId) {
@@ -35,7 +56,7 @@ class CartAPI {
 
       await ensureCustomerTrayDraftsSchema();
       const result = await pool.query(
-        `SELECT tray_items, user_email, updated_at
+        `SELECT tray_lines, tray_items, user_email, updated_at
          FROM customer_tray_drafts
          WHERE customer_id = $1
          LIMIT 1`,
@@ -43,9 +64,13 @@ class CartAPI {
       );
 
       const row = result.rows[0];
+      const trayLines = normalizedTrayItems(row?.tray_lines);
+      const trayItems = normalizedTrayItems(row?.tray_items);
+      const items = trayItems.length > 0 ? trayItems : trayLines;
       const cart = {
-        items: parseTrayItems(row?.tray_items),
-        tray_items: parseTrayItems(row?.tray_items),
+        items,
+        tray_lines: items,
+        tray_items: items,
         user_email: row?.user_email ?? null,
         last_sync: row?.updated_at ?? null,
       };
@@ -64,17 +89,18 @@ class CartAPI {
       if (!customerId) return;
 
       const { timestamp } = req.body || {};
-      const cart = cartItemsFromBody(req.body);
+      const cart = normalizeTrayItems(cartItemsFromBody(req.body));
       const email = await customerEmail(customerId);
 
       client = await pool.connect();
       await client.query("BEGIN");
       await ensureCustomerTrayDraftsSchema();
       await client.query(
-        `INSERT INTO customer_tray_drafts (customer_id, user_email, tray_items, updated_at)
-         VALUES ($1, $2, $3::jsonb, now())
+        `INSERT INTO customer_tray_drafts (customer_id, user_email, tray_lines, tray_items, updated_at)
+         VALUES ($1, $2, $3::jsonb, $3::jsonb, now())
          ON CONFLICT (customer_id) DO UPDATE SET
            user_email = EXCLUDED.user_email,
+           tray_lines = EXCLUDED.tray_lines,
            tray_items = EXCLUDED.tray_items,
            updated_at = now()`,
         [customerId, email, JSON.stringify(cart)],
@@ -87,6 +113,7 @@ class CartAPI {
         customer_id: customerId,
         user_email: email,
         items: cart,
+        tray_lines: cart,
         tray_items: cart,
         timestamp: timestamp ?? null,
       });
@@ -109,7 +136,8 @@ class CartAPI {
       await ensureCustomerTrayDraftsSchema();
       await pool.query(
         `UPDATE customer_tray_drafts
-         SET tray_items = '[]'::jsonb,
+         SET tray_lines = '[]'::jsonb,
+             tray_items = '[]'::jsonb,
              updated_at = now()
          WHERE customer_id = $1`,
         [customerId],

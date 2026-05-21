@@ -1222,87 +1222,130 @@ class _InquirePageState extends State<InquirePage> {
         ),
       ],
       const SizedBox(height: 32),
-      _inquirySectionTitle('Menu preferences'),
-      const SizedBox(height: 8),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          ChoiceChip(
-            label: const Text('I want to make my own menu'),
-            selected: _menuPrefTabIndex == 0,
-            selectedColor: AntdTokens.brandPrimary,
-            labelStyle: TextStyle(
-              color:
-                  _menuPrefTabIndex == 0
-                      ? AntdTokens.brandOnPrimary
-                      : Colors.black87,
-              fontWeight:
-                  _menuPrefTabIndex == 0 ? FontWeight.w700 : FontWeight.normal,
-            ),
-            onSelected: (_) => _switchMenuPrefTab(0),
-          ),
-          ChoiceChip(
-            label: const Text('Choose from Set Menu'),
-            selected: _menuPrefTabIndex == 1,
-            selectedColor: AntdTokens.brandPrimary,
-            labelStyle: TextStyle(
-              color:
-                  _menuPrefTabIndex == 1
-                      ? AntdTokens.brandOnPrimary
-                      : Colors.black87,
-              fontWeight:
-                  _menuPrefTabIndex == 1 ? FontWeight.w700 : FontWeight.normal,
-            ),
-            onSelected: (_) => _switchMenuPrefTab(1),
-          ),
-        ],
-      ),
-      const SizedBox(height: 12),
-      ListenableBuilder(
-        listenable: Listenable.merge([
-          MenuStore.instance,
-          SetMenuStore.instance,
-        ]),
-        builder: (context, _) {
-          final loading =
-              MenuStore.instance.isLoading || SetMenuStore.instance.isLoading;
-          if (loading &&
-              _inquiryCateringDishes().isEmpty &&
-              SetMenuStore.instance.activeSetMenus.isEmpty) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: CircularProgressIndicator()),
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final useTwoColumns = constraints.maxWidth >= 820;
+          final menuSelection = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _inquirySectionTitle('Menu preferences'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('I want to make my own menu'),
+                    selected: _menuPrefTabIndex == 0,
+                    selectedColor: AntdTokens.brandPrimary,
+                    labelStyle: TextStyle(
+                      color:
+                          _menuPrefTabIndex == 0
+                              ? AntdTokens.brandOnPrimary
+                              : Colors.black87,
+                      fontWeight:
+                          _menuPrefTabIndex == 0
+                              ? FontWeight.w700
+                              : FontWeight.normal,
+                    ),
+                    onSelected: (_) => _switchMenuPrefTab(0),
+                  ),
+                  ChoiceChip(
+                    label: const Text('Choose from Set Menu'),
+                    selected: _menuPrefTabIndex == 1,
+                    selectedColor: AntdTokens.brandPrimary,
+                    labelStyle: TextStyle(
+                      color:
+                          _menuPrefTabIndex == 1
+                              ? AntdTokens.brandOnPrimary
+                              : Colors.black87,
+                      fontWeight:
+                          _menuPrefTabIndex == 1
+                              ? FontWeight.w700
+                              : FontWeight.normal,
+                    ),
+                    onSelected: (_) => _switchMenuPrefTab(1),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ListenableBuilder(
+                listenable: Listenable.merge([
+                  MenuStore.instance,
+                  SetMenuStore.instance,
+                ]),
+                builder: (context, _) {
+                  final loading =
+                      MenuStore.instance.isLoading ||
+                      SetMenuStore.instance.isLoading;
+                  if (loading &&
+                      _inquiryCateringDishes().isEmpty &&
+                      SetMenuStore.instance.activeSetMenus.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  return InquiryMenuPicker(
+                    key: ValueKey<int>(_menuPrefTabIndex),
+                    embedded: true,
+                    tabIndex: _menuPrefTabIndex,
+                    cateringDishes: _inquiryCateringDishes(),
+                    setMenus: SetMenuStore.instance.activeSetMenus,
+                    initialSelections: List<Map<String, dynamic>>.from(
+                      _menuSelections,
+                    ),
+                    mode: InquiryMenuPickerMode.inquiryExclusive,
+                    minCustomDishes: 4,
+                    maxCustomDishes: 8,
+                    externalError: _fieldErrors['menu'],
+                    onSelectionChanged: _onInlineMenuSelectionChanged,
+                  );
+                },
+              ),
+            ],
+          );
+          final allergenSelection = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _inquirySectionTitle('Allergens'),
+              const SizedBox(height: 8),
+              AntdFieldShell(
+                label: 'Food allergens to avoid',
+                child: AllergenSelectorField(
+                  initialSerialized: _allergensSerialized,
+                  onChanged: (s) {
+                    setState(() {
+                      _allergensSerialized = s;
+                      _pruneMenuSelectionsForCurrentAllergens();
+                      _fieldErrors.remove('menu');
+                    });
+                  },
+                ),
+              ),
+            ],
+          );
+
+          if (!useTwoColumns) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                menuSelection,
+                const SizedBox(height: 16),
+                allergenSelection,
+              ],
             );
           }
-          return InquiryMenuPicker(
-            key: ValueKey<int>(_menuPrefTabIndex),
-            embedded: true,
-            tabIndex: _menuPrefTabIndex,
-            cateringDishes: _inquiryCateringDishes(),
-            setMenus: SetMenuStore.instance.activeSetMenus,
-            initialSelections: List<Map<String, dynamic>>.from(_menuSelections),
-            mode: InquiryMenuPickerMode.inquiryExclusive,
-            minCustomDishes: 4,
-            maxCustomDishes: 8,
-            externalError: _fieldErrors['menu'],
-            onSelectionChanged: _onInlineMenuSelectionChanged,
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 3, child: menuSelection),
+              const SizedBox(width: 24),
+              Expanded(flex: 2, child: allergenSelection),
+            ],
           );
         },
-      ),
-      const SizedBox(height: 16),
-      AntdFieldShell(
-        label: 'Allergens',
-        child: AllergenSelectorField(
-          initialSerialized: _allergensSerialized,
-          onChanged: (s) {
-            setState(() {
-              _allergensSerialized = s;
-              _pruneMenuSelectionsForCurrentAllergens();
-              _fieldErrors.remove('menu');
-            });
-          },
-        ),
       ),
       const SizedBox(height: 24),
       ..._buildPhase0Footer(),

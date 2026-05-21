@@ -488,7 +488,7 @@ export function buildRestaurantOrderSelectSql(cols) {
   return parts.join(',\n  ');
 }
 
-/** Line items: prefer [tray_items] column over legacy [items]. */
+/** Line items: prefer mobile/web tray_items over tray_lines and legacy [items]. */
 export function parseRestaurantOrderTrayItems(orderOrRaw) {
   if (orderOrRaw == null) return [];
   if (Array.isArray(orderOrRaw)) return orderOrRaw;
@@ -503,7 +503,12 @@ export function parseRestaurantOrderTrayItems(orderOrRaw) {
     }
   }
   if (typeof orderOrRaw === 'object') {
-    const raw = orderOrRaw.tray_items ?? orderOrRaw.items;
+    const raw =
+      orderOrRaw.tray_items ??
+      orderOrRaw.trayItems ??
+      orderOrRaw.tray_lines ??
+      orderOrRaw.trayLines ??
+      orderOrRaw.items;
     return parseRestaurantOrderTrayItems(raw);
   }
   return [];

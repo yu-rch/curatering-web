@@ -982,6 +982,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
             Wrap(
               spacing: 12,
               runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 SizedBox(
                   width: 220,
@@ -1058,16 +1059,22 @@ extension _ManageEventsTableExt on _ManageEventsState {
                     _inquiryEventTypeFilter.isNotEmpty ||
                     _inquiryDateFilter.isNotEmpty ||
                     query.isNotEmpty)
-                  TextButton.icon(
-                    onPressed:
-                        () => _mutateTableState(() {
-                          _inquiryServiceTypeFilter = '';
-                          _inquiryEventTypeFilter = '';
-                          _inquiryDateFilter = '';
-                          _eventSearchController.clear();
-                        }),
-                    icon: const Icon(Icons.filter_alt_off),
-                    label: const Text('Clear filters'),
+                  SizedBox(
+                    height: 48,
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: TextButton.icon(
+                        onPressed:
+                            () => _mutateTableState(() {
+                              _inquiryServiceTypeFilter = '';
+                              _inquiryEventTypeFilter = '';
+                              _inquiryDateFilter = '';
+                              _eventSearchController.clear();
+                            }),
+                        icon: const Icon(Icons.filter_alt_off),
+                        label: const Text('Clear filters'),
+                      ),
+                    ),
                   ),
               ],
             ),

@@ -22,7 +22,17 @@ export function normalizeTrayLineItem(raw) {
   const dish = asTrayObject(m.dish ?? m.menu_item ?? m.menuItem);
 
   const dishId = String(
-    m.dish_id ?? m.dishId ?? m.menu_dish_id ?? dish.id ?? m.id ?? '',
+    m.dish_id ??
+      m.dishId ??
+      m.menu_dish_id ??
+      m.menuDishId ??
+      m.menu_id ??
+      m.menuId ??
+      m.item_id ??
+      m.itemId ??
+      dish.id ??
+      m.id ??
+      '',
   ).trim();
   if (!dishId) return null;
 
@@ -102,6 +112,8 @@ function itemsFromRequestBody(body) {
   if (Array.isArray(b.tray_items)) return b.tray_items;
   if (Array.isArray(b.trayItems)) return b.trayItems;
   if (Array.isArray(b.items)) return b.items;
+  if (Array.isArray(b.cart)) return b.cart;
+  if (b.cart && typeof b.cart === 'object') return itemsFromRequestBody(b.cart);
   return null;
 }
 
@@ -131,7 +143,8 @@ export async function getTrayDraftItemsByCustomerId(customerId) {
   if (result.rowCount === 0) return [];
   const row = result.rows[0];
   const lines = parseItemsArray(row.tray_lines);
-  return lines.length > 0 ? lines : parseItemsArray(row.tray_items);
+  const items = parseItemsArray(row.tray_items);
+  return items.length > 0 ? items : lines;
 }
 
 export async function getTrayDraft(req, res) {
@@ -157,11 +170,11 @@ export async function getTrayDraft(req, res) {
     const row = result.rows[0];
     const trayLines = parseItemsArray(row.tray_lines);
     const trayItems = parseItemsArray(row.tray_items);
-    const items = trayLines.length > 0 ? trayLines : trayItems;
+    const items = trayItems.length > 0 ? trayItems : trayLines;
     return res.json({
       success: true,
       items,
-      tray_lines: trayLines.length > 0 ? trayLines : items,
+      tray_lines: items,
       tray_items: items,
       updatedAt: row.updated_at?.toISOString?.() ?? row.updated_at,
     });

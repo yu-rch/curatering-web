@@ -778,15 +778,18 @@ class _SmoothPageTransitionsBuilder extends PageTransitionsBuilder {
     Widget child,
   ) {
     if (route.isFirst) return child;
-    final curved = animation.drive(CurveTween(curve: Curves.easeOutCubic));
+    final curved = animation.drive(CurveTween(curve: Curves.easeOutQuart));
     return FadeTransition(
       opacity: Tween<double>(begin: 0.0, end: 1.0).animate(curved),
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0.025, 0),
-          end: Offset.zero,
-        ).animate(curved),
-        child: child,
+      child: ScaleTransition(
+        scale: Tween<double>(begin: 0.995, end: 1.0).animate(curved),
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0.012, 0.008),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
       ),
     );
   }

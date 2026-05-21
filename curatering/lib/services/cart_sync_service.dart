@@ -15,35 +15,35 @@ class CartSyncService {
   static const String _cartKey = 'cart';
   static const String _lastSyncKey = 'cart_last_sync';
 
-  /// Extract line items from GET /api/tray-draft (prefers non-empty `tray_lines`,
-  /// then `tray_items` for web/mobile compatibility).
+  /// Extract line items from GET /api/tray-draft (prefers non-empty
+  /// `tray_items`, then `tray_lines` for web/mobile compatibility).
   static List<dynamic> _itemsListFromTrayDraftResponse(
     Map<String, dynamic> payload,
   ) {
-    final linesRaw = payload['tray_lines'] ?? payload['trayLines'];
-    final fromLines = _itemsListFromTrayPayload(linesRaw);
-    if (fromLines.isNotEmpty) return fromLines;
-
     final itemsRaw = payload['tray_items'] ?? payload['trayItems'];
     final fromItems = _itemsListFromTrayPayload(itemsRaw);
     if (fromItems.isNotEmpty) return fromItems;
 
+    final linesRaw = payload['tray_lines'] ?? payload['trayLines'];
+    final fromLines = _itemsListFromTrayPayload(linesRaw);
+    if (fromLines.isNotEmpty) return fromLines;
+
     final items = _itemsListFromTrayPayload(payload['items']);
     if (items.isNotEmpty) return items;
 
-    if (linesRaw != null) {
-      return fromLines;
+    if (itemsRaw != null) {
+      return fromItems;
     }
-    return fromItems;
+    return fromLines;
   }
 
   static List<dynamic> _itemsListFromTrayPayload(dynamic payload) {
     if (payload is Map) {
       final nested =
-          payload['tray_lines'] ??
-          payload['trayLines'] ??
           payload['tray_items'] ??
           payload['trayItems'] ??
+          payload['tray_lines'] ??
+          payload['trayLines'] ??
           payload['items'];
       return _itemsListFromTrayPayload(nested);
     }

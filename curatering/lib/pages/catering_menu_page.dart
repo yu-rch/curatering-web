@@ -125,7 +125,7 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
         value: validValue,
         isExpanded: true,
         decoration: InputDecoration(
-          labelText: 'Set menu filter',
+          labelText: 'Filter by set menu',
           filled: true,
           fillColor: Colors.white,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
@@ -135,7 +135,7 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
           ),
         ),
         items: [
-          const DropdownMenuItem(value: '', child: Text('All catering dishes')),
+          const DropdownMenuItem(value: '', child: Text('All set menus')),
           for (final set in setMenus)
             DropdownMenuItem(value: set.id, child: Text(set.name)),
         ],

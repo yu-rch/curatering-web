@@ -42,7 +42,7 @@ Return ONLY valid JSON. No explanations. No markdown. No extra text.
 Schema:
 
 {{
-  "sentiment": "positive | negative | mixed",
+  "sentiment": "positive | negative | neutral | mixed",
   "complaints": ["string"],
   "praises": ["string"],
   "insights": ["string"]
@@ -50,6 +50,7 @@ Schema:
 
 Rules:
 - Output MUST be valid JSON
+- Output MUST be one JSON object, not an array
 - Use double quotes only
 - No trailing commas
 - complaints, praises, and insights must each be arrays
@@ -134,16 +135,28 @@ Provide likely causes, what to check, and recommended actions.
 """.strip()
 
 
+def _json_from_substring(text, opener, closer):
+    start = text.find(opener)
+    end = text.rfind(closer)
+    if start < 0 or end <= start:
+        return None
+    try:
+        return json.loads(text[start:end + 1])
+    except Exception:
+        return None
+
+
 def extract_json(text):
+    text = str(text or "").strip()
     try:
         return json.loads(text)
     except Exception:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except Exception:
-                return None
+        parsed = _json_from_substring(text, "{", "}")
+        if parsed is not None:
+            return parsed
+        parsed = _json_from_substring(text, "[", "]")
+        if parsed is not None:
+            return parsed
     return None
 
 
@@ -199,11 +212,11 @@ def generate_json(prompt):
     return raw_output, extract_json(raw_output)
 
 
-def normalize_analysis(parsed):
+def _normalize_analysis_item(parsed):
     if not isinstance(parsed, dict):
         return None
     sentiment = str(parsed.get("sentiment") or "mixed").strip().lower()
-    if sentiment not in ("positive", "negative", "mixed"):
+    if sentiment not in ("positive", "negative", "neutral", "mixed"):
         sentiment = "mixed"
     return {
         "sentiment": sentiment,
@@ -211,6 +224,43 @@ def normalize_analysis(parsed):
         "praises": _string_list(parsed.get("praises")),
         "insights": _string_list(parsed.get("insights")),
     }
+
+
+def _overall_sentiment(items):
+    counts = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0}
+    for item in items:
+        counts[item["sentiment"]] = counts.get(item["sentiment"], 0) + 1
+    if counts["negative"] > counts["positive"] and counts["negative"] >= counts["neutral"]:
+        return "negative"
+    if counts["positive"] > counts["negative"] and counts["positive"] >= counts["neutral"]:
+        return "positive"
+    if counts["neutral"] and counts["neutral"] == len(items):
+        return "neutral"
+    return "mixed"
+
+
+def normalize_analysis(parsed):
+    if isinstance(parsed, list):
+        items = [_normalize_analysis_item(item) for item in parsed]
+        items = [item for item in items if item]
+        if not items:
+            return None
+        return {
+            "sentiment": _overall_sentiment(items),
+            "complaints": _string_list(
+                [entry for item in items for entry in item["complaints"]],
+                40,
+            ),
+            "praises": _string_list(
+                [entry for item in items for entry in item["praises"]],
+                40,
+            ),
+            "insights": _string_list(
+                [entry for item in items for entry in item["insights"]],
+                40,
+            ),
+        }
+    return _normalize_analysis_item(parsed)
 
 
 def fetch_pending_feedback(limit):
