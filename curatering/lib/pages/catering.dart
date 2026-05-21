@@ -294,6 +294,35 @@ enum PaymentService {
         return 'Cheque';
     }
   }
+
+  String get apiValue {
+    switch (this) {
+      case PaymentService.cash:
+        return 'cash';
+      case PaymentService.bankTransfer:
+        return 'bank_transfer';
+      case PaymentService.ccdebitCard:
+        return 'debit_credit_card';
+      case PaymentService.ewallet:
+        return 'e_wallet';
+      case PaymentService.cheque:
+        return 'cheque';
+    }
+  }
+
+  int? get referenceDigitLength {
+    switch (this) {
+      case PaymentService.bankTransfer:
+        return 18;
+      case PaymentService.ccdebitCard:
+        return 23;
+      case PaymentService.ewallet:
+        return 13;
+      case PaymentService.cash:
+      case PaymentService.cheque:
+        return null;
+    }
+  }
 }
 
 class MenuItem {
@@ -3401,6 +3430,7 @@ class _ManageEventsState extends State<ManageEvents>
         paymentType: paymentType,
         status: 'paid',
         referenceNumber: referenceNumber,
+        paymentMethod: paymentService.apiValue,
         amount: amount,
       );
 
@@ -3693,6 +3723,7 @@ class _ManageEventsState extends State<ManageEvents>
                             if (value != null) {
                               dialogSetState(() {
                                 selectedPaymentService = value;
+                                referenceController.clear();
                               });
                             }
                           },
@@ -3705,10 +3736,34 @@ class _ManageEventsState extends State<ManageEvents>
                         const SizedBox(height: 8),
                         TextField(
                           controller: referenceController,
-                          decoration: const InputDecoration(
-                            hintText: 'Enter reference number',
+                          keyboardType:
+                              selectedPaymentService.referenceDigitLength ==
+                                      null
+                                  ? TextInputType.text
+                                  : TextInputType.number,
+                          inputFormatters: [
+                            if (selectedPaymentService.referenceDigitLength !=
+                                null) ...[
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(
+                                selectedPaymentService.referenceDigitLength!,
+                              ),
+                            ],
+                          ],
+                          decoration: InputDecoration(
+                            hintText:
+                                selectedPaymentService.referenceDigitLength ==
+                                        null
+                                    ? 'Enter reference number'
+                                    : '${selectedPaymentService.referenceDigitLength}-digit reference number',
+                            helperText:
+                                selectedPaymentService.referenceDigitLength ==
+                                        null
+                                    ? 'No reference length limit for ${selectedPaymentService.displayName}.'
+                                    : '${selectedPaymentService.displayName} requires exactly ${selectedPaymentService.referenceDigitLength} digits.',
                             border: OutlineInputBorder(),
                           ),
+                          onChanged: (_) => dialogSetState(() {}),
                         ),
                         const SizedBox(height: 16),
                         Center(
@@ -3746,11 +3801,25 @@ class _ManageEventsState extends State<ManageEvents>
                                 );
                                 return;
                               }
+                              final reference = referenceController.text.trim();
+                              final requiredReferenceLength =
+                                  selectedPaymentService.referenceDigitLength;
+                              if (requiredReferenceLength != null &&
+                                  reference.length != requiredReferenceLength) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      '${selectedPaymentService.displayName} reference number must be exactly $requiredReferenceLength digits.',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
                               final confirmed = await _confirmOrderPayment(
                                 order,
                                 mode,
                                 selectedPaymentService,
-                                referenceController.text.trim(),
+                                reference,
                                 amount: payAmount,
                               );
                               if (confirmed && mounted) {

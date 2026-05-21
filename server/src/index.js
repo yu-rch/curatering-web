@@ -552,7 +552,7 @@ async function ensureFeedbackAnalyticsSchema() {
           id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           batch_id uuid,
           feedback_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
-          original_feedback TEXT NOT NULL DEFAULT '',
+          message TEXT NOT NULL DEFAULT '',
           sentiment TEXT,
           complaints JSONB NOT NULL DEFAULT '[]'::jsonb,
           praises JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -562,6 +562,26 @@ async function ensureFeedbackAnalyticsSchema() {
           ai_response JSONB NOT NULL DEFAULT '{}'::jsonb,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
+      `);
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'feedback_analysis'
+              AND column_name = 'original_feedback'
+          ) AND NOT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'feedback_analysis'
+              AND column_name = 'message'
+          ) THEN
+            ALTER TABLE feedback_analysis RENAME COLUMN original_feedback TO message;
+          END IF;
+        END $$;
       `);
       await pool.query(`
         CREATE TABLE IF NOT EXISTS feedback_batches (
@@ -609,14 +629,19 @@ async function ensureFeedbackAnalyticsSchema() {
         ALTER TABLE feedback_analysis
         ADD COLUMN IF NOT EXISTS batch_id uuid,
         ADD COLUMN IF NOT EXISTS feedback_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS message TEXT NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS complaints JSONB NOT NULL DEFAULT '[]'::jsonb,
         ADD COLUMN IF NOT EXISTS praises JSONB NOT NULL DEFAULT '[]'::jsonb,
-        ADD COLUMN IF NOT EXISTS insights JSONB NOT NULL DEFAULT '[]'::jsonb
+        ADD COLUMN IF NOT EXISTS insights JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS key_topics JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS summary TEXT NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS ai_response JSONB NOT NULL DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       `);
       await pool.query(`
         ALTER TABLE feedback_analysis
-        ALTER COLUMN original_feedback SET DEFAULT '',
-        ALTER COLUMN original_feedback DROP NOT NULL
+        ALTER COLUMN message SET DEFAULT '',
+        ALTER COLUMN message DROP NOT NULL
       `);
       await pool.query(`
         UPDATE feedback SET status = 'pending' WHERE status IS NULL
@@ -918,7 +943,7 @@ async function storeFeedbackAnalysis(input, aiResponse) {
   }
   await pool.query(
     `INSERT INTO feedback_analysis (
-       original_feedback,
+       message,
        sentiment,
        key_topics,
        summary,
@@ -7138,6 +7163,9 @@ async function registerRoutesAfterDbInit() {
       try {
         const { orderId } = req.params;
         const { paymentType, status, referenceNumber, amount } = req.body || {};
+        const paymentMethodRaw = String(
+          req.body?.paymentMethod ?? req.body?.payment_method ?? "",
+        ).trim();
 
         if (!paymentType || !status) {
           return res.status(400).json({ error: 'paymentType and status are required' });
@@ -7149,6 +7177,23 @@ async function registerRoutesAfterDbInit() {
 
         if (!['paid', 'pending', 'cancelled'].includes(status)) {
           return res.status(400).json({ error: 'Invalid status. Must be paid, pending, or cancelled' });
+        }
+
+        const paymentMethodKey = paymentMethodRaw.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+        const referenceRules = [
+          { test: /bank/.test(paymentMethodKey), label: "Bank Transfer", digits: 18 },
+          { test: /debit|credit|card/.test(paymentMethodKey), label: "Debit/Credit Card", digits: 23 },
+          { test: /e_?wallet|wallet/.test(paymentMethodKey), label: "E-wallet", digits: 13 },
+        ];
+        const referenceRule = referenceRules.find((rule) => rule.test);
+        const cleanReference = String(referenceNumber || "").trim();
+        if (status === "paid" && referenceRule) {
+          const expected = referenceRule.digits;
+          if (!new RegExp(`^\\d{${expected}}$`).test(cleanReference)) {
+            return res.status(400).json({
+              error: `${referenceRule.label} reference number must be exactly ${expected} digits`,
+            });
+          }
         }
 
         // Determine which table to use
@@ -7167,6 +7212,29 @@ async function registerRoutesAfterDbInit() {
         const tableName = orderResult.rows[0].table_name;
         const statusColumn = paymentType === 'down_payment' ? 'down_payment_status' : 'full_payment_status';
         const amountColumn = paymentType === 'down_payment' ? 'down_payment_amount' : 'full_payment_amount';
+        let downPaymentNextStatus = "on_going";
+        if (paymentType === "down_payment") {
+          try {
+            const constraint = await pool.query(
+              `SELECT pg_get_constraintdef(oid) AS definition
+               FROM pg_constraint
+               WHERE conrelid = $1::regclass
+                 AND conname = $2
+               LIMIT 1`,
+              [tableName, `${tableName}_status_check`],
+            );
+            const definition = String(constraint.rows[0]?.definition || "");
+            if (
+              definition &&
+              !definition.includes("'on_going'") &&
+              definition.includes("'for_processing'")
+            ) {
+              downPaymentNextStatus = "for_processing";
+            }
+          } catch (_) {
+            // Keep the canonical status when constraint inspection is unavailable.
+          }
+        }
 
         // Build update query with reference number if provided
         let updateQuery = `UPDATE ${tableName} SET ${statusColumn} = $1, updated_at = now()`;
@@ -7175,9 +7243,10 @@ async function registerRoutesAfterDbInit() {
         if (status === 'paid' && paymentType === 'down_payment') {
           updateQuery += `,
             status = CASE
-              WHEN status IN ('for_down_payment', 'for_downpayment') THEN 'on_going'
+              WHEN status IN ('for_down_payment', 'for_downpayment') THEN $${queryParams.length + 1}
               ELSE status
             END`;
+          queryParams.push(downPaymentNextStatus);
         } else if (status === 'paid' && paymentType === 'full_payment') {
           updateQuery += `,
             status = CASE
@@ -7189,7 +7258,12 @@ async function registerRoutesAfterDbInit() {
         if (referenceNumber && referenceNumber.trim()) {
           const refColumn = paymentType === 'down_payment' ? 'down_payment_reference' : 'full_payment_reference';
           updateQuery += `, ${refColumn} = $${queryParams.length + 1}`;
-          queryParams.push(referenceNumber.trim());
+          queryParams.push(cleanReference);
+        }
+
+        if (paymentMethodRaw) {
+          updateQuery += `, payment_method = $${queryParams.length + 1}`;
+          queryParams.push(paymentMethodRaw);
         }
 
         const amountNum = Number(amount);

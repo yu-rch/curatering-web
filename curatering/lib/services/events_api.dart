@@ -209,6 +209,7 @@ class EventsApi {
     required String paymentType, // 'down_payment' or 'full_payment'
     required String status, // 'paid' or 'pending'
     String? referenceNumber,
+    String? paymentMethod,
     double? amount,
   }) async {
     final body = <String, dynamic>{
@@ -217,6 +218,9 @@ class EventsApi {
     };
     if (referenceNumber != null && referenceNumber.isNotEmpty) {
       body['referenceNumber'] = referenceNumber;
+    }
+    if (paymentMethod != null && paymentMethod.isNotEmpty) {
+      body['paymentMethod'] = paymentMethod;
     }
     if (amount != null && amount > 0) {
       body['amount'] = amount;

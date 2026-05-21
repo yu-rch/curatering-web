@@ -2490,7 +2490,7 @@ class _InquirePageState extends State<InquirePage> {
         prompt,
         user_id: runpodUserId,
         initImageBase64: venueB64,
-        strength: 0.46,
+        strength: 0.52,
         numInferenceSteps: 18,
         designMeta: _eventDesignRunpodMeta(),
       );

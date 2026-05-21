@@ -51,16 +51,10 @@ class ContactUsPage extends StatefulWidget {
 }
 
 class _ContactUsPageState extends State<ContactUsPage> {
-  final _formKey = GlobalKey<FormState>();
   final _feedbackFormKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _messageController = TextEditingController();
   final _feedbackNameController = TextEditingController();
   final _feedbackEmailController = TextEditingController();
   final _feedbackMessageController = TextEditingController();
-  bool _isSubmitting = false;
   bool _isSubmittingFeedback = false;
   int _feedbackRating = 5;
 
@@ -80,55 +74,10 @@ class _ContactUsPageState extends State<ContactUsPage> {
   @override
   void dispose() {
     WebsiteContentStore.instance.removeListener(_onContent);
-    _nameController.dispose();
-    _emailController.dispose();
-    _phoneController.dispose();
-    _messageController.dispose();
     _feedbackNameController.dispose();
     _feedbackEmailController.dispose();
     _feedbackMessageController.dispose();
     super.dispose();
-  }
-
-  Future<void> _submitForm() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _isSubmitting = true);
-
-    try {
-      // TODO: Implement actual form submission
-      await Future.delayed(const Duration(seconds: 2));
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Message sent successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _clearForm();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to send message. Please try again.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-      }
-    }
-  }
-
-  void _clearForm() {
-    _nameController.clear();
-    _emailController.clear();
-    _phoneController.clear();
-    _messageController.clear();
   }
 
   Future<void> _submitFeedback() async {
@@ -236,16 +185,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          flex: 2,
-                          child: Column(
-                            children: [
-                              _buildContactForm(w),
-                              const SizedBox(height: 24),
-                              _buildFeedbackModule(),
-                            ],
-                          ),
-                        ),
+                        Expanded(flex: 2, child: _buildFeedbackModule()),
                         const SizedBox(width: 48),
                         Expanded(child: _buildContactInfo(w)),
                       ],
@@ -253,8 +193,6 @@ class _ContactUsPageState extends State<ContactUsPage> {
                   else
                     Column(
                       children: [
-                        _buildContactForm(w),
-                        const SizedBox(height: 24),
                         _buildFeedbackModule(),
                         const SizedBox(height: 48),
                         _buildContactInfo(w),
@@ -265,133 +203,6 @@ class _ContactUsPageState extends State<ContactUsPage> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildContactForm(WebsiteContentStore w) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Send us a message',
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: const Color(0xFF1E1E1E),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Your Name',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your name';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(
-                  labelText: 'Email Address',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your email';
-                  }
-                  if (!value.contains('@')) {
-                    return 'Please enter a valid email';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              TextFormField(
-                controller: _phoneController,
-                decoration: const InputDecoration(
-                  labelText: 'Phone Number',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.phone,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your phone number';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              TextFormField(
-                controller: _messageController,
-                decoration: const InputDecoration(
-                  labelText: 'Message',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 5,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your message';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 24),
-
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _submitForm,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E1E1E),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child:
-                      _isSubmitting
-                          ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white,
-                              ),
-                            ),
-                          )
-                          : const Text(
-                            'SEND MESSAGE',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
