@@ -140,6 +140,7 @@ class _InventoryState extends State<Inventory> {
 
   bool _isLoading = false;
   bool _isExportingPdf = false;
+  bool _isSavingInventory = false;
   String? _editingItemId;
   String _sortBy = 'name';
   bool _sortAscending = true;
@@ -624,6 +625,7 @@ class _InventoryState extends State<Inventory> {
                 ),
                 AntdPrimaryButton(
                   label: item == null ? 'Add' : 'Update',
+                  loading: _isSavingInventory,
                   onPressed: () => _saveInventoryItem(dialogContext),
                 ),
               ],
@@ -635,6 +637,7 @@ class _InventoryState extends State<Inventory> {
   }
 
   Future<void> _saveInventoryItem(BuildContext dialogContext) async {
+    if (_isSavingInventory) return;
     if (_nameController.text.trim().isEmpty ||
         _quantityController.text.trim().isEmpty ||
         _unitController.text.trim().isEmpty ||
@@ -657,6 +660,7 @@ class _InventoryState extends State<Inventory> {
     }
 
     try {
+      setState(() => _isSavingInventory = true);
       final body = {
         'name': _nameController.text.trim(),
         'category': _categoryController.text.trim(),
@@ -696,13 +700,16 @@ class _InventoryState extends State<Inventory> {
       }
     } catch (e) {
       if (mounted) {
+        final message =
+            e is ApiError && e.statusCode == 409
+                ? 'This inventory item already exists.'
+                : 'Save failed: $e';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Save failed: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isSavingInventory = false);
     }
   }
 

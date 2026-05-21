@@ -17,7 +17,12 @@ from diffusers import (
     StableDiffusionXLImg2ImgPipeline,
     StableDiffusionXLPipeline,
 )
-from PIL import Image
+try:
+    from diffusers import ControlNetModel, StableDiffusionXLControlNetImg2ImgPipeline
+except Exception:
+    ControlNetModel = None
+    StableDiffusionXLControlNetImg2ImgPipeline = None
+from PIL import Image, ImageFilter, ImageOps
 from supabase import create_client
 
 BUCKET_ID = "ai-images"
@@ -147,18 +152,22 @@ def format_exception_detail(exc: BaseException) -> dict:
 # ---------------------------
 _sd_pipeline = None
 _sd_img2img_pipeline = None
-_sd_pipeline_lock = threading.Lock()
+_sd_controlnet_img2img_pipeline = None
+_sd_pipeline_lock = threading.RLock()
 
 MAX_INIT_IMAGE_BYTES = int(os.getenv("MAX_INIT_IMAGE_BYTES", "6000000"))
 SD_IMAGE_SIZE = int(os.getenv("SD_IMAGE_SIZE", "1024"))
-DEFAULT_INFERENCE_STEPS = int(os.getenv("DEFAULT_INFERENCE_STEPS", "28"))
-IMG2IMG_INFERENCE_STEPS = int(os.getenv("IMG2IMG_INFERENCE_STEPS", "24"))
-GUIDANCE_SCALE = float(os.getenv("SD_GUIDANCE_SCALE", "7.0"))
+DEFAULT_INFERENCE_STEPS = int(os.getenv("DEFAULT_INFERENCE_STEPS", "30"))
+IMG2IMG_INFERENCE_STEPS = int(os.getenv("IMG2IMG_INFERENCE_STEPS", "30"))
+GUIDANCE_SCALE = float(os.getenv("SD_GUIDANCE_SCALE", "6.5"))
 MODEL_ID = os.getenv("SD_MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0")
+CONTROLNET_MODEL_ID = os.getenv(
+    "SD_CONTROLNET_MODEL_ID", "diffusers/controlnet-canny-sdxl-1.0"
+)
 HF_CACHE = os.getenv("HF_HOME", "/app/huggingface")
 NEGATIVE_PROMPT = os.getenv(
     "SD_NEGATIVE_PROMPT",
-    "low quality, blurry, distorted, deformed, text, watermark, logo",
+    "warped architecture, distorted room, melted surfaces, duplicate objects, blurry, low quality, cartoon, CGI, fisheye",
 )
 
 
@@ -221,6 +230,36 @@ def get_sd_img2img_pipeline():
         return _sd_img2img_pipeline
 
 
+def get_sd_controlnet_img2img_pipeline():
+    """ControlNet img2img pipeline for venue edge preservation."""
+    global _sd_controlnet_img2img_pipeline
+    if _sd_controlnet_img2img_pipeline is not None:
+        return _sd_controlnet_img2img_pipeline
+    if ControlNetModel is None or StableDiffusionXLControlNetImg2ImgPipeline is None:
+        raise RuntimeError("ControlNet SDXL pipeline is unavailable in this image")
+    with _sd_pipeline_lock:
+        if _sd_controlnet_img2img_pipeline is not None:
+            return _sd_controlnet_img2img_pipeline
+        t0 = time.time()
+        txt = get_sd_pipeline()
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.float16 if device == "cuda" else torch.float32
+        print("Loading ControlNet model:", CONTROLNET_MODEL_ID)
+        controlnet = ControlNetModel.from_pretrained(
+            CONTROLNET_MODEL_ID,
+            torch_dtype=dtype,
+            cache_dir=HF_CACHE,
+            use_safetensors=True,
+        )
+        _sd_controlnet_img2img_pipeline = StableDiffusionXLControlNetImg2ImgPipeline(
+            **txt.components,
+            controlnet=controlnet,
+        ).to(device)
+        _configure_pipeline(_sd_controlnet_img2img_pipeline)
+        print(f"ControlNet img2img pipeline ready in {time.time() - t0:.1f}s")
+        return _sd_controlnet_img2img_pipeline
+
+
 def _decode_init_image(data) -> Optional[Image.Image]:
     """Decode optional venue/reference photo from base64 input fields."""
     raw = (
@@ -263,6 +302,29 @@ def _resize_for_sd(img: Image.Image, size: int = SD_IMAGE_SIZE) -> Image.Image:
     return canvas
 
 
+def _controlnet_enabled(config) -> bool:
+    if not isinstance(config, dict):
+        return False
+    return config.get("enabled") is True
+
+
+def _controlnet_condition_image(img: Image.Image) -> Image.Image:
+    """Lightweight Canny-style edge map without adding OpenCV to the worker image."""
+    edges = img.convert("L").filter(ImageFilter.FIND_EDGES)
+    edges = ImageOps.autocontrast(edges)
+    return edges.convert("RGB")
+
+
+def _controlnet_conditioning_scale(config) -> float:
+    if not isinstance(config, dict):
+        return 0.8
+    try:
+        scale = float(config.get("conditioning_scale", 0.8))
+    except Exception:
+        scale = 0.8
+    return max(0.1, min(scale, 1.5))
+
+
 # ---------------------------
 # PROMPT ENGINE
 # ---------------------------
@@ -276,8 +338,8 @@ def _clean_field(value) -> str:
 
 def build_prompt(data) -> str:
     """
-    Build a single SD prompt. Client `prompt` is primary; optional structured
-  fields are appended only when non-empty and not already present in the text.
+    Build a concise SDXL prompt. The client prompt is already a comma-separated
+    visual prompt; structured fields are appended only when not duplicated.
     """
     base = _clean_field(data.get("prompt"))
     parts: List[str] = []
@@ -304,13 +366,13 @@ def build_prompt(data) -> str:
     if not parts:
         parts.append("professional event venue decoration, elegant lighting")
 
-    combined = ". ".join(parts)
+    combined = ", ".join(parts)
     quality = (
-        "high quality, realistic lighting, professional event venue photography, "
-        "SDXL, sharp details"
+        "photorealistic event styling, luxury interior photography, "
+        "cinematic lighting, ultra detailed"
     )
-    if "high quality" not in combined.lower():
-        combined = f"{combined}. {quality}"
+    if "photorealistic" not in combined.lower():
+        combined = f"{combined}, {quality}"
     return combined.strip()
 
 
@@ -323,43 +385,81 @@ def generate(
     init_image: Optional[Image.Image] = None,
     strength: float = 0.65,
     num_inference_steps: Optional[int] = None,
+    guidance_scale: Optional[float] = None,
+    negative_prompt: Optional[str] = None,
+    controlnet: Optional[dict] = None,
 ) -> Tuple[bytes, str]:
     if init_image is not None:
         default_steps = IMG2IMG_INFERENCE_STEPS
-        strength = max(0.15, min(float(strength), 0.95))
+        strength = max(0.28, min(float(strength), 0.42))
     else:
         default_steps = DEFAULT_INFERENCE_STEPS
     steps = num_inference_steps if num_inference_steps is not None else default_steps
-    steps = max(15, min(int(steps), 40))
+    steps = max(15, min(int(steps), 30))
+    guidance = GUIDANCE_SCALE
+    if guidance_scale is not None:
+        try:
+            guidance = max(1.0, min(float(guidance_scale), 12.0))
+        except Exception:
+            guidance = GUIDANCE_SCALE
+    neg = negative_prompt.strip() if isinstance(negative_prompt, str) and negative_prompt.strip() else NEGATIVE_PROMPT
 
     t0 = time.time()
     with torch.inference_mode():
         if init_image is not None:
             print(
-                f"Img2img (strength={strength}, steps={steps}, size={SD_IMAGE_SIZE}):",
+                f"Img2img (strength={strength}, guidance={guidance}, steps={steps}, size={SD_IMAGE_SIZE}):",
                 prompt[:200],
             )
-            pipe = get_sd_img2img_pipeline()
             prepared = _resize_for_sd(init_image)
-            result = pipe(
-                prompt=prompt,
-                image=prepared,
-                strength=strength,
-                num_inference_steps=steps,
-                guidance_scale=GUIDANCE_SCALE,
-                negative_prompt=NEGATIVE_PROMPT,
-            )
-            mode = "img2img"
+            if _controlnet_enabled(controlnet):
+                try:
+                    pipe = get_sd_controlnet_img2img_pipeline()
+                    control_image = _controlnet_condition_image(prepared)
+                    result = pipe(
+                        prompt=prompt,
+                        image=prepared,
+                        control_image=control_image,
+                        strength=strength,
+                        num_inference_steps=steps,
+                        guidance_scale=guidance,
+                        negative_prompt=neg,
+                        controlnet_conditioning_scale=_controlnet_conditioning_scale(controlnet),
+                    )
+                    mode = "controlnet_img2img"
+                except Exception as exc:
+                    print("ControlNet unavailable; falling back to SDXL img2img:", exc)
+                    pipe = get_sd_img2img_pipeline()
+                    result = pipe(
+                        prompt=prompt,
+                        image=prepared,
+                        strength=strength,
+                        num_inference_steps=steps,
+                        guidance_scale=guidance,
+                        negative_prompt=neg,
+                    )
+                    mode = "img2img"
+            else:
+                pipe = get_sd_img2img_pipeline()
+                result = pipe(
+                    prompt=prompt,
+                    image=prepared,
+                    strength=strength,
+                    num_inference_steps=steps,
+                    guidance_scale=guidance,
+                    negative_prompt=neg,
+                )
+                mode = "img2img"
         else:
-            print(f"Txt2img (steps={steps}, size={SD_IMAGE_SIZE}):", prompt[:200])
+            print(f"Txt2img (guidance={guidance}, steps={steps}, size={SD_IMAGE_SIZE}):", prompt[:200])
             pipe = get_sd_pipeline()
             result = pipe(
                 prompt=prompt,
                 width=SD_IMAGE_SIZE,
                 height=SD_IMAGE_SIZE,
                 num_inference_steps=steps,
-                guidance_scale=GUIDANCE_SCALE,
-                negative_prompt=NEGATIVE_PROMPT,
+                guidance_scale=guidance,
+                negative_prompt=neg,
             )
             mode = "txt2img"
 
@@ -463,9 +563,15 @@ def handler(event):
         steps = data.get("num_inference_steps")
         if steps is None:
             steps = IMG2IMG_INFERENCE_STEPS if init_image is not None else DEFAULT_INFERENCE_STEPS
+        guidance_scale = data.get("guidance_scale", GUIDANCE_SCALE)
+        negative_prompt = data.get("negative_prompt", NEGATIVE_PROMPT)
+        controlnet = data.get("controlnet")
 
         mode = "img2img" if init_image is not None else "txt2img"
-        print(f"Prompt ({mode}, steps={steps}, strength={strength}):", prompt[:280])
+        print(
+            f"Prompt ({mode}, steps={steps}, strength={strength}, guidance={guidance_scale}, controlnet={_controlnet_enabled(controlnet)}):",
+            prompt[:280],
+        )
 
         step = "generate_image"
         img_bytes, generation_mode = generate(
@@ -473,6 +579,9 @@ def handler(event):
             init_image=init_image,
             strength=strength,
             num_inference_steps=steps,
+            guidance_scale=guidance_scale,
+            negative_prompt=negative_prompt,
+            controlnet=controlnet,
         )
 
         step = "upload_storage"

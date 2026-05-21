@@ -166,9 +166,19 @@ class _CashierPosShellState extends State<CashierPosShell>
     }
   }
 
+  double _toMoney(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString().trim() ?? '') ?? 0;
+  }
+
+  int _toQty(dynamic value) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString().trim() ?? '') ?? 1;
+  }
+
   double get _trayTotal => _tray.fold<double>(0, (s, it) {
-    final q = (it['qty'] as num?)?.toInt() ?? 1;
-    final p = (it['price'] as num?)?.toDouble() ?? 0;
+    final q = _toQty(it['qty']);
+    final p = _toMoney(it['price']);
     return s + q * p;
   });
 
@@ -440,7 +450,7 @@ class _CashierPosShellState extends State<CashierPosShell>
             itemCount: _menu.length,
             itemBuilder: (_, i) {
               final d = _menu[i];
-              final price = (d['price'] as num?)?.toDouble() ?? 0;
+              final price = _toMoney(d['price']);
               return ListTile(
                 title: Text(d['name']?.toString() ?? 'Dish'),
                 subtitle: Text('₱${price.toStringAsFixed(2)}'),

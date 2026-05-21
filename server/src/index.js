@@ -337,15 +337,26 @@ function normalizeRunpodInput(input) {
   }
   if (out.strength != null) {
     const st = Number(out.strength);
+    const hasInitImage = typeof out.init_image_base64 === "string" && out.init_image_base64.trim();
     out.strength = Number.isFinite(st)
-      ? Math.min(0.95, Math.max(0.15, st))
-      : 0.65;
+      ? hasInitImage
+        ? Math.min(0.42, Math.max(0.28, st))
+        : Math.min(0.95, Math.max(0.15, st))
+      : hasInitImage
+        ? 0.35
+        : 0.65;
   }
   if (out.num_inference_steps != null) {
     const steps = Number(out.num_inference_steps);
     out.num_inference_steps = Number.isFinite(steps)
       ? Math.min(30, Math.max(12, Math.round(steps)))
       : 20;
+  }
+  if (out.guidance_scale != null) {
+    const guidance = Number(out.guidance_scale);
+    out.guidance_scale = Number.isFinite(guidance)
+      ? Math.min(12, Math.max(1, guidance))
+      : 6.5;
   }
   return out;
 }
@@ -625,6 +636,40 @@ async function ensureFeedbackAnalyticsSchema() {
         ADD COLUMN IF NOT EXISTS dashboard_data JSONB NOT NULL DEFAULT '{}'::jsonb,
         ADD COLUMN IF NOT EXISTS ai_response JSONB NOT NULL DEFAULT '{}'::jsonb,
         ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      `);
+      await pool.query(`
+        DO $$
+        DECLARE
+          col_name text;
+        BEGIN
+          FOREACH col_name IN ARRAY ARRAY[
+            'insights',
+            'trends',
+            'problems',
+            'recommendations',
+            'alerts'
+          ] LOOP
+            IF EXISTS (
+              SELECT 1
+              FROM information_schema.columns
+              WHERE table_schema = current_schema()
+                AND table_name = 'dashboard_insights'
+                AND column_name = col_name
+                AND data_type = 'ARRAY'
+                AND udt_name = '_jsonb'
+            ) THEN
+              EXECUTE format('ALTER TABLE dashboard_insights ALTER COLUMN %I DROP DEFAULT', col_name);
+              EXECUTE format(
+                'ALTER TABLE dashboard_insights ALTER COLUMN %I TYPE jsonb USING COALESCE(to_jsonb(%I), ''[]''::jsonb)',
+                col_name,
+                col_name
+              );
+              EXECUTE format('ALTER TABLE dashboard_insights ALTER COLUMN %I SET DEFAULT ''[]''::jsonb', col_name);
+              EXECUTE format('UPDATE dashboard_insights SET %I = ''[]''::jsonb WHERE %I IS NULL', col_name, col_name);
+              EXECUTE format('ALTER TABLE dashboard_insights ALTER COLUMN %I SET NOT NULL', col_name);
+            END IF;
+          END LOOP;
+        END $$;
       `);
       await pool.query(`
         ALTER TABLE feedback_analysis
@@ -8508,6 +8553,14 @@ async function registerRoutesAfterDbInit() {
         const cateringUnionSql = cateringUnionParts.length
           ? cateringUnionParts.join(' UNION ALL ')
           : `SELECT NULL::text AS status, NULL::text AS down_payment_status, NULL::text AS full_payment_status, 0::numeric AS total_cost, now() AS created_at, now() AS updated_at, NULL::text AS source, NULL::text AS style WHERE FALSE`;
+        const eventOrderCols = await getTableColumnNames('event_orders');
+        const cateringOrderCols = await getTableColumnNames('catering_orders');
+        const eventPostAnalysisExpr = eventOrderCols.has('post_analysis')
+          ? 'post_analysis'
+          : `'{}'::jsonb`;
+        const cateringPostAnalysisExpr = cateringOrderCols.has('post_analysis')
+          ? 'post_analysis'
+          : `'{}'::jsonb`;
         if (orderSource && orderSource !== 'ALL') {
           restParams.push(orderSource);
           restFilters.push(`order_source = $${restParams.length}`);
@@ -8628,13 +8681,13 @@ async function registerRoutesAfterDbInit() {
              COUNT(*) FILTER (WHERE complaints > 0)::int AS count,
              COALESCE(SUM(complaints), 0)::int AS complaint_count
            FROM (
-             SELECT COALESCE((post_analysis->>'complaints')::int, 0) AS complaints,
+             SELECT COALESCE((${eventPostAnalysisExpr}->>'complaints')::int, 0) AS complaints,
                     COALESCE(updated_at, created_at) AS feedback_at,
                     source
              FROM event_orders
              ${includeEventCatering ? '' : 'WHERE FALSE'}
              UNION ALL
-             SELECT COALESCE((post_analysis->>'complaints')::int, 0) AS complaints,
+             SELECT COALESCE((${cateringPostAnalysisExpr}->>'complaints')::int, 0) AS complaints,
                     COALESCE(updated_at, created_at) AS feedback_at,
                     source
              FROM catering_orders
@@ -9042,10 +9095,13 @@ async function registerRoutesAfterDbInit() {
       try {
         const { orderId } = req.params;
         const { status, delivery_tracking_url, payment_status } = req.body || {};
+        const deliveryUrl = String(delivery_tracking_url || '').trim();
+        const hasDeliveryUrl = deliveryUrl.length > 0;
         
         const updateFields = [];
         const updateValues = [];
         let paramIndex = 1;
+        let nextStatus = null;
 
         if (status) {
           const normalizedStatus = String(status).trim().toUpperCase();
@@ -9061,15 +9117,18 @@ async function registerRoutesAfterDbInit() {
               error: `Invalid status: ${status}. Allowed: ${allowedStatuses.join(', ')}`,
             });
           }
-          updateFields.push(`order_status = $${paramIndex++}`);
-          updateValues.push(normalizedStatus);
+          nextStatus = normalizedStatus;
         }
 
-        if (delivery_tracking_url) {
+        if (hasDeliveryUrl) {
           updateFields.push(`delivery_tracking_url = $${paramIndex++}`);
-          updateValues.push(delivery_tracking_url);
+          updateValues.push(deliveryUrl);
+          nextStatus = 'OUT_FOR_DELIVERY';
+        }
+
+        if (nextStatus) {
           updateFields.push(`order_status = $${paramIndex++}`);
-          updateValues.push('OUT_FOR_DELIVERY');
+          updateValues.push(nextStatus);
         }
         
         if (payment_status === 'paid' || payment_status === 'confirmed') {
@@ -9097,9 +9156,7 @@ async function registerRoutesAfterDbInit() {
           return res.status(404).json({ error: 'Order not found' });
         }
 
-        const effectiveStatus = delivery_tracking_url
-          ? 'OUT_FOR_DELIVERY'
-          : status?.toString().trim().toUpperCase();
+        const effectiveStatus = nextStatus;
 
         // Auto-calculate loyalty points when order is delivered
         if (effectiveStatus === 'DELIVERED') {
@@ -9366,6 +9423,21 @@ async function registerRoutesAfterDbInit() {
         const notes = b.notes != null ? String(b.notes) : null;
         const minStock = b.minStockLevel != null ? Number(b.minStockLevel) : 0;
         const status = b.available === false ? 'inactive' : 'active';
+        const existing = await pool.query(
+          `SELECT *
+           FROM inventory
+           WHERE archived = FALSE
+             AND lower(trim(item_name)) = lower(trim($1))
+             AND lower(trim(category)) = lower(trim($2))
+           LIMIT 1`,
+          [name, category],
+        );
+        if (existing.rowCount > 0) {
+          return res.status(409).json({
+            error: 'Inventory item already exists',
+            item: inventoryRowToJson(existing.rows[0]),
+          });
+        }
         const itemCode = await generateSequentialId('ITM', 4);
         const r = await pool.query(
           `INSERT INTO inventory (item_code, item_name, description, category, quantity, unit, unit_cost, min_stock_level, status, archived)

@@ -188,6 +188,30 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     return 0.0;
   }
 
+  String _managerOrderId(Map<String, dynamic> order) {
+    for (final key in const ['id', 'order_id', 'order_no']) {
+      final value = order[key]?.toString().trim();
+      if (value != null && value.isNotEmpty && value.toLowerCase() != 'null') {
+        return value;
+      }
+    }
+    return '';
+  }
+
+  String _responseErrorMessage(http.Response response) {
+    final body = response.body.trim();
+    if (body.startsWith('<!DOCTYPE') || body.startsWith('<html')) {
+      return 'Server returned an HTML error page (${response.statusCode}). Please refresh and try again.';
+    }
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        return (decoded['error'] ?? decoded['message'] ?? body).toString();
+      }
+    } catch (_) {}
+    return body.isEmpty ? 'Request failed (${response.statusCode})' : body;
+  }
+
   String _normalizedStatus(dynamic raw) {
     final value = (raw ?? '').toString().trim().toLowerCase();
     return value.replaceAll(' ', '_');
@@ -256,6 +280,16 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     String newStatus, {
     String? deliveryUrl,
   }) async {
+    if (orderId.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot update order: order id is missing.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     // Optimistic update: Update UI immediately
     final originalOrder = _findOrderById(orderId);
     if (originalOrder != null) {
@@ -307,7 +341,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       _completedOrders,
     ]) {
       try {
-        final order = orderList.firstWhere((order) => order['id'] == orderId);
+        final order = orderList.firstWhere(
+          (order) => _managerOrderId(order) == orderId,
+        );
         return Map<String, dynamic>.from(order);
       } catch (e) {
         // Continue searching
@@ -359,9 +395,11 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   void _removeOrderFromAllLists(String orderId) {
-    _confirmationOrders.removeWhere((order) => order['id'] == orderId);
-    _processingOrders.removeWhere((order) => order['id'] == orderId);
-    _completedOrders.removeWhere((order) => order['id'] == orderId);
+    _confirmationOrders.removeWhere(
+      (order) => _managerOrderId(order) == orderId,
+    );
+    _processingOrders.removeWhere((order) => _managerOrderId(order) == orderId);
+    _completedOrders.removeWhere((order) => _managerOrderId(order) == orderId);
   }
 
   @override
@@ -1135,7 +1173,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
-                      onTap: () => _cancelOrder(order['id']),
+                      onTap: () => _cancelOrder(_managerOrderId(order)),
                       child: MouseRegion(
                         cursor: SystemMouseCursors.click,
                         child: Container(
@@ -1299,7 +1337,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                     const SizedBox(width: 8),
                     if (normalizedStatus == 'in_preparation') ...[
                       GestureDetector(
-                        onTap: () => _showDeliveryUrlDialog(order['id']),
+                        onTap:
+                            () =>
+                                _showDeliveryUrlDialog(_managerOrderId(order)),
                         child: MouseRegion(
                           cursor: SystemMouseCursors.click,
                           child: Container(
@@ -1336,7 +1376,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                     ],
                     if (normalizedStatus == 'out_for_delivery') ...[
                       GestureDetector(
-                        onTap: () => _markDelivered(order['id']),
+                        onTap: () => _markDelivered(_managerOrderId(order)),
                         child: MouseRegion(
                           cursor: SystemMouseCursors.click,
                           child: Container(
@@ -1532,33 +1572,80 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         .trim();
   }
 
-  String? _paymentProofImageUrl(dynamic proof) {
+  String? _paymentProofRaw(dynamic proof) {
     if (proof == null) return null;
     final s = proof.toString().trim();
     if (s.isEmpty) return null;
-    if (s.startsWith('http://') ||
-        s.startsWith('https://') ||
-        s.startsWith('data:')) {
-      return s;
+    return s;
+  }
+
+  bool _looksLikeBase64Image(String s) {
+    final value = s.trim().replaceAll(RegExp(r'\s+'), '');
+    if (value.startsWith('/9j/') || value.startsWith('iVBORw0KGgo')) {
+      return true;
     }
-    if (s.startsWith('/')) return '$apiBaseUrl$s';
-    if (s.startsWith('/9j/') || s.startsWith('iVBORw0KGgo')) {
-      final mime = s.startsWith('iVBORw0KGgo') ? 'image/png' : 'image/jpeg';
-      return 'data:$mime;base64,$s';
+    return value.length > 80 &&
+        RegExp(r'^[A-Za-z0-9+/]+={0,2}$').hasMatch(value);
+  }
+
+  Widget _paymentProofImage(dynamic proof) {
+    final raw = _paymentProofRaw(proof);
+    if (raw == null) return const SizedBox.shrink();
+
+    String? base64Payload;
+    if (raw.startsWith('data:')) {
+      final comma = raw.indexOf(',');
+      if (comma > -1) base64Payload = raw.substring(comma + 1);
+    } else if (_looksLikeBase64Image(raw)) {
+      base64Payload = raw;
     }
-    return '$apiBaseUrl/$s';
+
+    if (base64Payload != null) {
+      try {
+        return Image.memory(
+          base64Decode(base64Payload.replaceAll(RegExp(r'\s+'), '')),
+          height: 180,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const Text('Unable to load image'),
+        );
+      } catch (_) {
+        return const Text('Unable to load image');
+      }
+    }
+
+    final url =
+        raw.startsWith('http://') || raw.startsWith('https://')
+            ? raw
+            : raw.startsWith('/')
+            ? '$apiBaseUrl$raw'
+            : '$apiBaseUrl/$raw';
+    return Image.network(
+      url,
+      height: 180,
+      width: double.infinity,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => const Text('Unable to load image'),
+    );
   }
 
   Future<void> _showConfirmPaymentDialog(Map<String, dynamic> order) async {
-    final orderId = order['id']?.toString() ?? '';
+    final orderId = _managerOrderId(order);
+    if (orderId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot confirm payment: order id is missing.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     final total = _parseAmount(order['total_amount']);
     final isMobile = _isMobileRestaurantOrder(order);
     final paymentRef = isMobile ? '' : _webPaymentReference(order);
-    final proofUrl =
+    final proof =
         isMobile
-            ? _paymentProofImageUrl(
-              order['payment_proof_initial'] ?? order['payment_proof'],
-            )
+            ? order['payment_proof_initial'] ?? order['payment_proof']
             : null;
     final amountController = TextEditingController(
       text: total > 0 ? total.toStringAsFixed(2) : '',
@@ -1619,7 +1706,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                           const SizedBox(height: 8),
                           Text('Reference: $paymentRef'),
                         ],
-                        if (proofUrl != null) ...[
+                        if (proof != null) ...[
                           const SizedBox(height: 12),
                           const Text(
                             'Payment proof',
@@ -1628,15 +1715,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                           const SizedBox(height: 8),
                           ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: Image.network(
-                              proofUrl,
-                              height: 180,
-                              width: double.infinity,
-                              fit: BoxFit.cover,
-                              errorBuilder:
-                                  (_, __, ___) =>
-                                      const Text('Unable to load image'),
-                            ),
+                            child: _paymentProofImage(proof),
                           ),
                         ],
                         const SizedBox(height: 16),
@@ -1737,7 +1816,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                                                 submitting = false;
                                               });
                                             } else {
-                                              throw Exception(response.body);
+                                              throw Exception(
+                                                _responseErrorMessage(response),
+                                              );
                                             }
                                           } catch (e) {
                                             setDialogState(() {
@@ -1832,6 +1913,16 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   Future<void> _cancelOrder(String orderId) async {
+    if (orderId.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot cancel order: order id is missing.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder:

@@ -3997,6 +3997,8 @@ class _ManageEventsState extends State<ManageEvents>
                 )
                 .toList();
 
+    final canEditChecklist =
+        _isManager || AuthSession.instance.currentRole == Role.supervisor;
     final showInventoryPicker = _isManager && _isCateringPlusEventOrder(order);
     final inventoryOptions = <Map<String, dynamic>>[];
     if (showInventoryPicker) {
@@ -4044,7 +4046,7 @@ class _ManageEventsState extends State<ManageEvents>
                             DataColumn(label: Text('Cost')),
                           ],
                           DataColumn(label: Text('Status')),
-                          if (_isManager) ...[
+                          if (canEditChecklist) ...[
                             DataColumn(label: Text('Actions')),
                           ],
                         ],
@@ -4055,7 +4057,7 @@ class _ManageEventsState extends State<ManageEvents>
                               return DataRow(
                                 cells: [
                                   DataCell(
-                                    _isManager
+                                    canEditChecklist
                                         ? TextFormField(
                                           initialValue: item.item,
                                           decoration: const InputDecoration(
@@ -4080,7 +4082,7 @@ class _ManageEventsState extends State<ManageEvents>
                                         : Text(item.item),
                                   ),
                                   DataCell(
-                                    _isManager
+                                    canEditChecklist
                                         ? TextFormField(
                                           initialValue: item.description,
                                           decoration: const InputDecoration(
@@ -4104,7 +4106,7 @@ class _ManageEventsState extends State<ManageEvents>
                                         : Text(item.description),
                                   ),
                                   DataCell(
-                                    _isManager
+                                    canEditChecklist
                                         ? TextFormField(
                                           initialValue:
                                               item.quantity.toString(),
@@ -4248,7 +4250,7 @@ class _ManageEventsState extends State<ManageEvents>
                                       ),
                                     ),
                                   ),
-                                  if (_isManager) ...[
+                                  if (canEditChecklist) ...[
                                     DataCell(
                                       Row(
                                         mainAxisSize: MainAxisSize.min,
@@ -4308,7 +4310,7 @@ class _ManageEventsState extends State<ManageEvents>
                       ),
                     ),
                     const SizedBox(height: 8),
-                    if (_isManager) ...[
+                    if (canEditChecklist) ...[
                       Row(
                         children: [
                           Container(

@@ -26,8 +26,9 @@ class RunPodService {
 
   static Uri _runUri() => Uri.parse('$_proxyBase/api/public/runpod/run');
 
-  static Uri _statusUri(String jobId) =>
-      Uri.parse('$_proxyBase/api/public/runpod/status/${Uri.encodeComponent(jobId)}');
+  static Uri _statusUri(String jobId) => Uri.parse(
+    '$_proxyBase/api/public/runpod/status/${Uri.encodeComponent(jobId)}',
+  );
 
   static String _normalizeB64(String raw) {
     var s = raw.trim();
@@ -126,9 +127,10 @@ class RunPodService {
     } catch (e) {
       if (e is Exception) throw e;
       if (response.body.isNotEmpty) {
-        msg = response.body.length > 500
-            ? '${response.body.substring(0, 500)}…'
-            : response.body;
+        msg =
+            response.body.length > 500
+                ? '${response.body.substring(0, 500)}…'
+                : response.body;
       }
     }
     throw Exception('HTTP ${response.statusCode}: $msg');
@@ -154,6 +156,7 @@ class RunPodService {
     String? initImageBase64,
     double strength = 0.65,
     int numInferenceSteps = 18,
+    double? guidanceScale,
     Map<String, dynamic>? designMeta,
   }) async {
     try {
@@ -163,6 +166,9 @@ class RunPodService {
         'num_inference_steps': numInferenceSteps,
         if (designMeta != null) ...designMeta,
       };
+      if (guidanceScale != null) {
+        input['guidance_scale'] = guidanceScale;
+      }
       final uid = user_id?.trim();
       if (uid != null && uid.isNotEmpty) {
         input['user_id'] = uid;
@@ -187,9 +193,10 @@ class RunPodService {
         final jobId = _extractJobId(data);
 
         if (_statusIsCompleted(status)) {
-          final out = data['output'] is Map<String, dynamic>
-              ? data['output'] as Map<String, dynamic>
-              : null;
+          final out =
+              data['output'] is Map<String, dynamic>
+                  ? data['output'] as Map<String, dynamic>
+                  : null;
           final imageUrl = _imageUrlFromOutput(out);
           if (imageUrl != null) return imageUrl;
           if (out != null && out['status'] == 'error') {
@@ -240,9 +247,7 @@ class RunPodService {
     Object? lastError;
 
     while (attempts < _maxPollAttempts) {
-      await Future.delayed(
-        const Duration(seconds: _pollIntervalSeconds),
-      );
+      await Future.delayed(const Duration(seconds: _pollIntervalSeconds));
       attempts++;
 
       try {
@@ -251,9 +256,7 @@ class RunPodService {
             .timeout(_pollGetTimeout);
 
         if (response.statusCode == 429) {
-          throw Exception(
-            'Too many requests — wait a moment and try again.',
-          );
+          throw Exception('Too many requests — wait a moment and try again.');
         }
 
         if (response.statusCode == 200) {
@@ -261,9 +264,10 @@ class RunPodService {
           final status = _normalizeStatus(data['status']);
 
           if (_statusIsCompleted(status)) {
-            final out = data['output'] is Map<String, dynamic>
-                ? data['output'] as Map<String, dynamic>
-                : null;
+            final out =
+                data['output'] is Map<String, dynamic>
+                    ? data['output'] as Map<String, dynamic>
+                    : null;
             final imageUrl = _imageUrlFromOutput(out);
             if (imageUrl != null) return imageUrl;
             if (out != null && out['status'] == 'error') {
