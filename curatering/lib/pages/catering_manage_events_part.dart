@@ -41,7 +41,17 @@ extension _ManageEventsTableExt on _ManageEventsState {
 
   bool _isOngoingStatus(String status) {
     final normalized = status.trim().toLowerCase();
-    return normalized == 'on_going' || normalized == 'ongoing';
+    return normalized == 'on_going' ||
+        normalized == 'ongoing' ||
+        normalized == 'for_ongoing';
+  }
+
+  bool _canManageSeatingAssignmentsForStatus(String status) {
+    final role = AuthSession.instance.currentRole;
+    return _isOngoingStatus(status) &&
+        (role == Role.manager ||
+            role == Role.supervisor ||
+            role == Role.superAdmin);
   }
 
   String _formatOrderSchedule(EventOrderDto dto) {
@@ -304,16 +314,45 @@ extension _ManageEventsTableExt on _ManageEventsState {
     }
   }
 
+  Future<void> _showSeatingAssignmentEditor(EventOrderDto dto) async {
+    final full = await _loadOrderForDetail(dto);
+    if (!_isCateringPlusEventOrder(full)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Seating assignment is only available for event orders.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+    await showAntdModal<void>(
+      context: context,
+      title: 'Edit seating assignment',
+      maxWidth: 980,
+      body: SingleChildScrollView(
+        child: ProcessingSeatingSection(order: full, onSaved: _refreshOrders),
+      ),
+      actions: [
+        AntdCancelButton(
+          label: 'Close',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
+    );
+  }
+
   Future<void> _showEventOrderDetailModal(EventOrderDto dto) async {
     final w = MediaQuery.sizeOf(context).width;
     EventOrderDto full = dto;
-    final role = AuthSession.instance.currentRole;
+    final canOpenSeatingEditor = _canManageSeatingAssignmentsForStatus(
+      dto.status,
+    );
     final canPostChanges =
-        _isOngoingStatus(dto.status) &&
-        _isCateringPlusEventOrder(dto) &&
-        (role == Role.manager ||
-            role == Role.supervisor ||
-            role == Role.superAdmin);
+        canOpenSeatingEditor && _isCateringPlusEventOrder(dto);
     await showAntdModal<void>(
       context: context,
       title: dto.eventTitle.isEmpty ? dto.customerName : dto.eventTitle,
@@ -322,13 +361,9 @@ extension _ManageEventsTableExt on _ManageEventsState {
         future: _loadOrderForDetail(dto),
         builder: (context, snap) {
           full = snap.data ?? dto;
-          final role = AuthSession.instance.currentRole;
           final canEditSeating =
-              _isOngoingStatus(full.status) &&
-              _isCateringPlusEventOrder(full) &&
-              (role == Role.manager ||
-                  role == Role.supervisor ||
-                  role == Role.superAdmin);
+              _canManageSeatingAssignmentsForStatus(full.status) &&
+              _isCateringPlusEventOrder(full);
           if (snap.connectionState == ConnectionState.waiting) {
             return const Padding(
               padding: EdgeInsets.all(24),
@@ -364,6 +399,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
           label: 'Close',
           onPressed: () => Navigator.of(context).pop(),
         ),
+        if (canOpenSeatingEditor)
+          AntdSecondaryButton(
+            label: 'Edit seating assignment',
+            icon: Icons.event_seat_outlined,
+            onPressed: () => _showSeatingAssignmentEditor(full),
+          ),
         if (canPostChanges)
           AntdPrimaryButton(
             label: 'Post changes to customer',
@@ -775,116 +816,123 @@ extension _ManageEventsTableExt on _ManageEventsState {
     required List<Widget> Function(EventOrderDto dto) actionCells,
   }) {
     final filtered = _filterEventOrdersBySearch(orders);
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+    return SizedBox(
+      width: double.infinity,
+      child: Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
-                  icon:
-                      _ordersLoading
-                          ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                          : const Icon(Icons.refresh),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _eventSearchController,
-              decoration: InputDecoration(
-                hintText: 'Search orders',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: Colors.grey.shade100,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              onChanged: (_) => _mutateTableState(() {}),
-            ),
-            const SizedBox(height: 16),
-            if (filtered.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 32),
-                child: Center(
-                  child: Text(
-                    emptyMessage,
-                    style: TextStyle(color: Colors.grey.shade600),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Refresh',
+                    onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
+                    icon:
+                        _ordersLoading
+                            ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.refresh),
                   ),
-                ),
-              )
-            else
-              PagedDataTable(
-                title: title,
-                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
-                columns: const [
-                  DataColumn(label: Text('Service type')),
-                  DataColumn(label: Text('Event / customer')),
-                  DataColumn(label: Text('Customer')),
-                  DataColumn(label: Text('Date')),
-                  DataColumn(label: Text('Guests')),
-                  DataColumn(label: Text('Total')),
-                  DataColumn(label: Text('Actions')),
                 ],
-                rows:
-                    filtered.map((dto) {
-                      final title =
-                          dto.eventTitle.isEmpty
-                              ? dto.customerName
-                              : dto.eventTitle;
-                      return DataRow(
-                        cells: [
-                          DataCell(Text(_orderTypeColumnLabel(dto))),
-                          DataCell(
-                            Text(
-                              title,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          DataCell(Text(dto.customerName)),
-                          DataCell(Text(_formatOrderSchedule(dto))),
-                          DataCell(Text('${dto.guestCount}')),
-                          DataCell(
-                            Text(
-                              formatPesos(
-                                dto.totalCost > 0
-                                    ? dto.totalCost
-                                    : computeOrderTotalCost(dto),
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: actionCells(dto),
-                            ),
-                          ),
-                        ],
-                      );
-                    }).toList(),
               ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: _eventSearchController,
+                decoration: InputDecoration(
+                  hintText: 'Search orders',
+                  prefixIcon: const Icon(Icons.search),
+                  filled: true,
+                  fillColor: Colors.grey.shade100,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                onChanged: (_) => _mutateTableState(() {}),
+              ),
+              const SizedBox(height: 16),
+              if (filtered.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  child: Center(
+                    child: Text(
+                      emptyMessage,
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                  ),
+                )
+              else
+                PagedDataTable(
+                  title: title,
+                  fullWidth: true,
+                  maxTableHeight: MediaQuery.sizeOf(context).height,
+                  headingRowColor: WidgetStateProperty.all(
+                    Colors.grey.shade100,
+                  ),
+                  columns: const [
+                    DataColumn(label: Text('Service type')),
+                    DataColumn(label: Text('Event / customer')),
+                    DataColumn(label: Text('Customer')),
+                    DataColumn(label: Text('Date')),
+                    DataColumn(label: Text('Guests')),
+                    DataColumn(label: Text('Total')),
+                    DataColumn(label: Text('Actions')),
+                  ],
+                  rows:
+                      filtered.map((dto) {
+                        final title =
+                            dto.eventTitle.isEmpty
+                                ? dto.customerName
+                                : dto.eventTitle;
+                        return DataRow(
+                          cells: [
+                            DataCell(Text(_orderTypeColumnLabel(dto))),
+                            DataCell(
+                              Text(
+                                title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            DataCell(Text(dto.customerName)),
+                            DataCell(Text(_formatOrderSchedule(dto))),
+                            DataCell(Text('${dto.guestCount}')),
+                            DataCell(
+                              Text(
+                                formatPesos(
+                                  dto.totalCost > 0
+                                      ? dto.totalCost
+                                      : computeOrderTotalCost(dto),
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: actionCells(dto),
+                              ),
+                            ),
+                          ],
+                        );
+                      }).toList(),
+                ),
+            ],
+          ),
         ),
       ),
     );

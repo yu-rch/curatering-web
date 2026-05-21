@@ -181,6 +181,54 @@ class _GalleryPageState extends State<GalleryPage> {
     );
   }
 
+  Widget _buildGallerySearchField({required String hintText}) {
+    return TextField(
+      onChanged:
+          (v) => setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
+      decoration: InputDecoration(
+        hintText: hintText,
+        prefixIcon: const Icon(Icons.search),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  Widget _buildGalleryToolbar({
+    required Widget searchField,
+    required List<Widget> filters,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final inline = constraints.maxWidth >= 860;
+        final filterColumn = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < filters.length; i++) ...[
+              if (i > 0) const SizedBox(height: 12),
+              filters[i],
+            ],
+          ],
+        );
+
+        if (!inline) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [searchField, const SizedBox(height: 16), filterColumn],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: 320, child: searchField),
+            const SizedBox(width: 16),
+            Expanded(child: filterColumn),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildGallery(WebsiteContentStore w) {
     final allTags = _allGalleryTags(w.galleryCategories);
     final categories =
@@ -204,67 +252,66 @@ class _GalleryPageState extends State<GalleryPage> {
           ),
         ),
         const SizedBox(height: 16),
-        TextField(
-          onChanged:
-              (v) =>
-                  setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
-          decoration: InputDecoration(
+        _buildGalleryToolbar(
+          searchField: _buildGallerySearchField(
             hintText: 'SEARCH BY TAG OR CATEGORY',
-            prefixIcon: const Icon(Icons.search),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           ),
-        ),
-        const SizedBox(height: 16),
-        _buildFilterChips(
-          title: 'CATEGORIES',
-          chips: [
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilterChip(
-                label: const Text('ALL'),
-                selected: _selectedGalleryCategoryId == 'ALL',
-                onSelected:
-                    (_) => setState(() => _selectedGalleryCategoryId = 'ALL'),
-              ),
-            ),
-            ...w.galleryCategories.map(
-              (cat) => Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: FilterChip(
-                  label: Text(cat.label),
-                  selected: _selectedGalleryCategoryId == cat.id,
-                  onSelected:
-                      (_) => setState(() {
-                        _selectedGalleryCategoryId = cat.id;
-                        _galleryDetailIndex = null;
-                      }),
+          filters: [
+            _buildFilterChips(
+              title: 'CATEGORIES',
+              chips: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FilterChip(
+                    label: const Text('ALL'),
+                    selected: _selectedGalleryCategoryId == 'ALL',
+                    onSelected:
+                        (_) =>
+                            setState(() => _selectedGalleryCategoryId = 'ALL'),
+                  ),
                 ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _buildFilterChips(
-          title: 'TAGS',
-          chips: [
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilterChip(
-                label: const Text('ALL'),
-                selected: _selectedGalleryTag == 'ALL',
-                onSelected: (_) => setState(() => _selectedGalleryTag = 'ALL'),
-              ),
-            ),
-            ...allTags.map(
-              (tag) => Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: FilterChip(
-                  label: Text(tag),
-                  selected:
-                      _selectedGalleryTag.toLowerCase() == tag.toLowerCase(),
-                  onSelected: (_) => setState(() => _selectedGalleryTag = tag),
+                ...w.galleryCategories.map(
+                  (cat) => Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      label: Text(cat.label),
+                      selected: _selectedGalleryCategoryId == cat.id,
+                      onSelected:
+                          (_) => setState(() {
+                            _selectedGalleryCategoryId = cat.id;
+                            _galleryDetailIndex = null;
+                          }),
+                    ),
+                  ),
                 ),
-              ),
+              ],
+            ),
+            _buildFilterChips(
+              title: 'TAGS',
+              chips: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FilterChip(
+                    label: const Text('ALL'),
+                    selected: _selectedGalleryTag == 'ALL',
+                    onSelected:
+                        (_) => setState(() => _selectedGalleryTag = 'ALL'),
+                  ),
+                ),
+                ...allTags.map(
+                  (tag) => Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      label: Text(tag),
+                      selected:
+                          _selectedGalleryTag.toLowerCase() ==
+                          tag.toLowerCase(),
+                      onSelected:
+                          (_) => setState(() => _selectedGalleryTag = tag),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -281,8 +328,8 @@ class _GalleryPageState extends State<GalleryPage> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'No gallery categories match these filters',
-                  style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                  'No gallery items match your filters.',
+                  style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
                 ),
               ],
             ),
@@ -411,45 +458,43 @@ class _GalleryPageState extends State<GalleryPage> {
           ],
         ),
         const SizedBox(height: 24),
-        TextField(
-          onChanged:
-              (v) =>
-                  setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
-          decoration: InputDecoration(
-            hintText: 'SEARCH BY TAG',
-            prefixIcon: const Icon(Icons.search),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-          ),
+        _buildGalleryToolbar(
+          searchField: _buildGallerySearchField(hintText: 'SEARCH BY TAG'),
+          filters:
+              allTags.isEmpty
+                  ? const []
+                  : [
+                    _buildFilterChips(
+                      title: 'TAGS',
+                      chips: [
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: FilterChip(
+                            label: const Text('ALL'),
+                            selected: _selectedGalleryTag == 'ALL',
+                            onSelected:
+                                (_) =>
+                                    setState(() => _selectedGalleryTag = 'ALL'),
+                          ),
+                        ),
+                        ...allTags.map(
+                          (tag) => Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: FilterChip(
+                              label: Text(tag),
+                              selected:
+                                  _selectedGalleryTag.toLowerCase() ==
+                                  tag.toLowerCase(),
+                              onSelected:
+                                  (_) =>
+                                      setState(() => _selectedGalleryTag = tag),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
         ),
-        if (allTags.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          _buildFilterChips(
-            title: 'TAGS',
-            chips: [
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: FilterChip(
-                  label: const Text('ALL'),
-                  selected: _selectedGalleryTag == 'ALL',
-                  onSelected:
-                      (_) => setState(() => _selectedGalleryTag = 'ALL'),
-                ),
-              ),
-              ...allTags.map(
-                (tag) => Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilterChip(
-                    label: Text(tag),
-                    selected:
-                        _selectedGalleryTag.toLowerCase() == tag.toLowerCase(),
-                    onSelected:
-                        (_) => setState(() => _selectedGalleryTag = tag),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
         const SizedBox(height: 32),
         if (filteredImages.isEmpty)
           Center(

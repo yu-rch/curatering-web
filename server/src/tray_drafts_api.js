@@ -1,9 +1,16 @@
 import { pool, ensureCustomerTrayDraftsSchema } from './db.js';
-import { customerIdFromRequest } from './customer_auth.js';
+import {
+  customerAccountCustomerIdFromRequest,
+  resolveCustomerAccountCustomerId,
+} from './customer_auth.js';
 import { parseRestaurantOrderTrayItems } from './order_schema.js';
 
-function customerIdFromReq(req) {
-  return req.customer?.id ? String(req.customer.id) : customerIdFromRequest(req);
+async function customerIdFromReq(req) {
+  if (req.customer?.customerId) return String(req.customer.customerId);
+  const raw = req.customer?.id ? String(req.customer.id) : null;
+  return raw
+    ? resolveCustomerAccountCustomerId(raw)
+    : customerAccountCustomerIdFromRequest(req);
 }
 
 function parseItemsArray(raw) {
@@ -136,7 +143,7 @@ async function upsertTrayDraftItems(customerId, items) {
 export async function getTrayDraftItemsByCustomerId(customerId) {
   if (!customerId) return [];
   await ensureCustomerTrayDraftsSchema();
-  const id = String(customerId);
+  const id = await resolveCustomerAccountCustomerId(customerId);
   const result = await pool.query(
     `SELECT tray_lines, tray_items FROM customer_tray_drafts WHERE customer_id = $1`,
     [id],
@@ -151,7 +158,7 @@ export async function getTrayDraftItemsByCustomerId(customerId) {
 export async function getTrayDraft(req, res) {
   try {
     await ensureCustomerTrayDraftsSchema();
-    const customerId = customerIdFromReq(req);
+    const customerId = await customerIdFromReq(req);
     if (!customerId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
@@ -188,7 +195,7 @@ export async function getTrayDraft(req, res) {
 export async function saveTrayDraft(req, res) {
   try {
     await ensureCustomerTrayDraftsSchema();
-    const customerId = customerIdFromReq(req);
+    const customerId = await customerIdFromReq(req);
     if (!customerId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
@@ -223,15 +230,16 @@ export async function saveTrayDraft(req, res) {
 export async function clearTrayDraftForCustomer(customerId) {
   if (!customerId) return;
   await ensureCustomerTrayDraftsSchema();
+  const id = await resolveCustomerAccountCustomerId(customerId);
   await pool.query(`DELETE FROM customer_tray_drafts WHERE customer_id = $1`, [
-    String(customerId),
+    id,
   ]);
 }
 
 export async function clearTrayDraft(req, res) {
   try {
     await ensureCustomerTrayDraftsSchema();
-    const customerId = customerIdFromReq(req);
+    const customerId = await customerIdFromReq(req);
     if (!customerId) {
       return res.status(401).json({ error: 'Authentication required' });
     }

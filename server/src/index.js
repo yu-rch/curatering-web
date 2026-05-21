@@ -8015,17 +8015,9 @@ async function registerRoutesAfterDbInit() {
     }
 
     const customerAuthRequired = (req, res, next) => {
-      const token =
-        req.headers.authorization?.replace(/^Bearer\s+/i, '').trim() ||
-        String(req.headers.customer_token || '').trim();
-
-      if (!token) {
-        return res.status(401).json({ error: 'Authentication required' });
-      }
-
       const customerId = customerIdFromRequest(req);
       if (!customerId) {
-        return res.status(401).json({ error: 'Invalid or expired token' });
+        return res.status(401).json({ error: 'Authentication required' });
       }
       req.customer = { id: customerId };
       next();

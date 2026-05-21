@@ -1,5 +1,9 @@
-import { pool, ensureCustomerTrayDraftsSchema } from "./db.js";
-import { requireCustomerId } from "./customer_auth.js";
+import {
+  pool,
+  ensureCustomerTrayDraftsSchema,
+  getTableColumnNames,
+} from "./db.js";
+import { customerAccountCustomerIdFromRequest } from "./customer_auth.js";
 import { normalizeTrayItems } from "./tray_drafts_api.js";
 
 function itemsArrayFromPayload(payload) {
@@ -41,8 +45,15 @@ function normalizedTrayItems(raw) {
 }
 
 async function customerEmail(customerId) {
+  const cols = await getTableColumnNames("customer_accounts");
+  const whereParts = ["id::text = $1"];
+  if (cols.has("customer_id")) whereParts.push("customer_id::text = $1");
+  if (cols.has("customer_code")) whereParts.push("customer_code::text = $1");
   const result = await pool.query(
-    `SELECT email FROM customer_accounts WHERE id::text = $1 LIMIT 1`,
+    `SELECT email
+     FROM customer_accounts
+     WHERE ${whereParts.join(" OR ")}
+     LIMIT 1`,
     [String(customerId)],
   );
   return result.rows[0]?.email ?? null;
@@ -51,8 +62,10 @@ async function customerEmail(customerId) {
 class CartAPI {
   static async getCart(req, res) {
     try {
-      const customerId = requireCustomerId(req, res);
-      if (!customerId) return;
+      const customerId = await customerAccountCustomerIdFromRequest(req);
+      if (!customerId) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
 
       await ensureCustomerTrayDraftsSchema();
       const result = await pool.query(
@@ -85,8 +98,10 @@ class CartAPI {
   static async syncCart(req, res) {
     let client;
     try {
-      const customerId = requireCustomerId(req, res);
-      if (!customerId) return;
+      const customerId = await customerAccountCustomerIdFromRequest(req);
+      if (!customerId) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
 
       const { timestamp } = req.body || {};
       const cart = normalizeTrayItems(cartItemsFromBody(req.body));
@@ -130,8 +145,10 @@ class CartAPI {
 
   static async clearCart(req, res) {
     try {
-      const customerId = requireCustomerId(req, res);
-      if (!customerId) return;
+      const customerId = await customerAccountCustomerIdFromRequest(req);
+      if (!customerId) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
 
       await ensureCustomerTrayDraftsSchema();
       await pool.query(
