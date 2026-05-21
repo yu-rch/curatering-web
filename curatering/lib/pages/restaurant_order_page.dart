@@ -145,89 +145,74 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
         // Left side - Menu
         Expanded(
           flex: 3,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                padding: websitePagePadding(context, vertical: 20),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Title
-                      Text(
-                        'RESTAURANT',
-                        style: GoogleFonts.getFont(
-                          _primaryFont,
-                          fontSize: 36,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF1E1E1E),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Order from our delicious restaurant menu',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Category tabs
-                      _buildCategoryTabs(restaurantDishes),
-                      const SizedBox(height: 24),
-
-                      // Menu items
-                      if (dishes.isEmpty)
-                        Center(
-                          child: Column(
-                            children: [
-                              const SizedBox(height: 100),
-                              Icon(
-                                Icons.restaurant_menu,
-                                size: 64,
-                                color: Colors.grey.shade400,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'No items available in this category',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      else
-                        GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount:
-                                    isMobile(context)
-                                        ? 1
-                                        : isTablet(context)
-                                        ? 2
-                                        : 3,
-                                crossAxisSpacing: 16,
-                                mainAxisSpacing: 16,
-                                childAspectRatio: 0.8,
-                              ),
-                          itemCount: dishes.length,
-                          itemBuilder: (context, index) {
-                            final dish = dishes[index];
-                            return _buildDishCard(dish);
-                          },
-                        ),
-                    ],
+          child: Padding(
+            padding: websitePagePadding(context, vertical: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'RESTAURANT',
+                  style: GoogleFonts.getFont(
+                    _primaryFont,
+                    fontSize: 36,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF1E1E1E),
                   ),
                 ),
-              );
-            },
+                const SizedBox(height: 8),
+                Text(
+                  'Order from our delicious restaurant menu',
+                  style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 24),
+                _buildCategoryTabs(restaurantDishes),
+                const SizedBox(height: 24),
+                Expanded(
+                  child:
+                      dishes.isEmpty
+                          ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.restaurant_menu,
+                                  size: 64,
+                                  color: Colors.grey.shade400,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No items available in this category',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                          : GridView.builder(
+                            padding: const EdgeInsets.only(bottom: 24),
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount:
+                                      isMobile(context)
+                                          ? 1
+                                          : isTablet(context)
+                                          ? 2
+                                          : 3,
+                                  crossAxisSpacing: 16,
+                                  mainAxisSpacing: 16,
+                                  childAspectRatio: 0.8,
+                                ),
+                            itemCount: dishes.length,
+                            itemBuilder: (context, index) {
+                              final dish = dishes[index];
+                              return _buildDishCard(dish);
+                            },
+                          ),
+                ),
+              ],
+            ),
           ),
         ),
         if (!isMobile(context))

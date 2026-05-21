@@ -93,14 +93,17 @@ class _RestaurantFeedbackPublicPageState
         children: [
           const CustomerWebsiteTopBar(showCartAndCustomerAuth: false),
           Expanded(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: Card(
-                  margin: const EdgeInsets.all(24),
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: _buildContent(),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: Card(
+                    margin: EdgeInsets.zero,
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: _buildContent(),
+                    ),
                   ),
                 ),
               ),

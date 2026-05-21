@@ -40,7 +40,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   // Delivery time selection
   // - ASAP (internal 'NOW'): send no delivery_time
-  // - LATER: send a concrete timestamp (resolved to today/tomorrow)
+  // - LATER: send a concrete timestamp later today
   String _deliveryTimeMode = 'NOW';
   TimeOfDay _selectedDeliveryTime = TimeOfDay.now();
 
@@ -199,6 +199,18 @@ class _CheckoutPageState extends State<CheckoutPage> {
       return;
     }
 
+    final scheduledDelivery = _resolveDeliveryTime();
+    if (_deliveryTimeMode == 'LATER' && scheduledDelivery == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please choose a delivery time later than now.'),
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -229,7 +241,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         'deliveryTime':
             _deliveryTimeMode == 'NOW'
                 ? 'NOW'
-                : _resolveDeliveryTime()?.toIso8601String(),
+                : scheduledDelivery?.toIso8601String(),
         'totalCost': CartStore.instance.totalAmount,
         'orderSource': 'WEB_APP',
       };
@@ -1146,14 +1158,55 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  Future<void> _pickDeliveryTime() async {
+  bool _isPastDeliveryTime(TimeOfDay time) {
+    final now = DateTime.now();
+    final currentMinute = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      now.hour,
+      now.minute,
+    );
+    final candidate = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      time.hour,
+      time.minute,
+    );
+    return candidate.isBefore(currentMinute);
+  }
+
+  TimeOfDay _initialDeliveryTime() {
+    if (!_isPastDeliveryTime(_selectedDeliveryTime)) {
+      return _selectedDeliveryTime;
+    }
+    final now = DateTime.now();
+    return TimeOfDay(hour: now.hour, minute: now.minute);
+  }
+
+  Future<bool> _pickDeliveryTime() async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: _selectedDeliveryTime,
+      initialTime: _initialDeliveryTime(),
       helpText: 'Select delivery time',
     );
-    if (picked == null) return;
-    setState(() => _selectedDeliveryTime = picked);
+    if (picked == null) return false;
+    if (_isPastDeliveryTime(picked)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Delivery time cannot be earlier than now.'),
+          ),
+        );
+      }
+      return false;
+    }
+    setState(() {
+      _deliveryTimeMode = 'LATER';
+      _selectedDeliveryTime = picked;
+    });
+    return true;
   }
 
   String _formatTimeOfDay(TimeOfDay t) {
@@ -1174,10 +1227,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
       _selectedDeliveryTime.minute,
     );
 
-    // If user picks a time earlier than "now", schedule for tomorrow.
-    return candidate.isBefore(now)
-        ? candidate.add(const Duration(days: 1))
-        : candidate;
+    final currentMinute = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      now.hour,
+      now.minute,
+    );
+    return candidate.isBefore(currentMinute) ? null : candidate;
   }
 
   Widget _buildDeliveryTimePicker() {
@@ -1217,7 +1274,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
                       return;
                     }
 
-                    setState(() => _deliveryTimeMode = 'LATER');
                     await _pickDeliveryTime();
                   },
                   children: const [

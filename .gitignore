@@ -10,11 +10,6 @@
 .env.example
 .env.local
 inst.txt
-/web-staff-full-handoff
-/web-staff-delta-since-full-handoff
-/web-customer-full-handoff
-/web-customer-full-handoff.zip
-/web-staff-delta-since-full-handoff.zip
 
 
 # Flutter repo-specific
@@ -127,7 +122,3 @@ app.*.symbols
 !/dev/ci/**/Gemfile.lock
 .env*.local
 server/.env
-server/.env
-server/.env
-web-customer-full-handoff.zip
-web-customer-full-handoff.zip
