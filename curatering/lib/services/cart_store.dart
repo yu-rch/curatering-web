@@ -9,8 +9,16 @@ class CartItem {
   final MenuDish dish;
   int quantity;
   String? selectedSauce;
+  List<String> addOns;
+  String? specialInstructions;
 
-  CartItem({required this.dish, this.quantity = 1, this.selectedSauce});
+  CartItem({
+    required this.dish,
+    this.quantity = 1,
+    this.selectedSauce,
+    this.addOns = const [],
+    this.specialInstructions,
+  });
 
   Map<String, dynamic> toJson() => {
     'dish': {
@@ -23,6 +31,8 @@ class CartItem {
     },
     'quantity': quantity,
     'selectedSauce': selectedSauce,
+    'addOns': addOns,
+    'specialInstructions': specialInstructions,
   };
 
   factory CartItem.fromJson(Map<String, dynamic> json) {
@@ -40,6 +50,13 @@ class CartItem {
       ),
       quantity: json['quantity'] ?? 1,
       selectedSauce: json['selectedSauce'],
+      addOns:
+          (json['addOns'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .where((e) => e.trim().isNotEmpty)
+              .toList() ??
+          const [],
+      specialInstructions: json['specialInstructions']?.toString(),
     );
   }
 }
@@ -64,15 +81,45 @@ class CartStore extends ChangeNotifier {
     }
   });
 
-  void addItem(MenuDish dish, {String? selectedSauce}) {
+  bool _sameCustomizations(
+    CartItem item,
+    String? selectedSauce,
+    List<String> addOns,
+    String? specialInstructions,
+  ) {
+    final normalizedAddOns =
+        addOns.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final itemAddOns =
+        item.addOns.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    return item.selectedSauce == selectedSauce &&
+        listEquals(itemAddOns, normalizedAddOns) &&
+        (item.specialInstructions ?? '').trim() ==
+            (specialInstructions ?? '').trim();
+  }
+
+  void addItem(
+    MenuDish dish, {
+    String? selectedSauce,
+    List<String> addOns = const [],
+    String? specialInstructions,
+  }) {
     final existingIndex = _items.indexWhere(
-      (item) => item.dish.id == dish.id && item.selectedSauce == selectedSauce,
+      (item) =>
+          item.dish.id == dish.id &&
+          _sameCustomizations(item, selectedSauce, addOns, specialInstructions),
     );
 
     if (existingIndex >= 0) {
       _items[existingIndex].quantity++;
     } else {
-      _items.add(CartItem(dish: dish, selectedSauce: selectedSauce));
+      _items.add(
+        CartItem(
+          dish: dish,
+          selectedSauce: selectedSauce,
+          addOns: addOns,
+          specialInstructions: specialInstructions,
+        ),
+      );
     }
 
     _saveCart();
@@ -91,6 +138,13 @@ class CartStore extends ChangeNotifier {
     CartSyncService.instance.syncToServer();
   }
 
+  void removeCartItem(CartItem target) {
+    _items.removeWhere((item) => identical(item, target));
+    _saveCart();
+    notifyListeners();
+    CartSyncService.instance.syncToServer();
+  }
+
   void updateQuantity(String dishId, int quantity) {
     if (quantity <= 0) {
       removeItem(dishId);
@@ -106,6 +160,36 @@ class CartStore extends ChangeNotifier {
       // Sync to server after updating quantity
       CartSyncService.instance.syncToServer();
     }
+  }
+
+  void updateCartItemQuantity(CartItem target, int quantity) {
+    if (quantity <= 0) {
+      removeCartItem(target);
+      return;
+    }
+    final existingIndex = _items.indexWhere((item) => identical(item, target));
+    if (existingIndex >= 0) {
+      _items[existingIndex].quantity = quantity;
+      _saveCart();
+      notifyListeners();
+      CartSyncService.instance.syncToServer();
+    }
+  }
+
+  void updateCartItemCustomizations(
+    CartItem target, {
+    String? selectedSauce,
+    List<String> addOns = const [],
+    String? specialInstructions,
+  }) {
+    final existingIndex = _items.indexWhere((item) => identical(item, target));
+    if (existingIndex < 0) return;
+    _items[existingIndex].selectedSauce = selectedSauce;
+    _items[existingIndex].addOns = addOns;
+    _items[existingIndex].specialInstructions = specialInstructions;
+    _saveCart();
+    notifyListeners();
+    CartSyncService.instance.syncToServer();
   }
 
   void clearCart({bool skipServerSync = false}) {
@@ -127,7 +211,12 @@ class CartStore extends ChangeNotifier {
       final existingIndex = _items.indexWhere(
         (item) =>
             item.dish.id == parsed.dish.id &&
-            item.selectedSauce == parsed.selectedSauce,
+            _sameCustomizations(
+              item,
+              parsed.selectedSauce,
+              parsed.addOns,
+              parsed.specialInstructions,
+            ),
       );
       if (existingIndex >= 0) {
         _items[existingIndex].quantity += parsed.quantity;

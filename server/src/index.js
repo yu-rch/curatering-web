@@ -1331,7 +1331,7 @@ const RUNPOD_NLP_ENDPOINT_ID = String(
     "",
 ).trim();
 const RUNPOD_API_BASE = "https://api.runpod.ai/v2";
-const RUNPOD_NLP_TIMEOUT_MS = Number(process.env.RUNPOD_NLP_TIMEOUT_MS || 180000);
+const RUNPOD_NLP_TIMEOUT_MS = Number(process.env.RUNPOD_NLP_TIMEOUT_MS || 300000);
 const RUNPOD_NLP_POLL_INTERVAL_MS = Number(process.env.RUNPOD_NLP_POLL_INTERVAL_MS || 2500);
 
 function getRunpodEndpointId(service) {
@@ -8799,46 +8799,51 @@ async function registerRoutesAfterDbInit() {
         const roItemsSelect = roItemsCol ? `${roItemsCol} AS items` : "'[]'::jsonb AS items";
 
         const eventOrders = await pool.query(
-          `SELECT event_type, guest_count, menu, total_cost, schedule_slots, status, customer_name, event_title, created_at
-           FROM (
-             SELECT event_type, guest_count, menu, total_cost, schedule_slots, status, customer_name,
-                    COALESCE(event_title, '') AS event_title, created_at
-             FROM event_orders
-             WHERE status = 'completed' AND created_at >= $1 AND created_at < $2
-             UNION ALL
-             SELECT 'Catering' AS event_type, guest_count, menu, total_cost, schedule_slots, status, customer_name,
-                    '' AS event_title, created_at
-             FROM catering_orders
-             WHERE status = 'completed' AND created_at >= $1 AND created_at < $2
-           ) x`,
+          `SELECT event_type, guest_count, menu, total_cost, schedule_slots, status, customer_name,
+                  COALESCE(event_title, '') AS event_title, created_at
+           FROM event_orders
+           WHERE status = 'completed' AND created_at >= $1 AND created_at < $2`,
           [rangeStart, rangeEnd],
         );
 
-        let totalSales = 0;
-        let guestTotal = 0;
-        let guestCountN = 0;
-        const dishCounts = {};
-        const eventTypeCounts = {};
-        for (const row of eventOrders.rows) {
-          totalSales += Number(row.total_cost) || 0;
-          const gc = Number(row.guest_count) || 0;
-          if (gc > 0) {
-            guestTotal += gc;
-            guestCountN += 1;
-          }
-          const et = String(row.event_type || 'Unspecified').trim() || 'Unspecified';
-          eventTypeCounts[et] = (eventTypeCounts[et] || 0) + 1;
-          let menu = row.menu;
-          if (typeof menu === 'string') {
-            try { menu = JSON.parse(menu); } catch { menu = []; }
-          }
-          if (Array.isArray(menu)) {
-            for (const item of menu) {
-              const name = String(item?.dishName || item?.dish_name || 'Unknown').trim() || 'Unknown';
-              dishCounts[name] = (dishCounts[name] || 0) + 1;
+        const cateringOrders = await pool.query(
+          `SELECT 'Catering' AS event_type, guest_count, menu, total_cost, schedule_slots, status, customer_name,
+                  '' AS event_title, created_at
+           FROM catering_orders
+           WHERE status = 'completed' AND created_at >= $1 AND created_at < $2`,
+          [rangeStart, rangeEnd],
+        );
+
+        function aggregateCateringRows(rows) {
+          let totalSales = 0;
+          let guestTotal = 0;
+          let guestCountN = 0;
+          const dishCounts = {};
+          const eventTypeCounts = {};
+          for (const row of rows) {
+            totalSales += Number(row.total_cost) || 0;
+            const gc = Number(row.guest_count) || 0;
+            if (gc > 0) {
+              guestTotal += gc;
+              guestCountN += 1;
+            }
+            const et = String(row.event_type || 'Unspecified').trim() || 'Unspecified';
+            eventTypeCounts[et] = (eventTypeCounts[et] || 0) + 1;
+            let menu = row.menu;
+            if (typeof menu === 'string') {
+              try { menu = JSON.parse(menu); } catch { menu = []; }
+            }
+            if (Array.isArray(menu)) {
+              for (const item of menu) {
+                const name = String(item?.dishName || item?.dish_name || 'Unknown').trim() || 'Unknown';
+                dishCounts[name] = (dishCounts[name] || 0) + 1;
+              }
             }
           }
+          return { totalSales, guestTotal, guestCountN, dishCounts, eventTypeCounts };
         }
+        const cateringOnlyMetrics = aggregateCateringRows(cateringOrders.rows);
+        const cateringEventsMetrics = aggregateCateringRows(eventOrders.rows);
 
         const restaurantOrders = await pool.query(
           `SELECT ${roItemsSelect}, ${roTotalCol} AS total_amount, created_at
@@ -8914,11 +8919,11 @@ async function registerRoutesAfterDbInit() {
           }
         }
 
-        const topDishes = Object.entries(dishCounts)
+        const topDishes = Object.entries(cateringOnlyMetrics.dishCounts)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 15)
           .map(([name, count]) => ({ name, count }));
-        const topEventTypes = Object.entries(eventTypeCounts)
+        const topEventTypes = Object.entries(cateringEventsMetrics.eventTypeCounts)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 15)
           .map(([name, count]) => ({ name, count }));
@@ -8962,10 +8967,29 @@ async function registerRoutesAfterDbInit() {
         res.json({
           period: { year, month: annual ? null : month, annual },
           catering: {
-            orderCount: eventOrders.rowCount,
-            totalSales,
-            averageGuestCount: guestCountN > 0 ? guestTotal / guestCountN : 0,
+            orderCount: cateringOrders.rowCount,
+            totalSales: cateringOnlyMetrics.totalSales,
+            averageGuestCount: cateringOnlyMetrics.guestCountN > 0
+              ? cateringOnlyMetrics.guestTotal / cateringOnlyMetrics.guestCountN
+              : 0,
             topDishes,
+            topEventTypes: [],
+            feedback: {
+              count: Number(cf.count) || 0,
+              averageStars: 0,
+              positiveCount: 0,
+              neutralCount: 0,
+              negativeCount: Number(cf.count) || 0,
+              complaintCount: Number(cf.complaint_count) || 0,
+            },
+          },
+          cateringEvents: {
+            orderCount: eventOrders.rowCount,
+            totalSales: cateringEventsMetrics.totalSales,
+            averageGuestCount: cateringEventsMetrics.guestCountN > 0
+              ? cateringEventsMetrics.guestTotal / cateringEventsMetrics.guestCountN
+              : 0,
+            topDishes: [],
             topEventTypes,
             feedback: {
               count: Number(cf.count) || 0,

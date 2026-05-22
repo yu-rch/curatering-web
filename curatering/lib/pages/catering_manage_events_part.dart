@@ -471,7 +471,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
       );
       await _refreshOrders();
       if (!mounted) return;
-      setState(() => _selectedStatus = EventStatus.forFullPayment);
+      _mutateTableState(() => _selectedStatus = EventStatus.forFullPayment);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -815,7 +815,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
     required String emptyMessage,
     required List<Widget> Function(EventOrderDto dto) actionCells,
   }) {
-    final filtered = _filterEventOrdersBySearch(orders);
+    final filtered = _filterEventOrdersByTableFilters(orders);
     return SizedBox(
       width: double.infinity,
       child: Card(
@@ -850,20 +850,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                 ],
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _eventSearchController,
-                decoration: InputDecoration(
-                  hintText: 'Search orders',
-                  prefixIcon: const Icon(Icons.search),
-                  filled: true,
-                  fillColor: Colors.grey.shade100,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-                onChanged: (_) => _mutateTableState(() {}),
-              ),
+              _buildEventTableFilters(orders),
               const SizedBox(height: 16),
               if (filtered.isEmpty)
                 Padding(
@@ -962,8 +949,138 @@ extension _ManageEventsTableExt on _ManageEventsState {
     return true;
   }
 
+  bool _matchesEventTableDateFilter(EventOrderDto dto) {
+    if (_eventTableDateFilter.isEmpty) return true;
+    if (dto.scheduleSlots.isEmpty) return false;
+    final value = _tryParseDate(dto.scheduleSlots.first.date);
+    if (value == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (_eventTableDateFilter == 'today') {
+      final day = DateTime(value.year, value.month, value.day);
+      return day == today;
+    }
+    if (_eventTableDateFilter == '7d') {
+      return !value.isBefore(now.subtract(const Duration(days: 7)));
+    }
+    if (_eventTableDateFilter == '30d') {
+      return !value.isBefore(now.subtract(const Duration(days: 30)));
+    }
+    return true;
+  }
+
+  List<EventOrderDto> _filterEventOrdersByTableFilters(
+    List<EventOrderDto> orders,
+  ) {
+    return orders.where((o) {
+      if (_eventTableServiceTypeFilter.isNotEmpty &&
+          _orderTypeColumnLabel(o) != _eventTableServiceTypeFilter) {
+        return false;
+      }
+      if (_eventTableEventTypeFilter.isNotEmpty &&
+          o.eventType != _eventTableEventTypeFilter) {
+        return false;
+      }
+      return _matchesEventTableDateFilter(o);
+    }).toList();
+  }
+
+  Widget _buildEventTableFilters(List<EventOrderDto> sourceOrders) {
+    final serviceTypes =
+        {
+            for (final o in sourceOrders) _orderTypeColumnLabel(o).trim(),
+          }.where((v) => v.isNotEmpty).toList()
+          ..sort();
+    final eventTypes =
+        {
+            for (final o in sourceOrders)
+              if (o.eventType.trim().isNotEmpty) o.eventType.trim(),
+          }.toList()
+          ..sort();
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 10,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        SizedBox(
+          width: 220,
+          child: DropdownButtonFormField<String>(
+            value: _eventTableServiceTypeFilter,
+            decoration: const InputDecoration(
+              labelText: 'Service type',
+              isDense: true,
+            ),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('All services')),
+              ...serviceTypes.map(
+                (value) => DropdownMenuItem(value: value, child: Text(value)),
+              ),
+            ],
+            onChanged:
+                (value) => _mutateTableState(
+                  () => _eventTableServiceTypeFilter = value ?? '',
+                ),
+          ),
+        ),
+        SizedBox(
+          width: 220,
+          child: DropdownButtonFormField<String>(
+            value: _eventTableEventTypeFilter,
+            decoration: const InputDecoration(
+              labelText: 'Event type',
+              isDense: true,
+            ),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('All events')),
+              ...eventTypes.map(
+                (value) => DropdownMenuItem(value: value, child: Text(value)),
+              ),
+            ],
+            onChanged:
+                (value) => _mutateTableState(
+                  () => _eventTableEventTypeFilter = value ?? '',
+                ),
+          ),
+        ),
+        SizedBox(
+          width: 220,
+          child: DropdownButtonFormField<String>(
+            value: _eventTableDateFilter,
+            decoration: const InputDecoration(
+              labelText: 'Event datetime',
+              isDense: true,
+            ),
+            items: const [
+              DropdownMenuItem(value: '', child: Text('All dates')),
+              DropdownMenuItem(value: 'today', child: Text('Today')),
+              DropdownMenuItem(value: '7d', child: Text('Last 7 days')),
+              DropdownMenuItem(value: '30d', child: Text('Last 30 days')),
+            ],
+            onChanged:
+                (value) => _mutateTableState(
+                  () => _eventTableDateFilter = value ?? '',
+                ),
+          ),
+        ),
+        if (_eventTableServiceTypeFilter.isNotEmpty ||
+            _eventTableEventTypeFilter.isNotEmpty ||
+            _eventTableDateFilter.isNotEmpty)
+          TextButton.icon(
+            onPressed:
+                () => _mutateTableState(() {
+                  _eventTableServiceTypeFilter = '';
+                  _eventTableEventTypeFilter = '';
+                  _eventTableDateFilter = '';
+                }),
+            icon: const Icon(Icons.filter_alt_off),
+            label: const Text('Clear filters'),
+          ),
+      ],
+    );
+  }
+
   Widget _buildOnlineInquiriesTableView(bool isNarrow) {
-    final query = _eventSearchController.text.trim().toLowerCase();
     final serviceTypes =
         {for (final o in _onlineInquiryOrders) _orderTypeColumnLabel(o).trim()}
             .where((v) => v.isNotEmpty)
@@ -986,16 +1103,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
             return false;
           }
           if (!_matchesInquiryDateFilter(o)) return false;
-          if (query.isEmpty) return true;
-          return [
-            o.customerName,
-            o.contactPerson,
-            o.contactNumber,
-            o.emailAddress,
-            o.eventType,
-            o.eventTitle,
-            o.orderType,
-          ].any((v) => v.toLowerCase().contains(query));
+          return true;
         }).toList();
 
     return Card(
@@ -1105,8 +1213,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                 ),
                 if (_inquiryServiceTypeFilter.isNotEmpty ||
                     _inquiryEventTypeFilter.isNotEmpty ||
-                    _inquiryDateFilter.isNotEmpty ||
-                    query.isNotEmpty)
+                    _inquiryDateFilter.isNotEmpty)
                   SizedBox(
                     height: 48,
                     child: Align(
@@ -1117,7 +1224,6 @@ extension _ManageEventsTableExt on _ManageEventsState {
                               _inquiryServiceTypeFilter = '';
                               _inquiryEventTypeFilter = '';
                               _inquiryDateFilter = '';
-                              _eventSearchController.clear();
                             }),
                         icon: const Icon(Icons.filter_alt_off),
                         label: const Text('Clear filters'),

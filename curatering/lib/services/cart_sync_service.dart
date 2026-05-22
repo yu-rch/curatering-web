@@ -77,6 +77,10 @@ class CartSyncService {
       'qty': item.quantity,
       'selectedSauce': sauceVal.isEmpty ? null : sauceVal,
       'selected_sauce': sauceVal.isEmpty ? null : sauceVal,
+      'addOns': item.addOns,
+      'add_ons': item.addOns,
+      'specialInstructions': item.specialInstructions,
+      'special_instructions': item.specialInstructions,
       'dip': sauceVal,
       'dip_qty': sauceVal.isNotEmpty ? item.quantity : 0,
       'dish_category': item.dish.category,
@@ -108,6 +112,9 @@ class CartSyncService {
           'dish': Map<String, dynamic>.from(nestedDish),
           'quantity': map['quantity'] ?? 1,
           'selectedSauce': map['selectedSauce'] ?? map['selected_sauce'],
+          'addOns': map['addOns'] ?? map['add_ons'],
+          'specialInstructions':
+              map['specialInstructions'] ?? map['special_instructions'],
         });
       } catch (_) {
         return null;
@@ -150,6 +157,15 @@ class CartSyncService {
       quantity: quantity < 1 ? 1 : quantity,
       selectedSauce:
           (map['selected_sauce'] ?? map['selectedSauce'] ?? map['dip'])
+              ?.toString(),
+      addOns:
+          ((map['add_ons'] ?? map['addOns']) as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .where((e) => e.trim().isNotEmpty)
+              .toList() ??
+          const [],
+      specialInstructions:
+          (map['special_instructions'] ?? map['specialInstructions'])
               ?.toString(),
     );
   }

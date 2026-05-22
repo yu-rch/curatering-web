@@ -424,6 +424,9 @@ class _ManageEventsState extends State<ManageEvents>
   String _inquiryServiceTypeFilter = '';
   String _inquiryEventTypeFilter = '';
   String _inquiryDateFilter = '';
+  String _eventTableServiceTypeFilter = '';
+  String _eventTableEventTypeFilter = '';
+  String _eventTableDateFilter = '';
   final List<EventScheduleSlot> _eventScheduleSlots = [];
 
   bool _ordersLoading = false;
@@ -513,7 +516,6 @@ class _ManageEventsState extends State<ManageEvents>
 
   EventOrderDto? _selectedProcessingOrderDto;
   EventOrderDto? _selectedPostAnalysisOrderDto;
-  EventOrderDto? _selectedCompletedOrderDto;
 
   // Extra cost items per order (chairs, tables, etc.)
   final Map<String, List<ChecklistItem>> _extraCostItemsPerOrder = {};
@@ -602,7 +604,6 @@ class _ManageEventsState extends State<ManageEvents>
       _selectedPaxPerDish.clear();
       _selectedProcessingOrderDto = null;
       _selectedPostAnalysisOrderDto = null;
-      _selectedCompletedOrderDto = null;
       _themeDesignImages.clear();
       _themePicks.clear();
       _themePickHashes.clear();
@@ -615,6 +616,9 @@ class _ManageEventsState extends State<ManageEvents>
       _inquiryServiceTypeFilter = '';
       _inquiryEventTypeFilter = '';
       _inquiryDateFilter = '';
+      _eventTableServiceTypeFilter = '';
+      _eventTableEventTypeFilter = '';
+      _eventTableDateFilter = '';
     });
   }
 
@@ -3875,11 +3879,12 @@ class _ManageEventsState extends State<ManageEvents>
     await showDialog<void>(
       context: context,
       builder: (context) {
+        final size = MediaQuery.sizeOf(context);
         return AlertDialog(
           title: const Text('Order Summary'),
           content: SizedBox(
-            width: 900,
-            height: 520,
+            width: size.width * 0.92,
+            height: size.height * 0.78,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -3890,24 +3895,32 @@ class _ManageEventsState extends State<ManageEvents>
                       Colors.grey.shade200,
                     ),
                     columns: const [
+                      DataColumn(label: Text('Set / Category')),
                       DataColumn(label: Text('Item')),
-                      DataColumn(label: Text('Qty')),
+                      DataColumn(label: Text('Pax / Qty')),
+                      DataColumn(label: Text('Details')),
                       DataColumn(label: Text('Unit Cost')),
                       DataColumn(label: Text('Total')),
                     ],
                     rows:
                         order.menu.map((m) {
-                          final item = m as dynamic;
-                          final dishName = item.dishName ?? 'Item';
-                          final qty = item.paxOption ?? '1 pax';
-                          final price =
-                              item.price is num
-                                  ? (item.price as num).toDouble()
-                                  : 0.0;
+                          final price = double.tryParse(m.price.trim()) ?? 0.0;
+                          final details = <String>[
+                            if (m.dishAllergens.trim().isNotEmpty)
+                              'Allergens: ${m.dishAllergens.trim()}',
+                          ].join('\n');
                           return DataRow(
                             cells: [
-                              DataCell(Text(dishName)),
-                              DataCell(Text('$qty')),
+                              DataCell(
+                                Text(
+                                  m.setMenuName.trim().isEmpty
+                                      ? 'A la carte'
+                                      : m.setMenuName.trim(),
+                                ),
+                              ),
+                              DataCell(Text(m.dishName.trim())),
+                              DataCell(Text(m.paxOption.trim())),
+                              DataCell(Text(details.isEmpty ? '—' : details)),
                               DataCell(Text(formatPesos(price))),
                               DataCell(Text(formatPesos(price))),
                             ],
@@ -5859,193 +5872,27 @@ class _ManageEventsState extends State<ManageEvents>
               eventDate.isAtSameMomentAs(oneMonthAgo);
         }).toList();
 
-    final listSection = Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'COMPLETED & CANCELLED EVENTS',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            if (orderDtos.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 40),
-                child: Center(
-                  child: Column(
-                    children: [
-                      Text(
-                        'No completed or cancelled events in the last 30 days.',
-                        style: TextStyle(color: Colors.grey.shade600),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Older events are available in the Order History page.',
-                        style: TextStyle(
-                          color: Colors.grey.shade500,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else
-              Column(
-                children:
-                    orderDtos
-                        .map(
-                          (dto) => Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: _buildSelectableOrderCard(
-                              dto,
-                              _selectedCompletedOrderDto?.id == dto.id,
-                              (d) => setState(() {
-                                _selectedCompletedOrderDto = d;
-                              }),
-                            ),
-                          ),
-                        )
-                        .toList(),
+    return SingleChildScrollView(
+      child: _buildOrdersTablePanel(
+        title: 'Completed & cancelled events',
+        orders: orderDtos,
+        emptyMessage: 'No completed or cancelled events in the last 30 days.',
+        actionCells:
+            (dto) => [
+              _eventIconAction(
+                icon: Icons.visibility_outlined,
+                tooltip: 'View details',
+                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
+                onPressed: () => _showEventOrderDetailModal(dto),
               ),
-          ],
-        ),
-      ),
-    );
-
-    final menuSection = Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'MENU',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            if (_selectedCompletedOrderDto == null)
-              Text(
-                'Select an event to view the menu.',
-                style: TextStyle(color: Colors.grey.shade600),
-              )
-            else
-              Column(
-                children:
-                    _selectedCompletedOrderDto!.menu.map((m) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 64,
-                              height: 64,
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade200,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(
-                                Icons.fastfood,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    m.dishName,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${m.price} · ${m.paxOption}',
-                                    style: TextStyle(
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
+              _eventIconAction(
+                icon: Icons.receipt_long_outlined,
+                tooltip: 'Order summary',
+                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
+                onPressed: () => _showOrderSummaryDialog(dto),
               ),
-          ],
-        ),
+            ],
       ),
-    );
-
-    final selCompleted = _selectedCompletedOrderDto;
-    final pa = selCompleted?.postAnalysis;
-    final compTotal =
-        selCompleted == null ? 0.0 : computeOrderTotalCost(selCompleted);
-    final compDown = compTotal > 0 ? compTotal / 2 : 0.0;
-
-    final infoSection = Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'OTHER INFO',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            _buildInfoRow(
-              'Business cards given away',
-              pa == null ? '—' : '${pa.businessCardsGivenAway}',
-            ),
-            _buildInfoRow(
-              'On-the-spot inquiries',
-              pa == null ? '—' : '${pa.onTheSpotInquiries}',
-            ),
-            _buildInfoRow(
-              'No. of Complaints',
-              pa == null ? '—' : '${pa.complaints}',
-            ),
-            const SizedBox(height: 16),
-            _buildCostBlock(
-              'Cost Estimation',
-              selCompleted == null ? 'N/A' : formatPesos(compTotal),
-              Colors.orange,
-            ),
-            const SizedBox(height: 8),
-            _buildCostBlock(
-              'Downpayment',
-              selCompleted == null ? 'N/A' : formatPesos(compDown),
-              Colors.blue,
-            ),
-            const SizedBox(height: 8),
-            _buildCostBlock(
-              'Total Cost',
-              selCompleted == null ? 'N/A' : formatPesos(compTotal),
-              Colors.green,
-            ),
-          ],
-        ),
-      ),
-    );
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(flex: 3, child: SingleChildScrollView(child: listSection)),
-        const SizedBox(width: 20),
-        Expanded(flex: 3, child: SingleChildScrollView(child: menuSection)),
-        const SizedBox(width: 20),
-        Expanded(flex: 4, child: SingleChildScrollView(child: infoSection)),
-      ],
     );
   }
 
@@ -7016,10 +6863,7 @@ class _ManageEventsState extends State<ManageEvents>
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      showSearch: true,
-      searchController: _eventSearchController,
-      searchHint: 'Search manage events',
-      onSearchChanged: (_) => setState(() {}),
+      showSearch: false,
       child: Container(
         color: const Color(0xFFF7F8FA),
         padding: const EdgeInsets.all(20),

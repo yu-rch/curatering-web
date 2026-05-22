@@ -48,6 +48,13 @@ class RestaurantOrderPage extends StatefulWidget {
 
 class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   String _selectedRestaurantType = 'ALL';
+  static const List<String> _defaultAddOns = [
+    'Extra cheese',
+    'Extra vegetables',
+    'Extra meat',
+    'Spicy',
+    'No onions',
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -661,68 +668,101 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   }
 
   Widget _buildCartItem(CartItem item) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          // Item info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return InkWell(
+      onTap: () => _showCustomizeCartItem(item),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            // Item info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.dish.name,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '₱${item.dish.price}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                  if (item.selectedSauce?.trim().isNotEmpty == true ||
+                      item.addOns.isNotEmpty ||
+                      item.specialInstructions?.trim().isNotEmpty == true) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      [
+                        if (item.selectedSauce?.trim().isNotEmpty == true)
+                          'Sauce: ${item.selectedSauce}',
+                        if (item.addOns.isNotEmpty)
+                          'Add-ons: ${item.addOns.join(', ')}',
+                        if (item.specialInstructions?.trim().isNotEmpty == true)
+                          'Note: ${item.specialInstructions}',
+                      ].join('\n'),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            // Quantity controls
+            Row(
               children: [
+                IconButton(
+                  icon: const Icon(Icons.remove, size: 16),
+                  onPressed: () => _updateQuantity(item, item.quantity - 1),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                ),
                 Text(
-                  item.dish.name,
+                  '${item.quantity}',
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '₱${item.dish.price}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                IconButton(
+                  icon: const Icon(Icons.add, size: 16),
+                  onPressed: () => _updateQuantity(item, item.quantity + 1),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                 ),
               ],
             ),
-          ),
-          // Quantity controls
-          Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.remove, size: 16),
-                onPressed: () => _updateQuantity(item, item.quantity - 1),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              ),
-              Text(
-                '${item.quantity}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.add, size: 16),
-                onPressed: () => _updateQuantity(item, item.quantity + 1),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   void _addToCart(MenuDish dish) {
+    if (dish.sauces.isNotEmpty || _defaultAddOns.isNotEmpty) {
+      _showAddToCartOptions(dish);
+      return;
+    }
     CartStore.instance.addItem(dish);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -733,11 +773,210 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   }
 
   void _updateQuantity(CartItem item, int newQuantity) {
-    if (newQuantity <= 0) {
-      CartStore.instance.removeItem(item.dish.id);
-    } else {
-      CartStore.instance.updateQuantity(item.dish.id, newQuantity);
-    }
+    CartStore.instance.updateCartItemQuantity(item, newQuantity);
+  }
+
+  Future<void> _showAddToCartOptions(MenuDish dish) async {
+    String? selectedSauce = dish.sauces.isNotEmpty ? dish.sauces.first : null;
+    final selectedAddOns = <String>{};
+    final noteController = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: Text('Customize ${dish.name}'),
+                  content: SizedBox(
+                    width: 420,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (dish.sauces.isNotEmpty) ...[
+                            const Text(
+                              'Sauce selection',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            for (final sauce in dish.sauces)
+                              RadioListTile<String>(
+                                value: sauce,
+                                groupValue: selectedSauce,
+                                title: Text(sauce),
+                                onChanged:
+                                    (value) => setDialogState(
+                                      () => selectedSauce = value,
+                                    ),
+                              ),
+                            const SizedBox(height: 8),
+                          ],
+                          const Text(
+                            'Add-ons / toppings',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          Wrap(
+                            spacing: 8,
+                            children:
+                                _defaultAddOns.map((addon) {
+                                  return FilterChip(
+                                    label: Text(addon),
+                                    selected: selectedAddOns.contains(addon),
+                                    onSelected:
+                                        (selected) => setDialogState(() {
+                                          if (selected) {
+                                            selectedAddOns.add(addon);
+                                          } else {
+                                            selectedAddOns.remove(addon);
+                                          }
+                                        }),
+                                  );
+                                }).toList(),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: noteController,
+                            maxLines: 2,
+                            decoration: const InputDecoration(
+                              labelText: 'Special instructions',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      onPressed: () {
+                        CartStore.instance.addItem(
+                          dish,
+                          selectedSauce: selectedSauce,
+                          addOns: selectedAddOns.toList(),
+                          specialInstructions: noteController.text.trim(),
+                        );
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('${dish.name} added to cart'),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      child: const Text('Add to cart'),
+                    ),
+                  ],
+                ),
+          ),
+    );
+    noteController.dispose();
+  }
+
+  Future<void> _showCustomizeCartItem(CartItem item) async {
+    String? selectedSauce = item.selectedSauce;
+    final selectedAddOns = item.addOns.toSet();
+    final noteController = TextEditingController(
+      text: item.specialInstructions ?? '',
+    );
+    await showDialog<void>(
+      context: context,
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: Text('Edit ${item.dish.name}'),
+                  content: SizedBox(
+                    width: 420,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (item.dish.sauces.isNotEmpty) ...[
+                            const Text(
+                              'Sauce selection',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            for (final sauce in item.dish.sauces)
+                              RadioListTile<String>(
+                                value: sauce,
+                                groupValue: selectedSauce,
+                                title: Text(sauce),
+                                onChanged:
+                                    (value) => setDialogState(
+                                      () => selectedSauce = value,
+                                    ),
+                              ),
+                            const SizedBox(height: 8),
+                          ],
+                          const Text(
+                            'Add-ons / toppings',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          Wrap(
+                            spacing: 8,
+                            children:
+                                _defaultAddOns.map((addon) {
+                                  return FilterChip(
+                                    label: Text(addon),
+                                    selected: selectedAddOns.contains(addon),
+                                    onSelected:
+                                        (selected) => setDialogState(() {
+                                          if (selected) {
+                                            selectedAddOns.add(addon);
+                                          } else {
+                                            selectedAddOns.remove(addon);
+                                          }
+                                        }),
+                                  );
+                                }).toList(),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: noteController,
+                            maxLines: 2,
+                            decoration: const InputDecoration(
+                              labelText: 'Special instructions',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        CartStore.instance.removeCartItem(item);
+                        Navigator.of(context).pop();
+                      },
+                      child: const Text('Remove'),
+                    ),
+                    FilledButton(
+                      onPressed: () {
+                        CartStore.instance.updateCartItemCustomizations(
+                          item,
+                          selectedSauce: selectedSauce,
+                          addOns: selectedAddOns.toList(),
+                          specialInstructions: noteController.text.trim(),
+                        );
+                        Navigator.of(context).pop();
+                      },
+                      child: const Text('Save'),
+                    ),
+                  ],
+                ),
+          ),
+    );
+    noteController.dispose();
   }
 
   // ignore: unused_element

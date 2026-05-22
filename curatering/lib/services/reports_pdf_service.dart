@@ -455,8 +455,8 @@ Future<Uint8List> buildOperationsReportPdf({
     pw.SizedBox(height: 16),
   ];
 
-  if (scope != 'restaurant') {
-    blocks.add(pw.Text('Catering / Events — Summary', style: headerStyle));
+  if (scope == 'combined' || scope == 'catering') {
+    blocks.add(pw.Text('Catering — Summary', style: headerStyle));
     blocks.add(
       summaryTable('Catering Summary Table', [
         ['Completed orders', '${data.catering.orderCount}'],
@@ -469,20 +469,42 @@ Future<Uint8List> buildOperationsReportPdf({
           'Catering feedback complaints',
           '${data.catering.feedback.complaintCount}',
         ],
-        ['Events with complaints', '${data.catering.feedback.count}'],
+        ['Orders with complaints', '${data.catering.feedback.count}'],
       ]),
     );
     blocks.add(
       chartBars('Top Requested Dishes Chart', data.catering.topDishes),
     );
-    blocks.add(chartBars('Event Types Chart', data.catering.topEventTypes));
     blocks.add(rankTable('Top requested dishes', data.catering.topDishes));
+  }
+
+  if (scope == 'combined' || scope == 'catering+events') {
+    blocks.add(pw.SizedBox(height: 8));
+    blocks.add(pw.Text('Catering + Events — Summary', style: headerStyle));
     blocks.add(
-      rankTable('Most frequent event type', data.catering.topEventTypes),
+      summaryTable('Catering + Events Summary Table', [
+        ['Completed orders', '${data.cateringEvents.orderCount}'],
+        ['Total sales', formatPhp(data.cateringEvents.totalSales)],
+        [
+          'Average guest count',
+          data.cateringEvents.averageGuestCount.toStringAsFixed(1),
+        ],
+        [
+          'Feedback complaints',
+          '${data.cateringEvents.feedback.complaintCount}',
+        ],
+        ['Events with complaints', '${data.cateringEvents.feedback.count}'],
+      ]),
+    );
+    blocks.add(
+      chartBars('Event Types Chart', data.cateringEvents.topEventTypes),
+    );
+    blocks.add(
+      rankTable('Most frequent event type', data.cateringEvents.topEventTypes),
     );
   }
 
-  if (scope != 'catering') {
+  if (scope == 'combined' || scope == 'restaurant') {
     blocks.add(pw.SizedBox(height: 8));
     blocks.add(pw.Text('Restaurant — Summary', style: headerStyle));
     blocks.add(

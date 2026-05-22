@@ -225,6 +225,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   'name': item.dish.name,
                   'price': item.dish.price,
                   'quantity': item.quantity,
+                  'selectedSauce': item.selectedSauce,
+                  'selected_sauce': item.selectedSauce,
+                  'addOns': item.addOns,
+                  'add_ons': item.addOns,
+                  'specialInstructions': item.specialInstructions,
+                  'special_instructions': item.specialInstructions,
                 },
               )
               .toList();
@@ -525,6 +531,31 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                                                 .shade600,
                                                       ),
                                                     ),
+                                                  if (item.addOns.isNotEmpty)
+                                                    Text(
+                                                      'ADD-ONS: ${item.addOns.join(', ').toUpperCase()}',
+                                                      style: TextStyle(
+                                                        fontSize: 9,
+                                                        color:
+                                                            Colors
+                                                                .grey
+                                                                .shade600,
+                                                      ),
+                                                    ),
+                                                  if (item.specialInstructions
+                                                          ?.trim()
+                                                          .isNotEmpty ==
+                                                      true)
+                                                    Text(
+                                                      'NOTE: ${item.specialInstructions}',
+                                                      style: TextStyle(
+                                                        fontSize: 9,
+                                                        color:
+                                                            Colors
+                                                                .grey
+                                                                .shade600,
+                                                      ),
+                                                    ),
                                                 ],
                                               ),
                                             ),
@@ -536,8 +567,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                                     if (item.quantity > 1) {
                                                       setState(() {
                                                         CartStore.instance
-                                                            .updateQuantity(
-                                                              item.dish.id,
+                                                            .updateCartItemQuantity(
+                                                              item,
                                                               item.quantity - 1,
                                                             );
                                                       });
@@ -545,8 +576,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                                       // Remove item if quantity becomes 0
                                                       setState(() {
                                                         CartStore.instance
-                                                            .removeItem(
-                                                              item.dish.id,
+                                                            .removeCartItem(
+                                                              item,
                                                             );
                                                       });
                                                     }
@@ -573,8 +604,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                                   onPressed: () {
                                                     setState(() {
                                                       CartStore.instance
-                                                          .updateQuantity(
-                                                            item.dish.id,
+                                                          .updateCartItemQuantity(
+                                                            item,
                                                             item.quantity + 1,
                                                           );
                                                     });

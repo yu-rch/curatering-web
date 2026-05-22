@@ -189,13 +189,45 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   String _managerOrderId(Map<String, dynamic> order) {
-    for (final key in const ['id', 'order_id', 'order_no']) {
+    for (final key in const [
+      'id',
+      'order_id',
+      'order_no',
+      'orderId',
+      'orderNo',
+      'order_number',
+      'orderNumber',
+      'restaurant_order_id',
+      'restaurantOrderId',
+      'public_order_id',
+      'publicOrderId',
+    ]) {
       final value = order[key]?.toString().trim();
       if (value != null && value.isNotEmpty && value.toLowerCase() != 'null') {
         return value;
       }
     }
     return '';
+  }
+
+  bool _hasOrderIdValue(dynamic value) {
+    final s = value?.toString().trim();
+    return s != null && s.isNotEmpty && s.toLowerCase() != 'null';
+  }
+
+  Map<String, dynamic> _normalizeManagerOrderMap(Map<String, dynamic> order) {
+    final normalized = Map<String, dynamic>.from(order);
+    final managerId = _managerOrderId(normalized);
+    if (managerId.isNotEmpty) {
+      normalized['manager_order_id'] = managerId;
+      if (!_hasOrderIdValue(normalized['order_id'])) {
+        normalized['order_id'] = managerId;
+      }
+      if (!_hasOrderIdValue(normalized['order_no'])) {
+        normalized['order_no'] = managerId;
+      }
+    }
+    return normalized;
   }
 
   String _responseErrorMessage(http.Response response) {
@@ -265,6 +297,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                 order['items'] = [];
               }
             }
+            return _normalizeManagerOrderMap(order);
           }
           return order;
         }).toList();
@@ -304,7 +337,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       }
 
       final response = await http.put(
-        Uri.parse('$apiBaseUrl/api/manager/restaurant/orders/$orderId'),
+        Uri.parse(
+          '$apiBaseUrl/api/manager/restaurant/orders/${Uri.encodeComponent(orderId)}',
+        ),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -1045,7 +1080,11 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   String _shortOrderId(dynamic rawId, dynamic orderNo) {
-    return formatRestaurantOrderNo({'order_no': orderNo, 'id': rawId});
+    return formatRestaurantOrderNo({
+      'order_no': orderNo,
+      'order_id': orderNo,
+      'id': rawId,
+    });
   }
 
   Widget _buildOrderTableRow(Map<String, dynamic> order, int index) {
@@ -1776,7 +1815,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                                             final token = await _getAuthToken();
                                             final response = await http.post(
                                               Uri.parse(
-                                                '$apiBaseUrl/api/manager/restaurant/orders/$orderId/confirm-payment',
+                                                '$apiBaseUrl/api/manager/restaurant/orders/${Uri.encodeComponent(orderId)}/confirm-payment',
                                               ),
                                               headers: {
                                                 'Authorization':
@@ -1858,7 +1897,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                                           final token = await _getAuthToken();
                                           await http.post(
                                             Uri.parse(
-                                              '$apiBaseUrl/api/manager/restaurant/orders/$orderId/notify-insufficient-payment',
+                                              '$apiBaseUrl/api/manager/restaurant/orders/${Uri.encodeComponent(orderId)}/notify-insufficient-payment',
                                             ),
                                             headers: {
                                               'Authorization': 'Bearer $token',
@@ -2020,7 +2059,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         final token = await _getAuthToken();
         final response = await http.post(
           Uri.parse(
-            '$apiBaseUrl/api/manager/restaurant/orders/$orderId/cancel',
+            '$apiBaseUrl/api/manager/restaurant/orders/${Uri.encodeComponent(orderId)}/cancel',
           ),
           headers: {
             'Authorization': 'Bearer $token',

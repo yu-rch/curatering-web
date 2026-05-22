@@ -82,9 +82,9 @@ class AppScaffold extends StatelessWidget {
 
   static const _superAdminSidebarItems = <_SidebarItemData>[
     _SidebarItemData(
-      icon: Icons.admin_panel_settings,
-      label: 'Super Admin Dashboard',
-      route: '/super-admin-dashboard',
+      icon: Icons.dashboard,
+      label: 'Dashboard',
+      route: '/dashboard',
     ),
     _SidebarItemData(
       icon: Icons.help_outline,
@@ -214,7 +214,10 @@ class AppScaffold extends StatelessWidget {
     if (role == Role.superAdmin) {
       return [
         ..._superAdminSidebarItems,
-        ..._commonSidebarItems.where((item) => item.route != '/help-requests'),
+        ..._commonSidebarItems.where(
+          (item) =>
+              item.route != '/help-requests' && item.route != '/dashboard',
+        ),
       ];
     }
     return _commonSidebarItems

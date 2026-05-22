@@ -4,11 +4,13 @@ class ReportsSummaryData {
   const ReportsSummaryData({
     required this.period,
     required this.catering,
+    required this.cateringEvents,
     required this.restaurant,
   });
 
   final Map<String, dynamic> period;
   final CateringReportSection catering;
+  final CateringReportSection cateringEvents;
   final RestaurantReportSection restaurant;
 
   factory ReportsSummaryData.fromJson(Map<String, dynamic> json) {
@@ -16,6 +18,11 @@ class ReportsSummaryData {
       period: Map<String, dynamic>.from(json['period'] as Map? ?? {}),
       catering: CateringReportSection.fromJson(
         Map<String, dynamic>.from(json['catering'] as Map? ?? {}),
+      ),
+      cateringEvents: CateringReportSection.fromJson(
+        Map<String, dynamic>.from(
+          (json['cateringEvents'] ?? json['catering_events']) as Map? ?? {},
+        ),
       ),
       restaurant: RestaurantReportSection.fromJson(
         Map<String, dynamic>.from(json['restaurant'] as Map? ?? {}),
@@ -42,8 +49,7 @@ class CateringReportSection {
   final FeedbackReportMetrics feedback;
 
   factory CateringReportSection.fromJson(Map<String, dynamic> json) {
-    double d(dynamic v) =>
-        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double d(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     List<ReportRankItem> list(dynamic raw) {
       if (raw is! List) return const [];
       return raw
@@ -89,8 +95,7 @@ class RestaurantReportSection {
   final FeedbackReportMetrics feedback;
 
   factory RestaurantReportSection.fromJson(Map<String, dynamic> json) {
-    double d(dynamic v) =>
-        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double d(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     List<ReportRankItem> list(dynamic raw) {
       if (raw is! List) return const [];
       return raw
@@ -134,8 +139,7 @@ class FeedbackReportMetrics {
   final int complaintCount;
 
   factory FeedbackReportMetrics.fromJson(Map<String, dynamic> json) {
-    double d(dynamic v) =>
-        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double d(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     int i(dynamic v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
     return FeedbackReportMetrics(
       count: i(json['count']),

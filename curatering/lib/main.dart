@@ -77,6 +77,18 @@ Widget _staffPage(Widget child, String path) {
   return HostRouteGuard(routePath: path, child: child);
 }
 
+class _RoleAwareDashboard extends StatelessWidget {
+  const _RoleAwareDashboard();
+
+  @override
+  Widget build(BuildContext context) {
+    if (AuthSession.instance.currentRole == Role.superAdmin) {
+      return const SuperAdminDashboardPage();
+    }
+    return const Dashboard();
+  }
+}
+
 String _startupRoutePath() => resolveAppInitialRoute();
 
 String _routePathFromSettings(RouteSettings settings) {
@@ -135,10 +147,10 @@ Route<dynamic>? _buildRouteForPath(String path) {
         (context) => _staffPage(
           RoleGuard(
             requiredRole: Role.manager,
-            allowedRoles: {Role.manager, Role.supervisor},
+            allowedRoles: {Role.manager, Role.supervisor, Role.superAdmin},
             child: PagePermissionGuard(
               route: PagePermissionRoutes.dashboard,
-              child: const Dashboard(),
+              child: const _RoleAwareDashboard(),
             ),
           ),
           '/dashboard',
@@ -147,7 +159,7 @@ Route<dynamic>? _buildRouteForPath(String path) {
         (context) => _staffPage(
           const RoleGuard(
             requiredRole: Role.superAdmin,
-            child: SuperAdminDashboardPage(),
+            child: _RoleAwareDashboard(),
           ),
           '/super-admin-dashboard',
         ),
@@ -582,10 +594,14 @@ class _MyAppState extends State<MyApp> {
                 (context) => _staffPage(
                   RoleGuard(
                     requiredRole: Role.manager,
-                    allowedRoles: {Role.manager, Role.supervisor},
+                    allowedRoles: {
+                      Role.manager,
+                      Role.supervisor,
+                      Role.superAdmin,
+                    },
                     child: PagePermissionGuard(
                       route: PagePermissionRoutes.dashboard,
-                      child: const Dashboard(),
+                      child: const _RoleAwareDashboard(),
                     ),
                   ),
                   '/dashboard',

@@ -12,7 +12,7 @@ import '../widgets/antd_tokens.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/paginated_data_table.dart';
 
-enum _ReportScope { catering, restaurant, combined }
+enum _ReportScope { catering, cateringEvents, restaurant, combined }
 
 class _DetailRow {
   const _DetailRow(this.label, this.value);
@@ -98,6 +98,7 @@ class _ReportsState extends State<Reports> {
     try {
       final scopeLabel = switch (_scope) {
         _ReportScope.catering => 'catering',
+        _ReportScope.cateringEvents => 'catering+events',
         _ReportScope.restaurant => 'restaurant',
         _ => 'combined',
       };
@@ -381,7 +382,11 @@ class _ReportsState extends State<Reports> {
                     ),
                     DropdownMenuItem(
                       value: _ReportScope.catering,
-                      child: Text('Catering / Events'),
+                      child: Text('Catering'),
+                    ),
+                    DropdownMenuItem(
+                      value: _ReportScope.cateringEvents,
+                      child: Text('Catering + Events'),
                     ),
                     DropdownMenuItem(
                       value: _ReportScope.restaurant,
@@ -429,16 +434,17 @@ class _ReportsState extends State<Reports> {
               Expanded(
                 child: ListView(
                   children: [
-                    if (_scope != _ReportScope.restaurant) ...[
+                    if (_scope == _ReportScope.combined ||
+                        _scope == _ReportScope.catering) ...[
                       const Text(
-                        'Catering / Events',
+                        'Catering',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      _summaryTable('Catering / Events Summary', [
+                      _summaryTable('Catering Summary', [
                         _DetailRow(
                           'Completed orders',
                           '${data.catering.orderCount}',
@@ -456,7 +462,7 @@ class _ReportsState extends State<Reports> {
                           '${data.catering.feedback.complaintCount}',
                         ),
                         _DetailRow(
-                          'Events with complaints',
+                          'Orders with complaints',
                           '${data.catering.feedback.count}',
                         ),
                       ]),
@@ -464,20 +470,56 @@ class _ReportsState extends State<Reports> {
                         'Top requested dishes chart',
                         data.catering.topDishes,
                       ),
-                      _rankChart(
-                        'Event type chart',
-                        data.catering.topEventTypes,
-                      ),
                       _rankTable(
                         'Top requested dishes',
                         data.catering.topDishes,
                       ),
+                    ],
+                    if (_scope == _ReportScope.combined ||
+                        _scope == _ReportScope.cateringEvents) ...[
+                      const Text(
+                        'Catering + Events',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _summaryTable('Catering + Events Summary', [
+                        _DetailRow(
+                          'Completed orders',
+                          '${data.cateringEvents.orderCount}',
+                        ),
+                        _DetailRow(
+                          'Total sales',
+                          formatPhp(data.cateringEvents.totalSales),
+                        ),
+                        _DetailRow(
+                          'Average guest count',
+                          data.cateringEvents.averageGuestCount.toStringAsFixed(
+                            1,
+                          ),
+                        ),
+                        _DetailRow(
+                          'Feedback complaints',
+                          '${data.cateringEvents.feedback.complaintCount}',
+                        ),
+                        _DetailRow(
+                          'Events with complaints',
+                          '${data.cateringEvents.feedback.count}',
+                        ),
+                      ]),
+                      _rankChart(
+                        'Event type chart',
+                        data.cateringEvents.topEventTypes,
+                      ),
                       _rankTable(
                         'Most frequent event type',
-                        data.catering.topEventTypes,
+                        data.cateringEvents.topEventTypes,
                       ),
                     ],
-                    if (_scope != _ReportScope.catering) ...[
+                    if (_scope == _ReportScope.combined ||
+                        _scope == _ReportScope.restaurant) ...[
                       const Text(
                         'Restaurant',
                         style: TextStyle(
