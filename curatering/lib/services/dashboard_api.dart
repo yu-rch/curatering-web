@@ -318,6 +318,7 @@ class DashboardInsight {
 class DashboardApi {
   DashboardApi._();
   static final DashboardApi instance = DashboardApi._();
+  static const Duration _analysisTimeout = Duration(minutes: 5);
 
   Future<DashboardSummary> loadSummary({
     DashboardFilters filters = const DashboardFilters(),
@@ -355,6 +356,7 @@ class DashboardApi {
     final decoded = await ApiClient.instance.postJson(
       '/api/dashboard/analyze',
       body: body,
+      timeout: _analysisTimeout,
     );
     final data = decoded['data'];
     if (data is! Map) {

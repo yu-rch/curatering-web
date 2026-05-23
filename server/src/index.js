@@ -361,6 +361,83 @@ function normalizeRunpodInput(input) {
   return out;
 }
 
+function shouldExpandEventDesignPrompt(input) {
+  const taskType = String(input?.task_type || input?.task || "").trim().toLowerCase();
+  return (
+    taskType === "event_design_image" ||
+    taskType === "event_design" ||
+    input?.use_nlp_prompt_expansion === true
+  );
+}
+
+function normalizeRunpodEventPromptExpansion(output) {
+  const result = output?.result || output?.analysis || output;
+  if (!result || typeof result !== "object" || Array.isArray(result)) return null;
+  const positivePrompt = String(result.positive_prompt || result.prompt || "").trim();
+  if (!positivePrompt) return null;
+  const recommendedStrength = Number(result.recommended_strength);
+  return {
+    positive_prompt: positivePrompt,
+    negative_prompt: String(result.negative_prompt || "").trim(),
+    theme_tokens: Array.isArray(result.theme_tokens) ? result.theme_tokens : [],
+    visual_direction: Array.isArray(result.visual_direction) ? result.visual_direction : [],
+    visual_keywords: Array.isArray(result.visual_keywords) ? result.visual_keywords : [],
+    decor_elements: Array.isArray(result.decor_elements) ? result.decor_elements : [],
+    style_tokens: Array.isArray(result.style_tokens) ? result.style_tokens : [],
+    lighting_tokens: Array.isArray(result.lighting_tokens) ? result.lighting_tokens : [],
+    decor_tokens: Array.isArray(result.decor_tokens) ? result.decor_tokens : [],
+    negative_tokens: Array.isArray(result.negative_tokens) ? result.negative_tokens : [],
+    recommended_strength: Number.isFinite(recommendedStrength)
+      ? Math.min(0.42, Math.max(0.30, recommendedStrength))
+      : undefined,
+  };
+}
+
+async function expandEventDesignPromptForRunpod(input) {
+  if (!shouldExpandEventDesignPrompt(input)) return input;
+
+  const nlpInput = {
+    task_type: "event_design",
+    event_type: input.event_type,
+    theme: input.theme || input.style,
+    style: input.style,
+    mood: input.mood,
+    colors: input.colors || input.color_palette,
+    color_palette: input.color_palette || input.colors,
+    decor: input.decor || input.decor_elements,
+    decor_elements: input.decor_elements || input.decor,
+    notes: input.notes || input.custom_instructions || input.prompt,
+    custom_instructions: input.custom_instructions || input.notes,
+    prompt: input.prompt,
+  };
+
+  try {
+    const output = await runRunpodJobAndWait("nlp", nlpInput);
+    const expansion = normalizeRunpodEventPromptExpansion(output);
+    if (!expansion) {
+      return {
+        ...input,
+        nlp_warning: "NLP prompt expansion returned no usable prompt",
+      };
+    }
+    return {
+      ...input,
+      ...expansion,
+      prompt: expansion.positive_prompt,
+      negative_prompt: expansion.negative_prompt || input.negative_prompt,
+      strength: expansion.recommended_strength ?? input.strength,
+      task_type: "sdxl_event_design",
+      nlp_expansion: expansion,
+    };
+  } catch (e) {
+    console.error("[runpod proxy] event prompt expansion failed:", e?.message || e);
+    return {
+      ...input,
+      nlp_warning: String(e?.message || e),
+    };
+  }
+}
+
 function getRunpodInput(req, res) {
   const input = req.body?.input;
   if (input == null || typeof input !== "object" || Array.isArray(input)) {
@@ -391,7 +468,7 @@ async function handleRunpodImageRun(req, res) {
     if (!input) return;
     let normalized;
     try {
-      normalized = normalizeRunpodInput(input);
+      normalized = await expandEventDesignPromptForRunpod(normalizeRunpodInput(input));
       const initLen =
         typeof normalized.init_image_base64 === "string"
           ? normalized.init_image_base64.length
@@ -401,6 +478,8 @@ async function handleRunpodImageRun(req, res) {
         initLen > 0 ? `img2img (venue b64 ${initLen} chars)` : "txt2img (no venue image)",
         "steps=",
         normalized.num_inference_steps ?? "default",
+        "nlp=",
+        normalized.nlp_expansion ? "expanded" : normalized.nlp_warning ? "fallback" : "skipped",
       );
     } catch (normErr) {
       if (normErr?.code === "payload_too_large") {
@@ -1156,7 +1235,9 @@ app.post(
         alerts,
       };
       if (prompt) input.prompt = prompt;
-      const aiResponse = await runRunpodJobAndWait("nlp", input);
+      const aiResponse = await runRunpodJobAndWait("nlp", input, {
+        timeoutMs: DASHBOARD_NLP_TIMEOUT_MS,
+      });
       const normalized = normalizeDashboardAiResult(aiResponse);
       if (!normalized.summary) {
         normalized.summary =
@@ -1332,6 +1413,10 @@ const RUNPOD_NLP_ENDPOINT_ID = String(
 ).trim();
 const RUNPOD_API_BASE = "https://api.runpod.ai/v2";
 const RUNPOD_NLP_TIMEOUT_MS = Number(process.env.RUNPOD_NLP_TIMEOUT_MS || 300000);
+const DASHBOARD_NLP_TIMEOUT_MS = Math.max(
+  300000,
+  Number(process.env.DASHBOARD_NLP_TIMEOUT_MS || RUNPOD_NLP_TIMEOUT_MS),
+);
 const RUNPOD_NLP_POLL_INTERVAL_MS = Number(process.env.RUNPOD_NLP_POLL_INTERVAL_MS || 2500);
 
 function getRunpodEndpointId(service) {

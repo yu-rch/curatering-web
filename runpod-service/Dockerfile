@@ -23,8 +23,8 @@ ENV HF_HOME=/app/huggingface
 ENV SD_MODEL_ID=stabilityai/stable-diffusion-xl-base-1.0
 ENV SD_IMAGE_SIZE=1024
 
-# copy handler
-COPY handler_minimal.py handler.py
+# copy primary event-design handler
+COPY handler.py handler.py
 
 # Runtime: inject SUPABASE_URL and SUPABASE_KEY through RunPod secrets (do not bake into the image).
 CMD ["python3", "-u", "handler.py"]

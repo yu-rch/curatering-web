@@ -2475,16 +2475,21 @@ class _InquirePageState extends State<InquirePage> {
       _selectedDecor,
       _decorOtherController,
     );
+    final notes = _designPromptController.text.trim();
 
     return {
+      'task_type': 'event_design_image',
+      'use_nlp_prompt_expansion': true,
       if (eventType != null && eventType.isNotEmpty)
         'event_type': eventType.trim().toLowerCase(),
-      if (style != null && style.isNotEmpty) 'style': style.trim(),
+      if (style != null && style.isNotEmpty) ...{
+        'theme': style.trim(),
+        'style': style.trim(),
+      },
       if (mood != null && mood.isNotEmpty) 'mood': mood.trim(),
-      if (colors.isNotEmpty) 'color_palette': colors,
-      if (decor.isNotEmpty) 'decor_elements': decor,
-      if (_designPromptController.text.trim().isNotEmpty)
-        'custom_instructions': _designPromptController.text.trim(),
+      if (colors.isNotEmpty) ...{'colors': colors, 'color_palette': colors},
+      if (decor.isNotEmpty) ...{'decor': decor, 'decor_elements': decor},
+      if (notes.isNotEmpty) ...{'notes': notes, 'custom_instructions': notes},
       'formality': _formality,
       'negative_prompt': _eventDesignNegativePrompt(),
       'guidance_scale': 6.5,

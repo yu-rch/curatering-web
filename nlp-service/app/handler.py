@@ -135,6 +135,492 @@ Provide likely causes, what to check, and recommended actions.
 """.strip()
 
 
+EVENT_THEME_FALLBACKS = {
+    "cinderella": {
+        "visual_keywords": [
+            "royal ballroom",
+            "blue and silver palette",
+            "glass slipper decor",
+            "fairytale lighting",
+            "luxury princess aesthetic",
+        ],
+        "visual_direction": [
+            "luxury fairytale princess ballroom",
+            "elegant royal blue decor",
+            "fairy lights",
+            "realistic premium venue styling",
+            "Cinderella-inspired centerpiece",
+        ],
+        "style_tokens": [
+            "luxury fairytale princess ballroom",
+            "royal blue drapery",
+            "silver accents",
+            "photorealistic event styling",
+        ],
+        "lighting_tokens": [
+            "fairytale lighting",
+            "cinematic lighting",
+            "soft elegant glow",
+        ],
+        "decor_tokens": [
+            "glass slipper decor",
+            "crystal chandeliers",
+            "Cinderella-inspired centerpiece",
+            "premium floral centerpieces",
+        ],
+    },
+    "harry potter": {
+        "visual_keywords": [
+            "floating candles",
+            "dark gothic banquet hall",
+            "warm magical lighting",
+            "castle-inspired decor",
+        ],
+        "visual_direction": [
+            "floating candles",
+            "dark gothic banquet hall",
+            "warm magical lighting",
+            "castle-inspired decor",
+        ],
+        "style_tokens": [
+            "dark academia banquet hall",
+            "castle-inspired interior",
+            "magical gothic atmosphere",
+            "photorealistic event styling",
+        ],
+        "lighting_tokens": [
+            "floating candlelight",
+            "warm magical lighting",
+            "cinematic shadows",
+        ],
+        "decor_tokens": [
+            "long banquet tables",
+            "floating candles",
+            "house banners",
+            "castle-inspired decor",
+        ],
+    },
+    "garden": {
+        "visual_keywords": [
+            "lush floral styling",
+            "romantic greenery",
+            "soft natural lighting",
+            "elegant botanical decor",
+        ],
+        "visual_direction": [
+            "romantic garden venue styling",
+            "lush floral installations",
+            "soft natural lighting",
+            "premium botanical decor",
+        ],
+        "style_tokens": [
+            "elegant botanical decor",
+            "luxury garden venue",
+            "photorealistic event styling",
+        ],
+        "lighting_tokens": [
+            "soft natural lighting",
+            "warm ambient glow",
+            "cinematic lighting",
+        ],
+        "decor_tokens": [
+            "floral arch",
+            "greenery installations",
+            "premium floral centerpieces",
+        ],
+    },
+}
+
+EVENT_DECOR_FALLBACKS = {
+    ("birthday", "luxurious"): [
+        "crystal chandeliers",
+        "premium floral centerpieces",
+        "elegant stage backdrop",
+    ],
+    ("wedding", "romantic"): [
+        "floral aisle styling",
+        "soft candlelit tables",
+        "elegant ceremony backdrop",
+    ],
+}
+
+EVENT_NEGATIVE_TOKENS = [
+    "cartoon",
+    "anime",
+    "warped architecture",
+    "warped room",
+    "blurry",
+    "distorted room",
+    "distorted architecture",
+    "melted surfaces",
+    "duplicate objects",
+    "low quality",
+    "fisheye",
+]
+
+EVENT_TYPE_TEMPLATES = {
+    "wedding": {
+        "theme_tokens": [
+            "elegant wedding reception",
+            "symmetrical luxury styling",
+            "romantic floral venue",
+        ],
+        "decor_tokens": [
+            "premium floral centerpieces",
+            "draped ceiling fabric",
+            "crystal chandeliers",
+            "elegant ceremony backdrop",
+        ],
+        "lighting_tokens": [
+            "warm candle lighting",
+            "soft romantic glow",
+            "luxury ambient lighting",
+        ],
+    },
+    "birthday": {
+        "theme_tokens": [
+            "celebration focal styling",
+            "playful luxury event design",
+            "centerpiece-focused party venue",
+        ],
+        "decor_tokens": [
+            "statement stage backdrop",
+            "premium photo booth",
+            "themed centerpiece",
+            "balloon and floral accents",
+        ],
+        "lighting_tokens": [
+            "festive cinematic lighting",
+            "warm magical glow",
+            "spotlit centerpiece",
+        ],
+    },
+    "corporate": {
+        "theme_tokens": [
+            "modern corporate event venue",
+            "minimal premium branding",
+            "clean executive styling",
+        ],
+        "decor_tokens": [
+            "branded stage backdrop",
+            "minimal floral accents",
+            "sleek lounge seating",
+            "premium signage",
+        ],
+        "lighting_tokens": [
+            "clean professional lighting",
+            "soft neutral illumination",
+            "modern stage lighting",
+        ],
+    },
+}
+
+SEMANTIC_DECOR_RECOMMENDATIONS = {
+    "luxury wedding": {
+        "decor_tokens": [
+            "crystal chandeliers",
+            "premium floral centerpieces",
+            "draped ceiling fabric",
+            "warm candle lighting",
+        ],
+        "lighting_tokens": ["warm candle lighting", "soft romantic glow"],
+    },
+    "luxurious wedding": {
+        "decor_tokens": [
+            "crystal chandeliers",
+            "premium floral centerpieces",
+            "draped ceiling fabric",
+            "warm candle lighting",
+        ],
+        "lighting_tokens": ["warm candle lighting", "soft romantic glow"],
+    },
+    "luxury birthday": {
+        "decor_tokens": [
+            "premium backdrop",
+            "luxury floral centerpieces",
+            "spotlit themed centerpiece",
+        ],
+        "lighting_tokens": ["festive cinematic lighting", "warm magical glow"],
+    },
+    "corporate gala": {
+        "decor_tokens": [
+            "premium branded backdrop",
+            "sleek stage design",
+            "minimal floral accents",
+        ],
+        "lighting_tokens": ["clean professional lighting", "modern stage lighting"],
+    },
+}
+
+STYLE_CONFLICTS = [
+    {"cartoon", "anime", "cgi", "illustration"},
+    {"minimal", "maximalist", "ornate"},
+    {"rustic", "futuristic", "cyberpunk"},
+    {"gothic", "pastel garden"},
+]
+
+INSTRUCTION_PATTERNS = [
+    r"\bplease\b",
+    r"\bmake\b",
+    r"\bcreate\b",
+    r"\bgenerate\b",
+    r"\bdesign\b",
+    r"\buse\b",
+    r"\badd\b",
+    r"\bremove\b",
+    r"\bshould\b",
+    r"\bmust\b",
+    r"\bprompt\b",
+    r"\bnegative prompt\b",
+    r"\bsdxl\b",
+    r"\bcontrolnet\b",
+]
+
+ARCHITECTURE_HINT_PATTERNS = [
+    r"\bpreserve (the )?(room|venue|architecture|geometry|layout)\b",
+    r"\bkeep (the )?(room|venue|architecture|geometry|layout)\b",
+    r"\bdo not change (the )?(room|venue|architecture|geometry|layout)\b",
+    r"\bcorrect architecture\b",
+    r"\bstable venue preservation\b",
+]
+
+
+def _clean_text(value):
+    return str(value or "").strip()
+
+
+def _as_list(value, max_items=12):
+    if isinstance(value, list):
+        items = value
+    elif isinstance(value, str):
+        items = re.split(r"[,;\n]+", value)
+    else:
+        items = []
+    return [str(item).strip() for item in items if str(item).strip()][:max_items]
+
+
+def _dedupe(items, max_items=12):
+    out = []
+    seen = set()
+    for item in items:
+        text = str(item or "").strip()
+        key = text.lower()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def _sanitize_phrase(value):
+    text = _clean_text(value)
+    if not text:
+        return ""
+    text = re.sub(r"[\[\]\{\}\"`]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip(" .,:;-")
+    lowered = text.lower()
+    for pattern in ARCHITECTURE_HINT_PATTERNS:
+        lowered = re.sub(pattern, "", lowered, flags=re.IGNORECASE)
+    for pattern in INSTRUCTION_PATTERNS:
+        lowered = re.sub(pattern, "", lowered, flags=re.IGNORECASE)
+    lowered = re.sub(r"\s+", " ", lowered).strip(" .,:;-")
+    if not lowered:
+        return ""
+    return lowered
+
+
+def _sanitize_list(values, max_items=12):
+    return _dedupe([_sanitize_phrase(item) for item in _as_list(values, max_items * 2)], max_items)
+
+
+def _remove_conflicting_aesthetics(items, max_items=12):
+    picked = []
+    blocked = set()
+    for item in items:
+        key = item.lower()
+        if any(term in key for term in blocked):
+            continue
+        picked.append(item)
+        for group in STYLE_CONFLICTS:
+            matches = [term for term in group if term in key]
+            if matches:
+                blocked.update(group - set(matches))
+        if len(picked) >= max_items:
+            break
+    return picked
+
+
+def _event_theme_data(theme, style=""):
+    lookup = f"{theme} {style}".strip().lower()
+    for key, data in EVENT_THEME_FALLBACKS.items():
+        if key in lookup:
+            return data
+    return {}
+
+
+def _template_for_event(event_type, prompt=""):
+    lookup = f"{event_type} {prompt}".lower()
+    for key, data in EVENT_TYPE_TEMPLATES.items():
+        if key in lookup:
+            return data
+    return {}
+
+
+def _semantic_recommendations(text):
+    lookup = text.lower()
+    merged = {"decor_tokens": [], "lighting_tokens": []}
+    for key, data in SEMANTIC_DECOR_RECOMMENDATIONS.items():
+        if key in lookup:
+            merged["decor_tokens"].extend(data.get("decor_tokens", []))
+            merged["lighting_tokens"].extend(data.get("lighting_tokens", []))
+    return merged
+
+
+def _limit_prompt_tokens(parts, min_tokens=50, max_tokens=120):
+    clean = _remove_conflicting_aesthetics(_dedupe(parts, 32), 32)
+    filler = [
+        "photorealistic interior photography",
+        "realistic premium venue styling",
+        "elegant event styling",
+        "high-end event photography",
+        "cinematic lighting",
+        "ultra detailed",
+    ]
+    prompt_parts = _dedupe(clean + filler, 32)
+    selected = []
+    token_count = 0
+    for part in prompt_parts:
+        count = len(part.split())
+        if selected and token_count + count > max_tokens:
+            continue
+        selected.append(part)
+        token_count += count
+        if token_count >= min_tokens:
+            break
+    if not selected:
+        selected = prompt_parts[:8]
+    return ", ".join(selected)
+
+
+def build_event_prompt_expansion_prompt(data):
+    return f"""
+[INST] You are a semantic planning AI for photorealistic event venue design.
+
+Convert structured event data into SDXL-ready prompt tokens. Return ONLY valid JSON.
+No markdown. No explanations. No trailing commas.
+
+Schema:
+{{
+  "positive_prompt": "string",
+  "negative_prompt": "string",
+  "theme_tokens": ["string"],
+  "decor_tokens": ["string"],
+  "lighting_tokens": ["string"],
+  "recommended_strength": 0.35
+}}
+
+Rules:
+- Remove prose, instructions, and non-visual wording.
+- Keep dense visual concepts only, like "luxury ballroom, elegant drapery, crystal lighting".
+- Do not over-emphasize "preserve room geometry"; use negative_prompt for architecture failures.
+- Normalize themes and remove conflicting aesthetics.
+- Use event-specific semantics: wedding=elegance/symmetry/florals/luxury lighting; birthday=focal decor/playful styling/centerpiece emphasis; corporate=modern/minimal/premium branding/clean lighting.
+- positive_prompt must be comma-separated and roughly 50-120 tokens.
+- recommended_strength should normally be 0.35 for venue img2img.
+
+Input:
+{json.dumps(data, ensure_ascii=False)}
+[/INST]
+""".strip()
+
+
+def normalize_event_prompt_expansion(parsed, source):
+    parsed = parsed if isinstance(parsed, dict) else {}
+    event_type = _clean_text(source.get("event_type")).lower()
+    theme = _clean_text(source.get("theme") or source.get("style"))
+    style = _clean_text(source.get("style"))
+    mood = _clean_text(source.get("mood")).lower()
+    prompt_text = _clean_text(source.get("prompt"))
+    notes = _clean_text(
+        source.get("notes")
+        or source.get("custom_instructions")
+        or source.get("prompt")
+    )
+    colors = _as_list(source.get("colors") or source.get("color_palette"), 8)
+    decor = _as_list(source.get("decor") or source.get("decor_elements"), 8)
+    theme_data = _event_theme_data(theme, style)
+    template = _template_for_event(event_type, f"{theme} {style} {mood} {prompt_text}")
+    semantic = _semantic_recommendations(f"{theme} {style} {mood} {prompt_text} {notes}")
+
+    decor_fallback = EVENT_DECOR_FALLBACKS.get((event_type, mood), [])
+    theme_tokens = _remove_conflicting_aesthetics(
+        _dedupe(
+            _sanitize_list(parsed.get("theme_tokens") or parsed.get("style_tokens"), 8)
+            + _sanitize_list(parsed.get("visual_direction"), 8)
+            + _sanitize_list(parsed.get("visual_keywords"), 8)
+            + theme_data.get("style_tokens", [])
+            + theme_data.get("visual_keywords", [])
+            + template.get("theme_tokens", [])
+            + ([f"{event_type} event venue"] if event_type else [])
+            + ([f"{mood} atmosphere"] if mood else []),
+            8,
+        ),
+        8,
+    )
+    lighting_tokens = _dedupe(
+        _sanitize_list(parsed.get("lighting_tokens"), 8)
+        + theme_data.get("lighting_tokens", [])
+        + template.get("lighting_tokens", [])
+        + semantic.get("lighting_tokens", [])
+        + ["cinematic lighting"],
+        8,
+    )
+    decor_tokens = _dedupe(
+        _sanitize_list(parsed.get("decor_tokens") or parsed.get("decor_elements"), 8)
+        + decor
+        + theme_data.get("decor_tokens", [])
+        + template.get("decor_tokens", [])
+        + semantic.get("decor_tokens", [])
+        + decor_fallback,
+        8,
+    )
+    negative_tokens = _dedupe(
+        _as_list(parsed.get("negative_tokens"), 10) + EVENT_NEGATIVE_TOKENS,
+        10,
+    )
+
+    positive_parts = (
+        _sanitize_list(parsed.get("positive_prompt"), 16)
+        + theme_tokens
+        + ([f"{', '.join(colors)} color palette"] if colors else [])
+        + decor_tokens
+        + lighting_tokens
+        + [
+            "realistic premium venue styling",
+            "luxury interior photography",
+            "photorealistic interior photography",
+        ]
+    )
+    positive_prompt = _limit_prompt_tokens(positive_parts)
+    negative_prompt = ", ".join(negative_tokens)
+    try:
+        strength = float(parsed.get("recommended_strength", 0.35))
+    except Exception:
+        strength = 0.35
+    strength = max(0.30, min(strength, 0.42))
+
+    return {
+        "positive_prompt": positive_prompt,
+        "negative_prompt": negative_prompt,
+        "theme_tokens": theme_tokens,
+        "decor_tokens": decor_tokens,
+        "lighting_tokens": lighting_tokens,
+        "recommended_strength": strength,
+    }
+
+
 def _json_from_substring(text, opener, closer):
     start = text.find(opener)
     end = text.rfind(closer)
@@ -307,6 +793,22 @@ def store_analysis(rows, feedbacks, analysis):
 def handler(job):
     data = (job or {}).get("input") or {}
     rows = []
+
+    task_type = str(data.get("task_type") or data.get("task") or "").strip()
+    if task_type in ("event_design", "event_prompt_expansion"):
+        raw_output, parsed = generate_json(build_event_prompt_expansion_prompt(data))
+        result = normalize_event_prompt_expansion(parsed, data)
+        return {
+            "analysis": result,
+            "result": result,
+            "positive_prompt": result["positive_prompt"],
+            "negative_prompt": result["negative_prompt"],
+            "theme_tokens": result["theme_tokens"],
+            "decor_tokens": result["decor_tokens"],
+            "lighting_tokens": result["lighting_tokens"],
+            "recommended_strength": result["recommended_strength"],
+            "raw_output": raw_output if not isinstance(parsed, dict) else None,
+        }
 
     if isinstance(data.get("dashboard_data"), dict):
         raw_output, parsed = generate_json(

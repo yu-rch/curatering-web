@@ -53,6 +53,7 @@ class ApiClient {
   Future<Map<String, dynamic>> postJson(
     String path, {
     Map<String, dynamic>? body,
+    Duration? timeout,
   }) async {
     final uri = Uri.parse(_resolveUrl(path));
     final res = await http
@@ -61,7 +62,7 @@ class ApiClient {
           headers: _defaultHeaders(),
           body: body == null ? null : jsonEncode(body),
         )
-        .timeout(_requestTimeout);
+        .timeout(timeout ?? _requestTimeout);
 
     return _handleResponse(res, uri);
   }
