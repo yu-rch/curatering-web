@@ -1824,6 +1824,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                                                     'application/json',
                                               },
                                               body: jsonEncode({
+                                                'orderId': orderId,
+                                                'order_id': orderId,
+                                                'order_no': orderId,
                                                 'amountPaid': paid,
                                               }),
                                             );
@@ -1905,6 +1908,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                                                   'application/json',
                                             },
                                             body: jsonEncode({
+                                              'orderId': orderId,
+                                              'order_id': orderId,
+                                              'order_no': orderId,
                                               'amountPaid': paid,
                                             }),
                                           );

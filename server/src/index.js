@@ -9253,113 +9253,173 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
+    function managerRestaurantOrderIdFromRequest(req) {
+      for (const value of [
+        req.params?.orderId,
+        req.body?.id,
+        req.body?.orderId,
+        req.body?.order_id,
+        req.body?.order_no,
+        req.body?.orderNo,
+        req.body?.manager_order_id,
+        req.body?.restaurant_order_id,
+      ]) {
+        const s = String(value ?? '').trim();
+        if (s && s.toLowerCase() !== 'null' && s.toLowerCase() !== 'undefined') {
+          return s;
+        }
+      }
+      return '';
+    }
+
+    const confirmRestaurantOrderPayment = async (req, res) => {
+      try {
+        const orderId = managerRestaurantOrderIdFromRequest(req);
+        if (!orderId) {
+          return res.status(400).json({ error: 'orderId is required' });
+        }
+
+        const { amountPaid } = req.body || {};
+        const paid = Number(amountPaid);
+        if (!Number.isFinite(paid) || paid <= 0) {
+          return res.status(400).json({ error: 'amountPaid is required' });
+        }
+
+        const lookup = await restaurantOrderWhereClause(orderId, 1);
+        if (!lookup) {
+          return res.status(400).json({ error: 'Invalid order id' });
+        }
+        const existing = await pool.query(
+          `SELECT * FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
+          [lookup.value],
+        );
+        if (existing.rowCount === 0) {
+          return res.status(404).json({ error: 'Order not found' });
+        }
+        const order = existing.rows[0];
+        const total = Number(order.total_cost || 0);
+        if (paid < total) {
+          return res.status(400).json({
+            error: 'insufficient_payment',
+            total,
+            amountPaid: paid,
+            shortfall: Number((total - paid).toFixed(2)),
+          });
+        }
+
+        const changeGiven = Number((paid - total).toFixed(2));
+        const confirmLookup = await restaurantOrderWhereClause(orderId, 3);
+        if (!confirmLookup) {
+          return res.status(400).json({ error: 'Invalid order id' });
+        }
+        const result = await pool.query(
+          `UPDATE restaurant_orders
+           SET amount_paid = $1,
+               change_given = $2,
+               payment_confirmed_initial = TRUE,
+               order_status = 'IN_PREPARATION',
+               cashier_amount_received_initial = $1,
+               updated_at = now()
+           WHERE ${confirmLookup.sql}
+           RETURNING *`,
+          [paid, changeGiven, confirmLookup.value],
+        );
+
+        const updated = result.rows[0];
+        const email = await resolveRestaurantOrderEmail(updated);
+        if (email) {
+          await sendCustomerNotificationEmail({
+            to: email,
+            subject: 'Curatering: Payment confirmed',
+            text:
+              `Your payment for order ${updated.order_id} was confirmed.\n` +
+              `Your order is now being prepared.\n\n` +
+              `- Curatering Team`,
+          });
+        }
+
+        if (updated?.order_status != null) updated.status = updated.order_status;
+        res.json({ order: updated, changeGiven });
+      } catch (error) {
+        console.error('confirm-payment:', error);
+        res.status(500).json({ error: 'Failed to confirm payment' });
+      }
+    };
+
+    app.post(
+      '/api/manager/restaurant/orders//confirm-payment',
+      managerAuthRequired,
+      confirmRestaurantOrderPayment,
+    );
+    app.post(
+      '/api/manager/restaurant/orders/confirm-payment',
+      managerAuthRequired,
+      confirmRestaurantOrderPayment,
+    );
     app.post(
       '/api/manager/restaurant/orders/:orderId/confirm-payment',
       managerAuthRequired,
-      async (req, res) => {
-        try {
-          const { orderId } = req.params;
-          const { amountPaid } = req.body || {};
-          const paid = Number(amountPaid);
-          if (!Number.isFinite(paid) || paid <= 0) {
-            return res.status(400).json({ error: 'amountPaid is required' });
-          }
-
-          const lookup = await restaurantOrderWhereClause(orderId, 1);
-          const existing = await pool.query(
-            `SELECT * FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
-            [lookup.value],
-          );
-          if (existing.rowCount === 0) {
-            return res.status(404).json({ error: 'Order not found' });
-          }
-          const order = existing.rows[0];
-          const total = Number(order.total_cost || 0);
-          if (paid < total) {
-            return res.status(400).json({
-              error: 'insufficient_payment',
-              total,
-              amountPaid: paid,
-              shortfall: Number((total - paid).toFixed(2)),
-            });
-          }
-
-          const changeGiven = Number((paid - total).toFixed(2));
-          const confirmLookup = await restaurantOrderWhereClause(orderId, 3);
-          const result = await pool.query(
-            `UPDATE restaurant_orders
-             SET amount_paid = $1,
-                 change_given = $2,
-                 payment_confirmed_initial = TRUE,
-                 order_status = 'IN_PREPARATION',
-                 cashier_amount_received_initial = $1,
-                 updated_at = now()
-             WHERE ${confirmLookup.sql}
-             RETURNING *`,
-            [paid, changeGiven, confirmLookup.value],
-          );
-
-          const updated = result.rows[0];
-          const email = await resolveRestaurantOrderEmail(updated);
-          if (email) {
-            await sendCustomerNotificationEmail({
-              to: email,
-              subject: 'Curatering: Payment confirmed',
-              text:
-                `Your payment for order ${updated.order_id} was confirmed.\n` +
-                `Your order is now being prepared.\n\n` +
-                `- Curatering Team`,
-            });
-          }
-
-          if (updated?.order_status != null) updated.status = updated.order_status;
-          res.json({ order: updated, changeGiven });
-        } catch (error) {
-          console.error('confirm-payment:', error);
-          res.status(500).json({ error: 'Failed to confirm payment' });
-        }
-      },
+      confirmRestaurantOrderPayment,
     );
 
+    const notifyInsufficientRestaurantPayment = async (req, res) => {
+      try {
+        const orderId = managerRestaurantOrderIdFromRequest(req);
+        if (!orderId) {
+          return res.status(400).json({ error: 'orderId is required' });
+        }
+
+        const { amountPaid, message } = req.body || {};
+        const lookup = await restaurantOrderWhereClause(orderId, 1);
+        if (!lookup) {
+          return res.status(400).json({ error: 'Invalid order id' });
+        }
+        const existing = await pool.query(
+          `SELECT * FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
+          [lookup.value],
+        );
+        if (existing.rowCount === 0) {
+          return res.status(404).json({ error: 'Order not found' });
+        }
+        const order = existing.rows[0];
+        const email = await resolveRestaurantOrderEmail(order);
+        if (!email) {
+          return res.status(400).json({ error: 'No email on file for this order' });
+        }
+        const total = Number(order.total_cost || 0);
+        const paid = Number(amountPaid ?? 0);
+        await sendCustomerNotificationEmail({
+          to: email,
+          subject: 'Curatering: Payment issue on your order',
+          text:
+            (message ||
+              `We could not confirm payment for order ${order.order_id}.\n` +
+                `Order total: PHP ${total.toFixed(2)}\n` +
+                `Amount received: PHP ${paid.toFixed(2)}\n` +
+                `Please submit the correct payment or contact us.\n`) +
+            `\n\n- Curatering Team`,
+        });
+        res.json({ ok: true });
+      } catch (error) {
+        console.error('notify-insufficient-payment:', error);
+        res.status(500).json({ error: 'Failed to send notification' });
+      }
+    };
+
+    app.post(
+      '/api/manager/restaurant/orders//notify-insufficient-payment',
+      managerAuthRequired,
+      notifyInsufficientRestaurantPayment,
+    );
+    app.post(
+      '/api/manager/restaurant/orders/notify-insufficient-payment',
+      managerAuthRequired,
+      notifyInsufficientRestaurantPayment,
+    );
     app.post(
       '/api/manager/restaurant/orders/:orderId/notify-insufficient-payment',
       managerAuthRequired,
-      async (req, res) => {
-        try {
-          const { orderId } = req.params;
-          const { amountPaid, message } = req.body || {};
-          const lookup = await restaurantOrderWhereClause(orderId, 1);
-          const existing = await pool.query(
-            `SELECT * FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
-            [lookup.value],
-          );
-          if (existing.rowCount === 0) {
-            return res.status(404).json({ error: 'Order not found' });
-          }
-          const order = existing.rows[0];
-          const email = await resolveRestaurantOrderEmail(order);
-          if (!email) {
-            return res.status(400).json({ error: 'No email on file for this order' });
-          }
-          const total = Number(order.total_cost || 0);
-          const paid = Number(amountPaid ?? 0);
-          await sendCustomerNotificationEmail({
-            to: email,
-            subject: 'Curatering: Payment issue on your order',
-            text:
-              (message ||
-                `We could not confirm payment for order ${order.order_id}.\n` +
-                  `Order total: PHP ${total.toFixed(2)}\n` +
-                  `Amount received: PHP ${paid.toFixed(2)}\n` +
-                  `Please submit the correct payment or contact us.\n`) +
-              `\n\n- Curatering Team`,
-          });
-          res.json({ ok: true });
-        } catch (error) {
-          console.error('notify-insufficient-payment:', error);
-          res.status(500).json({ error: 'Failed to send notification' });
-        }
-      },
+      notifyInsufficientRestaurantPayment,
     );
 
     app.post(
