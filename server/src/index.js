@@ -735,7 +735,6 @@ async function ensureFeedbackAnalyticsSchema() {
                 AND table_name = 'dashboard_insights'
                 AND column_name = col_name
                 AND data_type = 'ARRAY'
-                AND udt_name = '_jsonb'
             ) THEN
               EXECUTE format('ALTER TABLE dashboard_insights ALTER COLUMN %I DROP DEFAULT', col_name);
               EXECUTE format(
