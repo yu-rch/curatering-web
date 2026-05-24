@@ -850,74 +850,68 @@ extension _ManageEventsTableExt on _ManageEventsState {
                 ],
               ),
               const SizedBox(height: 12),
-              _buildEventTableFilters(orders),
-              const SizedBox(height: 16),
               if (filtered.isEmpty)
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  child: Center(
-                    child: Text(
-                      emptyMessage,
-                      style: TextStyle(color: Colors.grey.shade600),
-                    ),
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    emptyMessage,
+                    style: TextStyle(color: Colors.grey.shade600),
                   ),
-                )
-              else
-                PagedDataTable(
-                  title: title,
-                  fullWidth: true,
-                  maxTableHeight: MediaQuery.sizeOf(context).height,
-                  headingRowColor: WidgetStateProperty.all(
-                    Colors.grey.shade100,
-                  ),
-                  columns: const [
-                    DataColumn(label: Text('Service type')),
-                    DataColumn(label: Text('Event / customer')),
-                    DataColumn(label: Text('Customer')),
-                    DataColumn(label: Text('Date')),
-                    DataColumn(label: Text('Guests')),
-                    DataColumn(label: Text('Total')),
-                    DataColumn(label: Text('Actions')),
-                  ],
-                  rows:
-                      filtered.map((dto) {
-                        final title =
-                            dto.eventTitle.isEmpty
-                                ? dto.customerName
-                                : dto.eventTitle;
-                        return DataRow(
-                          cells: [
-                            DataCell(Text(_orderTypeColumnLabel(dto))),
-                            DataCell(
-                              Text(
-                                title,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            DataCell(Text(dto.customerName)),
-                            DataCell(Text(_formatOrderSchedule(dto))),
-                            DataCell(Text('${dto.guestCount}')),
-                            DataCell(
-                              Text(
-                                formatPesos(
-                                  dto.totalCost > 0
-                                      ? dto.totalCost
-                                      : computeOrderTotalCost(dto),
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: actionCells(dto),
-                              ),
-                            ),
-                          ],
-                        );
-                      }).toList(),
                 ),
+              PagedDataTable(
+                title: title,
+                fullWidth: true,
+                maxTableHeight: MediaQuery.sizeOf(context).height,
+                filters: [_buildEventTableFilters(orders)],
+                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                columns: const [
+                  DataColumn(label: Text('Service type')),
+                  DataColumn(label: Text('Event / customer')),
+                  DataColumn(label: Text('Customer')),
+                  DataColumn(label: Text('Date')),
+                  DataColumn(label: Text('Guests')),
+                  DataColumn(label: Text('Total')),
+                  DataColumn(label: Text('Actions')),
+                ],
+                rows:
+                    filtered.map((dto) {
+                      final title =
+                          dto.eventTitle.isEmpty
+                              ? dto.customerName
+                              : dto.eventTitle;
+                      return DataRow(
+                        cells: [
+                          DataCell(Text(_orderTypeColumnLabel(dto))),
+                          DataCell(
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          DataCell(Text(dto.customerName)),
+                          DataCell(Text(_formatOrderSchedule(dto))),
+                          DataCell(Text('${dto.guestCount}')),
+                          DataCell(
+                            Text(
+                              formatPesos(
+                                dto.totalCost > 0
+                                    ? dto.totalCost
+                                    : computeOrderTotalCost(dto),
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: actionCells(dto),
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+              ),
             ],
           ),
         ),
@@ -1080,6 +1074,94 @@ extension _ManageEventsTableExt on _ManageEventsState {
     );
   }
 
+  Widget _buildOnlineInquiryTableFilters(
+    List<String> serviceTypes,
+    List<String> eventTypes,
+  ) {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 10,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        SizedBox(
+          width: 220,
+          child: DropdownButtonFormField<String>(
+            value: _inquiryServiceTypeFilter,
+            decoration: const InputDecoration(
+              labelText: 'Service type',
+              isDense: true,
+            ),
+            items: [
+              const DropdownMenuItem(
+                value: '',
+                child: Text('All service types'),
+              ),
+              ...serviceTypes.map(
+                (value) => DropdownMenuItem(value: value, child: Text(value)),
+              ),
+            ],
+            onChanged:
+                (value) => _mutateTableState(
+                  () => _inquiryServiceTypeFilter = value ?? '',
+                ),
+          ),
+        ),
+        SizedBox(
+          width: 220,
+          child: DropdownButtonFormField<String>(
+            value: _inquiryEventTypeFilter,
+            decoration: const InputDecoration(
+              labelText: 'Event type',
+              isDense: true,
+            ),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('All event types')),
+              ...eventTypes.map(
+                (value) => DropdownMenuItem(value: value, child: Text(value)),
+              ),
+            ],
+            onChanged:
+                (value) => _mutateTableState(
+                  () => _inquiryEventTypeFilter = value ?? '',
+                ),
+          ),
+        ),
+        SizedBox(
+          width: 220,
+          child: DropdownButtonFormField<String>(
+            value: _inquiryDateFilter,
+            decoration: const InputDecoration(
+              labelText: 'Inquiry datetime',
+              isDense: true,
+            ),
+            items: const [
+              DropdownMenuItem(value: '', child: Text('All dates')),
+              DropdownMenuItem(value: 'today', child: Text('Today')),
+              DropdownMenuItem(value: '7d', child: Text('Last 7 days')),
+              DropdownMenuItem(value: '30d', child: Text('Last 30 days')),
+            ],
+            onChanged:
+                (value) =>
+                    _mutateTableState(() => _inquiryDateFilter = value ?? ''),
+          ),
+        ),
+        if (_inquiryServiceTypeFilter.isNotEmpty ||
+            _inquiryEventTypeFilter.isNotEmpty ||
+            _inquiryDateFilter.isNotEmpty)
+          TextButton.icon(
+            onPressed:
+                () => _mutateTableState(() {
+                  _inquiryServiceTypeFilter = '';
+                  _inquiryEventTypeFilter = '';
+                  _inquiryDateFilter = '';
+                }),
+            icon: const Icon(Icons.filter_alt_off),
+            label: const Text('Clear filters'),
+          ),
+      ],
+    );
+  }
+
   Widget _buildOnlineInquiriesTableView(bool isNarrow) {
     final serviceTypes =
         {for (final o in _onlineInquiryOrders) _orderTypeColumnLabel(o).trim()}
@@ -1135,104 +1217,6 @@ extension _ManageEventsTableExt on _ManageEventsState {
               ],
             ),
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 10,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: 220,
-                  child: DropdownButtonFormField<String>(
-                    value: _inquiryServiceTypeFilter,
-                    decoration: const InputDecoration(
-                      labelText: 'Service type',
-                      isDense: true,
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text('All service types'),
-                      ),
-                      ...serviceTypes.map(
-                        (value) =>
-                            DropdownMenuItem(value: value, child: Text(value)),
-                      ),
-                    ],
-                    onChanged:
-                        (value) => _mutateTableState(
-                          () => _inquiryServiceTypeFilter = value ?? '',
-                        ),
-                  ),
-                ),
-                SizedBox(
-                  width: 220,
-                  child: DropdownButtonFormField<String>(
-                    value: _inquiryEventTypeFilter,
-                    decoration: const InputDecoration(
-                      labelText: 'Event type',
-                      isDense: true,
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text('All event types'),
-                      ),
-                      ...eventTypes.map(
-                        (value) =>
-                            DropdownMenuItem(value: value, child: Text(value)),
-                      ),
-                    ],
-                    onChanged:
-                        (value) => _mutateTableState(
-                          () => _inquiryEventTypeFilter = value ?? '',
-                        ),
-                  ),
-                ),
-                SizedBox(
-                  width: 220,
-                  child: DropdownButtonFormField<String>(
-                    value: _inquiryDateFilter,
-                    decoration: const InputDecoration(
-                      labelText: 'Inquiry datetime',
-                      isDense: true,
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: '', child: Text('All dates')),
-                      DropdownMenuItem(value: 'today', child: Text('Today')),
-                      DropdownMenuItem(value: '7d', child: Text('Last 7 days')),
-                      DropdownMenuItem(
-                        value: '30d',
-                        child: Text('Last 30 days'),
-                      ),
-                    ],
-                    onChanged:
-                        (value) => _mutateTableState(
-                          () => _inquiryDateFilter = value ?? '',
-                        ),
-                  ),
-                ),
-                if (_inquiryServiceTypeFilter.isNotEmpty ||
-                    _inquiryEventTypeFilter.isNotEmpty ||
-                    _inquiryDateFilter.isNotEmpty)
-                  SizedBox(
-                    height: 48,
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: TextButton.icon(
-                        onPressed:
-                            () => _mutateTableState(() {
-                              _inquiryServiceTypeFilter = '';
-                              _inquiryEventTypeFilter = '';
-                              _inquiryDateFilter = '';
-                            }),
-                        icon: const Icon(Icons.filter_alt_off),
-                        label: const Text('Clear filters'),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
             if (filtered.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 32),
@@ -1248,6 +1232,9 @@ extension _ManageEventsTableExt on _ManageEventsState {
                 child: PagedDataTable(
                   title: 'Online Inquiries',
                   fullWidth: true,
+                  filters: [
+                    _buildOnlineInquiryTableFilters(serviceTypes, eventTypes),
+                  ],
                   maxTableHeight: MediaQuery.sizeOf(context).height,
                   headingRowColor: WidgetStateProperty.all(
                     Colors.grey.shade100,

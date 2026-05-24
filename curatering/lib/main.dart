@@ -42,6 +42,7 @@ import 'pages/website_admin_page.dart';
 import 'pages/restaurant_orders_route.dart';
 import 'pages/inventory.dart';
 import 'pages/super_admin_dashboard.dart';
+import 'features/event_design/event_design_admin_screen.dart';
 import 'data_store.dart';
 
 Future<void> main() async {
@@ -334,6 +335,18 @@ Route<dynamic>? _buildRouteForPath(String path) {
             ),
           ),
           '/settings',
+        ),
+    '/event-design-options':
+        (context) => _staffPage(
+          RoleGuard(
+            requiredRole: Role.manager,
+            allowedRoles: {Role.manager, Role.supervisor, Role.superAdmin},
+            child: PagePermissionGuard(
+              route: PagePermissionRoutes.eventDesignOptions,
+              child: EventDesignAdminScreen(apiBase: apiBaseUrl),
+            ),
+          ),
+          '/event-design-options',
         ),
   };
 
@@ -773,6 +786,22 @@ class _MyAppState extends State<MyApp> {
                     ),
                   ),
                   '/settings',
+                ),
+            '/event-design-options':
+                (context) => _staffPage(
+                  RoleGuard(
+                    requiredRole: Role.manager,
+                    allowedRoles: {
+                      Role.manager,
+                      Role.supervisor,
+                      Role.superAdmin,
+                    },
+                    child: PagePermissionGuard(
+                      route: PagePermissionRoutes.eventDesignOptions,
+                      child: EventDesignAdminScreen(apiBase: apiBaseUrl),
+                    ),
+                  ),
+                  '/event-design-options',
                 ),
           },
         );

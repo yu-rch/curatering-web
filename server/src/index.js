@@ -340,11 +340,26 @@ function normalizeRunpodInput(input) {
     const hasInitImage = typeof out.init_image_base64 === "string" && out.init_image_base64.trim();
     out.strength = Number.isFinite(st)
       ? hasInitImage
-        ? Math.min(0.42, Math.max(0.28, st))
+        ? Math.min(0.65, Math.max(0.5, st))
         : Math.min(0.95, Math.max(0.15, st))
       : hasInitImage
-        ? 0.35
+        ? 0.58
         : 0.65;
+  }
+  if (out.controlnet && typeof out.controlnet === "object" && !Array.isArray(out.controlnet)) {
+    const scale = Number(out.controlnet.conditioning_scale);
+    out.controlnet = {
+      ...out.controlnet,
+      conditioning_scale: Number.isFinite(scale)
+        ? Math.min(0.75, Math.max(0.55, scale))
+        : 0.65,
+    };
+  }
+  if (out.controlnet_conditioning_scale != null) {
+    const scale = Number(out.controlnet_conditioning_scale);
+    out.controlnet_conditioning_scale = Number.isFinite(scale)
+      ? Math.min(0.75, Math.max(0.55, scale))
+      : 0.65;
   }
   if (out.num_inference_steps != null) {
     const steps = Number(out.num_inference_steps);
@@ -388,7 +403,7 @@ function normalizeRunpodEventPromptExpansion(output) {
     decor_tokens: Array.isArray(result.decor_tokens) ? result.decor_tokens : [],
     negative_tokens: Array.isArray(result.negative_tokens) ? result.negative_tokens : [],
     recommended_strength: Number.isFinite(recommendedStrength)
-      ? Math.min(0.42, Math.max(0.30, recommendedStrength))
+      ? Math.min(0.65, Math.max(0.50, recommendedStrength))
       : undefined,
   };
 }
@@ -7000,8 +7015,7 @@ let autoCancelJobScheduled = false;
 function scheduleAutoCancelJob() {
   if (autoCancelJobScheduled) return;
   autoCancelJobScheduled = true;
-  setInterval(autoCancelStalePendingCashierOrders, 5 * 60 * 1000);
-  setTimeout(autoCancelStalePendingCashierOrders, 30 * 1000);
+  console.log('[auto-cancel] Disabled; customer follow-up requests now handle stale pending orders.');
 }
 
 async function autoCancelStalePendingCashierOrders() {
@@ -8208,6 +8222,62 @@ async function registerRoutesAfterDbInit() {
         if (!Array.isArray(orderItems) || orderItems.length === 0) {
           return res.status(400).json({ error: 'Items are required' });
         }
+        const dishIds = [
+          ...new Set(
+            orderItems
+              .map((item) => item?.dish_id ?? item?.dishId ?? item?.menu_dish_id ?? item?.id)
+              .filter((value) => value != null && String(value).trim().isNotEmpty)
+              .map((value) => String(value).trim()),
+          ),
+        ];
+        if (dishIds.length > 0) {
+          const dishResult = await pool.query(
+            `SELECT id::text AS id, name, price, category, type, meal_type, public_description, allergens
+             FROM menu_dishes
+             WHERE id::text = ANY($1) AND archived = false`,
+            [dishIds],
+          );
+          const dishesById = new Map(dishResult.rows.map((dish) => [dish.id, dish]));
+          orderItems = orderItems.map((raw) => {
+            if (!raw || typeof raw !== 'object') return raw;
+            const item = { ...raw };
+            const dishId = String(
+              item.dish_id ?? item.dishId ?? item.menu_dish_id ?? item.id ?? '',
+            ).trim();
+            const dish = dishesById.get(dishId);
+            if (!dish) return item;
+            const price = Number(dish.price) || 0;
+            return {
+              ...item,
+              dishId,
+              dish_id: dishId,
+              menu_dish_id: dishId,
+              name: dish.name,
+              item_name: dish.name,
+              dishName: dish.name,
+              dish_name: dish.name,
+              price,
+              dishPrice: price,
+              dish_price: price,
+              dish_category: dish.category,
+              dishCategory: dish.category,
+              dish_type: dish.type,
+              dishType: dish.type,
+              meal_type: dish.meal_type,
+              mealType: dish.meal_type,
+              public_description: dish.public_description,
+              allergens: dish.allergens,
+              dish: {
+                id: dishId,
+                name: dish.name,
+                price: String(dish.price),
+                category: dish.category,
+                type: dish.type,
+                mealType: dish.meal_type,
+              },
+            };
+          });
+        }
 
         if (!deliveryAddress) {
           return res.status(400).json({ error: 'Delivery address is required' });
@@ -8414,6 +8484,81 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
+    app.post('/api/restaurant/orders/:orderId/follow-up', customerAuthRequired, async (req, res) => {
+      try {
+        await ensureRestaurantOrderWorkflowColumns();
+        const { orderId } = req.params;
+        const lookup = await restaurantOrderWhereClause(orderId, 1);
+        if (!lookup) {
+          return res.status(400).json({ error: 'Invalid order id' });
+        }
+
+        const existing = await pool.query(
+          `SELECT *
+           FROM restaurant_orders
+           WHERE ${lookup.sql} AND customer_id::text = $2
+           LIMIT 1`,
+          [lookup.value, req.customer.id],
+        );
+        if (existing.rowCount === 0) {
+          return res.status(404).json({ error: 'Order not found' });
+        }
+
+        const order = existing.rows[0];
+        const status = String(order.order_status || '').toUpperCase();
+        if (status === 'DELIVERED' || status === 'CANCELLED') {
+          return res.status(400).json({ error: 'Follow-up is only available for active orders' });
+        }
+
+        const last = order.last_customer_followup_at
+          ? new Date(order.last_customer_followup_at)
+          : null;
+        if (last && !Number.isNaN(last.getTime())) {
+          const nextAllowedAt = new Date(last.getTime() + 20 * 60 * 1000);
+          if (nextAllowedAt > new Date()) {
+            return res.status(429).json({
+              error: 'Please wait before sending another follow-up',
+              nextAllowedAt: nextAllowedAt.toISOString(),
+            });
+          }
+        }
+
+        const updated = await pool.query(
+          `UPDATE restaurant_orders
+           SET last_customer_followup_at = now(), updated_at = now()
+           WHERE id = $1
+           RETURNING *`,
+          [order.id],
+        );
+        const updatedOrder = updated.rows[0];
+        const followupRecipient =
+          process.env.RESTAURANT_FOLLOWUP_EMAIL ||
+          process.env.SEED_SUPER_ADMIN_EMAIL ||
+          process.env.ADMIN_EMAIL;
+        if (followupRecipient) {
+          sendCustomerNotificationEmailAsync({
+            to: followupRecipient,
+            subject: 'Curatering: Customer order follow-up',
+            text:
+              `A customer requested a follow-up for restaurant order ${updatedOrder.order_id}.\n\n` +
+              `Customer: ${updatedOrder.full_name || 'Unknown'}\n` +
+              `Status: ${updatedOrder.order_status || 'Unknown'}\n` +
+              `Payment status: ${updatedOrder.payment_status || 'pending'}\n\n` +
+              `Please review the order in Restaurant Orders.`,
+          });
+        }
+
+        res.json({
+          ok: true,
+          nextAllowedAt: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
+          order: serializeRestaurantOrderRow(updatedOrder, parseRestaurantOrderTrayItems(updatedOrder)),
+        });
+      } catch (error) {
+        console.error('Error sending restaurant order follow-up:', error);
+        res.status(500).json({ error: 'Failed to send follow-up' });
+      }
+    });
+
     app.post(
       '/api/restaurant/orders/:orderId/feedback',
       customerAuthRequired,
@@ -8484,7 +8629,8 @@ async function registerRoutesAfterDbInit() {
         const lookup = await restaurantOrderWhereClause(String(payload.orderId), 1);
         if (!lookup) return res.status(400).json({ error: 'Invalid feedback link' });
         const result = await pool.query(
-          `SELECT order_id, full_name, order_status, feedback_stars
+          `SELECT order_id, full_name, order_status, feedback_stars,
+                  total_cost, tray_items, created_at, delivery_address
            FROM restaurant_orders
            WHERE ${lookup.sql}
            LIMIT 1`,
@@ -8499,6 +8645,10 @@ async function registerRoutesAfterDbInit() {
           order: {
             order_id: order.order_id,
             full_name: order.full_name,
+            total_amount: order.total_cost,
+            items: parseRestaurantOrderTrayItems(order),
+            created_at: order.created_at,
+            delivery_address: order.delivery_address,
             feedback_submitted: order.feedback_stars != null,
           },
         });
@@ -8615,14 +8765,19 @@ async function registerRoutesAfterDbInit() {
         const orderStatus = String(req.query.orderStatus || 'ALL').trim().toUpperCase();
         const businessSide = String(req.query.businessSide || 'ALL').trim().toUpperCase();
         const cateringStyle = String(req.query.cateringStyle || 'ALL').trim().toUpperCase();
-        const includeRestaurant = businessSide !== 'CATERING';
+        const includeRestaurant =
+          businessSide !== 'CATERING' && businessSide !== 'CATERING_WITH_EVENT';
         const includeCatering = businessSide !== 'RESTAURANT';
-        const includeCateringOnly = cateringStyle !== 'CATERING_WITH_EVENT';
+        const includeCateringOnly =
+          businessSide !== 'CATERING_WITH_EVENT' && cateringStyle !== 'CATERING_WITH_EVENT';
         const includeEventCatering = cateringStyle !== 'CATERING_ONLY';
         const cateringSourceFilter = (() => {
           if (!orderSource || orderSource === 'ALL') return 'TRUE';
           if (orderSource === 'WEB_APP') {
             return `lower(coalesce(source, '')) IN ('web', 'web_app', 'new_event', 'online_inquiry', 'customer_website')`;
+          }
+          if (orderSource === 'MOBILE_APP') {
+            return `lower(coalesce(source, '')) IN ('mobile', 'mobile_app', 'customer_mobile')`;
           }
           return 'FALSE';
         })();
@@ -8881,6 +9036,14 @@ async function registerRoutesAfterDbInit() {
           ? `AND upper(COALESCE(${roStatusCol}::text, '')) NOT IN ('CANCELLED')`
           : '';
         const roItemsSelect = roItemsCol ? `${roItemsCol} AS items` : "'[]'::jsonb AS items";
+        const eventOrderCols = await getTableColumnNames('event_orders');
+        const cateringOrderCols = await getTableColumnNames('catering_orders');
+        const eventPostAnalysisExpr = eventOrderCols.has('post_analysis')
+          ? 'post_analysis'
+          : `'{}'::jsonb`;
+        const cateringPostAnalysisExpr = cateringOrderCols.has('post_analysis')
+          ? 'post_analysis'
+          : `'{}'::jsonb`;
 
         const eventOrders = await pool.query(
           `SELECT event_type, guest_count, menu, total_cost, schedule_slots, status, customer_name,
@@ -9034,11 +9197,11 @@ async function registerRoutesAfterDbInit() {
              COUNT(*) FILTER (WHERE complaints > 0)::int AS count,
              COALESCE(SUM(complaints), 0)::int AS complaint_count
            FROM (
-             SELECT COALESCE((post_analysis->>'complaints')::int, 0) AS complaints,
+             SELECT COALESCE((${eventPostAnalysisExpr}->>'complaints')::int, 0) AS complaints,
                     COALESCE(updated_at, created_at) AS feedback_at
              FROM event_orders
              UNION ALL
-             SELECT COALESCE((post_analysis->>'complaints')::int, 0) AS complaints,
+             SELECT COALESCE((${cateringPostAnalysisExpr}->>'complaints')::int, 0) AS complaints,
                     COALESCE(updated_at, created_at) AS feedback_at
              FROM catering_orders
            ) feedback
@@ -9312,7 +9475,8 @@ async function registerRoutesAfterDbInit() {
         const notifyEmail = await resolveRestaurantOrderEmail(updatedOrder);
         if (notifyEmail) {
           const feedbackText = effectiveStatus === 'DELIVERED'
-            ? `\nShare your feedback: ${restaurantFeedbackLink(updatedOrder)}\n`
+            ? `\nYour order is complete. Share quick feedback here: ${restaurantFeedbackLink(updatedOrder)}\n` +
+              `Registered customers can also open My Orders to review the order and feedback form.\n`
             : '';
           await sendCustomerNotificationEmail({
             to: notifyEmail,

@@ -25,7 +25,9 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   bool _isLoading = true;
   String? _error;
   bool _gridView = false;
+  final Set<String> _sendingFollowUps = {};
   static const Duration _requestTimeout = Duration(seconds: 45);
+  static const Duration _followUpCooldown = Duration(minutes: 20);
 
   String get _apiBaseUrl {
     return apiBaseUrl;
@@ -152,9 +154,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
       final t =
           DateTime.tryParse(o['updated_at']?.toString() ?? '') ??
           DateTime.tryParse(o['created_at']?.toString() ?? '');
-      if (closed &&
-          t != null &&
-          now.difference(t) >= _historyAfterClose) {
+      if (closed && t != null && now.difference(t) >= _historyAfterClose) {
         history.add(o);
       } else {
         active.add(o);
@@ -188,6 +188,12 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
     final items = _normalizeOrderItems(order['items']);
     final status = order['status'] ?? 'pending';
     final paymentStatus = order['payment_status'] ?? 'pending';
+    final orderKey = _orderKey(order);
+    final cooldownUntil = _followUpCooldownUntil(order);
+    final canFollowUp =
+        _isActiveOrder(status) &&
+        orderKey.isNotEmpty &&
+        (cooldownUntil == null || !cooldownUntil.isAfter(DateTime.now()));
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -350,14 +356,39 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                 Chip(
                   label: Text(
                     'Payment: ${_formatPaymentStatus(paymentStatus)}',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: Colors.white,
-                    ),
+                    style: const TextStyle(fontSize: 10, color: Colors.white),
                   ),
                   backgroundColor: _getPaymentStatusColor(paymentStatus),
                   padding: EdgeInsets.zero,
                 ),
+                if (_isActiveOrder(status)) ...[
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      onPressed:
+                          canFollowUp && !_sendingFollowUps.contains(orderKey)
+                              ? () => _sendFollowUp(order)
+                              : null,
+                      icon:
+                          _sendingFollowUps.contains(orderKey)
+                              ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : const Icon(Icons.notifications_active_outlined),
+                      label: Text(
+                        cooldownUntil != null &&
+                                cooldownUntil.isAfter(DateTime.now())
+                            ? 'Follow up available ${_formatCooldown(cooldownUntil)}'
+                            : 'Follow up order',
+                      ),
+                    ),
+                  ),
+                ],
                 if (order['delivery_address'] != null) ...[
                   const SizedBox(height: 12),
                   Row(
@@ -462,10 +493,94 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   }
 
   String _shortOrderId(dynamic rawId, dynamic orderNo) {
-    return formatRestaurantOrderNo({
-      'order_no': orderNo,
-      'id': rawId,
-    });
+    return formatRestaurantOrderNo({'order_no': orderNo, 'id': rawId});
+  }
+
+  bool _isActiveOrder(dynamic status) {
+    final s = status.toString().toLowerCase();
+    return s != 'delivered' && s != 'cancelled';
+  }
+
+  String _orderKey(Map<String, dynamic> order) {
+    for (final key in const ['id', 'order_id', 'order_no']) {
+      final value = order[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  DateTime? _followUpCooldownUntil(Map<String, dynamic> order) {
+    final raw = order['last_customer_followup_at']?.toString();
+    if (raw == null || raw.isEmpty) return null;
+    final last = DateTime.tryParse(raw);
+    if (last == null) return null;
+    return last.add(_followUpCooldown);
+  }
+
+  String _formatCooldown(DateTime until) {
+    final remaining = until.difference(DateTime.now());
+    if (remaining.inMinutes <= 0) return 'now';
+    return 'in ${remaining.inMinutes + 1}m';
+  }
+
+  Future<void> _sendFollowUp(Map<String, dynamic> order) async {
+    final orderKey = _orderKey(order);
+    if (orderKey.isEmpty || _sendingFollowUps.contains(orderKey)) return;
+    setState(() => _sendingFollowUps.add(orderKey));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('customer_token');
+      if (token == null || token.isEmpty)
+        throw Exception('Please log in again');
+      final response = await http
+          .post(
+            Uri.parse(
+              '$_apiBaseUrl/api/restaurant/orders/${Uri.encodeComponent(orderKey)}/follow-up',
+            ),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(_requestTimeout);
+      final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+      if (response.statusCode != 200) {
+        throw Exception(
+          data is Map
+              ? data['error'] ?? 'Failed to send follow-up'
+              : 'Failed to send follow-up',
+        );
+      }
+      final updated = Map<String, dynamic>.from(data['order'] as Map? ?? {});
+      final updatedKey = _orderKey(updated);
+      setState(() {
+        _orders =
+            _orders.map((entry) {
+              if (entry is! Map) return entry;
+              final existing = Map<String, dynamic>.from(entry);
+              return _orderKey(existing) == updatedKey ? updated : existing;
+            }).toList();
+      });
+      CustomerOrdersCache.instance.setRestaurantOrders(
+        _orders
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList(),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Follow-up sent to the team.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sendingFollowUps.remove(orderKey));
+    }
   }
 
   void _navigateFromTopBar(CustomerPageTab tab) {

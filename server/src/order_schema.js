@@ -482,6 +482,7 @@ export function buildRestaurantOrderSelectSql(cols) {
     `${sqlExpr(cols, ['feedback_stars'], 'NULL::int')} AS feedback_stars`,
     `${sqlExpr(cols, ['feedback_remarks'], 'NULL::text')} AS feedback_remarks`,
     `${sqlExpr(cols, ['feedback_submitted_at'], 'NULL::timestamptz')} AS feedback_submitted_at`,
+    `${sqlExpr(cols, ['last_customer_followup_at'], 'NULL::timestamptz')} AS last_customer_followup_at`,
     `${sqlExpr(cols, ['created_at'], 'now()')} AS created_at`,
     `${sqlExpr(cols, ['updated_at'], 'now()')} AS updated_at`,
   ];

@@ -1347,6 +1347,7 @@ async function ensureRestaurantOrderWorkflowColumnsOnce() {
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS payment_uploaded BOOLEAN NOT NULL DEFAULT FALSE`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS amount_paid DECIMAL(10,2)`,
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS change_given DECIMAL(10,2)`,
+    `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS last_customer_followup_at TIMESTAMPTZ`,
   ];
   for (const sql of alters) {
     await pool.query(sql);

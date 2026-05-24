@@ -33,8 +33,11 @@ DEVICE = "cuda"
 HF_CACHE = os.getenv("HF_HOME", "/app/huggingface")
 SD_IMAGE_SIZE = int(os.getenv("SD_IMAGE_SIZE", "1024"))
 MAX_INIT_IMAGE_BYTES = int(os.getenv("MAX_INIT_IMAGE_BYTES", "6000000"))
-DEFAULT_STRENGTH = float(os.getenv("SD_IMG2IMG_STRENGTH", "0.35"))
+DEFAULT_STRENGTH = float(os.getenv("SD_IMG2IMG_STRENGTH", "0.58"))
 DEFAULT_GUIDANCE = float(os.getenv("SD_GUIDANCE_SCALE", "6.5"))
+DEFAULT_CONTROLNET_CONDITIONING_SCALE = float(
+    os.getenv("SD_CONTROLNET_CONDITIONING_SCALE", "0.65")
+)
 
 print("====================================")
 print("DEVICE:", DEVICE)
@@ -229,7 +232,7 @@ def _theme_tokens(data):
     tokens = []
     for key, values in THEME_MAP.items():
         if key in lookup:
-            tokens.extend(values)
+            tokens = list(dict.fromkeys(tokens + values))
     return tokens
 
 
@@ -248,6 +251,7 @@ def build_prompt(data):
         "decor_elements",
     ):
         token_parts.extend(_list_field(data.get(key)))
+    token_parts = list(dict.fromkeys(token_parts))
 
     event_type = _clean_field(data.get("event_type"))
     theme = _clean_field(data.get("theme") or data.get("style"))
@@ -277,7 +281,7 @@ def build_prompt(data):
             "cinematic lighting",
             "ultra detailed",
         ],
-        28,
+        18,
     )
 
     return ", ".join(parts)
@@ -367,15 +371,18 @@ def _clamp_int(value, default, lo, hi):
 def generate_event_design(base_image, prompt, negative_prompt, data):
     base_image = _resize_for_sdxl(base_image)
     control_image = generate_control_image(base_image)
-    strength = _clamp_float(data.get("strength"), DEFAULT_STRENGTH, 0.30, 0.42)
+    strength = _clamp_float(data.get("strength"), DEFAULT_STRENGTH, 0.50, 0.65)
     guidance = _clamp_float(data.get("guidance_scale"), DEFAULT_GUIDANCE, 6.0, 7.0)
     steps = 30
     controlnet = data.get("controlnet") if isinstance(data.get("controlnet"), dict) else {}
     conditioning_scale = _clamp_float(
-        controlnet.get("conditioning_scale", 0.8),
-        0.8,
-        0.1,
-        1.5,
+        controlnet.get(
+            "conditioning_scale",
+            data.get("controlnet_conditioning_scale", DEFAULT_CONTROLNET_CONDITIONING_SCALE),
+        ),
+        DEFAULT_CONTROLNET_CONDITIONING_SCALE,
+        0.55,
+        0.75,
     )
 
     print(

@@ -140,11 +140,32 @@ class RunPodService {
   /// Extract image URL from worker output (including legacy error+uploaded cases).
   static String? _imageUrlFromOutput(Map<String, dynamic>? out) {
     if (out == null) return null;
-    final direct = out['image_url'] as String?;
-    if (direct != null && direct.isNotEmpty) return direct;
+    for (final key in const [
+      'image_url',
+      'imageUrl',
+      'public_url',
+      'publicUrl',
+      'url',
+      'image',
+    ]) {
+      final direct = out[key]?.toString().trim();
+      if (direct != null &&
+          direct.isNotEmpty &&
+          (direct.startsWith('http://') || direct.startsWith('https://'))) {
+        return direct;
+      }
+    }
+    final nested = out['output'];
+    if (nested is Map<String, dynamic>) {
+      final nestedUrl = _imageUrlFromOutput(nested);
+      if (nestedUrl != null) return nestedUrl;
+    }
     final diag = out['diagnostics'];
     if (diag is Map) {
-      final uploaded = diag['public_url'] as String?;
+      final uploaded =
+          (diag['public_url'] ?? diag['publicUrl'] ?? diag['image_url'])
+              ?.toString()
+              .trim();
       if (uploaded != null && uploaded.isNotEmpty) return uploaded;
     }
     return null;

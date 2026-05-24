@@ -142,6 +142,8 @@ class _InventoryState extends State<Inventory> {
   bool _isExportingPdf = false;
   bool _isSavingInventory = false;
   String? _editingItemId;
+  InventoryItem? _stockTargetItem;
+  bool _creatingNewInventoryItem = false;
   String _sortBy = 'name';
   bool _sortAscending = true;
   bool _editingAvailable = true;
@@ -468,10 +470,12 @@ class _InventoryState extends State<Inventory> {
     }
   }
 
-  void _showAddEditDialog([InventoryItem? item]) {
+  void _showAddEditDialog([InventoryItem? item, bool createNewItem = false]) {
     _editingItemId = item?.id;
+    _stockTargetItem = null;
+    _creatingNewInventoryItem = createNewItem || item != null;
     _nameController.text = item?.name ?? '';
-    _quantityController.text = item?.quantity.toString() ?? '';
+    _quantityController.text = item == null ? '' : item.quantity.toString();
     _unitController.text = item?.unit ?? 'pcs';
     _descriptionController.text = item?.notes ?? '';
     _categoryController.text = item?.category ?? 'Non-Perishable Ingredients';
@@ -495,7 +499,11 @@ class _InventoryState extends State<Inventory> {
               titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
               contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
               title: Text(
-                item == null ? 'Add Inventory Item' : 'Edit Inventory Item',
+                item == null
+                    ? createNewItem
+                        ? 'New Inventory Item'
+                        : 'Add Stock to Existing Item'
+                    : 'Edit Inventory Item',
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               content: SizedBox(
@@ -507,10 +515,77 @@ class _InventoryState extends State<Inventory> {
                       AntdFieldShell(
                         label: 'Item',
                         required: true,
-                        child: AntdOutlineInput(
-                          controller: _nameController,
-                          hintText: 'Item name',
-                        ),
+                        child:
+                            item == null && !createNewItem
+                                ? Autocomplete<InventoryItem>(
+                                  displayStringForOption:
+                                      (option) => option.name,
+                                  optionsBuilder: (value) {
+                                    final query =
+                                        value.text.trim().toLowerCase();
+                                    if (query.isEmpty) {
+                                      return _activeItems.take(12);
+                                    }
+                                    return _activeItems.where(
+                                      (i) =>
+                                          i.name.toLowerCase().contains(
+                                            query,
+                                          ) ||
+                                          i.itemCode.toLowerCase().contains(
+                                            query,
+                                          ),
+                                    );
+                                  },
+                                  fieldViewBuilder: (
+                                    context,
+                                    controller,
+                                    focusNode,
+                                    onSubmit,
+                                  ) {
+                                    if (controller.text !=
+                                        _nameController.text) {
+                                      controller.text = _nameController.text;
+                                    }
+                                    return TextField(
+                                      controller: controller,
+                                      focusNode: focusNode,
+                                      decoration: const InputDecoration(
+                                        hintText: 'Search existing item',
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                      ),
+                                      onChanged: (value) {
+                                        _nameController.text = value;
+                                        _stockTargetItem = null;
+                                      },
+                                    );
+                                  },
+                                  onSelected: (selected) {
+                                    setModalState(() {
+                                      _stockTargetItem = selected;
+                                      _editingItemId = selected.id;
+                                      _nameController.text = selected.name;
+                                      _categoryController.text =
+                                          _categories.contains(
+                                                selected.category,
+                                              )
+                                              ? selected.category
+                                              : 'Other';
+                                      _unitController.text =
+                                          _units.contains(selected.unit)
+                                              ? selected.unit
+                                              : 'pcs';
+                                      _descriptionController.text =
+                                          selected.notes ?? '';
+                                      _editingAvailable = selected.available;
+                                    });
+                                  },
+                                )
+                                : AntdOutlineInput(
+                                  controller: _nameController,
+                                  readOnly: item != null,
+                                  hintText: 'Item name',
+                                ),
                       ),
                       const SizedBox(height: 14),
                       AntdFieldShell(
@@ -661,10 +736,24 @@ class _InventoryState extends State<Inventory> {
 
     try {
       setState(() => _isSavingInventory = true);
+      final target = _stockTargetItem;
+      if (!_creatingNewInventoryItem && target == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please select an existing inventory item'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+      final savedQuantity =
+          target != null && !_creatingNewInventoryItem
+              ? target.quantity + q
+              : q;
       final body = {
         'name': _nameController.text.trim(),
         'category': _categoryController.text.trim(),
-        'quantity': q,
+        'quantity': savedQuantity,
         'unitCost': 0,
         'unit': _unitController.text.trim(),
         'notes':
@@ -1271,8 +1360,14 @@ class _InventoryState extends State<Inventory> {
             style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
           ),
           if (_isManager)
+            OutlinedButton.icon(
+              onPressed: () => _showAddEditDialog(null, true),
+              icon: const Icon(Icons.add_box_outlined),
+              label: const Text('New item'),
+            ),
+          if (_isManager)
             AntdPrimaryButton(
-              label: 'Add item',
+              label: 'Add stock',
               onPressed: () => _showAddEditDialog(),
             ),
         ],

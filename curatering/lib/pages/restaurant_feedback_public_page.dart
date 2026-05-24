@@ -22,6 +22,7 @@ class _RestaurantFeedbackPublicPageState
   bool _submitting = false;
   String? _error;
   String? _orderId;
+  Map<String, dynamic> _order = const {};
   bool _submitted = false;
   int _stars = 5;
   final _remarks = TextEditingController();
@@ -49,6 +50,7 @@ class _RestaurantFeedbackPublicPageState
       }
       final order = Map<String, dynamic>.from(data['order'] as Map? ?? {});
       setState(() {
+        _order = order;
         _orderId = order['order_id']?.toString();
         _submitted = order['feedback_submitted'] == true;
         _loading = false;
@@ -137,6 +139,8 @@ class _RestaurantFeedbackPublicPageState
           'Feedback for $_orderId',
           style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
         ),
+        const SizedBox(height: 12),
+        _buildOrderSummary(),
         const SizedBox(height: 16),
         const Text('How was your restaurant order?'),
         const SizedBox(height: 8),
@@ -177,6 +181,39 @@ class _RestaurantFeedbackPublicPageState
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildOrderSummary() {
+    final items =
+        (_order['items'] as List? ?? const [])
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Order total: ₱${_order['total_amount'] ?? '0.00'}',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          if (items.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            for (final item in items.take(5))
+              Text(
+                '• ${item['name'] ?? item['dishName'] ?? 'Item'} x${item['quantity'] ?? 1}',
+              ),
+          ],
+        ],
+      ),
     );
   }
 }

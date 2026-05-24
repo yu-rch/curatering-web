@@ -2497,8 +2497,9 @@ class _InquirePageState extends State<InquirePage> {
         'enabled': true,
         'preprocessor': 'canny',
         'preserve_venue': true,
-        'conditioning_scale': 0.8,
+        'conditioning_scale': 0.65,
       },
+      'controlnet_conditioning_scale': 0.65,
     };
   }
 
@@ -2593,7 +2594,7 @@ class _InquirePageState extends State<InquirePage> {
         prompt,
         user_id: runpodUserId,
         initImageBase64: venueB64,
-        strength: 0.35,
+        strength: 0.58,
         numInferenceSteps: 30,
         guidanceScale: 6.5,
         designMeta: _eventDesignRunpodMeta(),

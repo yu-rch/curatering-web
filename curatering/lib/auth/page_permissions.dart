@@ -5,6 +5,7 @@ class PagePermissionRoutes {
   static const String dashboard = '/dashboard';
   static const String livePerformance = '/live-performance';
   static const String manageEvents = '/manage-events';
+  static const String eventDesignOptions = '/event-design-options';
   static const String loyalty = '/loyalty';
   static const String menu = '/menu';
   static const String restaurantOrders = '/restaurant-orders';
@@ -19,6 +20,7 @@ class PagePermissionRoutes {
     ('Dashboard', dashboard),
     ('Live performance', livePerformance),
     ('Manage Events', manageEvents),
+    ('Event Design Options', eventDesignOptions),
     ('Loyalty Rewards', loyalty),
     ('Menu', menu),
     ('Restaurant Orders', restaurantOrders),

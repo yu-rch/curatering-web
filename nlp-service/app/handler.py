@@ -473,22 +473,23 @@ def _semantic_recommendations(text):
     merged = {"decor_tokens": [], "lighting_tokens": []}
     for key, data in SEMANTIC_DECOR_RECOMMENDATIONS.items():
         if key in lookup:
-            merged["decor_tokens"].extend(data.get("decor_tokens", []))
-            merged["lighting_tokens"].extend(data.get("lighting_tokens", []))
+            merged["decor_tokens"] = list(
+                dict.fromkeys(merged["decor_tokens"] + data.get("decor_tokens", []))
+            )
+            merged["lighting_tokens"] = list(
+                dict.fromkeys(merged["lighting_tokens"] + data.get("lighting_tokens", []))
+            )
     return merged
 
 
-def _limit_prompt_tokens(parts, min_tokens=50, max_tokens=120):
-    clean = _remove_conflicting_aesthetics(_dedupe(parts, 32), 32)
+def _limit_prompt_tokens(parts, min_tokens=35, max_tokens=70):
+    clean = _remove_conflicting_aesthetics(_dedupe(parts, 20), 20)
     filler = [
         "photorealistic interior photography",
         "realistic premium venue styling",
-        "elegant event styling",
-        "high-end event photography",
         "cinematic lighting",
-        "ultra detailed",
     ]
-    prompt_parts = _dedupe(clean + filler, 32)
+    prompt_parts = _dedupe(clean + filler, 20)
     selected = []
     token_count = 0
     for part in prompt_parts:
@@ -518,7 +519,7 @@ Schema:
   "theme_tokens": ["string"],
   "decor_tokens": ["string"],
   "lighting_tokens": ["string"],
-  "recommended_strength": 0.35
+  "recommended_strength": 0.58
 }}
 
 Rules:
@@ -527,8 +528,8 @@ Rules:
 - Do not over-emphasize "preserve room geometry"; use negative_prompt for architecture failures.
 - Normalize themes and remove conflicting aesthetics.
 - Use event-specific semantics: wedding=elegance/symmetry/florals/luxury lighting; birthday=focal decor/playful styling/centerpiece emphasis; corporate=modern/minimal/premium branding/clean lighting.
-- positive_prompt must be comma-separated and roughly 50-120 tokens.
-- recommended_strength should normally be 0.35 for venue img2img.
+- positive_prompt must be comma-separated and roughly 35-70 tokens.
+- recommended_strength should normally be 0.58 for venue img2img.
 
 Input:
 {json.dumps(data, ensure_ascii=False)}
@@ -557,34 +558,34 @@ def normalize_event_prompt_expansion(parsed, source):
     decor_fallback = EVENT_DECOR_FALLBACKS.get((event_type, mood), [])
     theme_tokens = _remove_conflicting_aesthetics(
         _dedupe(
-            _sanitize_list(parsed.get("theme_tokens") or parsed.get("style_tokens"), 8)
-            + _sanitize_list(parsed.get("visual_direction"), 8)
-            + _sanitize_list(parsed.get("visual_keywords"), 8)
+            _sanitize_list(parsed.get("theme_tokens") or parsed.get("style_tokens"), 5)
+            + _sanitize_list(parsed.get("visual_direction"), 5)
+            + _sanitize_list(parsed.get("visual_keywords"), 5)
             + theme_data.get("style_tokens", [])
             + theme_data.get("visual_keywords", [])
             + template.get("theme_tokens", [])
             + ([f"{event_type} event venue"] if event_type else [])
             + ([f"{mood} atmosphere"] if mood else []),
-            8,
+            5,
         ),
-        8,
+        5,
     )
     lighting_tokens = _dedupe(
-        _sanitize_list(parsed.get("lighting_tokens"), 8)
+        _sanitize_list(parsed.get("lighting_tokens"), 5)
         + theme_data.get("lighting_tokens", [])
         + template.get("lighting_tokens", [])
         + semantic.get("lighting_tokens", [])
         + ["cinematic lighting"],
-        8,
+        5,
     )
     decor_tokens = _dedupe(
-        _sanitize_list(parsed.get("decor_tokens") or parsed.get("decor_elements"), 8)
+        _sanitize_list(parsed.get("decor_tokens") or parsed.get("decor_elements"), 5)
         + decor
         + theme_data.get("decor_tokens", [])
         + template.get("decor_tokens", [])
         + semantic.get("decor_tokens", [])
         + decor_fallback,
-        8,
+        6,
     )
     negative_tokens = _dedupe(
         _as_list(parsed.get("negative_tokens"), 10) + EVENT_NEGATIVE_TOKENS,
@@ -592,7 +593,7 @@ def normalize_event_prompt_expansion(parsed, source):
     )
 
     positive_parts = (
-        _sanitize_list(parsed.get("positive_prompt"), 16)
+        _sanitize_list(parsed.get("positive_prompt"), 8)
         + theme_tokens
         + ([f"{', '.join(colors)} color palette"] if colors else [])
         + decor_tokens
@@ -600,16 +601,15 @@ def normalize_event_prompt_expansion(parsed, source):
         + [
             "realistic premium venue styling",
             "luxury interior photography",
-            "photorealistic interior photography",
         ]
     )
     positive_prompt = _limit_prompt_tokens(positive_parts)
     negative_prompt = ", ".join(negative_tokens)
     try:
-        strength = float(parsed.get("recommended_strength", 0.35))
+        strength = float(parsed.get("recommended_strength", 0.58))
     except Exception:
-        strength = 0.35
-    strength = max(0.30, min(strength, 0.42))
+        strength = 0.58
+    strength = max(0.50, min(strength, 0.65))
 
     return {
         "positive_prompt": positive_prompt,

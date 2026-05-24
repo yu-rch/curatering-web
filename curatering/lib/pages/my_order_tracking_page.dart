@@ -24,7 +24,9 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
   List<dynamic> _activeOrders = [];
   bool _isLoading = true;
   String? _error;
+  final Set<String> _sendingFollowUps = {};
   static const Duration _requestTimeout = Duration(seconds: 45);
+  static const Duration _followUpCooldown = Duration(minutes: 20);
 
   String get _apiBaseUrl {
     return apiBaseUrl;
@@ -240,10 +242,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
   }
 
   String _shortOrderId(dynamic rawId, dynamic orderNo) {
-    return formatRestaurantOrderNo({
-      'order_no': orderNo,
-      'id': rawId,
-    });
+    return formatRestaurantOrderNo({'order_no': orderNo, 'id': rawId});
   }
 
   void _navigateFromTopBar(CustomerPageTab tab) {
@@ -364,6 +363,12 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                               order['payment_status'] ?? 'pending';
                           final currentStep = _getStatusStep(status);
                           final items = _normalizeOrderItems(order['items']);
+                          final orderKey = _orderKey(order);
+                          final cooldownUntil = _followUpCooldownUntil(order);
+                          final canFollowUp =
+                              orderKey.isNotEmpty &&
+                              (cooldownUntil == null ||
+                                  !cooldownUntil.isAfter(DateTime.now()));
 
                           return Card(
                             margin: const EdgeInsets.only(bottom: 16),
@@ -555,6 +560,41 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                                       ),
                                     ],
                                   ),
+                                  const SizedBox(height: 16),
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: OutlinedButton.icon(
+                                      onPressed:
+                                          canFollowUp &&
+                                                  !_sendingFollowUps.contains(
+                                                    orderKey,
+                                                  )
+                                              ? () => _sendFollowUp(order)
+                                              : null,
+                                      icon:
+                                          _sendingFollowUps.contains(orderKey)
+                                              ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                              : const Icon(
+                                                Icons
+                                                    .notifications_active_outlined,
+                                              ),
+                                      label: Text(
+                                        cooldownUntil != null &&
+                                                cooldownUntil.isAfter(
+                                                  DateTime.now(),
+                                                )
+                                            ? 'Follow up available ${_formatCooldown(cooldownUntil)}'
+                                            : 'Follow up order',
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -635,5 +675,82 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
         ),
       ],
     );
+  }
+
+  String _orderKey(Map<String, dynamic> order) {
+    for (final key in const ['id', 'order_id', 'order_no']) {
+      final value = order[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  DateTime? _followUpCooldownUntil(Map<String, dynamic> order) {
+    final raw = order['last_customer_followup_at']?.toString();
+    if (raw == null || raw.isEmpty) return null;
+    final last = DateTime.tryParse(raw);
+    if (last == null) return null;
+    return last.add(_followUpCooldown);
+  }
+
+  String _formatCooldown(DateTime until) {
+    final remaining = until.difference(DateTime.now());
+    if (remaining.inMinutes <= 0) return 'now';
+    return 'in ${remaining.inMinutes + 1}m';
+  }
+
+  Future<void> _sendFollowUp(Map<String, dynamic> order) async {
+    final orderKey = _orderKey(order);
+    if (orderKey.isEmpty || _sendingFollowUps.contains(orderKey)) return;
+    setState(() => _sendingFollowUps.add(orderKey));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('customer_token');
+      if (token == null || token.isEmpty)
+        throw Exception('Please log in again');
+      final response = await http
+          .post(
+            Uri.parse(
+              '$_apiBaseUrl/api/restaurant/orders/${Uri.encodeComponent(orderKey)}/follow-up',
+            ),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(_requestTimeout);
+      final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+      if (response.statusCode != 200) {
+        throw Exception(
+          data is Map
+              ? data['error'] ?? 'Failed to send follow-up'
+              : 'Failed to send follow-up',
+        );
+      }
+      final updated = Map<String, dynamic>.from(data['order'] as Map? ?? {});
+      final updatedKey = _orderKey(updated);
+      setState(() {
+        _activeOrders =
+            _activeOrders.map((entry) {
+              if (entry is! Map) return entry;
+              final existing = Map<String, dynamic>.from(entry);
+              return _orderKey(existing) == updatedKey ? updated : existing;
+            }).toList();
+      });
+      CustomerOrdersCache.instance.invalidateRestaurant();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Follow-up sent to the team.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sendingFollowUps.remove(orderKey));
+    }
   }
 }

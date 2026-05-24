@@ -43,6 +43,11 @@ class AppScaffold extends StatelessWidget {
       route: '/manage-events',
     ),
     _SidebarItemData(
+      icon: Icons.auto_awesome,
+      label: 'Event Design Options',
+      route: '/event-design-options',
+    ),
+    _SidebarItemData(
       icon: Icons.loyalty,
       label: 'Loyalty Rewards',
       route: '/loyalty',

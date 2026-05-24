@@ -183,6 +183,7 @@ class _DashboardState extends State<Dashboard> {
             'ALL': 'All',
             'RESTAURANT': 'Restaurant',
             'CATERING': 'Catering',
+            'CATERING_WITH_EVENT': 'Catering + event styling',
           },
           onChanged: (v) {
             setState(() => _businessSide = v);
@@ -208,6 +209,7 @@ class _DashboardState extends State<Dashboard> {
           items: const {
             'ALL': 'All sources',
             'WEB_APP': 'Web',
+            'MOBILE_APP': 'Mobile',
             'POS_WEB': 'POS web',
           },
           onChanged: (v) {
@@ -1095,6 +1097,8 @@ class _DashboardState extends State<Dashboard> {
                       child: Center(child: CircularProgressIndicator()),
                     )
                   else if (s != null) ...[
+                    _aiInsightsPanel(),
+                    const SizedBox(height: 16),
                     if (_showRestaurantSection()) ...[
                       _businessSection(
                         title: 'Restaurant Orders',
@@ -1600,8 +1604,6 @@ class _DashboardState extends State<Dashboard> {
                       ]),
                       const SizedBox(height: 20),
                       _sectionTitle('Operational Insights'),
-                      _aiInsightsPanel(),
-                      const SizedBox(height: 16),
                       _metricsRow([
                         _metricCard(
                           'Inquiries this month',
