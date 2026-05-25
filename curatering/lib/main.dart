@@ -42,7 +42,6 @@ import 'pages/website_admin_page.dart';
 import 'pages/restaurant_orders_route.dart';
 import 'pages/inventory.dart';
 import 'pages/super_admin_dashboard.dart';
-import 'features/event_design/event_design_admin_screen.dart';
 import 'data_store.dart';
 
 Future<void> main() async {
@@ -336,18 +335,6 @@ Route<dynamic>? _buildRouteForPath(String path) {
           ),
           '/settings',
         ),
-    '/event-design-options':
-        (context) => _staffPage(
-          RoleGuard(
-            requiredRole: Role.manager,
-            allowedRoles: {Role.manager, Role.supervisor, Role.superAdmin},
-            child: PagePermissionGuard(
-              route: PagePermissionRoutes.eventDesignOptions,
-              child: EventDesignAdminScreen(apiBase: apiBaseUrl),
-            ),
-          ),
-          '/event-design-options',
-        ),
   };
 
   if (needsRedirectToCustomerSite(path)) {
@@ -387,6 +374,7 @@ class _MyAppState extends State<MyApp> {
 
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   Timer? _staffIdleTimer;
+  bool _showingTimeoutDialog = false;
 
   @override
   void initState() {
@@ -422,11 +410,34 @@ class _MyAppState extends State<MyApp> {
     _staffIdleTimer = Timer(_staffIdleTimeout, _expireStaffSessionForIdle);
   }
 
-  void _expireStaffSessionForIdle() {
+  Future<void> _expireStaffSessionForIdle() async {
     if (!AuthSession.instance.hasToken) return;
-    AuthSession.instance.clear();
     final nav = _navigatorKey.currentState;
     if (nav == null) return;
+    final context = _navigatorKey.currentContext;
+    if (context != null && !_showingTimeoutDialog) {
+      _showingTimeoutDialog = true;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (dialogContext) => AlertDialog(
+              title: const Text('Account timed out'),
+              content: const Text(
+                'Your account has timed out, login to continue access.',
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+      );
+      _showingTimeoutDialog = false;
+    }
+    if (!AuthSession.instance.hasToken) return;
+    AuthSession.instance.clear();
     nav.pushNamedAndRemoveUntil('/login', (_) => false);
   }
 
@@ -786,22 +797,6 @@ class _MyAppState extends State<MyApp> {
                     ),
                   ),
                   '/settings',
-                ),
-            '/event-design-options':
-                (context) => _staffPage(
-                  RoleGuard(
-                    requiredRole: Role.manager,
-                    allowedRoles: {
-                      Role.manager,
-                      Role.supervisor,
-                      Role.superAdmin,
-                    },
-                    child: PagePermissionGuard(
-                      route: PagePermissionRoutes.eventDesignOptions,
-                      child: EventDesignAdminScreen(apiBase: apiBaseUrl),
-                    ),
-                  ),
-                  '/event-design-options',
                 ),
           },
         );

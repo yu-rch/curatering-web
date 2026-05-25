@@ -73,16 +73,22 @@ class CartSyncService {
       'dishPrice': item.dish.price,
       'dish_price': item.dish.price,
       'price': priceNum,
+      'additionalChargeAmount': item.dish.additionalChargeAmount,
+      'menu_dishes_additional_charge_amount': item.dish.additionalChargeAmount,
       'quantity': item.quantity,
       'qty': item.quantity,
       'selectedSauce': sauceVal.isEmpty ? null : sauceVal,
       'selected_sauce': sauceVal.isEmpty ? null : sauceVal,
+      'addOnQuantity': sauceVal.isNotEmpty ? item.addOnQuantity : 1,
       'addOns': item.addOns,
       'add_ons': item.addOns,
       'specialInstructions': item.specialInstructions,
       'special_instructions': item.specialInstructions,
       'dip': sauceVal,
-      'dip_qty': sauceVal.isNotEmpty ? item.quantity : 0,
+      'dip_qty': sauceVal.isNotEmpty ? item.addOnQuantity : 1,
+      'notes': item.specialInstructions,
+      'line_subtotal': item.lineSubtotal,
+      'addon_extra_subtotal': item.addonExtraSubtotal,
       'dish_category': item.dish.category,
       'dishCategory': item.dish.category,
       'dish_type': item.dish.type,
@@ -93,6 +99,7 @@ class CartSyncService {
         'id': item.dish.id,
         'name': item.dish.name,
         'price': item.dish.price,
+        'additionalChargeAmount': item.dish.additionalChargeAmount,
         'category': item.dish.category,
         'type': item.dish.type,
         'mealType': item.dish.mealType,
@@ -111,10 +118,14 @@ class CartSyncService {
         return CartItem.fromJson({
           'dish': Map<String, dynamic>.from(nestedDish),
           'quantity': map['quantity'] ?? 1,
-          'selectedSauce': map['selectedSauce'] ?? map['selected_sauce'],
+          'selectedSauce':
+              map['selectedSauce'] ?? map['selected_sauce'] ?? map['dip'],
+          'addOnQuantity': map['addOnQuantity'] ?? map['dip_qty'],
           'addOns': map['addOns'] ?? map['add_ons'],
           'specialInstructions':
-              map['specialInstructions'] ?? map['special_instructions'],
+              map['specialInstructions'] ??
+              map['special_instructions'] ??
+              map['notes'],
         });
       } catch (_) {
         return null;
@@ -128,6 +139,11 @@ class CartSyncService {
     final qty = map['quantity'] ?? map['qty'] ?? map['dip_qty'];
     final quantity =
         qty is num ? qty.toInt() : int.tryParse(qty?.toString() ?? '') ?? 1;
+    final rawDipQty = map['addOnQuantity'] ?? map['dip_qty'];
+    final dipQty =
+        rawDipQty is num
+            ? rawDipQty.toInt()
+            : int.tryParse(rawDipQty?.toString() ?? '') ?? 1;
 
     return CartItem(
       dish: MenuDish(
@@ -142,6 +158,10 @@ class CartSyncService {
         price:
             (map['dish_price'] ?? map['dishPrice'] ?? map['price'] ?? '0')
                 .toString(),
+        additionalChargeAmount:
+            (map['additionalChargeAmount'] as num?)?.toDouble() ??
+            (map['menu_dishes_additional_charge_amount'] as num?)?.toDouble() ??
+            0,
         category:
             (map['dish_category'] ??
                     map['dishCategory'] ??
@@ -158,6 +178,7 @@ class CartSyncService {
       selectedSauce:
           (map['selected_sauce'] ?? map['selectedSauce'] ?? map['dip'])
               ?.toString(),
+      addOnQuantity: dipQty < 0 ? 0 : dipQty,
       addOns:
           ((map['add_ons'] ?? map['addOns']) as List<dynamic>?)
               ?.map((e) => e.toString())
@@ -165,7 +186,9 @@ class CartSyncService {
               .toList() ??
           const [],
       specialInstructions:
-          (map['special_instructions'] ?? map['specialInstructions'])
+          (map['special_instructions'] ??
+                  map['specialInstructions'] ??
+                  map['notes'])
               ?.toString(),
     );
   }

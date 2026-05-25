@@ -55,6 +55,7 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
   final List<String> _venuePhotosB64 = [];
   final List<String> _previousUrls = [];
   String? _generatedUrl;
+  String? _generateError;
   bool _generating = false;
   bool _saving = false;
 
@@ -150,6 +151,47 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
     ].join(', ');
   }
 
+  Map<String, dynamic> _eventConfig() {
+    return {
+      'task_type': 'event_prompt_expansion',
+      'event_type': _eventType,
+      if (_style != null) ...{'theme': _style, 'style': _style},
+      if (_mood != null) 'mood': _mood,
+      'colors': _palettes.toList(),
+      'color_palette': _palettes.toList(),
+      'decor': _decor.toList(),
+      'decor_elements': _decor.toList(),
+      if (_notes.text.trim().isNotEmpty) ...{
+        'notes': _notes.text.trim(),
+        'custom_instructions': _notes.text.trim(),
+      },
+      if (widget.formalityLevel?.trim().isNotEmpty == true)
+        'formality': widget.formalityLevel!.trim(),
+      if (widget.eventSetting?.trim().isNotEmpty == true)
+        'event_setting': widget.eventSetting!.trim(),
+    };
+  }
+
+  Map<String, dynamic> _runpodMeta(EventPromptExpansion expansion) {
+    return {
+      ..._eventConfig(),
+      'task_type': 'sdxl_event_design',
+      'use_nlp_prompt_expansion': false,
+      ...expansion.toSdxlMeta(),
+      'negative_prompt':
+          expansion.negativePrompt.isNotEmpty
+              ? expansion.negativePrompt
+              : 'warped architecture, distorted room, melted surfaces, duplicate objects, blurry, low quality, cartoon, CGI, fisheye',
+      'controlnet': {
+        'enabled': true,
+        'preprocessor': 'canny',
+        'preserve_venue': true,
+        'conditioning_scale': 0.65,
+      },
+      'controlnet_conditioning_scale': 0.65,
+    };
+  }
+
   Map<String, dynamic> _themeDesign() {
     return {
       'eventDesignSource': 'customer_ai',
@@ -172,42 +214,29 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
 
   Future<void> _generate() async {
     if (_venuePhotosB64.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Upload a venue photo before generating.'),
-        ),
+      setState(
+        () => _generateError = 'Upload a venue photo before generating.',
       );
       return;
     }
-    setState(() => _generating = true);
+    setState(() {
+      _generating = true;
+      _generateError = null;
+    });
     try {
+      final fallbackPrompt = _prompt();
+      final expansion = await RunPodService.expandEventPrompt(
+        _eventConfig(),
+        fallbackPrompt: fallbackPrompt,
+      );
       final url = await RunPodService.generateImageWithPolling(
-        _prompt(),
+        expansion.positivePrompt,
         user_id: widget.userEmail,
         initImageBase64: _venuePhotosB64.first,
-        strength: 0.58,
+        strength: expansion.recommendedStrength ?? 0.58,
         numInferenceSteps: 30,
         guidanceScale: 6.5,
-        designMeta: {
-          'task_type': 'event_design_image',
-          'use_nlp_prompt_expansion': true,
-          'event_type': _eventType,
-          'theme': _style,
-          'style': _style,
-          'mood': _mood,
-          'colors': _palettes.toList(),
-          'decor': _decor.toList(),
-          'notes': _notes.text.trim(),
-          'negative_prompt':
-              'warped architecture, distorted room, melted surfaces, duplicate objects, blurry, low quality, cartoon, CGI, fisheye',
-          'controlnet': {
-            'enabled': true,
-            'preprocessor': 'canny',
-            'preserve_venue': true,
-            'conditioning_scale': 0.65,
-          },
-          'controlnet_conditioning_scale': 0.65,
-        },
+        designMeta: _runpodMeta(expansion),
       );
       if (!mounted) return;
       if (url == null || url.trim().isEmpty) {
@@ -221,9 +250,7 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e'), backgroundColor: Colors.red.shade700),
-      );
+      setState(() => _generateError = '$e');
     } finally {
       if (mounted) setState(() => _generating = false);
     }
@@ -411,6 +438,26 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
               _generating ? 'Generating...' : 'Generate event design',
             ),
           ),
+          if (_generateError != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Text(
+                _generateError!,
+                style: TextStyle(
+                  color: Colors.red.shade800,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           if (_generatedUrl != null) ...[
             InkWell(

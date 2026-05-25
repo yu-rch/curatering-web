@@ -1,16 +1,21 @@
 runpod
 
-diffusers==0.25.0
-transformers==4.36.2
-accelerate==0.25.0
+torch==2.1.0
+torchvision==0.16.0
 
-huggingface_hub==0.19.4
-safetensors==0.4.1
+diffusers==0.27.2
+transformers==4.39.3
+accelerate==0.28.0
+huggingface_hub==0.20.3
+
+xformers==0.0.22.post7
+safetensors
+
+controlnet_aux
+opencv-python
+timm
 
 pillow
 numpy==1.26.4
 supabase
 requests
-
-controlnet_aux
-opencv-python

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../widgets/antd_message.dart';
+
 const int kMaxImageAttachmentBytes = 25 * 1024 * 1024;
 
 String imageAttachmentTooLargeMessage(int maxMb) =>
@@ -43,12 +45,10 @@ Future<List<String>> pickImagesBase64({
     out.add(base64Encode(bytes));
   }
   if (skipped > 0 && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          imageAttachmentTooLargeMessage(maxBytes ~/ (1024 * 1024)),
-        ),
-      ),
+    showAntdMessage(
+      context,
+      imageAttachmentTooLargeMessage(maxBytes ~/ (1024 * 1024)),
+      type: AntdMessageType.warning,
     );
   }
   return out;

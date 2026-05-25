@@ -227,10 +227,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   'quantity': item.quantity,
                   'selectedSauce': item.selectedSauce,
                   'selected_sauce': item.selectedSauce,
+                  'addOnQuantity': item.addOnQuantity,
+                  'dip': item.selectedSauce,
+                  'dip_qty': item.addOnQuantity,
                   'addOns': item.addOns,
                   'add_ons': item.addOns,
                   'specialInstructions': item.specialInstructions,
                   'special_instructions': item.specialInstructions,
+                  'notes': item.specialInstructions,
+                  'line_subtotal': item.lineSubtotal,
+                  'addon_extra_subtotal': item.addonExtraSubtotal,
                 },
               )
               .toList();
@@ -521,14 +527,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                                   if (item.selectedSauce !=
                                                       null)
                                                     Text(
-                                                      item.selectedSauce!
-                                                          .toUpperCase(),
+                                                      '${item.selectedSauce!.toUpperCase()} × ${item.addOnQuantity}',
                                                       style: TextStyle(
                                                         fontSize: 9,
                                                         color:
                                                             Colors
                                                                 .grey
                                                                 .shade600,
+                                                      ),
+                                                    ),
+                                                  if (item.addonExtraSubtotal >
+                                                      0)
+                                                    Text(
+                                                      'EXTRA ADD-ON: ₱${item.addonExtraSubtotal.toStringAsFixed(2)}',
+                                                      style: TextStyle(
+                                                        fontSize: 9,
+                                                        color:
+                                                            Colors
+                                                                .orange
+                                                                .shade800,
                                                       ),
                                                     ),
                                                   if (item.addOns.isNotEmpty)
@@ -624,7 +641,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                             ),
                                             const SizedBox(width: 12),
                                             Text(
-                                              '₱${((double.tryParse(item.dish.price) ?? 0) * item.quantity).toStringAsFixed(0)}',
+                                              '₱${item.lineSubtotal.toStringAsFixed(0)}',
                                               style: const TextStyle(
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.bold,

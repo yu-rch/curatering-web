@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -25,13 +26,21 @@ class _DashboardState extends State<Dashboard> {
         'Analyze current restaurant and catering feedback, identify urgent issues, explain trends, and recommend specific actions for management.',
   );
   bool _isLoading = false;
-  bool _isInsightLoading = false;
   bool _isPrintingPdf = false;
+  Timer? _autoRefreshTimer;
+  DateTime? _lastRefreshAt;
   String? _errorMessage;
   String? _insightError;
+  String? _dishTrendError;
+  String? _healthError;
   DashboardSummary? _summary;
-  DashboardInsight? _insight;
-  String _range = 'year';
+  DashboardAiAnalysis? _insight;
+  DishTrendsResult? _dishTrends;
+  AiHealthStatus? _aiHealth;
+  AiTaskState _insightState = AiTaskState.idle;
+  AiTaskState _dishTrendState = AiTaskState.idle;
+  AiTaskState _healthState = AiTaskState.idle;
+  String _range = '30d';
   String _orderSource = 'ALL';
   String _businessSide = 'ALL';
   String _cateringStyle = 'ALL';
@@ -42,13 +51,43 @@ class _DashboardState extends State<Dashboard> {
     super.initState();
     _load();
     _loadInsight();
+    _loadDishTrends();
+    _loadAiHealth();
+    _startAutoRefresh();
   }
 
   @override
   void dispose() {
+    _autoRefreshTimer?.cancel();
     _searchController.dispose();
     _insightPromptController.dispose();
     super.dispose();
+  }
+
+  bool _isAiBusy(AiTaskState state) =>
+      state == AiTaskState.queued || state == AiTaskState.processing;
+
+  void _startAutoRefresh() {
+    _autoRefreshTimer = Timer.periodic(
+      const Duration(minutes: 10),
+      (_) => _refreshDashboard(),
+    );
+  }
+
+  Future<void> _refreshDashboard({bool force = false}) async {
+    final now = DateTime.now();
+    if (!force &&
+        _lastRefreshAt != null &&
+        now.difference(_lastRefreshAt!) < const Duration(seconds: 30)) {
+      return;
+    }
+    _lastRefreshAt = now;
+    await Future.wait([
+      _load(forceRefresh: true),
+      _loadInsight(),
+      _loadDishTrends(),
+      _loadAiHealth(),
+    ]);
   }
 
   Future<void> _load({bool forceRefresh = false}) async {
@@ -80,26 +119,29 @@ class _DashboardState extends State<Dashboard> {
 
   String get _insightRange {
     switch (_range) {
-      case 'today':
+      case '7d':
         return '7d';
-      case 'month':
+      case '30d':
         return '30d';
+      case '90d':
+        return '90d';
       case 'year':
       case 'all':
       default:
-        return '90d';
+        return _range == 'year' || _range == 'all' ? '90d' : _range;
     }
   }
 
   Future<void> _loadInsight() async {
     if (!AuthSession.instance.hasToken) return;
     setState(() {
-      _isInsightLoading = true;
+      _insightState = AiTaskState.processing;
       _insightError = null;
     });
     try {
       final insight = await DashboardApi.instance.loadLatestInsight(
         range: _insightRange,
+        filters: _dashboardFilters,
       );
       if (mounted) setState(() => _insight = insight);
     } catch (_) {
@@ -107,28 +149,95 @@ class _DashboardState extends State<Dashboard> {
         setState(() => _insightError = 'Failed to load AI insights.');
       }
     } finally {
-      if (mounted) setState(() => _isInsightLoading = false);
+      if (mounted) setState(() => _insightState = AiTaskState.idle);
     }
   }
 
   Future<void> _generateInsight() async {
-    if (!AuthSession.instance.hasToken || _isInsightLoading) return;
+    if (!AuthSession.instance.hasToken || _isAiBusy(_insightState)) return;
     setState(() {
-      _isInsightLoading = true;
+      _insightState = AiTaskState.processing;
       _insightError = null;
     });
     try {
       final insight = await DashboardApi.instance.analyzeDashboard(
         range: _insightRange,
         prompt: _insightPromptController.text,
+        dashboardData: _summary,
+        filters: _dashboardFilters,
+        onStateChanged:
+            (state) => mounted ? setState(() => _insightState = state) : null,
       );
-      if (mounted) setState(() => _insight = insight);
+      if (mounted) {
+        setState(() {
+          _insight = insight;
+          _insightState = AiTaskState.completed;
+        });
+      }
     } catch (_) {
       if (mounted) {
-        setState(() => _insightError = 'Failed to generate AI analysis.');
+        setState(() {
+          _insightState = AiTaskState.failed;
+          _insightError =
+              _insight == null
+                  ? 'AI unavailable. No cached analysis is available yet.'
+                  : 'AI unavailable. Showing the latest cached analysis.';
+        });
       }
-    } finally {
-      if (mounted) setState(() => _isInsightLoading = false);
+    }
+  }
+
+  Future<void> _loadDishTrends() async {
+    if (!AuthSession.instance.hasToken || _isAiBusy(_dishTrendState)) return;
+    setState(() {
+      _dishTrendState = AiTaskState.processing;
+      _dishTrendError = null;
+    });
+    try {
+      final trends = await DashboardApi.instance.loadDishTrends(
+        onStateChanged:
+            (state) => mounted ? setState(() => _dishTrendState = state) : null,
+      );
+      if (mounted) {
+        setState(() {
+          _dishTrends = trends;
+          _dishTrendState = AiTaskState.completed;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _dishTrendState = AiTaskState.failed;
+          _dishTrendError = 'Failed to load dish trends.';
+        });
+      }
+    }
+  }
+
+  Future<void> _loadAiHealth() async {
+    if (!AuthSession.instance.hasToken || _isAiBusy(_healthState)) return;
+    setState(() {
+      _healthState = AiTaskState.processing;
+      _healthError = null;
+    });
+    try {
+      final health = await DashboardApi.instance.loadAiHealth(
+        onStateChanged:
+            (state) => mounted ? setState(() => _healthState = state) : null,
+      );
+      if (mounted) {
+        setState(() {
+          _aiHealth = health;
+          _healthState = AiTaskState.completed;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _healthState = AiTaskState.failed;
+          _healthError = 'Failed to load AI health.';
+        });
+      }
     }
   }
 
@@ -136,12 +245,27 @@ class _DashboardState extends State<Dashboard> {
     final now = DateTime.now();
     DateTime? start;
     DateTime? end;
-    if (_range == 'today') {
-      start = DateTime(now.year, now.month, now.day);
-      end = start.add(const Duration(days: 1));
-    } else if (_range == 'month') {
-      start = DateTime(now.year, now.month);
-      end = DateTime(now.year, now.month + 1);
+    if (_range == '7d') {
+      start = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(const Duration(days: 6));
+      end = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+    } else if (_range == '30d') {
+      start = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(const Duration(days: 29));
+      end = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+    } else if (_range == '90d') {
+      start = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(const Duration(days: 89));
+      end = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
     } else if (_range == 'year') {
       start = DateTime(now.year);
       end = DateTime(now.year + 1);
@@ -149,6 +273,7 @@ class _DashboardState extends State<Dashboard> {
     return DashboardFilters(
       start: start,
       end: end,
+      aiRange: _insightRange,
       orderSource: _orderSource,
       businessSide: _businessSide,
       cateringStyle: _cateringStyle,
@@ -165,15 +290,15 @@ class _DashboardState extends State<Dashboard> {
           value: _range,
           label: 'Range',
           items: const {
-            'today': 'Today',
-            'month': 'This month',
+            '7d': 'Last 7 days',
+            '30d': 'Last 30 days',
+            '90d': 'Last 90 days',
             'year': 'This year',
             'all': 'All time',
           },
           onChanged: (v) {
             setState(() => _range = v);
-            _load(forceRefresh: true);
-            _loadInsight();
+            _refreshDashboard(force: true);
           },
         ),
         _filterDropdown(
@@ -181,13 +306,13 @@ class _DashboardState extends State<Dashboard> {
           label: 'Business side',
           items: const {
             'ALL': 'All',
-            'RESTAURANT': 'Restaurant',
-            'CATERING': 'Catering',
-            'CATERING_WITH_EVENT': 'Catering + event styling',
+            'RESTAURANT': 'Restaurant only',
+            'CATERING': 'Catering only',
+            'CATERING_WITH_EVENT': 'Event packages only',
           },
           onChanged: (v) {
             setState(() => _businessSide = v);
-            _load(forceRefresh: true);
+            _refreshDashboard(force: true);
           },
         ),
         _filterDropdown(
@@ -200,7 +325,7 @@ class _DashboardState extends State<Dashboard> {
           },
           onChanged: (v) {
             setState(() => _cateringStyle = v);
-            _load(forceRefresh: true);
+            _refreshDashboard(force: true);
           },
         ),
         _filterDropdown(
@@ -208,13 +333,15 @@ class _DashboardState extends State<Dashboard> {
           label: 'Source',
           items: const {
             'ALL': 'All sources',
+            'ONLINE': 'Online only',
+            'WALK_IN': 'Walk-in only',
             'WEB_APP': 'Web',
             'MOBILE_APP': 'Mobile',
             'POS_WEB': 'POS web',
           },
           onChanged: (v) {
             setState(() => _orderSource = v);
-            _load(forceRefresh: true);
+            _refreshDashboard(force: true);
           },
         ),
       ],
@@ -230,7 +357,7 @@ class _DashboardState extends State<Dashboard> {
     return SizedBox(
       width: 190,
       child: DropdownButtonFormField<String>(
-        value: value,
+        initialValue: value,
         decoration: InputDecoration(
           labelText: label,
           isDense: true,
@@ -842,8 +969,56 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
+  String _aiActionLabel(AiTaskState state, String idleLabel) {
+    switch (state) {
+      case AiTaskState.queued:
+        return 'Queued...';
+      case AiTaskState.processing:
+        return 'Generating...';
+      case AiTaskState.failed:
+        return 'Retry';
+      case AiTaskState.completed:
+      case AiTaskState.idle:
+        return idleLabel;
+    }
+  }
+
+  Widget _aiStatusPill(AiTaskState state) {
+    final color = switch (state) {
+      AiTaskState.queued => Colors.orange.shade700,
+      AiTaskState.processing => AntdTokens.blue,
+      AiTaskState.completed => AntdTokens.success,
+      AiTaskState.failed => AntdTokens.error,
+      AiTaskState.idle => AntdTokens.labelMuted,
+    };
+    final label = switch (state) {
+      AiTaskState.queued => 'Queued',
+      AiTaskState.processing => 'Generating',
+      AiTaskState.completed => 'Ready',
+      AiTaskState.failed => 'Failed',
+      AiTaskState.idle => 'Idle',
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
   Widget _aiInsightsPanel() {
     final insight = _insight;
+    final busy = _isAiBusy(_insightState);
     return Card(
       elevation: 0,
       color: Colors.white,
@@ -870,10 +1045,12 @@ class _DashboardState extends State<Dashboard> {
                     ),
                   ),
                 ),
+                _aiStatusPill(_insightState),
+                const SizedBox(width: 8),
                 TextButton.icon(
-                  onPressed: _isInsightLoading ? null : _generateInsight,
+                  onPressed: busy ? null : _generateInsight,
                   icon:
-                      _isInsightLoading
+                      busy
                           ? const SizedBox(
                             width: 16,
                             height: 16,
@@ -881,7 +1058,7 @@ class _DashboardState extends State<Dashboard> {
                           )
                           : const Icon(Icons.psychology_alt_outlined),
                   label: Text(
-                    _isInsightLoading ? 'Analyzing...' : 'Generate AI analysis',
+                    _aiActionLabel(_insightState, 'Generate AI analysis'),
                   ),
                 ),
               ],
@@ -910,10 +1087,7 @@ class _DashboardState extends State<Dashboard> {
             ),
             if (_insightError != null) ...[
               const SizedBox(height: 12),
-              Text(
-                _insightError!,
-                style: TextStyle(color: Colors.red.shade700),
-              ),
+              _errorBanner(_insightError!, onRetry: _generateInsight),
             ],
             const SizedBox(height: 14),
             if (insight == null)
@@ -921,87 +1095,590 @@ class _DashboardState extends State<Dashboard> {
                 'No stored AI analysis yet. Generate one to summarize recent feedback, alerts, and recommended actions.',
                 style: TextStyle(color: AntdTokens.labelMuted),
               )
-            else ...[
-              Text(
-                insight.summary.isEmpty
-                    ? 'No summary returned.'
-                    : insight.summary,
-                style: const TextStyle(
-                  color: AntdTokens.valueDark,
-                  fontWeight: FontWeight.w600,
+            else
+              _aiSectionGrid([
+                _aiSectionCard(
+                  title: 'Dashboard Summary',
+                  subtitle: 'AI executive summary',
+                  icon: Icons.summarize_outlined,
+                  color: AntdTokens.blue,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        insight.summary.isEmpty
+                            ? 'No summary returned.'
+                            : insight.summary,
+                        style: const TextStyle(
+                          color: AntdTokens.valueDark,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (insight.explainability.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        const Text(
+                          'AI detected:',
+                          style: TextStyle(
+                            color: AntdTokens.valueDark,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        _insightList(insight.explainability),
+                      ],
+                      if (insight.insights.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        _insightList(insight.insights),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
-              if (insight.alerts.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children:
-                      insight.alerts
-                          .map(
-                            (item) => Chip(
-                              label: Text(item.message),
-                              backgroundColor:
-                                  item.severity == 'high'
-                                      ? Colors.red.shade50
-                                      : Colors.orange.shade50,
-                              side: BorderSide(
-                                color:
-                                    item.severity == 'high'
-                                        ? Colors.red.shade200
-                                        : Colors.orange.shade200,
-                              ),
-                            ),
+                _aiSectionCard(
+                  title: 'Trends',
+                  subtitle: 'Sales, ordering, and event trends',
+                  icon: Icons.trending_up,
+                  color: Colors.indigo.shade500,
+                  child: _insightList(insight.trends),
+                ),
+                _aiSectionCard(
+                  title: 'Problems',
+                  subtitle:
+                      'Operational issues, customer complaints, and low stock risks',
+                  icon: Icons.report_problem_outlined,
+                  color: AntdTokens.warning,
+                  child: _insightList(insight.problems),
+                ),
+                _aiSectionCard(
+                  title: 'Recommendations',
+                  subtitle: 'Actionable suggestions',
+                  icon: Icons.task_alt,
+                  color: AntdTokens.success,
+                  child: _insightList(insight.recommendations),
+                ),
+                _aiSectionCard(
+                  title: 'Alerts',
+                  subtitle: 'Severity cards',
+                  icon: Icons.notifications_active_outlined,
+                  color: AntdTokens.error,
+                  child:
+                      insight.alerts.isEmpty
+                          ? const Text(
+                            'No alerts.',
+                            style: TextStyle(color: AntdTokens.labelMuted),
                           )
-                          .toList(),
+                          : Column(
+                            children: insight.alerts.map(_alertCard).toList(),
+                          ),
                 ),
-              ],
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 24,
-                runSpacing: 16,
-                children: [
-                  _insightList('Insights', insight.insights),
-                  _insightList('Trends', insight.trends),
-                  _insightList('Problems', insight.problems),
-                  _insightList('Recommendations', insight.recommendations),
-                ],
-              ),
-            ],
+              ]),
           ],
         ),
       ),
     );
   }
 
-  Widget _insightList(String title, List<String> items) {
-    return SizedBox(
-      width: 280,
+  Widget _aiSectionGrid(List<Widget> children) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 900;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children:
+              children
+                  .map(
+                    (child) => SizedBox(
+                      width:
+                          narrow
+                              ? constraints.maxWidth
+                              : (constraints.maxWidth - 12) / 2,
+                      child: child,
+                    ),
+                  )
+                  .toList(),
+        );
+      },
+    );
+  }
+
+  Widget _aiSectionCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required Widget child,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AntdTokens.borderSubtle),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: color, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: AntdTokens.valueDark,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: AntdTokens.labelMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _insightList(List<String> items) {
+    if (items.isEmpty) {
+      return const Text(
+        'No items.',
+        style: TextStyle(color: AntdTokens.labelMuted),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final item in items)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [const Text('• '), Expanded(child: Text(item))],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _alertCard(DashboardInsightAlert alert) {
+    final color = _severityColor(alert.severity);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.warning_amber_outlined, color: color, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  alert.message,
+                  style: TextStyle(color: color, fontWeight: FontWeight.w800),
+                ),
+              ),
+              Text(
+                alert.severity.toUpperCase(),
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          if (alert.explanation.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              alert.explanation,
+              style: const TextStyle(color: AntdTokens.textSecondary),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Color _severityColor(String severity) {
+    switch (severity.trim().toLowerCase()) {
+      case 'high':
+        return Colors.red.shade700;
+      case 'medium':
+        return Colors.orange.shade700;
+      case 'info':
+      default:
+        return AntdTokens.blue;
+    }
+  }
+
+  Widget _errorBanner(String message, {VoidCallback? onRetry}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.shade100),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(message, style: TextStyle(color: Colors.red.shade800)),
+          ),
+          if (onRetry != null)
+            TextButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Retry'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _aiHealthPanel() {
+    final health = _aiHealth;
+    final busy = _isAiBusy(_healthState);
+    return _dashboardCard(
+      title: 'AI Health Monitoring',
+      subtitle: 'GPU, NLP, SDXL, queue, and latency status',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _aiStatusPill(_healthState),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: busy ? null : _loadAiHealth,
+                icon:
+                    busy
+                        ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Icon(Icons.refresh),
+                label: Text(_aiActionLabel(_healthState, 'Refresh health')),
+              ),
+            ],
+          ),
+          if (_healthError != null) ...[
+            const SizedBox(height: 10),
+            _errorBanner(_healthError!, onRetry: _loadAiHealth),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _healthTile('GPU', health?.gpuOnline, health?.gpuName),
+              _healthTile('NLP', health?.nlpOnline, health?.model),
+              _healthTile('SDXL', health?.sdxlOnline, null),
+              _healthMetricTile(
+                'Queue size',
+                health?.queueSize?.toString() ?? 'Unknown',
+              ),
+              _healthMetricTile(
+                'Last latency',
+                health?.lastInferenceLatencyMs == null
+                    ? 'Unknown'
+                    : '${health!.lastInferenceLatencyMs!.toStringAsFixed(0)} ms',
+              ),
+            ],
+          ),
+          if (health?.message.isNotEmpty == true) ...[
+            const SizedBox(height: 10),
+            Text(
+              health!.message,
+              style: const TextStyle(color: AntdTokens.labelMuted),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _healthTile(String label, bool? online, String? detail) {
+    final color =
+        online == true
+            ? AntdTokens.success
+            : online == false
+            ? AntdTokens.error
+            : AntdTokens.labelMuted;
+    final value =
+        online == true
+            ? 'Online'
+            : online == false
+            ? 'Offline'
+            : 'Unknown';
+    return _healthMetricTile(label, value, detail: detail, color: color);
+  }
+
+  Widget _healthMetricTile(
+    String label,
+    String value, {
+    String? detail,
+    Color color = AntdTokens.valueDark,
+  }) {
+    return Container(
+      width: 170,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AntdTokens.borderSubtle),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            title,
+            label,
             style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              color: AntdTokens.valueDark,
+              color: AntdTokens.labelMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 6),
-          if (items.isEmpty)
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(color: color, fontWeight: FontWeight.w800),
+          ),
+          if (detail != null && detail.trim().isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Text(
+              detail,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AntdTokens.labelMuted,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _dishTrendsPanel() {
+    final trends = _dishTrends;
+    final busy = _isAiBusy(_dishTrendState);
+    final top = trends?.topDishes ?? const <DishTrend>[];
+    final revenue = trends?.revenueLeaders ?? const <DishTrend>[];
+    final maxOrders = top.fold<double>(
+      0,
+      (max, item) => math.max(max, item.orders),
+    );
+    final maxRevenue = revenue.fold<double>(
+      0,
+      (max, item) => math.max(max, item.revenue),
+    );
+    return _dashboardCard(
+      title: 'Dish Trend AI',
+      subtitle: 'Top dishes, revenue leaders, and trending dishes',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _aiStatusPill(_dishTrendState),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: busy ? null : _loadDishTrends,
+                icon:
+                    busy
+                        ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Icon(Icons.refresh),
+                label: Text(_aiActionLabel(_dishTrendState, 'Refresh trends')),
+              ),
+            ],
+          ),
+          if (_dishTrendError != null) ...[
+            const SizedBox(height: 10),
+            _errorBanner(_dishTrendError!, onRetry: _loadDishTrends),
+          ],
+          if (trends?.summary.isNotEmpty == true) ...[
+            const SizedBox(height: 10),
+            Text(
+              trends!.summary,
+              style: const TextStyle(
+                color: AntdTokens.valueDark,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          if (trends == null || trends.isEmpty)
             const Text(
-              'No items.',
+              'No dish trend data returned yet.',
               style: TextStyle(color: AntdTokens.labelMuted),
             )
           else
-            for (final item in items)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 5),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [const Text('• '), Expanded(child: Text(item))],
+            _aiSectionGrid([
+              _dishRankingCard(
+                title: 'Top dishes',
+                items: top,
+                maxValue: maxOrders,
+                color: AntdTokens.blue,
+                valueBuilder:
+                    (item) => '${item.orders.toStringAsFixed(0)} orders',
+              ),
+              _dishRankingCard(
+                title: 'Revenue leaders',
+                items: revenue,
+                maxValue: maxRevenue,
+                color: AntdTokens.success,
+                valueBuilder: (item) => formatPhp(item.revenue),
+              ),
+              _aiSectionCard(
+                title: 'Trending dishes',
+                subtitle: 'AI trend badges',
+                icon: Icons.local_fire_department_outlined,
+                color: Colors.deepOrange.shade500,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final dish in trends.trendingDishes)
+                      Chip(
+                        label: Text(dish),
+                        avatar: const Icon(Icons.trending_up, size: 16),
+                        backgroundColor: Colors.deepOrange.shade50,
+                        side: BorderSide(color: Colors.deepOrange.shade100),
+                      ),
+                  ],
                 ),
               ),
+            ]),
+          if (trends?.recommendations.isNotEmpty == true) ...[
+            const SizedBox(height: 12),
+            _aiSectionCard(
+              title: 'Dish recommendations',
+              subtitle: 'Menu and stocking suggestions',
+              icon: Icons.tips_and_updates_outlined,
+              color: Colors.purple.shade500,
+              child: _insightList(trends!.recommendations),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _dishRankingCard({
+    required String title,
+    required List<DishTrend> items,
+    required double maxValue,
+    required Color color,
+    required String Function(DishTrend item) valueBuilder,
+  }) {
+    return _aiSectionCard(
+      title: title,
+      subtitle: 'Horizontal ranking cards',
+      icon: Icons.bar_chart,
+      color: color,
+      child:
+          items.isEmpty
+              ? const Text(
+                'No dishes returned.',
+                style: TextStyle(color: AntdTokens.labelMuted),
+              )
+              : Column(
+                children: [
+                  for (var i = 0; i < math.min(5, items.length); i++)
+                    _dishRankingRow(
+                      rank: i + 1,
+                      trend: items[i],
+                      value: valueBuilder(items[i]),
+                      maxValue: maxValue,
+                      color: color,
+                    ),
+                ],
+              ),
+    );
+  }
+
+  Widget _dishRankingRow({
+    required int rank,
+    required DishTrend trend,
+    required String value,
+    required double maxValue,
+    required Color color,
+  }) {
+    final amount = value.startsWith('₱') ? trend.revenue : trend.orders;
+    final factor = maxValue <= 0 ? 0.0 : (amount / maxValue).clamp(0.0, 1.0);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '#$rank',
+                style: const TextStyle(
+                  color: AntdTokens.labelMuted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  trend.dish,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(value, style: TextStyle(color: color)),
+            ],
+          ),
+          const SizedBox(height: 5),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: factor,
+              minHeight: 8,
+              backgroundColor: color.withValues(alpha: 0.10),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
         ],
       ),
     );
@@ -1063,7 +1740,9 @@ class _DashboardState extends State<Dashboard> {
                       IconButton(
                         tooltip: 'Refresh',
                         onPressed:
-                            _isLoading ? null : () => _load(forceRefresh: true),
+                            _isLoading
+                                ? null
+                                : () => _refreshDashboard(force: true),
                         icon: const Icon(Icons.refresh),
                       ),
                     ],
@@ -1098,6 +1777,10 @@ class _DashboardState extends State<Dashboard> {
                     )
                   else if (s != null) ...[
                     _aiInsightsPanel(),
+                    const SizedBox(height: 16),
+                    _aiHealthPanel(),
+                    const SizedBox(height: 16),
+                    _dishTrendsPanel(),
                     const SizedBox(height: 16),
                     if (_showRestaurantSection()) ...[
                       _businessSection(

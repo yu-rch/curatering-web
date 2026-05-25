@@ -12,6 +12,7 @@ import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
 import '../utils/debouncer.dart';
 import '../utils/image_cache.dart';
+import '../widgets/antd_message.dart';
 import '../widgets/allergen_selector_field.dart';
 
 // Lazy loading image widget for dish images
@@ -177,6 +178,8 @@ class _MenuState extends State<Menu> {
   final _debouncer = Debouncer(delay: const Duration(milliseconds: 300));
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
+  final TextEditingController _additionalChargeController =
+      TextEditingController();
   final TextEditingController _paxController = TextEditingController();
   final TextEditingController _newPaxController = TextEditingController();
   final TextEditingController _newSauceController = TextEditingController();
@@ -204,6 +207,7 @@ class _MenuState extends State<Menu> {
   bool _isModifyingSet = false;
   bool _isGridView = true; // Default to grid view
   bool _isSavingSetMenu = false;
+  String? _setMenuError;
 
   bool _matchesSearch(MenuDish dish) {
     final query = _searchController.text.trim().toLowerCase();
@@ -324,6 +328,7 @@ class _MenuState extends State<Menu> {
     _searchController.dispose();
     _nameController.dispose();
     _priceController.dispose();
+    _additionalChargeController.dispose();
     _paxController.dispose();
     _newPaxController.dispose();
     _newSauceController.dispose();
@@ -355,6 +360,7 @@ class _MenuState extends State<Menu> {
     _typeController.clear();
     _nameController.clear();
     _priceController.clear();
+    _additionalChargeController.text = '0.00';
     _editingPaxOptions = category == 'catering' ? const [] : ['1 pax'];
     if (category == 'restaurant') {
       _editingType = 'others';
@@ -381,6 +387,10 @@ class _MenuState extends State<Menu> {
     _typeController.text = _editingType;
     _nameController.text = dish.name;
     _priceController.text = dish.price;
+    _additionalChargeController.text =
+        dish.additionalChargeAmount > 0
+            ? dish.additionalChargeAmount.toStringAsFixed(2)
+            : '0.00';
     _paxController.text = '';
     _editingPaxOptions = dish.paxOptions.toList();
     _editingPaxPrices = Map.fromEntries(
@@ -442,9 +452,21 @@ class _MenuState extends State<Menu> {
 
   Future<void> _saveSetMenu() async {
     final name = _setMenuNameController.text.trim();
-    if (name.isEmpty || _selectedSetDishIds.isEmpty || _isSavingSetMenu) return;
+    if (_isSavingSetMenu) return;
+    if (name.isEmpty || _selectedSetDishIds.isEmpty) {
+      setState(() {
+        _setMenuError =
+            name.isEmpty
+                ? 'Enter a set menu name.'
+                : 'Add at least one dish to this set menu.';
+      });
+      return;
+    }
 
-    setState(() => _isSavingSetMenu = true);
+    setState(() {
+      _isSavingSetMenu = true;
+      _setMenuError = null;
+    });
     try {
       if (_selectedSetMenuId == null) {
         // Create new set menu
@@ -452,9 +474,9 @@ class _MenuState extends State<Menu> {
           name: name,
           dishIds: _selectedSetDishIds.toList(),
         );
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Set menu created successfully')),
-        );
+        if (mounted) {
+          showAntdMessage(context, 'Set menu created successfully');
+        }
       } else {
         // Update existing set menu
         await SetMenuStore.instance.updateSetMenu(
@@ -462,17 +484,21 @@ class _MenuState extends State<Menu> {
           name: name,
           dishIds: _selectedSetDishIds.toList(),
         );
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Set menu updated successfully')),
-        );
+        if (mounted) {
+          showAntdMessage(context, 'Set menu updated successfully');
+        }
       }
       _setMenuNameController.clear();
       _selectedSetDishIds.clear();
       _selectedSetMenuId = null;
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) {
+        showAntdMessage(
+          context,
+          'Set menu save failed: $e',
+          type: AntdMessageType.error,
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSavingSetMenu = false);
     }
@@ -483,6 +509,7 @@ class _MenuState extends State<Menu> {
     required String category,
   }) async {
     var isSaving = false;
+    String? formError;
     if (dish == null) {
       _resetEditorState(category: category);
     } else {
@@ -596,6 +623,19 @@ class _MenuState extends State<Menu> {
                           decimal: true,
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _additionalChargeController,
+                        decoration: const InputDecoration(
+                          labelText: 'Additional charge fee',
+                          helperText:
+                              'Used when customers add extra dishes beyond a set menu.',
+                          prefixText: '₱ ',
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                      ),
                       if (category == 'catering') ...[
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
@@ -648,6 +688,26 @@ class _MenuState extends State<Menu> {
                         onChanged: (s) => _allergensController.text = s,
                       ),
                       const SizedBox(height: 8),
+                      if (formError != null) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.red.shade200),
+                          ),
+                          child: Text(
+                            formError!,
+                            style: TextStyle(
+                              color: Colors.red.shade800,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Available for ordering'),
@@ -678,6 +738,11 @@ class _MenuState extends State<Menu> {
                           : () async {
                             final name = _nameController.text.trim();
                             final price = _priceController.text.trim();
+                            final additionalCharge =
+                                double.tryParse(
+                                  _additionalChargeController.text.trim(),
+                                ) ??
+                                0;
                             final needsPax = category == 'restaurant';
                             final paxToSave =
                                 category == 'catering'
@@ -686,25 +751,22 @@ class _MenuState extends State<Menu> {
                             if (name.isEmpty ||
                                 price.isEmpty ||
                                 (needsPax && paxToSave.isEmpty)) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      name.isEmpty || price.isEmpty
-                                          ? 'Please enter name and price.'
-                                          : 'Add at least one PAX / size option for this dish.',
-                                    ),
-                                  ),
-                                );
-                              }
+                              dialogSetState(() {
+                                formError =
+                                    name.isEmpty || price.isEmpty
+                                        ? 'Please enter name and price.'
+                                        : 'Add at least one PAX / size option for this dish.';
+                              });
                               return;
                             }
+                            dialogSetState(() => formError = null);
                             dialogSetState(() => isSaving = true);
                             try {
                               if (dish == null) {
                                 await MenuStore.instance.addDish(
                                   name: name,
                                   price: price,
+                                  additionalChargeAmount: additionalCharge,
                                   paxOptions: paxToSave,
                                   imageBase64: _editingImageBase64,
                                   category: category,
@@ -732,6 +794,7 @@ class _MenuState extends State<Menu> {
                                   id: dish.id,
                                   name: name,
                                   price: price,
+                                  additionalChargeAmount: additionalCharge,
                                   paxOptions: paxToSave,
                                   imageBase64: _editingImageBase64,
                                   category: category,
@@ -760,8 +823,10 @@ class _MenuState extends State<Menu> {
                               }
                             } catch (e) {
                               if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Error: $e')),
+                                showAntdMessage(
+                                  context,
+                                  'Dish save failed: $e',
+                                  type: AntdMessageType.error,
                                 );
                               }
                             } finally {
@@ -793,6 +858,7 @@ class _MenuState extends State<Menu> {
         id: dish.id,
         name: dish.name,
         price: dish.price,
+        additionalChargeAmount: dish.additionalChargeAmount,
         paxOptions: dish.paxOptions,
         imageBase64: dish.imageBase64,
         category: dish.category,
@@ -805,24 +871,19 @@ class _MenuState extends State<Menu> {
         allergens: dish.allergens,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              dish.available
-                  ? 'Dish marked as unavailable'
-                  : 'Dish marked as available',
-            ),
-            backgroundColor: Colors.green,
-          ),
+        showAntdMessage(
+          context,
+          dish.available
+              ? 'Dish marked as unavailable'
+              : 'Dish marked as available',
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to update dish: $e'),
-            backgroundColor: Colors.red,
-          ),
+        showAntdMessage(
+          context,
+          'Failed to update dish: $e',
+          type: AntdMessageType.error,
         );
       }
     }
@@ -859,9 +920,7 @@ class _MenuState extends State<Menu> {
     if (confirmed != true || !mounted) return;
     final price = priceCtrl.text.trim();
     if (price.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Enter a price')));
+      showAntdMessage(context, 'Enter a price', type: AntdMessageType.error);
       return;
     }
     final dishes =
@@ -877,6 +936,7 @@ class _MenuState extends State<Menu> {
           id: d.id,
           name: d.name,
           price: price,
+          additionalChargeAmount: d.additionalChargeAmount,
           paxOptions: d.paxOptions,
           imageBase64: d.imageBase64,
           category: d.category,
@@ -893,14 +953,12 @@ class _MenuState extends State<Menu> {
       }
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          failed == 0
-              ? 'Updated $done catering dish(es).'
-              : 'Updated $done, failed $failed.',
-        ),
-      ),
+    showAntdMessage(
+      context,
+      failed == 0
+          ? 'Updated $done catering dish(es).'
+          : 'Updated $done, failed $failed.',
+      type: failed == 0 ? AntdMessageType.success : AntdMessageType.warning,
     );
   }
 
@@ -961,8 +1019,10 @@ class _MenuState extends State<Menu> {
                             }
                           } catch (e) {
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Error: $e')),
+                              showAntdMessage(
+                                context,
+                                'Archive failed: $e',
+                                type: AntdMessageType.error,
                               );
                             }
                           }
@@ -1153,8 +1213,10 @@ class _MenuState extends State<Menu> {
                                 }
                               } catch (e) {
                                 if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Error: $e')),
+                                  showAntdMessage(
+                                    context,
+                                    'Ingredient save failed: $e',
+                                    type: AntdMessageType.error,
                                   );
                                 }
                               }
@@ -1311,6 +1373,7 @@ class _MenuState extends State<Menu> {
                         id: dish.id,
                         name: dish.name,
                         price: dish.price,
+                        additionalChargeAmount: dish.additionalChargeAmount,
                         paxOptions: dish.paxOptions,
                         imageBase64: dish.imageBase64,
                         category: dish.category,
@@ -1324,9 +1387,11 @@ class _MenuState extends State<Menu> {
                       );
                     } catch (e) {
                       if (context.mounted) {
-                        ScaffoldMessenger.of(
+                        showAntdMessage(
                           context,
-                        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+                          'Availability update failed: $e',
+                          type: AntdMessageType.error,
+                        );
                       }
                     }
                   },
@@ -2169,6 +2234,27 @@ class _MenuState extends State<Menu> {
                           ],
                         ),
                       ),
+                      if (_setMenuError != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.shade200),
+                            ),
+                            child: Text(
+                              _setMenuError!,
+                              style: TextStyle(
+                                color: Colors.red.shade800,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
                       // Dishes in new menu
                       Expanded(
                         child:
@@ -2515,14 +2601,6 @@ class _MenuState extends State<Menu> {
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'PHP${dish.price}',
-                        style: TextStyle(
-                          color: Colors.grey.shade600,
-                          fontSize: 12,
                         ),
                       ),
                     ],

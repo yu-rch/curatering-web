@@ -5,6 +5,7 @@ import '../config.dart';
 import '../auth/auth_session.dart';
 import '../utils/responsive_layout.dart';
 import '../utils/order_display_utils.dart';
+import '../widgets/antd_message.dart';
 
 class RestaurantTransactionsPage extends StatefulWidget {
   const RestaurantTransactionsPage({super.key});
@@ -45,12 +46,10 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     // Check if user is authenticated
     if (!AuthSession.instance.hasToken) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please log in to view restaurant orders'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 3),
-          ),
+        showAntdMessage(
+          context,
+          'Please log in to view restaurant orders',
+          type: AntdMessageType.error,
         );
       }
       return;
@@ -117,12 +116,11 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error loading orders: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
+        showAntdMessage(
+          context,
+          'Error loading orders: $e',
+          type: AntdMessageType.error,
+          duration: const Duration(seconds: 5),
         );
       }
     } finally {
@@ -314,11 +312,10 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     String? deliveryUrl,
   }) async {
     if (orderId.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cannot update order: order id is missing.'),
-          backgroundColor: Colors.red,
-        ),
+      showAntdMessage(
+        context,
+        'Cannot update order: order id is missing.',
+        type: AntdMessageType.error,
       );
       return;
     }
@@ -356,15 +353,15 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Order status updated to $newStatus')),
-        );
+        showAntdMessage(context, 'Order status updated to $newStatus');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        showAntdMessage(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error updating order: $e')));
+          'Error updating order: $e',
+          type: AntdMessageType.error,
+        );
       }
     }
   }
@@ -1139,42 +1136,6 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                   spacing: 8,
                   runSpacing: 6,
                   children: [
-                    GestureDetector(
-                      onTap: () => _showOrderItemsDialog(order),
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade600,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.visibility,
-                                color: Colors.white,
-                                size: 16,
-                              ),
-                              SizedBox(width: 4),
-                              Text(
-                                'View Dishes',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
                     _buildPaymentStatusBadge(
                       order['payment_status'] as String? ?? 'pending',
                     ),
@@ -1334,42 +1295,6 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                   spacing: 8,
                   runSpacing: 6,
                   children: [
-                    GestureDetector(
-                      onTap: () => _showOrderItemsDialog(order),
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade600,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.visibility,
-                                color: Colors.white,
-                                size: 16,
-                              ),
-                              SizedBox(width: 4),
-                              Text(
-                                'View Dishes',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
                     _buildPaymentStatusBadge(
                       order['payment_status'] as String? ?? 'pending',
                     ),
@@ -1510,45 +1435,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                 child: Wrap(
                   spacing: 8,
                   runSpacing: 6,
-                  children: [
-                    GestureDetector(
-                      onTap: () => _showOrderItemsDialog(order),
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade600,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.visibility,
-                                color: Colors.white,
-                                size: 16,
-                              ),
-                              SizedBox(width: 4),
-                              Text(
-                                'View Dishes',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    _buildPaymentStatusBadge(paymentStatus),
-                  ],
+                  children: [_buildPaymentStatusBadge(paymentStatus)],
                 ),
               ),
             ],
@@ -1671,11 +1558,10 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   Future<void> _showConfirmPaymentDialog(Map<String, dynamic> order) async {
     final orderId = _managerOrderId(order);
     if (orderId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cannot confirm payment: order id is missing.'),
-          backgroundColor: Colors.red,
-        ),
+      showAntdMessage(
+        context,
+        'Cannot confirm payment: order id is missing.',
+        type: AntdMessageType.error,
       );
       return;
     }
@@ -1840,14 +1726,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                                                 forceRefresh: true,
                                               );
                                               if (mounted) {
-                                                ScaffoldMessenger.of(
+                                                showAntdMessage(
                                                   context,
-                                                ).showSnackBar(
-                                                  const SnackBar(
-                                                    content: Text(
-                                                      'Payment confirmed — order in preparation',
-                                                    ),
-                                                  ),
+                                                  'Payment confirmed — order in preparation',
                                                 );
                                               }
                                             } else if (response.statusCode ==
@@ -1915,26 +1796,17 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                                             }),
                                           );
                                           if (mounted) {
-                                            ScaffoldMessenger.of(
+                                            showAntdMessage(
                                               context,
-                                            ).showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                  'Customer notified about insufficient payment',
-                                                ),
-                                              ),
+                                              'Customer notified about insufficient payment',
                                             );
                                           }
                                         } catch (e) {
                                           if (mounted) {
-                                            ScaffoldMessenger.of(
+                                            showAntdMessage(
                                               context,
-                                            ).showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  'Failed to notify: $e',
-                                                ),
-                                              ),
+                                              'Failed to notify: $e',
+                                              type: AntdMessageType.error,
                                             );
                                           }
                                         }
@@ -1959,11 +1831,10 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
   Future<void> _cancelOrder(String orderId) async {
     if (orderId.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cannot cancel order: order id is missing.'),
-          backgroundColor: Colors.red,
-        ),
+      showAntdMessage(
+        context,
+        'Cannot cancel order: order id is missing.',
+        type: AntdMessageType.error,
       );
       return;
     }
@@ -2075,18 +1946,18 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         if (response.statusCode == 200) {
           await _loadOrders(forceRefresh: true);
           if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('Order cancelled')));
+            showAntdMessage(context, 'Order cancelled');
           }
         } else {
           throw Exception(response.body);
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(
+          showAntdMessage(
             context,
-          ).showSnackBar(SnackBar(content: Text('Cancel failed: $e')));
+            'Cancel failed: $e',
+            type: AntdMessageType.error,
+          );
         }
       }
     }

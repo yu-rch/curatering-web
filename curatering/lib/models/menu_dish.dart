@@ -2,6 +2,7 @@ class MenuDish {
   final String id;
   final String name;
   final String price;
+  final double additionalChargeAmount;
   final List<String> paxOptions;
   final String? imageBase64;
   final String category;
@@ -10,8 +11,10 @@ class MenuDish {
   final bool available;
   final DateTime? archivedAt;
   final List<String> ingredients;
+
   /// Legacy column; prefer [mealType] from `menu_dishes.meal_type`.
   final String type;
+
   /// Meal type (restaurant section or catering course) from `menu_dishes.meal_type`.
   final String mealType;
 
@@ -21,6 +24,7 @@ class MenuDish {
     if (mt.isNotEmpty) return mt;
     return type.trim();
   }
+
   final List<String> setMenus; // Array of set names this dish belongs to
   /// Short description for the dish on the public catering menu (tap for details).
   final String publicDescription;
@@ -30,6 +34,7 @@ class MenuDish {
     required this.id,
     required this.name,
     required this.price,
+    this.additionalChargeAmount = 0,
     required this.paxOptions,
     this.imageBase64,
     this.category = 'catering',
@@ -49,6 +54,7 @@ class MenuDish {
     String? id,
     String? name,
     String? price,
+    double? additionalChargeAmount,
     List<String>? paxOptions,
     String? imageBase64,
     String? category,
@@ -67,6 +73,8 @@ class MenuDish {
       id: id ?? this.id,
       name: name ?? this.name,
       price: price ?? this.price,
+      additionalChargeAmount:
+          additionalChargeAmount ?? this.additionalChargeAmount,
       paxOptions: paxOptions ?? this.paxOptions,
       imageBase64: imageBase64 ?? this.imageBase64,
       category: category ?? this.category,
@@ -83,4 +91,3 @@ class MenuDish {
     );
   }
 }
-

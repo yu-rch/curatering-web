@@ -1,3 +1,0 @@
-#include "Debug.xcconfig"
-PRODUCT_BUNDLE_IDENTIFIER = com.curatering.customer
-APP_DISPLAY_NAME = Macrina Kitchen

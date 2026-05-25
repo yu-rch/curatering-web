@@ -133,6 +133,10 @@ class WebsiteContentStore extends ChangeNotifier {
   String galleryTitle = 'Gallery';
   String galleryIntro =
       'WE CATER TO MANY DIFFERENT TYPES OF EVENTS. TAKE A LOOK AT OUR WORK AND SEE SOME THINGS YOU MIGHT LIKE!';
+  String restaurantPageTitle = 'RESTAURANT';
+  String restaurantPageSubtitle = 'Order from our delicious restaurant menu';
+  String inquiryPageTitle = 'INQUIRE';
+  String inquiryPageSubtitle = 'Inquire for Catering or Event';
   String contactTitle = 'Contact Us';
   String contactBannerText = 'WE\'D LOVE TO HEAR FROM YOU!';
   String contactReachUsLabel = 'YOU CAN REACH US VIA:';
@@ -274,6 +278,13 @@ class WebsiteContentStore extends ChangeNotifier {
         map['eventDesignsSubtitle'] as String? ?? eventDesignsSubtitle;
     galleryTitle = map['galleryTitle'] as String? ?? galleryTitle;
     galleryIntro = map['galleryIntro'] as String? ?? galleryIntro;
+    restaurantPageTitle =
+        map['restaurantPageTitle'] as String? ?? restaurantPageTitle;
+    restaurantPageSubtitle =
+        map['restaurantPageSubtitle'] as String? ?? restaurantPageSubtitle;
+    inquiryPageTitle = map['inquiryPageTitle'] as String? ?? inquiryPageTitle;
+    inquiryPageSubtitle =
+        map['inquiryPageSubtitle'] as String? ?? inquiryPageSubtitle;
     contactTitle = map['contactTitle'] as String? ?? contactTitle;
     contactBannerText =
         map['contactBannerText'] as String? ?? contactBannerText;
@@ -342,6 +353,10 @@ class WebsiteContentStore extends ChangeNotifier {
     'eventDesignsSubtitle': eventDesignsSubtitle,
     'galleryTitle': galleryTitle,
     'galleryIntro': galleryIntro,
+    'restaurantPageTitle': restaurantPageTitle,
+    'restaurantPageSubtitle': restaurantPageSubtitle,
+    'inquiryPageTitle': inquiryPageTitle,
+    'inquiryPageSubtitle': inquiryPageSubtitle,
     'contactTitle': contactTitle,
     'contactBannerText': contactBannerText,
     'contactReachUsLabel': contactReachUsLabel,

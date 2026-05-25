@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../config.dart';
 import '../config/site_routes.dart';
+import '../features/event_design/event_design_admin_screen.dart';
 import '../services/website_content_store.dart';
 import '../utils/gallery_search.dart';
 import '../utils/website_image_utils.dart';
@@ -27,7 +29,7 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 5, vsync: this);
     WebsiteContentStore.instance.addListener(_onStore);
     WebsiteContentStore.instance.ensureLoaded().then((_) {
       if (mounted) setState(() {});
@@ -94,7 +96,7 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage>
                       ),
                       SizedBox(height: 4),
                       Text(
-                        'Edit the public customer site — homepage, gallery, and contact us.',
+                        'Edit the public customer site — homepage, inquiry page, gallery, and contact us.',
                         style: TextStyle(color: AntdTokens.labelMuted),
                       ),
                     ],
@@ -156,6 +158,8 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage>
             indicatorColor: AntdTokens.brandPrimary,
             tabs: const [
               Tab(text: 'Homepage'),
+              Tab(text: 'Restaurant page'),
+              Tab(text: 'Inquiry page'),
               Tab(text: 'Gallery'),
               Tab(text: 'Contact us'),
             ],
@@ -169,6 +173,8 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage>
                   physics: const NeverScrollableScrollPhysics(),
                   children: [
                     _HomepageEditorTab(onChanged: _markDirty),
+                    _RestaurantEditorTab(onChanged: _markDirty),
+                    _InquiryEditorTab(onChanged: _markDirty),
                     _GalleryEditorTab(onChanged: _markDirty),
                     _ContactEditorTab(onChanged: _markDirty),
                   ],
@@ -177,6 +183,120 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RestaurantEditorTab extends StatelessWidget {
+  const _RestaurantEditorTab({required this.onChanged});
+
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = WebsiteContentStore.instance;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _sectionTitle('Restaurant page text'),
+              _textField(
+                label: 'Page title',
+                value: w.restaurantPageTitle,
+                onChanged: (v) {
+                  w.restaurantPageTitle = v;
+                  onChanged();
+                },
+              ),
+              const SizedBox(height: 12),
+              _textField(
+                label: 'Subtitle',
+                value: w.restaurantPageSubtitle,
+                onChanged: (v) {
+                  w.restaurantPageSubtitle = v;
+                  onChanged();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InquiryEditorTab extends StatelessWidget {
+  const _InquiryEditorTab({required this.onChanged});
+
+  final VoidCallback onChanged;
+
+  Future<void> _openEventDesignOptions(BuildContext context) {
+    return showDialog<void>(
+      context: context,
+      builder:
+          (ctx) => Dialog(
+            insetPadding: const EdgeInsets.all(24),
+            child: SizedBox(
+              width: 760,
+              height: 680,
+              child: EventDesignAdminScreen(apiBase: apiBaseUrl),
+            ),
+          ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final w = WebsiteContentStore.instance;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _sectionTitle('Inquiry page text'),
+              _textField(
+                label: 'Page title',
+                value: w.inquiryPageTitle,
+                onChanged: (v) {
+                  w.inquiryPageTitle = v;
+                  onChanged();
+                },
+              ),
+              const SizedBox(height: 12),
+              _textField(
+                label: 'Subtitle badge',
+                value: w.inquiryPageSubtitle,
+                onChanged: (v) {
+                  w.inquiryPageSubtitle = v;
+                  onChanged();
+                },
+              ),
+              const SizedBox(height: 24),
+              _sectionTitle('Inquiry page event design'),
+              const Text(
+                'Manage the style, mood, color, and decor choices shown in the customer inquiry event design flow.',
+                style: TextStyle(color: AntdTokens.labelMuted, height: 1.35),
+              ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: () => _openEventDesignOptions(context),
+                  icon: const Icon(Icons.auto_awesome, size: 18),
+                  label: const Text('Edit event design options'),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

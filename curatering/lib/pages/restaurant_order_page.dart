@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/menu_store.dart';
 import '../services/cart_store.dart';
+import '../services/website_content_store.dart';
 import '../models/menu_dish.dart';
 import '../widgets/customer_website_topbar.dart';
 import 'checkout_page.dart';
@@ -48,6 +49,8 @@ class RestaurantOrderPage extends StatefulWidget {
 
 class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   String _selectedRestaurantType = 'ALL';
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
   static const List<String> _defaultAddOns = [
     'Extra cheese',
     'Extra vegetables',
@@ -55,6 +58,20 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     'Spicy',
     'No onions',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    WebsiteContentStore.instance.ensureLoaded().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,13 +83,21 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
           CustomerWebsiteTopBar(
             showCartAndCustomerAuth: !widget.contentEditable,
           ),
-          Expanded(child: _buildRestaurantMenu()),
+          Expanded(
+            child: Stack(
+              children: [
+                _buildRestaurantMenu(),
+                if (isMobile(context)) _buildMobileTrayButton(),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildRestaurantMenu() {
+    final content = WebsiteContentStore.instance;
     final allDishes = MenuStore.instance.activeDishes;
 
     // Show loading state if dishes are empty or currently loading
@@ -139,11 +164,18 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     }
 
     final selectedType = _selectedRestaurantType.trim().toLowerCase();
+    final search = _searchQuery.trim().toLowerCase();
     final dishes =
         restaurantDishes.where((d) {
-          if (selectedType == 'all') return true;
-          final dishType = restaurantTypeForDish(d);
-          return dishType == selectedType;
+          final matchesType =
+              selectedType == 'all' || restaurantTypeForDish(d) == selectedType;
+          if (!matchesType) return false;
+          if (search.isEmpty) return true;
+          return d.name.toLowerCase().contains(search) ||
+              d.publicDescription.toLowerCase().contains(search) ||
+              d.ingredients.any(
+                (ingredient) => ingredient.toLowerCase().contains(search),
+              );
         }).toList();
 
     return Row(
@@ -158,7 +190,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'RESTAURANT',
+                  content.restaurantPageTitle,
                   style: GoogleFonts.getFont(
                     _primaryFont,
                     fontSize: 36,
@@ -168,10 +200,36 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Order from our delicious restaurant menu',
+                  content.restaurantPageSubtitle,
                   style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
                 ),
                 const SizedBox(height: 24),
+                TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search restaurant menu',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon:
+                        _searchQuery.isEmpty
+                            ? null
+                            : IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed:
+                                  () => setState(() {
+                                    _searchController.clear();
+                                    _searchQuery = '';
+                                  }),
+                            ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onChanged:
+                      (value) => setState(
+                        () => _searchQuery = value.trim().toLowerCase(),
+                      ),
+                ),
+                const SizedBox(height: 16),
                 _buildCategoryTabs(restaurantDishes),
                 const SizedBox(height: 24),
                 Expanded(
@@ -243,6 +301,40 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildMobileTrayButton() {
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 16,
+      child: ListenableBuilder(
+        listenable: CartStore.instance,
+        builder: (context, _) {
+          final itemCount = CartStore.instance.itemCount;
+          final total = CartStore.instance.totalAmount;
+          if (itemCount <= 0) return const SizedBox.shrink();
+          return SafeArea(
+            top: false,
+            child: ElevatedButton.icon(
+              onPressed: _openCartSidebar,
+              icon: const Icon(Icons.shopping_cart_outlined),
+              label: Text(
+                'YOUR TRAY · $itemCount ${itemCount == 1 ? 'ITEM' : 'ITEMS'} · ₱${total.toStringAsFixed(2)}',
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1E1E1E),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -697,7 +789,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '₱${item.dish.price}',
+                    '₱${item.lineSubtotal.toStringAsFixed(2)}',
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
                   if (item.selectedSauce?.trim().isNotEmpty == true ||
@@ -707,7 +799,9 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                     Text(
                       [
                         if (item.selectedSauce?.trim().isNotEmpty == true)
-                          'Sauce: ${item.selectedSauce}',
+                          'Sauce: ${item.selectedSauce} × ${item.addOnQuantity}',
+                        if (item.addonExtraSubtotal > 0)
+                          'Extra add-on fee: ₱${item.addonExtraSubtotal.toStringAsFixed(2)}',
                         if (item.addOns.isNotEmpty)
                           'Add-ons: ${item.addOns.join(', ')}',
                         if (item.specialInstructions?.trim().isNotEmpty == true)
@@ -778,6 +872,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
 
   Future<void> _showAddToCartOptions(MenuDish dish) async {
     String? selectedSauce = dish.sauces.isNotEmpty ? dish.sauces.first : null;
+    var addOnQuantity = selectedSauce?.trim().isNotEmpty == true ? 1 : 1;
     final selectedAddOns = <String>{};
     final noteController = TextEditingController();
     await showDialog<void>(
@@ -805,10 +900,51 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                                 groupValue: selectedSauce,
                                 title: Text(sauce),
                                 onChanged:
-                                    (value) => setDialogState(
-                                      () => selectedSauce = value,
-                                    ),
+                                    (value) => setDialogState(() {
+                                      selectedSauce = value;
+                                      addOnQuantity = 1;
+                                    }),
                               ),
+                            Row(
+                              children: [
+                                const Expanded(
+                                  child: Text(
+                                    'Add-on portions',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.remove_circle_outline),
+                                  onPressed:
+                                      addOnQuantity > 0
+                                          ? () => setDialogState(
+                                            () => addOnQuantity--,
+                                          )
+                                          : null,
+                                ),
+                                Text(
+                                  '$addOnQuantity',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.add_circle_outline),
+                                  onPressed:
+                                      () =>
+                                          setDialogState(() => addOnQuantity++),
+                                ),
+                              ],
+                            ),
+                            Text(
+                              'First add-on is included; +₱${dish.additionalChargeAmount > 0 ? dish.additionalChargeAmount.toStringAsFixed(0) : kRestaurantAddonExtraPhp.toStringAsFixed(0)} for each extra per main dish.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
                             const SizedBox(height: 8),
                           ],
                           const Text(
@@ -856,6 +992,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                         CartStore.instance.addItem(
                           dish,
                           selectedSauce: selectedSauce,
+                          addOnQuantity: addOnQuantity,
                           addOns: selectedAddOns.toList(),
                           specialInstructions: noteController.text.trim(),
                         );
@@ -878,6 +1015,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
 
   Future<void> _showCustomizeCartItem(CartItem item) async {
     String? selectedSauce = item.selectedSauce;
+    var addOnQuantity = item.addOnQuantity;
     final selectedAddOns = item.addOns.toSet();
     final noteController = TextEditingController(
       text: item.specialInstructions ?? '',
@@ -907,10 +1045,51 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                                 groupValue: selectedSauce,
                                 title: Text(sauce),
                                 onChanged:
-                                    (value) => setDialogState(
-                                      () => selectedSauce = value,
-                                    ),
+                                    (value) => setDialogState(() {
+                                      selectedSauce = value;
+                                      addOnQuantity = 1;
+                                    }),
                               ),
+                            Row(
+                              children: [
+                                const Expanded(
+                                  child: Text(
+                                    'Add-on portions',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.remove_circle_outline),
+                                  onPressed:
+                                      addOnQuantity > 0
+                                          ? () => setDialogState(
+                                            () => addOnQuantity--,
+                                          )
+                                          : null,
+                                ),
+                                Text(
+                                  '$addOnQuantity',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.add_circle_outline),
+                                  onPressed:
+                                      () =>
+                                          setDialogState(() => addOnQuantity++),
+                                ),
+                              ],
+                            ),
+                            Text(
+                              'First add-on is included; +₱${item.dish.additionalChargeAmount > 0 ? item.dish.additionalChargeAmount.toStringAsFixed(0) : kRestaurantAddonExtraPhp.toStringAsFixed(0)} for each extra per main dish.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
                             const SizedBox(height: 8),
                           ],
                           const Text(
@@ -965,6 +1144,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                         CartStore.instance.updateCartItemCustomizations(
                           item,
                           selectedSauce: selectedSauce,
+                          addOnQuantity: addOnQuantity,
                           addOns: selectedAddOns.toList(),
                           specialInstructions: noteController.text.trim(),
                         );

@@ -1763,10 +1763,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                               borderRadius: BorderRadius.circular(24),
                             ),
                           ),
-                          child: const Text(
-                            'save this to your design board',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
                         ),
                     ],
                   ),

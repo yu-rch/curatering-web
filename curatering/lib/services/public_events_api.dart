@@ -11,10 +11,13 @@ class PublicEventsApi {
   static final PublicEventsApi instance = PublicEventsApi._();
   static const Duration _aiTimeout = Duration(seconds: 180);
   static const Duration _inquirySubmitTimeout = Duration(seconds: 45);
+
   /// Composite rendering often runs longer than search/extract.
   static const Duration _compositeTimeout = Duration(seconds: 180);
 
-  Future<void> submitOnlineInquiry({required Map<String, dynamic> payload}) async {
+  Future<Map<String, dynamic>> submitOnlineInquiry({
+    required Map<String, dynamic> payload,
+  }) async {
     final res = await http
         .post(
           Uri.parse('$apiBaseUrl/api/online-inquiries'),
@@ -32,6 +35,9 @@ class PublicEventsApi {
       } catch (_) {}
       throw ApiError(message: msg, statusCode: res.statusCode);
     }
+    if (res.body.trim().isEmpty) return const {};
+    final decoded = jsonDecode(res.body);
+    return decoded is Map ? Map<String, dynamic>.from(decoded) : const {};
   }
 
   Future<Map<String, dynamic>> inferThemeObjectsWithSam({
@@ -61,11 +67,7 @@ class PublicEventsApi {
     return ApiClient.instance
         .postJson(
           '/api/public/events/theme-design/swap-colors',
-          body: {
-            'imageBase64': imageBase64,
-            'masks': masks,
-            'edits': edits,
-          },
+          body: {'imageBase64': imageBase64, 'masks': masks, 'edits': edits},
         )
         .timeout(_aiTimeout);
   }
@@ -155,10 +157,7 @@ class PublicEventsApi {
     return ApiClient.instance
         .postJson(
           '/api/public/events/theme-design/auto-place',
-          body: {
-            'freeSpaces': freeSpaces,
-            'objects': objects,
-          },
+          body: {'freeSpaces': freeSpaces, 'objects': objects},
         )
         .timeout(_aiTimeout);
   }
@@ -170,10 +169,7 @@ class PublicEventsApi {
     return ApiClient.instance
         .postJson(
           '/api/public/events/theme-design/render-composite',
-          body: {
-            'baseImageBase64': baseImageBase64,
-            'objects': objects,
-          },
+          body: {'baseImageBase64': baseImageBase64, 'objects': objects},
         )
         .timeout(_compositeTimeout);
   }

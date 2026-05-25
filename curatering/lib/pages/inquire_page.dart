@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:intl/intl.dart';
@@ -18,6 +17,7 @@ import '../services/menu_store.dart';
 import '../services/public_events_api.dart';
 import '../services/runpod_service.dart';
 import '../services/set_menu_store.dart';
+import '../services/website_content_store.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_form_field.dart';
 import '../widgets/antd_message.dart';
@@ -80,10 +80,19 @@ class _InquirePageState extends State<InquirePage> {
   final _guests = TextEditingController();
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
+  final _endTimeController = TextEditingController();
+  final _eventCityController = TextEditingController();
+  final _foodTastingDateController = TextEditingController();
+  final _foodTastingTimeController = TextEditingController();
+  final List<Map<String, String>> _extraScheduleSlots = [];
 
   // State
   String _eventType = 'Birthday';
   String _formality = 'casual';
+  String _eventSetting = 'Indoor';
+  bool _foodTastingRequested = false;
+  bool _suggestMenu = false;
+  String? _submittedCateringId;
   bool _submitting = false;
   bool _generatingDesign = false;
   String? _generatedImageUrl;
@@ -187,6 +196,9 @@ class _InquirePageState extends State<InquirePage> {
     }
     MenuStore.instance.loadDishes();
     SetMenuStore.instance.loadSetMenus();
+    WebsiteContentStore.instance.ensureLoaded().then((_) {
+      if (mounted) setState(() {});
+    });
     _prefillFromCustomerProfile();
   }
 
@@ -225,6 +237,10 @@ class _InquirePageState extends State<InquirePage> {
     _guests.dispose();
     _dateController.dispose();
     _timeController.dispose();
+    _endTimeController.dispose();
+    _eventCityController.dispose();
+    _foodTastingDateController.dispose();
+    _foodTastingTimeController.dispose();
     _designPromptController.dispose();
     _inquiryEventTypeOtherController.dispose();
     _macrinaPalette.dispose();
@@ -264,14 +280,110 @@ class _InquirePageState extends State<InquirePage> {
     return custom.isEmpty ? 'Other' : custom;
   }
 
+  bool get _isCateringWithEventStyling {
+    final guests = int.tryParse(_guests.text.trim()) ?? 0;
+    return _serviceType == 'catering+event' || guests >= 50;
+  }
+
+  String get _inquiryTypeLabel =>
+      _isCateringWithEventStyling ? 'CATERING WITH EVENT STYLING' : 'CATERING';
+
+  List<Map<String, dynamic>> _buildScheduleSlotsForApi() {
+    final slots = <Map<String, dynamic>>[
+      {
+        'date': _dateController.text.trim(),
+        'startTime': _timeController.text.trim(),
+        'endTime': _endTimeController.text.trim(),
+      },
+    ];
+    for (final slot in _extraScheduleSlots) {
+      slots.add({
+        'date': (slot['date'] ?? '').trim(),
+        'startTime': (slot['startTime'] ?? '').trim(),
+        'endTime': (slot['endTime'] ?? '').trim(),
+      });
+    }
+    return slots
+        .where(
+          (slot) =>
+              '${slot['date']}'.trim().isNotEmpty ||
+              '${slot['startTime']}'.trim().isNotEmpty ||
+              '${slot['endTime']}'.trim().isNotEmpty,
+        )
+        .toList();
+  }
+
+  List<Map<String, dynamic>> _buildInquiryCostBreakdown() {
+    final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
+    final base = estimateInquiryCateringTotal(guestCount);
+    final extra = _menuAdditionalChargeTotal();
+    return [
+      {
+        'label': 'Initial catering estimate',
+        'amount': base,
+        'note':
+            '₱${kCateringInquiryPricePerGuest.toStringAsFixed(0)} × $guestCount guests',
+      },
+      if (extra > 0)
+        {
+          'label': 'Set menu extra dishes',
+          'amount': extra,
+          'note': 'Additional charge for dishes added beyond the set menu',
+        },
+    ];
+  }
+
+  Map<String, MenuDish> get _activeDishById => {
+    for (final dish in MenuStore.instance.activeDishes) dish.id: dish,
+  };
+
+  List<Map<String, dynamic>> _setMenuAdditionalChargeRows() {
+    if (_menuSelections.isEmpty) return const [];
+    final block = _menuSelections.first;
+    if ((block['kind'] as String? ?? 'custom') != 'set') return const [];
+    final selectedIds =
+        (block['dishIds'] as List<dynamic>? ?? const [])
+            .map((id) => id.toString())
+            .where((id) => id.isNotEmpty)
+            .toList();
+    final originalIds =
+        (block['originalDishIds'] as List<dynamic>? ?? const [])
+            .map((id) => id.toString())
+            .where((id) => id.isNotEmpty)
+            .toSet();
+    final originalCount =
+        (block['originalDishCount'] as num?)?.toInt() ?? originalIds.length;
+    final overage = selectedIds.length - originalCount;
+    if (overage <= 0) return const [];
+    final dishById = _activeDishById;
+    final addedIds = selectedIds
+        .where((id) => !originalIds.contains(id))
+        .take(overage);
+    return addedIds.map((id) {
+      final dish = dishById[id];
+      final amount = dish?.additionalChargeAmount ?? 0;
+      return {'dishId': id, 'dishName': dish?.name ?? id, 'amount': amount};
+    }).toList();
+  }
+
+  double _menuAdditionalChargeTotal() {
+    return _setMenuAdditionalChargeRows().fold<double>(
+      0,
+      (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
+    );
+  }
+
   double _estimateMenuCost() {
     final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
-    return estimateInquiryCateringTotal(guestCount);
+    return estimateInquiryCateringTotal(guestCount) +
+        _menuAdditionalChargeTotal();
   }
 
   Future<void> _showOrderSummaryAndConfirm() async {
     final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
     final estimated = _estimateMenuCost();
+    final additionalRows = _setMenuAdditionalChargeRows();
+    final additionalTotal = _menuAdditionalChargeTotal();
 
     final confirmed = await showAntdModal<bool>(
       context: context,
@@ -296,6 +408,21 @@ class _InquirePageState extends State<InquirePage> {
             Text(
               '₱${kCateringInquiryPricePerGuest.toStringAsFixed(0)} × $guestCount guests',
             ),
+          if (additionalRows.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Set menu extra dish fees:',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            for (final row in additionalRows)
+              Text(
+                '${row['dishName']}: ₱${((row['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
+              ),
+            Text(
+              'Additional fees: ₱${additionalTotal.toStringAsFixed(2)}',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
           const SizedBox(height: 12),
           Text(
             'By confirming, you submit this inquiry to our team for review.',
@@ -328,22 +455,25 @@ class _InquirePageState extends State<InquirePage> {
 
     try {
       final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
-      final scheduleSlots = <Map<String, dynamic>>[
-        {
-          'date': _dateController.text.trim(),
-          'startTime': _timeController.text.trim(),
-          'endTime': '',
-        },
-      ];
+      final scheduleSlots = _buildScheduleSlotsForApi();
+      final costBreakdown = _buildInquiryCostBreakdown();
 
       final payload = <String, dynamic>{
-        'orderType': _serviceType == 'catering' ? 'catering' : 'catering_event',
+        'orderType':
+            _isCateringWithEventStyling ? 'catering_event' : 'catering',
+        'inquiryType': _inquiryTypeLabel,
+        'serviceIncluded':
+            _isCateringWithEventStyling
+                ? 'yes'
+                : (_includeCateringService == true ? 'yes' : 'no'),
         'eventTitle':
-            _serviceType == 'catering'
+            !_isCateringWithEventStyling
                 ? _customer.text.trim()
                 : _eventTitle.text.trim(),
         'eventType': _resolvedInquiryEventType,
         'formalityLevel': _formality,
+        'eventSetting': _eventSetting,
+        'eventCity': _eventCityController.text.trim(),
         'customerName': _customer.text.trim(),
         'contactPerson': _contactPerson.text.trim(),
         'contactNumber': _phone.text.trim(),
@@ -352,9 +482,29 @@ class _InquirePageState extends State<InquirePage> {
         if (_addressLat != null) 'addressLat': _addressLat,
         if (_addressLng != null) 'addressLng': _addressLng,
         'guestCount': guestCount,
+        'paxBuffer': 0,
         'scheduleSlots': scheduleSlots,
         'menu': _buildMenuForApi(),
+        'curateOwnMenu': !_suggestMenu,
+        'menuSuggestionNote': _suggestMenu ? 'Suggest me a menu instead' : '',
+        'selectedSetMenu':
+            _menuSelections.isNotEmpty
+                ? (_menuSelections.first['setMenuName'] ?? '').toString()
+                : '',
+        'menuModifications':
+            _menuSelections.isNotEmpty
+                ? (_menuSelections.first['additionalChargeRows'] ??
+                    _setMenuAdditionalChargeRows())
+                : const [],
+        'estimatedTotal': _estimateMenuCost(),
+        'costBreakdown': costBreakdown,
+        'foodTastingRequested': _foodTastingRequested,
+        if (_foodTastingRequested) ...{
+          'foodTastingDate': _foodTastingDateController.text.trim(),
+          'foodTastingTime': _foodTastingTimeController.text.trim(),
+        },
         'allergens': _allergensSerialized.trim(),
+        'guestAllergens': _allergensSerialized.trim(),
         'source': 'web',
       };
       final themeDesign = _buildThemeDesignForApi();
@@ -362,14 +512,23 @@ class _InquirePageState extends State<InquirePage> {
         payload['themeDesign'] = themeDesign;
       }
 
-      await PublicEventsApi.instance.submitOnlineInquiry(payload: payload);
+      final submitted = await PublicEventsApi.instance.submitOnlineInquiry(
+        payload: payload,
+      );
 
       if (mounted) {
         showAntdMessage(
           context,
           'Inquiry submitted successfully! We\'ll contact you soon.',
         );
+        final submittedId =
+            (submitted['cateringId'] ?? submitted['catering_id'] ?? '')
+                .toString();
         _clearForm();
+        setState(() {
+          _submittedCateringId = submittedId.isEmpty ? null : submittedId;
+          _formPhase = 3;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -393,7 +552,7 @@ class _InquirePageState extends State<InquirePage> {
     });
     void err(String k, String m) => _fieldErrors[k] = m;
 
-    if (_serviceType != 'catering' && _eventTitle.text.trim().isEmpty) {
+    if (_isCateringWithEventStyling && _eventTitle.text.trim().isEmpty) {
       err('eventTitle', 'Please enter an event title');
     }
     if (_eventType == 'Other' &&
@@ -420,9 +579,9 @@ class _InquirePageState extends State<InquirePage> {
     if (_timeController.text.trim().isEmpty) {
       err('time', 'Please select an event time');
     }
-    if (_menuSelections.isEmpty) {
+    if (!_suggestMenu && _menuSelections.isEmpty) {
       err('menu', 'Choose your menu using the options below');
-    } else {
+    } else if (!_suggestMenu) {
       final block = _menuSelections.first;
       final kind = block['kind'] as String? ?? 'custom';
       if (kind == 'custom') {
@@ -430,6 +589,13 @@ class _InquirePageState extends State<InquirePage> {
         if (n < 4 || n > 8) {
           err('menu', 'Select between 4 and 8 dishes for your custom menu');
         }
+      }
+    }
+    if (_foodTastingRequested) {
+      if (_foodTastingDateController.text.trim().isEmpty) {
+        err('foodTasting', 'Choose a food tasting date');
+      } else if (_foodTastingTimeController.text.trim().isEmpty) {
+        err('foodTasting', 'Choose a food tasting time');
       }
     }
     if (_serviceType == 'catering') {
@@ -466,7 +632,7 @@ class _InquirePageState extends State<InquirePage> {
 
   bool _validateAllForSubmit() {
     if (!_validatePhase0MainForm()) return false;
-    if (_serviceType != 'catering+event') return true;
+    if (!_isCateringWithEventStyling) return true;
     if (_eventDesignMode == 'macrina') {
       return _validateMacrinaStep();
     }
@@ -475,7 +641,7 @@ class _InquirePageState extends State<InquirePage> {
 
   void _goNextFromMainForm() {
     if (!_validatePhase0MainForm()) return;
-    if (_serviceType == 'catering+event') {
+    if (_isCateringWithEventStyling) {
       setState(() => _formPhase = 1);
     } else {
       _showOrderSummaryAndConfirm();
@@ -507,13 +673,16 @@ class _InquirePageState extends State<InquirePage> {
 
   /// Event design payload for staff "view details" (AI image vs Macrina text inspiration).
   Map<String, dynamic>? _buildThemeDesignForApi() {
-    if (_serviceType == 'catering') return null;
+    if (!_isCateringWithEventStyling) return null;
     if (_eventDesignMode == 'macrina') {
       return {
         'eventDesignSource': 'macrina',
         'macrinaColorPalette': _macrinaPalette.text.trim(),
         'macrinaTheme': _macrinaTheme.text.trim(),
-        'serviceType': _serviceType,
+        'serviceType':
+            _isCateringWithEventStyling ? 'catering+event' : _serviceType,
+        'eventSetting': _eventSetting,
+        'event_setting': _eventSetting,
       };
     }
     if (_eventDesignMode == 'customer') {
@@ -534,6 +703,10 @@ class _InquirePageState extends State<InquirePage> {
       return {
         'eventDesignSource': 'customer_ai',
         'wantsCustomDesign': _wantsCustomDesign,
+        'serviceType':
+            _isCateringWithEventStyling ? 'catering+event' : _serviceType,
+        'eventSetting': _eventSetting,
+        'event_setting': _eventSetting,
         if (_generatedImageUrl != null && _generatedImageUrl!.trim().isNotEmpty)
           'generatedImageUrl': _generatedImageUrl!.trim(),
         if (eventType.isNotEmpty) 'eventDesignEventType': eventType,
@@ -543,7 +716,6 @@ class _InquirePageState extends State<InquirePage> {
         if (decor.isNotEmpty) 'decorElements': decor,
         if (_designPromptController.text.trim().isNotEmpty)
           'customInstructions': _designPromptController.text.trim(),
-        'serviceType': _serviceType,
       };
     }
     return null;
@@ -551,14 +723,30 @@ class _InquirePageState extends State<InquirePage> {
 
   /// API `/api/online-inquiries` menu: inquiry blocks (set name + dish names) or flat rows.
   List<Map<String, dynamic>> _buildMenuForApi() {
+    if (_suggestMenu) {
+      return [
+        {
+          'kind': 'suggest',
+          'dishName': 'Suggest me a menu instead',
+          'dishNames': ['Suggest me a menu instead'],
+        },
+      ];
+    }
     if (_menuSelections.isEmpty) {
       return [
         {'dishName': 'Customer will confirm menu details with coordinator'},
       ];
     }
-    return _menuSelections
-        .map((block) => Map<String, dynamic>.from(block))
-        .toList();
+    final additionalRows = _setMenuAdditionalChargeRows();
+    final additionalTotal = _menuAdditionalChargeTotal();
+    return _menuSelections.map((block) {
+      final out = Map<String, dynamic>.from(block);
+      if ((out['kind'] as String? ?? '') == 'set') {
+        out['additionalChargeRows'] = additionalRows;
+        out['additionalChargeTotal'] = additionalTotal;
+      }
+      return out;
+    }).toList();
   }
 
   void _clearForm() {
@@ -574,6 +762,14 @@ class _InquirePageState extends State<InquirePage> {
       _guests.clear();
       _dateController.clear();
       _timeController.clear();
+      _endTimeController.clear();
+      _eventCityController.clear();
+      _eventSetting = 'Indoor';
+      _foodTastingRequested = false;
+      _foodTastingDateController.clear();
+      _foodTastingTimeController.clear();
+      _extraScheduleSlots.clear();
+      _suggestMenu = false;
       _eventType = 'Birthday';
       _inquiryEventTypeOtherController.clear();
       _formality = 'casual';
@@ -812,6 +1008,7 @@ class _InquirePageState extends State<InquirePage> {
         _inquiryEventTypes.contains(_eventType)
             ? _eventType
             : _inquiryEventTypes.first;
+    final isEventStyling = _isCateringWithEventStyling;
 
     return [
       _inquirySectionTitle('Event Information'),
@@ -877,10 +1074,10 @@ class _InquirePageState extends State<InquirePage> {
           child: AntdOutlineInput(
             controller: _eventTitle,
             hintText:
-                _serviceType == 'catering'
+                !isEventStyling
                     ? 'Not required for catering only'
                     : 'Enter event title',
-            readOnly: _serviceType == 'catering',
+            readOnly: !isEventStyling,
             onChanged: (_) => onFieldChanged('eventTitle'),
           ),
         ),
@@ -1122,8 +1319,161 @@ class _InquirePageState extends State<InquirePage> {
             },
           ),
         ),
-        const SizedBox.shrink(),
+        AntdFieldShell(
+          label: 'End Time',
+          child: AntdPickerInput(
+            value: _endTimeController.text,
+            hintText: 'e.g. 10:00 PM',
+            icon: Icons.access_time,
+            onTap: () async {
+              TimeOfDay initialTime = const TimeOfDay(hour: 14, minute: 0);
+              if (_endTimeController.text.trim().isNotEmpty) {
+                try {
+                  initialTime = TimeOfDay.fromDateTime(
+                    DateFormat('h:mm a').parse(_endTimeController.text),
+                  );
+                } catch (_) {}
+              }
+              final pickedTime = await showTimePicker(
+                context: context,
+                initialTime: initialTime,
+              );
+              if (pickedTime != null) {
+                setState(() {
+                  _endTimeController.text = pickedTime
+                      .format(context)
+                      .replaceAll(' ', '');
+                });
+              }
+            },
+          ),
+        ),
       ),
+      const SizedBox(height: 12),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: OutlinedButton.icon(
+          onPressed:
+              () => setState(
+                () => _extraScheduleSlots.add({
+                  'date': '',
+                  'startTime': '',
+                  'endTime': '',
+                }),
+              ),
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Add another day / schedule'),
+        ),
+      ),
+      for (var i = 0; i < _extraScheduleSlots.length; i++) ...[
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: TextFormField(
+                initialValue: _extraScheduleSlots[i]['date'],
+                decoration: const InputDecoration(
+                  labelText: 'Date (YYYY-MM-DD)',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged:
+                    (value) => _extraScheduleSlots[i]['date'] = value.trim(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextFormField(
+                initialValue: _extraScheduleSlots[i]['startTime'],
+                decoration: const InputDecoration(
+                  labelText: 'Start time',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged:
+                    (value) =>
+                        _extraScheduleSlots[i]['startTime'] = value.trim(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextFormField(
+                initialValue: _extraScheduleSlots[i]['endTime'],
+                decoration: const InputDecoration(
+                  labelText: 'End time',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged:
+                    (value) => _extraScheduleSlots[i]['endTime'] = value.trim(),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Remove schedule',
+              onPressed: () => setState(() => _extraScheduleSlots.removeAt(i)),
+              icon: const Icon(Icons.delete_outline),
+            ),
+          ],
+        ),
+      ],
+      const SizedBox(height: 16),
+      _responsiveTwoCol(
+        context,
+        AntdFieldShell(
+          label: 'Event City',
+          child: AntdOutlineInput(
+            controller: _eventCityController,
+            hintText: 'City / municipality',
+          ),
+        ),
+        AntdFieldShell(
+          label: 'Event Setting',
+          child: DropdownButtonFormField<String>(
+            initialValue: _eventSetting,
+            isExpanded: true,
+            decoration: const InputDecoration(border: OutlineInputBorder()),
+            items: const [
+              DropdownMenuItem(value: 'Indoor', child: Text('Indoor')),
+              DropdownMenuItem(value: 'Outdoor', child: Text('Outdoor')),
+              DropdownMenuItem(value: 'Mixed', child: Text('Mixed')),
+            ],
+            onChanged:
+                (value) => setState(() => _eventSetting = value ?? 'Indoor'),
+          ),
+        ),
+      ),
+      const SizedBox(height: 16),
+      CheckboxListTile(
+        contentPadding: EdgeInsets.zero,
+        value: _foodTastingRequested,
+        title: const Text('Request food tasting'),
+        subtitle: const Text(
+          'Optional: choose your preferred tasting date and time.',
+        ),
+        onChanged:
+            (value) => setState(() => _foodTastingRequested = value == true),
+      ),
+      if (_foodTastingRequested) ...[
+        const SizedBox(height: 8),
+        _responsiveTwoCol(
+          context,
+          AntdFieldShell(
+            label: 'Food tasting date',
+            errorText: _fieldErrors['foodTasting'],
+            child: AntdOutlineInput(
+              controller: _foodTastingDateController,
+              hintText: 'YYYY-MM-DD',
+              onChanged: (_) => onFieldChanged('foodTasting'),
+            ),
+          ),
+          AntdFieldShell(
+            label: 'Food tasting time',
+            child: AntdOutlineInput(
+              controller: _foodTastingTimeController,
+              hintText: 'e.g. 2:00PM',
+              onChanged: (_) => onFieldChanged('foodTasting'),
+            ),
+          ),
+        ),
+      ],
       if (_serviceType == 'catering') ...[
         Builder(
           builder: (context) {
@@ -1237,79 +1587,116 @@ class _InquirePageState extends State<InquirePage> {
             children: [
               _inquirySectionTitle('Menu preferences'),
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  ChoiceChip(
-                    label: const Text('I want to make my own menu'),
-                    selected: _menuPrefTabIndex == 0,
-                    selectedColor: AntdTokens.brandPrimary,
-                    labelStyle: TextStyle(
-                      color:
-                          _menuPrefTabIndex == 0
-                              ? AntdTokens.brandOnPrimary
-                              : Colors.black87,
-                      fontWeight:
-                          _menuPrefTabIndex == 0
-                              ? FontWeight.w700
-                              : FontWeight.normal,
-                    ),
-                    onSelected: (_) => _switchMenuPrefTab(0),
-                  ),
-                  ChoiceChip(
-                    label: const Text('Choose from Set Menu'),
-                    selected: _menuPrefTabIndex == 1,
-                    selectedColor: AntdTokens.brandPrimary,
-                    labelStyle: TextStyle(
-                      color:
-                          _menuPrefTabIndex == 1
-                              ? AntdTokens.brandOnPrimary
-                              : Colors.black87,
-                      fontWeight:
-                          _menuPrefTabIndex == 1
-                              ? FontWeight.w700
-                              : FontWeight.normal,
-                    ),
-                    onSelected: (_) => _switchMenuPrefTab(1),
-                  ),
-                ],
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _suggestMenu,
+                title: const Text('Suggest me a menu instead'),
+                subtitle: const Text(
+                  'Macrina\'s team can recommend dishes based on your event and allergens.',
+                ),
+                onChanged:
+                    (value) => setState(() {
+                      _suggestMenu = value == true;
+                      if (_suggestMenu) {
+                        _menuSelections.clear();
+                        _selectedDishIds.clear();
+                        _fieldErrors.remove('menu');
+                      }
+                    }),
               ),
-              const SizedBox(height: 12),
-              ListenableBuilder(
-                listenable: Listenable.merge([
-                  MenuStore.instance,
-                  SetMenuStore.instance,
-                ]),
-                builder: (context, _) {
-                  final loading =
-                      MenuStore.instance.isLoading ||
-                      SetMenuStore.instance.isLoading;
-                  if (loading &&
-                      _inquiryCateringDishes().isEmpty &&
-                      SetMenuStore.instance.activeSetMenus.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 24),
-                      child: Center(child: CircularProgressIndicator()),
+              if (!_suggestMenu) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('I want to make my own menu'),
+                      selected: _menuPrefTabIndex == 0,
+                      selectedColor: AntdTokens.brandPrimary,
+                      labelStyle: TextStyle(
+                        color:
+                            _menuPrefTabIndex == 0
+                                ? AntdTokens.brandOnPrimary
+                                : Colors.black87,
+                        fontWeight:
+                            _menuPrefTabIndex == 0
+                                ? FontWeight.w700
+                                : FontWeight.normal,
+                      ),
+                      onSelected: (_) => _switchMenuPrefTab(0),
+                    ),
+                    ChoiceChip(
+                      label: const Text('Choose from Set Menu'),
+                      selected: _menuPrefTabIndex == 1,
+                      selectedColor: AntdTokens.brandPrimary,
+                      labelStyle: TextStyle(
+                        color:
+                            _menuPrefTabIndex == 1
+                                ? AntdTokens.brandOnPrimary
+                                : Colors.black87,
+                        fontWeight:
+                            _menuPrefTabIndex == 1
+                                ? FontWeight.w700
+                                : FontWeight.normal,
+                      ),
+                      onSelected: (_) => _switchMenuPrefTab(1),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ListenableBuilder(
+                  listenable: Listenable.merge([
+                    MenuStore.instance,
+                    SetMenuStore.instance,
+                  ]),
+                  builder: (context, _) {
+                    final loading =
+                        MenuStore.instance.isLoading ||
+                        SetMenuStore.instance.isLoading;
+                    if (loading &&
+                        _inquiryCateringDishes().isEmpty &&
+                        SetMenuStore.instance.activeSetMenus.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    final additionalTotal = _menuAdditionalChargeTotal();
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        InquiryMenuPicker(
+                          key: ValueKey<int>(_menuPrefTabIndex),
+                          embedded: true,
+                          tabIndex: _menuPrefTabIndex,
+                          cateringDishes: _inquiryCateringDishes(),
+                          setMenus: SetMenuStore.instance.activeSetMenus,
+                          initialSelections: List<Map<String, dynamic>>.from(
+                            _menuSelections,
+                          ),
+                          mode: InquiryMenuPickerMode.inquiryExclusive,
+                          minCustomDishes: 4,
+                          maxCustomDishes: 8,
+                          externalError: _fieldErrors['menu'],
+                          onSelectionChanged: _onInlineMenuSelectionChanged,
+                        ),
+                        if (additionalTotal > 0) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Extra set-menu dish fees: ₱${additionalTotal.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              color: AntdTokens.warning,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ],
                     );
-                  }
-                  return InquiryMenuPicker(
-                    key: ValueKey<int>(_menuPrefTabIndex),
-                    embedded: true,
-                    tabIndex: _menuPrefTabIndex,
-                    cateringDishes: _inquiryCateringDishes(),
-                    setMenus: SetMenuStore.instance.activeSetMenus,
-                    initialSelections: List<Map<String, dynamic>>.from(
-                      _menuSelections,
-                    ),
-                    mode: InquiryMenuPickerMode.inquiryExclusive,
-                    minCustomDishes: 4,
-                    maxCustomDishes: 8,
-                    externalError: _fieldErrors['menu'],
-                    onSelectionChanged: _onInlineMenuSelectionChanged,
-                  );
-                },
-              ),
+                  },
+                ),
+              ],
             ],
           );
           final allergenSelection = Column(
@@ -2171,8 +2558,54 @@ class _InquirePageState extends State<InquirePage> {
     ];
   }
 
+  List<Widget> _buildCompletedContent() {
+    return [
+      Center(
+        child: Icon(
+          Icons.check_circle_outline,
+          size: 56,
+          color: Colors.green.shade600,
+        ),
+      ),
+      const SizedBox(height: 16),
+      Center(
+        child: Text(
+          'Inquiry submitted',
+          style: GoogleFonts.getFont(
+            _primaryFont,
+            fontSize: 28,
+            fontWeight: FontWeight.bold,
+            color: const Color(0xFF1E1E1E),
+          ),
+        ),
+      ),
+      const SizedBox(height: 8),
+      Center(
+        child: Text(
+          _submittedCateringId == null
+              ? 'Our team will review your inquiry and contact you soon.'
+              : 'Reference: $_submittedCateringId',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.grey.shade700),
+        ),
+      ),
+      const SizedBox(height: 24),
+      Center(
+        child: FilledButton(
+          onPressed:
+              () => setState(() {
+                _submittedCateringId = null;
+                _formPhase = 0;
+              }),
+          child: const Text('Submit another inquiry'),
+        ),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
+    final content = WebsiteContentStore.instance;
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: Column(
@@ -2189,7 +2622,7 @@ class _InquirePageState extends State<InquirePage> {
                 children: [
                   const SizedBox(height: 24),
                   Text(
-                    'INQUIRE',
+                    content.inquiryPageTitle,
                     textAlign: TextAlign.center,
                     style: GoogleFonts.getFont(
                       _primaryFont,
@@ -2209,8 +2642,8 @@ class _InquirePageState extends State<InquirePage> {
                         color: const Color(0xFFFFC024),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Text(
-                        'Inquire for Catering or Event',
+                      child: Text(
+                        content.inquiryPageSubtitle,
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
@@ -2232,12 +2665,11 @@ class _InquirePageState extends State<InquirePage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (_formPhase == 0) ..._buildPhase0Content(context),
-                          if (_formPhase == 1 &&
-                              _serviceType == 'catering+event')
+                          if (_formPhase == 1 && _isCateringWithEventStyling)
                             ..._buildPhase1Content(),
-                          if (_formPhase == 2 &&
-                              _serviceType == 'catering+event')
+                          if (_formPhase == 2 && _isCateringWithEventStyling)
                             ..._buildPhase2Content(context),
+                          if (_formPhase == 3) ..._buildCompletedContent(),
                         ],
                       ),
                     ),
@@ -2460,7 +2892,7 @@ class _InquirePageState extends State<InquirePage> {
     ].join(', ');
   }
 
-  Map<String, dynamic> _eventDesignRunpodMeta() {
+  Map<String, dynamic> _eventDesignConfig() {
     final eventType = _resolvedCategory(
       _selectedEventType,
       _eventTypeOtherController,
@@ -2478,8 +2910,7 @@ class _InquirePageState extends State<InquirePage> {
     final notes = _designPromptController.text.trim();
 
     return {
-      'task_type': 'event_design_image',
-      'use_nlp_prompt_expansion': true,
+      'task_type': 'event_prompt_expansion',
       if (eventType != null && eventType.isNotEmpty)
         'event_type': eventType.trim().toLowerCase(),
       if (style != null && style.isNotEmpty) ...{
@@ -2491,6 +2922,20 @@ class _InquirePageState extends State<InquirePage> {
       if (decor.isNotEmpty) ...{'decor': decor, 'decor_elements': decor},
       if (notes.isNotEmpty) ...{'notes': notes, 'custom_instructions': notes},
       'formality': _formality,
+      if (_address.text.trim().isNotEmpty) 'venue': _address.text.trim(),
+      if (_guests.text.trim().isNotEmpty) 'guest_count': _guests.text.trim(),
+    };
+  }
+
+  Map<String, dynamic> _eventDesignRunpodMeta({
+    EventPromptExpansion? expansion,
+  }) {
+    final config = _eventDesignConfig();
+    return {
+      ...config,
+      'task_type': 'sdxl_event_design',
+      'use_nlp_prompt_expansion': false,
+      if (expansion != null) ...expansion.toSdxlMeta(),
       'negative_prompt': _eventDesignNegativePrompt(),
       'guidance_scale': 6.5,
       'controlnet': {
@@ -2579,8 +3024,13 @@ class _InquirePageState extends State<InquirePage> {
     });
 
     try {
-      final prompt = _composeEventDesignPrompt();
+      final fallbackPrompt = _composeEventDesignPrompt();
       final venueB64 = _normalizeVenueB64ForRunpod(venueRaw);
+      final expansion = await RunPodService.expandEventPrompt(
+        _eventDesignConfig(),
+        fallbackPrompt: fallbackPrompt,
+      );
+      final prompt = expansion.positivePrompt;
       if (kDebugMode) {
         debugPrint(
           'RunPod: POST ${apiBaseUrl}/api/public/runpod/run '
@@ -2597,7 +3047,7 @@ class _InquirePageState extends State<InquirePage> {
         strength: 0.58,
         numInferenceSteps: 30,
         guidanceScale: 6.5,
-        designMeta: _eventDesignRunpodMeta(),
+        designMeta: _eventDesignRunpodMeta(expansion: expansion),
       );
 
       if (imageUrl != null) {

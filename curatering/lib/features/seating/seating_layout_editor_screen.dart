@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../../utils/theme_design_venue_refs.dart';
+import '../../widgets/antd_message.dart';
 import '../event_design/events_feature_api.dart';
 import 'seating_layout_export.dart';
 import 'seating_plan.dart';
@@ -131,15 +132,11 @@ class _SeatingLayoutEditorScreenState extends State<SeatingLayoutEditorScreen> {
         cashierPassword: widget.cashierPassword,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Seating layout saved.')));
+      showAntdMessage(context, 'Seating layout saved.');
       Navigator.pop(context, _plan);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e'), backgroundColor: Colors.red.shade700),
-      );
+      showAntdMessage(context, '$e', type: AntdMessageType.error);
     } finally {
       if (mounted) setState(() => _saving = false);
     }

@@ -5,10 +5,13 @@ import '../models/menu_dish.dart';
 import 'api_client.dart';
 import 'cart_sync_service.dart';
 
+const double kRestaurantAddonExtraPhp = 15;
+
 class CartItem {
   final MenuDish dish;
   int quantity;
   String? selectedSauce;
+  int addOnQuantity;
   List<String> addOns;
   String? specialInstructions;
 
@@ -16,23 +19,48 @@ class CartItem {
     required this.dish,
     this.quantity = 1,
     this.selectedSauce,
+    this.addOnQuantity = 1,
     this.addOns = const [],
     this.specialInstructions,
   });
+
+  double get addonExtraPerUnit {
+    final configured = dish.additionalChargeAmount;
+    return configured.isFinite && configured > 0
+        ? configured
+        : kRestaurantAddonExtraPhp;
+  }
+
+  double get addonExtraSubtotal {
+    if (selectedSauce?.trim().isNotEmpty != true) return 0;
+    final extraQty = addOnQuantity - 1;
+    if (extraQty <= 0) return 0;
+    return extraQty * addonExtraPerUnit * quantity;
+  }
+
+  double get lineSubtotal {
+    final base = (double.tryParse(dish.price) ?? 0) * quantity;
+    return base + addonExtraSubtotal;
+  }
 
   Map<String, dynamic> toJson() => {
     'dish': {
       'id': dish.id,
       'name': dish.name,
       'price': dish.price,
+      'additionalChargeAmount': dish.additionalChargeAmount,
       'category': dish.category,
       'type': dish.type,
       'mealType': dish.mealType,
     },
     'quantity': quantity,
     'selectedSauce': selectedSauce,
+    'addOnQuantity': addOnQuantity,
+    'dip': selectedSauce,
+    'dip_qty': addOnQuantity,
     'addOns': addOns,
     'specialInstructions': specialInstructions,
+    'notes': specialInstructions,
   };
 
   factory CartItem.fromJson(Map<String, dynamic> json) {
@@ -41,6 +69,8 @@ class CartItem {
         id: json['dish']['id'],
         name: json['dish']['name'],
         price: json['dish']['price'],
+        additionalChargeAmount:
+            (json['dish']['additionalChargeAmount'] as num?)?.toDouble() ?? 0,
         category: json['dish']['category'] ?? 'restaurant',
         paxOptions: [],
         type: json['dish']['type'] ?? '',
@@ -49,14 +79,20 @@ class CartItem {
                 .toString(),
       ),
       quantity: json['quantity'] ?? 1,
-      selectedSauce: json['selectedSauce'],
+      selectedSauce: json['selectedSauce'] ?? json['dip'],
+      addOnQuantity:
+          (json['addOnQuantity'] as num?)?.toInt() ??
+          (json['dip_qty'] as num?)?.toInt() ??
+          1,
       addOns:
           (json['addOns'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .where((e) => e.trim().isNotEmpty)
               .toList() ??
           const [],
-      specialInstructions: json['specialInstructions']?.toString(),
+      specialInstructions:
+          (json['specialInstructions'] ?? json['notes'] ?? json['line_note'])
+              ?.toString(),
     );
   }
 }
@@ -73,17 +109,13 @@ class CartStore extends ChangeNotifier {
 
   int get itemCount => _items.fold(0, (sum, item) => sum + item.quantity);
 
-  double get totalAmount => _items.fold(0.0, (sum, item) {
-    try {
-      return sum + (double.parse(item.dish.price) * item.quantity);
-    } catch (e) {
-      return sum;
-    }
-  });
+  double get totalAmount =>
+      _items.fold(0.0, (sum, item) => sum + item.lineSubtotal);
 
   bool _sameCustomizations(
     CartItem item,
     String? selectedSauce,
+    int addOnQuantity,
     List<String> addOns,
     String? specialInstructions,
   ) {
@@ -92,6 +124,7 @@ class CartStore extends ChangeNotifier {
     final itemAddOns =
         item.addOns.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
     return item.selectedSauce == selectedSauce &&
+        item.addOnQuantity == addOnQuantity &&
         listEquals(itemAddOns, normalizedAddOns) &&
         (item.specialInstructions ?? '').trim() ==
             (specialInstructions ?? '').trim();
@@ -100,13 +133,22 @@ class CartStore extends ChangeNotifier {
   void addItem(
     MenuDish dish, {
     String? selectedSauce,
+    int addOnQuantity = 1,
     List<String> addOns = const [],
     String? specialInstructions,
   }) {
+    final normalizedAddOnQuantity =
+        selectedSauce?.trim().isNotEmpty == true ? addOnQuantity : 1;
     final existingIndex = _items.indexWhere(
       (item) =>
           item.dish.id == dish.id &&
-          _sameCustomizations(item, selectedSauce, addOns, specialInstructions),
+          _sameCustomizations(
+            item,
+            selectedSauce,
+            normalizedAddOnQuantity,
+            addOns,
+            specialInstructions,
+          ),
     );
 
     if (existingIndex >= 0) {
@@ -116,6 +158,7 @@ class CartStore extends ChangeNotifier {
         CartItem(
           dish: dish,
           selectedSauce: selectedSauce,
+          addOnQuantity: normalizedAddOnQuantity,
           addOns: addOns,
           specialInstructions: specialInstructions,
         ),
@@ -179,12 +222,15 @@ class CartStore extends ChangeNotifier {
   void updateCartItemCustomizations(
     CartItem target, {
     String? selectedSauce,
+    int addOnQuantity = 1,
     List<String> addOns = const [],
     String? specialInstructions,
   }) {
     final existingIndex = _items.indexWhere((item) => identical(item, target));
     if (existingIndex < 0) return;
     _items[existingIndex].selectedSauce = selectedSauce;
+    _items[existingIndex].addOnQuantity =
+        selectedSauce?.trim().isNotEmpty == true ? addOnQuantity : 1;
     _items[existingIndex].addOns = addOns;
     _items[existingIndex].specialInstructions = specialInstructions;
     _saveCart();
@@ -214,6 +260,7 @@ class CartStore extends ChangeNotifier {
             _sameCustomizations(
               item,
               parsed.selectedSauce,
+              parsed.addOnQuantity,
               parsed.addOns,
               parsed.specialInstructions,
             ),

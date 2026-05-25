@@ -643,6 +643,49 @@ export async function initDb() {
     ADD COLUMN IF NOT EXISTS allergens TEXT NOT NULL DEFAULT '';
   `);
 
+  for (const table of ['event_orders', 'catering_orders']) {
+    await pool.query(`
+      ALTER TABLE ${table}
+      ADD COLUMN IF NOT EXISTS event_setting TEXT NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS event_city TEXT NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS service_included TEXT NOT NULL DEFAULT 'no',
+      ADD COLUMN IF NOT EXISTS selected_set_menu TEXT NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS menu_modifications JSONB NOT NULL DEFAULT '{}'::jsonb,
+      ADD COLUMN IF NOT EXISTS cost_breakdown JSONB NOT NULL DEFAULT '[]'::jsonb,
+      ADD COLUMN IF NOT EXISTS food_tasting_requested BOOLEAN NOT NULL DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS food_tasting_date TEXT NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS food_tasting_time TEXT NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS pax_buffer INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS estimated_total NUMERIC NOT NULL DEFAULT 0
+    `);
+  }
+
+  await pool.query(`
+    ALTER TABLE catering_orders
+    ADD COLUMN IF NOT EXISTS theme_design JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS seating_plan JSONB NOT NULL DEFAULT '{}'::jsonb
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS event_design_category_options (
+      id TEXT PRIMARY KEY DEFAULT 'default',
+      categories JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_generations (
+      id BIGSERIAL PRIMARY KEY,
+      user_email TEXT NOT NULL DEFAULT '',
+      image_url TEXT NOT NULL DEFAULT '',
+      prompt TEXT NOT NULL DEFAULT '',
+      design_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+      job_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
   await pool.query(`
     ALTER TABLE customer_accounts
     ADD COLUMN IF NOT EXISTS registration_platform TEXT NOT NULL DEFAULT 'web';
@@ -703,6 +746,7 @@ export async function initDb() {
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       name TEXT NOT NULL,
       price TEXT NOT NULL,
+      menu_dishes_additional_charge_amount NUMERIC NOT NULL DEFAULT 0,
       category TEXT NOT NULL DEFAULT 'catering',
       pax_options JSONB NOT NULL DEFAULT '[]'::jsonb,
       sauces JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -721,6 +765,11 @@ export async function initDb() {
   await pool.query(`
     ALTER TABLE menu_dishes
     ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT '';
+  `);
+
+  await pool.query(`
+    ALTER TABLE menu_dishes
+    ADD COLUMN IF NOT EXISTS menu_dishes_additional_charge_amount NUMERIC NOT NULL DEFAULT 0;
   `);
 
   await pool.query(`

@@ -4,7 +4,7 @@ import 'antd_tokens.dart';
 
 enum AntdMessageType { success, error, warning }
 
-/// Top-center transient feedback (Ant Design “message” style).
+/// Bottom-right transient feedback (Ant Design notification style).
 void showAntdMessage(
   BuildContext context,
   String message, {
@@ -47,36 +47,33 @@ void showAntdMessage(
   entry = OverlayEntry(
     builder: (ctx) {
       return Positioned(
-        left: 16,
-        right: 16,
-        top: MediaQuery.paddingOf(ctx).top + 8,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Material(
-              color: AntdTokens.messageBarBg,
-              elevation: 8,
-              shadowColor: Colors.black54,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _StatusDot(type: type),
-                    const SizedBox(width: 12),
-                    Flexible(
-                      child: Text(
-                        message,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
+        right: 24,
+        bottom: MediaQuery.paddingOf(ctx).bottom + 24,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420, minWidth: 280),
+          child: Material(
+            color: AntdTokens.messageBarBg,
+            elevation: 8,
+            shadowColor: Colors.black54,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _StatusDot(type: type),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
+                      message,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),

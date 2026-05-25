@@ -1,26 +1,27 @@
-FROM vllm/vllm-openai:latest
+FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-devel
 
 WORKDIR /app
 
-# Install RunPod SDK separately (good isolation)
-COPY app/requirements.txt /app/requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN python3 -m pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --upgrade pip
 
-# Copy handler
-COPY app/handler.py /app/handler.py
+RUN pip install numpy==1.26.4
 
-# Optional but useful for HF + caching stability
+COPY app/requirements.txt ./requirements.txt
+
+RUN pip install --no-cache-dir -r requirements.txt
+RUN python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('mistralai/Mistral-7B-Instruct-v0.2')"
+RUN python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='mistralai/Mistral-7B-Instruct-v0.2')"
+
+COPY app/handler.py ./handler.py
+
 ENV HF_HOME=/app/huggingface
 ENV TRANSFORMERS_CACHE=/app/huggingface
+ENV HUGGINGFACE_HUB_CACHE=/app/huggingface
 
-# Your model config
-ENV NLP_MODEL_NAME=mistralai/Mistral-7B-Instruct-v0.2
-
-# Better defaults for inference stability
-ENV TOKENIZERS_PARALLELISM=false
-ENV PYTHONUNBUFFERED=1
-
-# RunPod requires direct handler execution
-ENTRYPOINT []
-CMD ["python3", "-u", "handler.py"]
+CMD ["python", "-u", "handler.py"]

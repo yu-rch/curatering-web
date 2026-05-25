@@ -20,11 +20,12 @@ class ApiService {
     try {
       final bytes = await imageFile.readAsBytes();
       final initB64 = base64Encode(bytes);
-      final prompt = StringBuffer()
-        ..write('$eventType event design')
-        ..write(', $colorScheme color scheme')
-        ..write(', $style style')
-        ..write(', for $guestCount guests');
+      final prompt =
+          StringBuffer()
+            ..write('$eventType event design')
+            ..write(', $colorScheme color scheme')
+            ..write(', $style style')
+            ..write(', for $guestCount guests');
       if (customPrompt.trim().isNotEmpty) {
         prompt.write('. $customPrompt');
       }
@@ -32,17 +33,39 @@ class ApiService {
         '. Decorate the venue in the reference photo, preserve layout, realistic lighting.',
       );
 
+      final eventConfig = {
+        'task_type': 'event_prompt_expansion',
+        'event_type': eventType,
+        'theme': style,
+        'style': style,
+        'mood': colorScheme,
+        'colors': [colorScheme],
+        'color_palette': [colorScheme],
+        'guest_count': guestCount,
+        if (customPrompt.trim().isNotEmpty)
+          'custom_instructions': customPrompt.trim(),
+      };
+      final expansion = await RunPodService.expandEventPrompt(
+        eventConfig,
+        fallbackPrompt: prompt.toString(),
+      );
+
       final imageUrl = await RunPodService.generateImageWithPolling(
-        prompt.toString(),
+        expansion.positivePrompt,
         initImageBase64: initB64,
-        strength: strength.clamp(0.15, 0.95),
+        strength:
+            (expansion.recommendedStrength ?? strength)
+                .clamp(0.15, 0.95)
+                .toDouble(),
         numInferenceSteps: 20,
         designMeta: {
-          'event_type': eventType,
-          'color_scheme': colorScheme,
-          'style': style,
-          'guest_count': guestCount,
-          if (negativePrompt.trim().isNotEmpty) 'negative_prompt': negativePrompt,
+          ...eventConfig,
+          'task_type': 'sdxl_event_design',
+          'use_nlp_prompt_expansion': false,
+          ...expansion.toSdxlMeta(),
+          if (negativePrompt.trim().isNotEmpty &&
+              expansion.negativePrompt.isEmpty)
+            'negative_prompt': negativePrompt,
         },
       );
 

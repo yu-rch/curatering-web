@@ -379,6 +379,7 @@ function normalizeRunpodInput(input) {
 function shouldExpandEventDesignPrompt(input) {
   const taskType = String(input?.task_type || input?.task || "").trim().toLowerCase();
   return (
+    taskType === "event_prompt_expansion" ||
     taskType === "event_design_image" ||
     taskType === "event_design" ||
     input?.use_nlp_prompt_expansion === true
@@ -412,7 +413,7 @@ async function expandEventDesignPromptForRunpod(input) {
   if (!shouldExpandEventDesignPrompt(input)) return input;
 
   const nlpInput = {
-    task_type: "event_design",
+    task_type: "event_prompt_expansion",
     event_type: input.event_type,
     theme: input.theme || input.style,
     style: input.style,
@@ -552,6 +553,66 @@ app.post("/api/public/runpod/run", publicRateLimit, handleRunpodImageRun);
 app.get("/api/public/runpod/status/:jobId", handleRunpodImageStatus);
 app.post("/api/public/runpod/image/run", publicRateLimit, handleRunpodImageRun);
 app.get("/api/public/runpod/image/status/:jobId", handleRunpodImageStatus);
+
+function publicNlpInput(req, res) {
+  const input = getRunpodInput(req, res);
+  if (!input) return null;
+  const taskType = String(input.task_type || input.task || "").trim().toLowerCase();
+  if (taskType !== "event_prompt_expansion") {
+    res.status(400).json({
+      message: "public NLP proxy only supports event_prompt_expansion",
+      code: "bad_request",
+    });
+    return null;
+  }
+  return { ...input, task_type: "event_prompt_expansion" };
+}
+
+async function handlePublicRunpodNlpRun(req, res) {
+  try {
+    const input = publicNlpInput(req, res);
+    if (!input) return;
+    const { res: rp, data } = await runpodProxyRequest("nlp", "/run", {
+      method: "POST",
+      jsonBody: { input },
+    });
+    return res.status(rp.status).json(data);
+  } catch (e) {
+    if (e?.code === "runpod_not_configured") {
+      return sendRunpodNotConfigured(res, "nlp", e);
+    }
+    console.error("[public runpod nlp proxy] POST /run", e);
+    return res.status(502).json({
+      message: String(e?.message || e),
+      code: "runpod_proxy_error",
+    });
+  }
+}
+
+async function handlePublicRunpodNlpStatus(req, res) {
+  try {
+    const jobId = String(req.params.jobId || "").trim();
+    if (!validateRunpodJobId(jobId)) {
+      return res.status(400).json({ message: "invalid job id", code: "bad_request" });
+    }
+    const { res: rp, data } = await runpodProxyRequest("nlp", `/status/${encodeURIComponent(jobId)}`, {
+      method: "GET",
+    });
+    return res.status(rp.status).json(data);
+  } catch (e) {
+    if (e?.code === "runpod_not_configured") {
+      return sendRunpodNotConfigured(res, "nlp", e);
+    }
+    console.error("[public runpod nlp proxy] GET /status", e);
+    return res.status(502).json({
+      message: String(e?.message || e),
+      code: "runpod_proxy_error",
+    });
+  }
+}
+
+app.post("/api/public/runpod/nlp/run", publicRateLimit, handlePublicRunpodNlpRun);
+app.get("/api/public/runpod/nlp/status/:jobId", publicRateLimit, handlePublicRunpodNlpStatus);
 
 app.post(
   "/api/runpod/nlp/run",
@@ -706,27 +767,59 @@ async function ensureFeedbackAnalyticsSchema() {
       await pool.query(`
         CREATE TABLE IF NOT EXISTS dashboard_insights (
           id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          analysis_type TEXT NOT NULL DEFAULT 'dashboard',
           range_key TEXT NOT NULL DEFAULT '7d',
+          filter_key TEXT NOT NULL DEFAULT 'default',
+          filters JSONB NOT NULL DEFAULT '{}'::jsonb,
           summary TEXT NOT NULL DEFAULT '',
           insights JSONB NOT NULL DEFAULT '[]'::jsonb,
           trends JSONB NOT NULL DEFAULT '[]'::jsonb,
           problems JSONB NOT NULL DEFAULT '[]'::jsonb,
           recommendations JSONB NOT NULL DEFAULT '[]'::jsonb,
           alerts JSONB NOT NULL DEFAULT '[]'::jsonb,
+          explainability JSONB NOT NULL DEFAULT '[]'::jsonb,
           dashboard_data JSONB NOT NULL DEFAULT '{}'::jsonb,
           ai_response JSONB NOT NULL DEFAULT '{}'::jsonb,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
       `);
       await pool.query(`
+        CREATE TABLE IF NOT EXISTS ai_analysis_logs (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          analysis_type TEXT NOT NULL DEFAULT 'dashboard',
+          range_key TEXT,
+          prompt TEXT NOT NULL DEFAULT '',
+          input_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+          ai_response JSONB NOT NULL DEFAULT '{}'::jsonb,
+          normalized_result JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_by TEXT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `);
+      await pool.query(`
+        ALTER TABLE ai_analysis_logs
+        ADD COLUMN IF NOT EXISTS analysis_type TEXT NOT NULL DEFAULT 'dashboard',
+        ADD COLUMN IF NOT EXISTS range_key TEXT,
+        ADD COLUMN IF NOT EXISTS prompt TEXT NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS input_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS ai_response JSONB NOT NULL DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS normalized_result JSONB NOT NULL DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS created_by TEXT NULL,
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      `);
+      await pool.query(`
         ALTER TABLE dashboard_insights
+        ADD COLUMN IF NOT EXISTS analysis_type TEXT NOT NULL DEFAULT 'dashboard',
         ADD COLUMN IF NOT EXISTS range_key TEXT NOT NULL DEFAULT '7d',
+        ADD COLUMN IF NOT EXISTS filter_key TEXT NOT NULL DEFAULT 'default',
+        ADD COLUMN IF NOT EXISTS filters JSONB NOT NULL DEFAULT '{}'::jsonb,
         ADD COLUMN IF NOT EXISTS summary TEXT NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS insights JSONB NOT NULL DEFAULT '[]'::jsonb,
         ADD COLUMN IF NOT EXISTS trends JSONB NOT NULL DEFAULT '[]'::jsonb,
         ADD COLUMN IF NOT EXISTS problems JSONB NOT NULL DEFAULT '[]'::jsonb,
         ADD COLUMN IF NOT EXISTS recommendations JSONB NOT NULL DEFAULT '[]'::jsonb,
         ADD COLUMN IF NOT EXISTS alerts JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS explainability JSONB NOT NULL DEFAULT '[]'::jsonb,
         ADD COLUMN IF NOT EXISTS dashboard_data JSONB NOT NULL DEFAULT '{}'::jsonb,
         ADD COLUMN IF NOT EXISTS ai_response JSONB NOT NULL DEFAULT '{}'::jsonb,
         ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -741,7 +834,8 @@ async function ensureFeedbackAnalyticsSchema() {
             'trends',
             'problems',
             'recommendations',
-            'alerts'
+            'alerts',
+            'explainability'
           ] LOOP
             IF EXISTS (
               SELECT 1
@@ -801,11 +895,20 @@ async function ensureFeedbackAnalyticsSchema() {
         CREATE INDEX IF NOT EXISTS idx_dashboard_insights_range_created_at
         ON dashboard_insights (range_key, created_at DESC)
       `);
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_dashboard_insights_type_filter_created_at
+        ON dashboard_insights (analysis_type, range_key, filter_key, created_at DESC)
+      `);
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_ai_analysis_logs_type_created_at
+        ON ai_analysis_logs (analysis_type, created_at DESC)
+      `);
       try {
         await pool.query(`ALTER TABLE feedback ENABLE ROW LEVEL SECURITY`);
         await pool.query(`ALTER TABLE feedback_analysis ENABLE ROW LEVEL SECURITY`);
         await pool.query(`ALTER TABLE feedback_batches ENABLE ROW LEVEL SECURITY`);
         await pool.query(`ALTER TABLE dashboard_insights ENABLE ROW LEVEL SECURITY`);
+        await pool.query(`ALTER TABLE ai_analysis_logs ENABLE ROW LEVEL SECURITY`);
       } catch (err) {
         console.warn("[feedback analytics] RLS enable skipped:", err?.message || err);
       }
@@ -851,6 +954,44 @@ function getDashboardRange(rawRange) {
   const start = new Date(end.getTime() - daysByKey[rangeKey] * 24 * 60 * 60 * 1000);
   const previousStart = new Date(start.getTime() - daysByKey[rangeKey] * 24 * 60 * 60 * 1000);
   return { key: rangeKey, days: daysByKey[rangeKey], start, end, previousStart };
+}
+
+function normalizeDashboardAiFilters(raw = {}) {
+  const range = getDashboardRange(raw.range || raw.rangeKey);
+  const businessSide = String(raw.businessSide || "ALL").trim().toUpperCase();
+  const cateringStyle = String(raw.cateringStyle || "ALL").trim().toUpperCase();
+  const orderSource = String(raw.orderSource || "ALL").trim().toUpperCase();
+  const normalizedSource =
+    orderSource === "ONLINE"
+      ? "ONLINE"
+      : orderSource === "WALK_IN" || orderSource === "WALKIN"
+        ? "WALK_IN"
+        : orderSource === "POS_WEB"
+          ? "WALK_IN"
+          : orderSource === "WEB_APP" || orderSource === "MOBILE_APP"
+            ? "ONLINE"
+            : "ALL";
+  return {
+    range: range.key,
+    businessSide:
+      businessSide === "RESTAURANT" || businessSide === "CATERING" || businessSide === "CATERING_WITH_EVENT"
+        ? businessSide
+        : "ALL",
+    cateringStyle:
+      cateringStyle === "CATERING_ONLY" || cateringStyle === "CATERING_WITH_EVENT"
+        ? cateringStyle
+        : "ALL",
+    orderSource: normalizedSource,
+  };
+}
+
+function dashboardFilterKey(filters) {
+  return [
+    filters.range || "7d",
+    filters.businessSide || "ALL",
+    filters.cateringStyle || "ALL",
+    filters.orderSource || "ALL",
+  ].join("|");
 }
 
 function sentimentBucket(value) {
@@ -928,10 +1069,50 @@ function detectDashboardAlerts(today, yesterday) {
   return alerts;
 }
 
+function buildDashboardExplainability({ current, previous, filters, alerts }) {
+  const points = [];
+  if (previous.total > 0) {
+    const delta = Math.round(((current.total - previous.total) / previous.total) * 100);
+    if (Math.abs(delta) >= 20) {
+      points.push(
+        `${Math.abs(delta)}% ${delta < 0 ? "decrease" : "increase"} in analyzed feedback volume`,
+      );
+    }
+  }
+  if (previous.negative > 0) {
+    const delta = Math.round(((current.sentiment.negative - previous.negative) / previous.negative) * 100);
+    if (Math.abs(delta) >= 20) {
+      points.push(
+        `${Math.abs(delta)}% ${delta < 0 ? "decrease" : "increase"} in negative feedback signals`,
+      );
+    }
+  }
+  if (current.complaint_count > 0) {
+    points.push(`${current.complaint_count} complaint signal(s) found in the selected period`);
+  }
+  if (current.top_topics?.length) {
+    points.push(`top detected topics: ${current.top_topics.map((item) => item.topic).join(", ")}`);
+  }
+  if (filters.businessSide !== "ALL") {
+    points.push(`analysis filtered to ${filters.businessSide.toLowerCase().replaceAll("_", " ")}`);
+  }
+  if (filters.orderSource !== "ALL") {
+    points.push(`orders filtered to ${filters.orderSource.toLowerCase().replaceAll("_", " ")}`);
+  }
+  if (Array.isArray(alerts) && alerts.length) {
+    points.push(`${alerts.length} operational alert(s) were detected before model analysis`);
+  }
+  return points.slice(0, 8);
+}
+
 function normalizeDashboardAiResult(output) {
   const parsed = extractRunpodNlpResult(output) || output?.analysis || output;
   const data = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   const list = (value, max = 8) => toStringArray(value, max);
+  const explainability = list(
+    data.explainability || data.explanation_points || data.detected_factors || data.factors,
+    10,
+  );
   const alerts = Array.isArray(data.alerts)
     ? data.alerts
         .map((item) => {
@@ -961,6 +1142,7 @@ function normalizeDashboardAiResult(output) {
     problems: list(data.problems),
     recommendations: list(data.recommendations),
     alerts,
+    explainability,
   };
 }
 
@@ -982,18 +1164,210 @@ async function queryDashboardAnalysisRows(start, end) {
   return result.rows;
 }
 
+async function runAiGatewayTask(taskType, input, options = {}) {
+  const startedAt = Date.now();
+  const output = await runRunpodJobAndWait(
+    "nlp",
+    {
+      ...input,
+      task_type: taskType,
+    },
+    options,
+  );
+  return {
+    output,
+    latencyMs: Date.now() - startedAt,
+  };
+}
+
+async function getCachedDashboardInsight({ analysisType = "dashboard", rangeKey, filterKey }) {
+  await ensureFeedbackAnalyticsSchema();
+  const result = await pool.query(
+    `SELECT *
+     FROM dashboard_insights
+     WHERE analysis_type = $1
+       AND range_key = $2
+       AND filter_key = $3
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [analysisType, rangeKey, filterKey],
+  );
+  return serializeDashboardInsight(result.rows[0] || null);
+}
+
+async function storeDashboardInsight({
+  analysisType = "dashboard",
+  range,
+  filters,
+  prompt,
+  dashboardData,
+  aiResponse,
+  normalized,
+  createdBy = null,
+}) {
+  const filterKey = dashboardFilterKey(filters);
+  const stored = await pool.query(
+    `INSERT INTO dashboard_insights (
+       analysis_type,
+       range_key,
+       filter_key,
+       filters,
+       summary,
+       insights,
+       trends,
+       problems,
+       recommendations,
+       alerts,
+       explainability,
+       dashboard_data,
+       ai_response
+     ) VALUES ($1, $2, $3, $4::jsonb, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb)
+     RETURNING *`,
+    [
+      analysisType,
+      range.key,
+      filterKey,
+      JSON.stringify(filters),
+      normalized.summary,
+      JSON.stringify(normalized.insights),
+      JSON.stringify(normalized.trends),
+      JSON.stringify(normalized.problems),
+      JSON.stringify(normalized.recommendations),
+      JSON.stringify(normalized.alerts),
+      JSON.stringify(normalized.explainability || []),
+      JSON.stringify(dashboardData),
+      JSON.stringify(aiResponse),
+    ],
+  );
+
+  await pool.query(
+    `INSERT INTO ai_analysis_logs (
+       analysis_type,
+       range_key,
+       prompt,
+       input_data,
+       ai_response,
+       normalized_result,
+       created_by
+     ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7)`,
+    [
+      analysisType,
+      range.key,
+      prompt,
+      JSON.stringify(dashboardData),
+      JSON.stringify(aiResponse),
+      JSON.stringify(normalized),
+      createdBy,
+    ],
+  );
+
+  return serializeDashboardInsight(stored.rows[0]);
+}
+
+async function analyzeDashboardThroughGateway({
+  rangeKey = "7d",
+  filters = {},
+  prompt = "",
+  requestDashboardData = {},
+  analysisType = "dashboard",
+  createdBy = null,
+} = {}) {
+  await ensureFeedbackAnalyticsSchema();
+  const range = getDashboardRange(rangeKey);
+  const normalizedFilters = normalizeDashboardAiFilters({
+    ...filters,
+    range: range.key,
+  });
+  const currentRows = await queryDashboardAnalysisRows(range.start, range.end);
+  const previousRows = await queryDashboardAnalysisRows(range.previousStart, range.start);
+  const current = aggregateDashboardFeedback(currentRows);
+  const previous = aggregateDashboardFeedback(previousRows);
+  const alerts = detectDashboardAlerts(
+    {
+      total: current.total,
+      negative: current.sentiment.negative,
+      complaint_count: current.complaint_count,
+    },
+    {
+      total: previous.total,
+      negative: previous.sentiment.negative,
+      complaint_count: previous.complaint_count,
+    },
+  );
+  const explainability = buildDashboardExplainability({
+    current,
+    previous,
+    filters: normalizedFilters,
+    alerts,
+  });
+  const dashboardData = {
+    range: range.key,
+    start: range.start.toISOString(),
+    end: range.end.toISOString(),
+    filters: normalizedFilters,
+    current,
+    previous,
+    alerts,
+    explainability,
+    prompt,
+    client_dashboard: requestDashboardData,
+  };
+  const { output: aiResponse, latencyMs } = await runAiGatewayTask(
+    "dashboard_analysis",
+    {
+      dashboard_data: dashboardData,
+      dashboard_filters: normalizedFilters,
+      alerts,
+      explainability,
+      ...(prompt ? { prompt } : {}),
+    },
+    { timeoutMs: DASHBOARD_NLP_TIMEOUT_MS },
+  );
+  const normalized = normalizeDashboardAiResult(aiResponse);
+  if (!normalized.summary) {
+    normalized.summary =
+      current.total > 0
+        ? `Analyzed ${current.total} feedback analysis record(s) for the last ${range.days} days.`
+        : `No feedback analysis records found for the last ${range.days} days.`;
+  }
+  normalized.explainability = normalized.explainability?.length
+    ? normalized.explainability
+    : explainability;
+  normalized.alerts = normalized.alerts.length ? normalized.alerts : alerts;
+
+  const stored = await storeDashboardInsight({
+    analysisType,
+    range,
+    filters: normalizedFilters,
+    prompt,
+    dashboardData: { ...dashboardData, latencyMs },
+    aiResponse,
+    normalized,
+    createdBy,
+  });
+  return {
+    data: stored,
+    dashboardData,
+    latencyMs,
+  };
+}
+
 function serializeDashboardInsight(row) {
   if (!row) return null;
   const jsonArray = (value) => (Array.isArray(value) ? value : []);
   return {
     id: String(row.id || ""),
+    analysisType: String(row.analysis_type || "dashboard"),
     range: String(row.range_key || row.range || "7d"),
+    filterKey: String(row.filter_key || "default"),
+    filters: row.filters && typeof row.filters === "object" ? row.filters : {},
     summary: String(row.summary || ""),
     insights: jsonArray(row.insights),
     trends: jsonArray(row.trends),
     problems: jsonArray(row.problems),
     recommendations: jsonArray(row.recommendations),
     alerts: jsonArray(row.alerts),
+    explainability: jsonArray(row.explainability),
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
   };
 }
@@ -1216,79 +1590,32 @@ app.post(
     requireRoles(req, res, next, new Set(["manager", "supervisor", "admin", "super_admin"])),
   async (req, res) => {
     try {
-      await ensureFeedbackAnalyticsSchema();
-      const range = getDashboardRange(req.body?.range);
-      const prompt = String(req.body?.prompt || "").trim().slice(0, 4000);
-      const currentRows = await queryDashboardAnalysisRows(range.start, range.end);
-      const previousRows = await queryDashboardAnalysisRows(range.previousStart, range.start);
-      const current = aggregateDashboardFeedback(currentRows);
-      const previous = aggregateDashboardFeedback(previousRows);
-      const alerts = detectDashboardAlerts(
-        {
-          total: current.total,
-          negative: current.sentiment.negative,
-          complaint_count: current.complaint_count,
-        },
-        {
-          total: previous.total,
-          negative: previous.sentiment.negative,
-          complaint_count: previous.complaint_count,
-        },
-      );
-      const dashboardData = {
-        range: range.key,
-        start: range.start.toISOString(),
-        end: range.end.toISOString(),
-        current,
-        previous,
-        prompt,
-      };
-
-      const input = {
-        dashboard_data: dashboardData,
-        alerts,
-      };
-      if (prompt) input.prompt = prompt;
-      const aiResponse = await runRunpodJobAndWait("nlp", input, {
-        timeoutMs: DASHBOARD_NLP_TIMEOUT_MS,
+      const requestInput =
+        req.body?.input && typeof req.body.input === "object" && !Array.isArray(req.body.input)
+          ? req.body.input
+          : {};
+      const prompt = String(requestInput.prompt || req.body?.prompt || "").trim().slice(0, 4000);
+      const filters = normalizeDashboardAiFilters({
+        ...(requestInput.filters || {}),
+        range: req.body?.range || requestInput.range,
+        businessSide: req.body?.businessSide || requestInput.businessSide,
+        cateringStyle: req.body?.cateringStyle || requestInput.cateringStyle,
+        orderSource: req.body?.orderSource || requestInput.orderSource,
       });
-      const normalized = normalizeDashboardAiResult(aiResponse);
-      if (!normalized.summary) {
-        normalized.summary =
-          current.total > 0
-            ? `Analyzed ${current.total} feedback analysis record(s) for the last ${range.days} days.`
-            : `No feedback analysis records found for the last ${range.days} days.`;
-      }
-      const stored = await pool.query(
-        `INSERT INTO dashboard_insights (
-           range_key,
-           summary,
-           insights,
-           trends,
-           problems,
-           recommendations,
-           alerts,
-           dashboard_data,
-           ai_response
-         ) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb)
-         RETURNING *`,
-        [
-          range.key,
-          normalized.summary,
-          JSON.stringify(normalized.insights),
-          JSON.stringify(normalized.trends),
-          JSON.stringify(normalized.problems),
-          JSON.stringify(normalized.recommendations),
-          JSON.stringify(normalized.alerts.length ? normalized.alerts : alerts),
-          JSON.stringify(dashboardData),
-          JSON.stringify(aiResponse),
-        ],
-      );
+      const generated = await analyzeDashboardThroughGateway({
+        rangeKey: filters.range,
+        filters,
+        prompt,
+        requestDashboardData: requestInput.dashboard_data || {},
+        analysisType: "dashboard",
+        createdBy: req.user?.id || null,
+      });
 
       return res.json({
         success: true,
-        data: serializeDashboardInsight(stored.rows[0]),
-        dashboardData,
+        data: generated.data,
+        dashboardData: generated.dashboardData,
+        latencyMs: generated.latencyMs,
       });
     } catch (e) {
       if (e?.code === "runpod_not_configured") {
@@ -1312,18 +1639,21 @@ app.get(
   async (req, res) => {
     try {
       await ensureFeedbackAnalyticsSchema();
-      const range = getDashboardRange(req.query?.range);
-      const result = await pool.query(
-        `SELECT *
-         FROM dashboard_insights
-         WHERE range_key = $1
-         ORDER BY created_at DESC
-         LIMIT 1`,
-        [range.key],
-      );
+      const filters = normalizeDashboardAiFilters({
+        range: req.query?.range,
+        businessSide: req.query?.businessSide,
+        cateringStyle: req.query?.cateringStyle,
+        orderSource: req.query?.orderSource,
+      });
+      const analysisType = String(req.query?.analysisType || "dashboard").trim() || "dashboard";
+      const data = await getCachedDashboardInsight({
+        analysisType,
+        rangeKey: filters.range,
+        filterKey: dashboardFilterKey(filters),
+      });
       return res.json({
         success: true,
-        data: serializeDashboardInsight(result.rows[0] || null),
+        data,
       });
     } catch (e) {
       console.error("[dashboard insights] failed", e);
@@ -1335,6 +1665,115 @@ app.get(
     }
   },
 );
+
+app.get(
+  "/api/ai/dashboard/cached",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin", "super_admin"])),
+  async (req, res) => {
+    try {
+      const filters = normalizeDashboardAiFilters(req.query || {});
+      const analysisType = String(req.query?.analysisType || "dashboard").trim() || "dashboard";
+      const data = await getCachedDashboardInsight({
+        analysisType,
+        rangeKey: filters.range,
+        filterKey: dashboardFilterKey(filters),
+      });
+      return res.json({ success: true, data, filters });
+    } catch (e) {
+      console.error("[ai gateway] cached dashboard failed", e);
+      return res.status(500).json({
+        message: String(e?.message || e),
+        code: "ai_cached_dashboard_failed",
+      });
+    }
+  },
+);
+
+let aiSchedulerStarted = false;
+
+const scheduledAiJobs = [
+  {
+    analysisType: "nightly_summary",
+    intervalMs: 24 * 60 * 60 * 1000,
+    rangeKey: "7d",
+    filters: normalizeDashboardAiFilters({ range: "7d" }),
+    prompt: "Create a concise nightly management summary with urgent alerts and next-day actions.",
+  },
+  {
+    analysisType: "weekly_business_report",
+    intervalMs: 7 * 24 * 60 * 60 * 1000,
+    rangeKey: "30d",
+    filters: normalizeDashboardAiFilters({ range: "30d" }),
+    prompt:
+      "Create a weekly business report covering sales trends, operations, catering pipeline, and recommendations.",
+  },
+  {
+    analysisType: "monthly_trend_analysis",
+    intervalMs: 30 * 24 * 60 * 60 * 1000,
+    rangeKey: "90d",
+    filters: normalizeDashboardAiFilters({ range: "90d" }),
+    prompt:
+      "Create a monthly trend analysis with demand shifts, premium dish signals, event package trends, and risks.",
+  },
+];
+
+async function runScheduledAiJob({ analysisType, rangeKey, filters, prompt }) {
+  try {
+    const filterKey = dashboardFilterKey(filters);
+    const cached = await getCachedDashboardInsight({
+      analysisType,
+      rangeKey,
+      filterKey,
+    });
+    if (cached?.createdAt) {
+      const cachedAt = new Date(cached.createdAt).getTime();
+      const job = scheduledAiJobs.find((item) => item.analysisType === analysisType);
+      if (Number.isFinite(cachedAt) && job && Date.now() - cachedAt < job.intervalMs) {
+        return;
+      }
+    }
+    console.log(`[ai scheduler] starting ${analysisType}`);
+    await analyzeDashboardThroughGateway({
+      rangeKey,
+      filters: {
+        ...filters,
+        range: rangeKey,
+      },
+      prompt,
+      analysisType,
+      createdBy: "ai_scheduler",
+    });
+    console.log(`[ai scheduler] completed ${analysisType}`);
+  } catch (e) {
+    console.error(`[ai scheduler] ${analysisType} failed`, e?.message || e);
+  }
+}
+
+function shouldRunScheduledJob(lastRun, intervalMs) {
+  return !lastRun || Date.now() - lastRun >= intervalMs;
+}
+
+function startAiAnalyticsScheduler() {
+  if (aiSchedulerStarted || process.env.AI_SCHEDULER_DISABLED === "1") return;
+  aiSchedulerStarted = true;
+
+  const lastRunByType = new Map();
+
+  const tick = async () => {
+    if (!dbReady) return;
+    for (const job of scheduledAiJobs) {
+      const lastRun = lastRunByType.get(job.analysisType);
+      if (!shouldRunScheduledJob(lastRun, job.intervalMs)) continue;
+      lastRunByType.set(job.analysisType, Date.now());
+      await runScheduledAiJob(job);
+    }
+  };
+
+  setTimeout(tick, 60_000);
+  setInterval(tick, 60 * 60 * 1000);
+}
 
 app.get(
   "/api/runpod/nlp/status/:jobId",
@@ -5823,6 +6262,104 @@ app.post("/api/public/events/theme-design/render-composite", async (req, res) =>
   }
 });
 
+const DEFAULT_EVENT_DESIGN_CATEGORIES = {
+  styles: ["Elegant", "Rustic", "Modern", "Garden", "Minimalist", "Vintage", "Bohemian", "Other"],
+  moods: ["Romantic", "Bright", "Dramatic", "Cozy", "Luxurious", "Fun", "Other"],
+  palettes: ["White & Gold", "Pastel Pink", "Earthy Green", "Navy & Silver", "Peach & Cream", "Black & White", "Other"],
+  decor: ["Floral Centerpieces", "Fairy Lights", "Stage Backdrop", "Balloon Setup", "Drapery & Curtains", "Table Runners", "Photo Booth", "Chandeliers", "Other"],
+};
+
+async function ensureEventDesignCategoryOptions() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS event_design_category_options (
+      id TEXT PRIMARY KEY DEFAULT 'default',
+      categories JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(
+    `INSERT INTO event_design_category_options (id, categories)
+     VALUES ('default', $1::jsonb)
+     ON CONFLICT (id) DO NOTHING`,
+    [JSON.stringify(DEFAULT_EVENT_DESIGN_CATEGORIES)],
+  );
+}
+
+app.get("/api/mobile/event-design/categories", async (_req, res) => {
+  try {
+    await ensureEventDesignCategoryOptions();
+    const result = await pool.query(
+      `SELECT categories FROM event_design_category_options WHERE id = 'default' LIMIT 1`,
+    );
+    return res.json(result.rows[0]?.categories || DEFAULT_EVENT_DESIGN_CATEGORIES);
+  } catch (e) {
+    console.error("[event design categories] load failed", e);
+    return res.status(500).json({ error: "Failed to load event design categories" });
+  }
+});
+
+app.put(
+  "/api/mobile/event-design/categories",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["admin", "super_admin"])),
+  async (req, res) => {
+    try {
+      await ensureEventDesignCategoryOptions();
+      const categories =
+        req.body?.categories && typeof req.body.categories === "object"
+          ? req.body.categories
+          : DEFAULT_EVENT_DESIGN_CATEGORIES;
+      await pool.query(
+        `INSERT INTO event_design_category_options (id, categories, updated_at)
+         VALUES ('default', $1::jsonb, now())
+         ON CONFLICT (id) DO UPDATE
+         SET categories = EXCLUDED.categories, updated_at = now()`,
+        [JSON.stringify(categories)],
+      );
+      return res.json({ ok: true, categories });
+    } catch (e) {
+      console.error("[event design categories] save failed", e);
+      return res.status(500).json({ error: "Failed to save event design categories" });
+    }
+  },
+);
+
+app.get("/api/mobile/ai-generations", async (req, res) => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ai_generations (
+        id BIGSERIAL PRIMARY KEY,
+        user_email TEXT NOT NULL DEFAULT '',
+        image_url TEXT NOT NULL DEFAULT '',
+        prompt TEXT NOT NULL DEFAULT '',
+        design_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+        job_id TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    const email = String(req.query.email || req.query.userEmail || "").trim().toLowerCase();
+    const params = [];
+    let where = "";
+    if (email) {
+      params.push(email);
+      where = "WHERE lower(trim(user_email)) = $1";
+    }
+    const result = await pool.query(
+      `SELECT id::text, image_url, prompt, design_meta, job_id, created_at
+       FROM ai_generations
+       ${where}
+       ORDER BY created_at DESC
+       LIMIT 24`,
+      params,
+    );
+    return res.json({ generations: result.rows });
+  } catch (e) {
+    console.error("[ai generations] load failed", e);
+    return res.status(500).json({ error: "Failed to load AI generations" });
+  }
+});
+
 app.get(
   "/api/manager/events/orders",
   authRequired,
@@ -6460,16 +6997,44 @@ app.post("/api/online-inquiries", async (req, res) => {
       addressLat,
       addressLng,
       guestCount,
+      paxBuffer,
       menu,
       allergens,
+      inquiryType,
+      serviceIncluded,
+      eventCity,
+      eventSetting,
+      selectedSetMenu,
+      menuModifications,
+      estimatedTotal,
+      costBreakdown,
+      foodTastingRequested,
+      foodTastingDate,
+      foodTastingTime,
+      menuSuggestionNote,
+      curateOwnMenu,
+      guestAllergens,
       themeDesign,
       source = 'web', // 'web' or 'mobile'
     } = req.body || {};
-    const allergensText = String(allergens ?? '').trim();
+    const allergensText = String(guestAllergens ?? allergens ?? '').trim();
+    const normalizedServiceIncluded = String(serviceIncluded ?? '').trim().toLowerCase() === 'yes' ? 'yes' : 'no';
+    const normalizedMenuMods = Array.isArray(menuModifications)
+      ? { additionalChargeRows: menuModifications }
+      : menuModifications && typeof menuModifications === 'object'
+        ? menuModifications
+        : {};
+    const normalizedCostBreakdown = Array.isArray(costBreakdown) ? costBreakdown : [];
     const slimTheme =
       themeDesign && typeof themeDesign === "object" && !Array.isArray(themeDesign)
         ? { ...themeDesign }
         : {};
+    if (eventSetting) slimTheme.event_setting = String(eventSetting).trim();
+    if (inquiryType) slimTheme.inquiry_type = String(inquiryType).trim();
+    if (menuSuggestionNote) slimTheme.menu_suggestion_note = String(menuSuggestionNote).trim();
+    if (curateOwnMenu !== undefined) slimTheme.curate_own_menu = Boolean(curateOwnMenu);
+    if (normalizedCostBreakdown.length) slimTheme.cost_breakdown = normalizedCostBreakdown;
+    if (Object.keys(normalizedMenuMods).length) slimTheme.menu_modifications = normalizedMenuMods;
     if (
       typeof slimTheme.venuePhotoBase64 === "string" &&
       slimTheme.venuePhotoBase64.length > 120_000
@@ -6518,9 +7083,13 @@ app.post("/api/online-inquiries", async (req, res) => {
       result = await pool.query(
         `INSERT INTO catering_orders
           (source, status, order_type, catering_id, customer_name, contact_person, contact_number, email_address,
-           schedule_slots, address, address_lat, address_lng, guest_count, menu, allergens)
+           schedule_slots, address, address_lat, address_lng, guest_count, pax_buffer, menu, allergens,
+           event_city, event_setting, service_included, selected_set_menu, menu_modifications,
+           cost_breakdown, food_tasting_requested, food_tasting_date, food_tasting_time,
+           estimated_total, theme_design)
         VALUES
-          ('online_inquiry', 'online_inquiries', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          ('online_inquiry', 'online_inquiries', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+           $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, $19, $20, $21, $22, $23, $24::jsonb)
          RETURNING id, catering_id;`,
         [
           cateringId,
@@ -6533,8 +7102,20 @@ app.post("/api/online-inquiries", async (req, res) => {
           resolvedAddressLat,
           resolvedAddressLng,
           Number(guestCount),
+          Number(paxBuffer ?? 0) || 0,
           JSON.stringify(menu),
           allergensText,
+          String(eventCity ?? '').trim(),
+          String(eventSetting ?? '').trim(),
+          normalizedServiceIncluded,
+          String(selectedSetMenu ?? '').trim(),
+          JSON.stringify(normalizedMenuMods),
+          JSON.stringify(normalizedCostBreakdown),
+          foodTastingRequested === true,
+          String(foodTastingDate ?? '').trim(),
+          String(foodTastingTime ?? '').trim(),
+          Number(estimatedTotal ?? 0) || 0,
+          themeDesignJson,
         ]
       );
     } else {
@@ -6543,10 +7124,13 @@ app.post("/api/online-inquiries", async (req, res) => {
         `INSERT INTO event_orders
           (source, status, event_title, order_type, event_type, formality_level, catering_id,
            customer_name, contact_person, contact_number, email_address,
-           schedule_slots, address, address_lat, address_lng, guest_count, menu, theme_design, allergens)
+           schedule_slots, address, address_lat, address_lng, guest_count, pax_buffer, menu, theme_design, allergens,
+           event_city, event_setting, service_included, selected_set_menu, menu_modifications,
+           cost_breakdown, food_tasting_requested, food_tasting_date, food_tasting_time,
+           estimated_total)
          VALUES
           ('online_inquiry', 'online_inquiries',
-           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::jsonb,$24::jsonb,$25,$26,$27,$28)
          RETURNING id, catering_id;`,
         [
           eventTitle,
@@ -6563,9 +7147,20 @@ app.post("/api/online-inquiries", async (req, res) => {
           resolvedAddressLat,
           resolvedAddressLng,
           Number(guestCount),
+          Number(paxBuffer ?? 0) || 0,
           JSON.stringify(menu),
           themeDesignJson,
           allergensText,
+          String(eventCity ?? '').trim(),
+          String(eventSetting ?? '').trim(),
+          normalizedServiceIncluded,
+          String(selectedSetMenu ?? '').trim(),
+          JSON.stringify(normalizedMenuMods),
+          JSON.stringify(normalizedCostBreakdown),
+          foodTastingRequested === true,
+          String(foodTastingDate ?? '').trim(),
+          String(foodTastingTime ?? '').trim(),
+          Number(estimatedTotal ?? 0) || 0,
         ]
       );
     }
@@ -6586,6 +7181,46 @@ app.post("/api/online-inquiries", async (req, res) => {
     return res.status(500).json({ message: "Failed to create online inquiry" });
   }
 });
+
+app.put(
+  "/api/events/orders/:orderId/theme-design",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin", "super_admin"])),
+  async (req, res) => {
+    try {
+      const orderId = String(req.params.orderId || "").trim();
+      const themeDesign = req.body?.themeDesign ?? req.body?.theme_design ?? {};
+      if (!orderId) return res.status(400).json({ error: "orderId required" });
+      if (!themeDesign || typeof themeDesign !== "object" || Array.isArray(themeDesign)) {
+        return res.status(400).json({ error: "themeDesign must be an object" });
+      }
+      let result = await pool.query(
+        `UPDATE event_orders
+         SET theme_design = COALESCE(theme_design, '{}'::jsonb) || $1::jsonb,
+             updated_at = now()
+         WHERE id = $2
+         RETURNING id, theme_design`,
+        [JSON.stringify(themeDesign), orderId],
+      );
+      if (result.rowCount === 0) {
+        result = await pool.query(
+          `UPDATE catering_orders
+           SET theme_design = COALESCE(theme_design, '{}'::jsonb) || $1::jsonb,
+               updated_at = now()
+           WHERE id = $2
+           RETURNING id, theme_design`,
+          [JSON.stringify(themeDesign), orderId],
+        );
+      }
+      if (result.rowCount === 0) return res.status(404).json({ error: "Order not found" });
+      return res.json({ ok: true, themeDesign: result.rows[0].theme_design });
+    } catch (e) {
+      console.error("[theme design save] failed", e);
+      return res.status(500).json({ error: "Failed to save theme design" });
+    }
+  },
+);
 
 // Debug endpoints — development only
 if (process.env.NODE_ENV !== "production") {
@@ -7766,7 +8401,7 @@ async function registerRoutesAfterDbInit() {
       while (retryCount < maxRetries) {
         try {
           const result = await pool.query(
-            `SELECT id, name, price, category, pax_options, sauces, ingredients,
+            `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, ingredients,
                     image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus,
                     public_description, allergens, meal_type
              FROM menu_dishes
@@ -7798,7 +8433,7 @@ async function registerRoutesAfterDbInit() {
       while (retryCount < maxRetries) {
         try {
           const result = await pool.query(
-            `SELECT id, name, price, category, pax_options, sauces, ingredients,
+            `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, ingredients,
                     image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus,
                     public_description, allergens, meal_type
              FROM menu_dishes
@@ -7831,7 +8466,7 @@ async function registerRoutesAfterDbInit() {
         try {
           const { id } = req.params;
           const result = await pool.query(
-            `SELECT id, name, price, category, pax_options, sauces, ingredients,
+            `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, ingredients,
                     image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus,
                     public_description, allergens, meal_type
              FROM menu_dishes
@@ -7865,7 +8500,7 @@ async function registerRoutesAfterDbInit() {
     app.get('/api/menu/dishes/all', authRequired, async (req, res) => {
       try {
         const result = await pool.query(
-          `SELECT id, name, price, category, pax_options, sauces, ingredients,
+          `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, ingredients,
                   image_base64, archived, available, archived_at, created_at, updated_at, type, meal_type, set_menus,
                   public_description, allergens
            FROM menu_dishes
@@ -7893,6 +8528,8 @@ async function registerRoutesAfterDbInit() {
           available,
           publicDescription,
           allergens,
+          menuDishesAdditionalChargeAmount,
+          additionalChargeAmount,
         } = req.body || {};
         
         if (!name || !price) {
@@ -7900,18 +8537,22 @@ async function registerRoutesAfterDbInit() {
         }
 
         const dishCategory = category || 'catering';
+        const additionalCharge = Number(
+          menuDishesAdditionalChargeAmount ?? additionalChargeAmount ?? 0,
+        );
         const resolvedMealType = String(mealType ?? '').trim() || String(type ?? '').trim();
         const mealTypeSaved = resolvedMealType
           ? await upsertMenuMealType(resolvedMealType)
           : '';
 
         const result = await pool.query(
-          `INSERT INTO menu_dishes (name, price, category, pax_options, sauces, ingredients, image_base64, type, set_menus, available, public_description, allergens, meal_type)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          `INSERT INTO menu_dishes (name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, ingredients, image_base64, type, set_menus, available, public_description, allergens, meal_type)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
            RETURNING *`,
           [
             name,
             price,
+            Number.isFinite(additionalCharge) ? Math.max(0, additionalCharge) : 0,
             dishCategory,
             JSON.stringify(paxOptions || []),
             JSON.stringify(sauces || []),
@@ -7953,9 +8594,14 @@ async function registerRoutesAfterDbInit() {
           available,
           publicDescription,
           allergens,
+          menuDishesAdditionalChargeAmount,
+          additionalChargeAmount,
         } = req.body || {};
         
         const dishCategory = category || 'catering';
+        const additionalCharge = Number(
+          menuDishesAdditionalChargeAmount ?? additionalChargeAmount ?? 0,
+        );
         const resolvedMealType = String(mealType ?? '').trim() || String(type ?? '').trim();
         const mealTypeSaved = resolvedMealType
           ? await upsertMenuMealType(resolvedMealType)
@@ -7965,8 +8611,9 @@ async function registerRoutesAfterDbInit() {
           `UPDATE menu_dishes
            SET name = $1, price = $2, category = $3, pax_options = $4, 
                sauces = $5, ingredients = $6, image_base64 = $7, type = $8, set_menus = $9,
-               available = $10, public_description = $11, allergens = $12, meal_type = $13, updated_at = now()
-           WHERE id = $14
+               available = $10, public_description = $11, allergens = $12, meal_type = $13,
+               menu_dishes_additional_charge_amount = $14, updated_at = now()
+           WHERE id = $15
            RETURNING *`,
           [
             name,
@@ -7982,6 +8629,7 @@ async function registerRoutesAfterDbInit() {
             String(publicDescription ?? '').trim(),
             String(allergens ?? '').trim(),
             mealTypeSaved,
+            Number.isFinite(additionalCharge) ? Math.max(0, additionalCharge) : 0,
             dishId,
           ]
         );
@@ -8232,7 +8880,7 @@ async function registerRoutesAfterDbInit() {
         ];
         if (dishIds.length > 0) {
           const dishResult = await pool.query(
-            `SELECT id::text AS id, name, price, category, type, meal_type, public_description, allergens
+            `SELECT id::text AS id, name, price, menu_dishes_additional_charge_amount, category, type, meal_type, public_description, allergens
              FROM menu_dishes
              WHERE id::text = ANY($1) AND archived = false`,
             [dishIds],
@@ -8247,6 +8895,15 @@ async function registerRoutesAfterDbInit() {
             const dish = dishesById.get(dishId);
             if (!dish) return item;
             const price = Number(dish.price) || 0;
+            const dip = String(item.dip ?? item.selected_sauce ?? item.selectedSauce ?? '').trim();
+            const rawDipQty = Number(item.dip_qty ?? item.addOnQuantity ?? 1);
+            const dipQty = dip
+              ? Math.max(0, Number.isFinite(rawDipQty) ? Math.floor(rawDipQty) : 1)
+              : 1;
+            const qty = Math.max(1, Number(item.qty ?? item.quantity ?? 1) || 1);
+            const additionalCharge = Number(dish.menu_dishes_additional_charge_amount) || 0;
+            const extraPerUnit = additionalCharge > 0 ? additionalCharge : 15;
+            const addonExtraSubtotal = dip ? Math.max(0, dipQty - 1) * extraPerUnit * qty : 0;
             return {
               ...item,
               dishId,
@@ -8259,6 +8916,17 @@ async function registerRoutesAfterDbInit() {
               price,
               dishPrice: price,
               dish_price: price,
+              qty,
+              quantity: qty,
+              dip,
+              dip_qty: dipQty,
+              selectedSauce: dip || null,
+              selected_sauce: dip || null,
+              notes: item.notes ?? item.special_instructions ?? item.specialInstructions ?? '',
+              line_subtotal: Number((qty * price + addonExtraSubtotal).toFixed(2)),
+              addon_extra_subtotal: Number(addonExtraSubtotal.toFixed(2)),
+              additional_charge_amount: additionalCharge,
+              menu_dishes_additional_charge_amount: additionalCharge,
               dish_category: dish.category,
               dishCategory: dish.category,
               dish_type: dish.type,
@@ -8773,11 +9441,14 @@ async function registerRoutesAfterDbInit() {
         const includeEventCatering = cateringStyle !== 'CATERING_ONLY';
         const cateringSourceFilter = (() => {
           if (!orderSource || orderSource === 'ALL') return 'TRUE';
-          if (orderSource === 'WEB_APP') {
+          if (orderSource === 'ONLINE' || orderSource === 'WEB_APP') {
             return `lower(coalesce(source, '')) IN ('web', 'web_app', 'new_event', 'online_inquiry', 'customer_website')`;
           }
           if (orderSource === 'MOBILE_APP') {
             return `lower(coalesce(source, '')) IN ('mobile', 'mobile_app', 'customer_mobile')`;
+          }
+          if (orderSource === 'WALK_IN' || orderSource === 'POS_WEB') {
+            return `lower(coalesce(source, '')) IN ('walk_in', 'walk-in', 'pos', 'pos_web', 'staff')`;
           }
           return 'FALSE';
         })();
@@ -8801,8 +9472,14 @@ async function registerRoutesAfterDbInit() {
           ? 'post_analysis'
           : `'{}'::jsonb`;
         if (orderSource && orderSource !== 'ALL') {
-          restParams.push(orderSource);
-          restFilters.push(`order_source = $${restParams.length}`);
+          if (orderSource === 'ONLINE') {
+            restFilters.push(`order_source IN ('WEB_APP', 'MOBILE_APP')`);
+          } else if (orderSource === 'WALK_IN') {
+            restFilters.push(`order_source IN ('POS_WEB', 'WALK_IN')`);
+          } else {
+            restParams.push(orderSource);
+            restFilters.push(`order_source = $${restParams.length}`);
+          }
         }
         if (orderStatus && orderStatus !== 'ALL') {
           restParams.push(orderStatus);
@@ -8867,6 +9544,18 @@ async function registerRoutesAfterDbInit() {
         const restaurantSalesYear = Number(r.sales_year) || 0;
         const cateringSalesYear = Number(c.sales_year) || 0;
 
+        const restaurantMonthlyParams = [yearStart, nextYear];
+        let restaurantMonthlySourceSql = '';
+        if (orderSource && orderSource !== 'ALL') {
+          if (orderSource === 'ONLINE') {
+            restaurantMonthlySourceSql = `AND order_source IN ('WEB_APP', 'MOBILE_APP')`;
+          } else if (orderSource === 'WALK_IN') {
+            restaurantMonthlySourceSql = `AND order_source IN ('POS_WEB', 'WALK_IN')`;
+          } else {
+            restaurantMonthlyParams.push(orderSource);
+            restaurantMonthlySourceSql = `AND order_source = $${restaurantMonthlyParams.length}`;
+          }
+        }
         const restaurantMonthlySales = await pool.query(
           `SELECT
              EXTRACT(MONTH FROM created_at)::int AS month,
@@ -8875,14 +9564,12 @@ async function registerRoutesAfterDbInit() {
            FROM restaurant_orders
            WHERE order_status NOT IN ('CANCELLED')
              AND created_at >= $1 AND created_at < $2
-             ${orderSource && orderSource !== 'ALL' ? `AND order_source = $3` : ''}
-             ${orderStatus && orderStatus !== 'ALL' ? `AND order_status = $${orderSource && orderSource !== 'ALL' ? 4 : 3}` : ''}
+             ${restaurantMonthlySourceSql}
+             ${orderStatus && orderStatus !== 'ALL' ? `AND order_status = $${restaurantMonthlyParams.length + 1}` : ''}
            GROUP BY 1
            ORDER BY 1`,
           [
-            yearStart,
-            nextYear,
-            ...(orderSource && orderSource !== 'ALL' ? [orderSource] : []),
+            ...restaurantMonthlyParams,
             ...(orderStatus && orderStatus !== 'ALL' ? [orderStatus] : []),
           ],
         );
@@ -10955,7 +11642,7 @@ async function registerRoutesAfterDbInit() {
         const { setName } = req.params;
         
         const result = await pool.query(
-          `SELECT id, name, price, category, pax_options, sauces, ingredients,
+          `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, ingredients,
                   image_base64, archived, type, set_menus, created_at, updated_at,
                   public_description, allergens
            FROM menu_dishes 
@@ -11000,6 +11687,7 @@ async function registerRoutesAfterDbInit() {
     await ensureRestaurantOrderWorkflowColumns();
     await ensureRestaurantPosColumns(pool);
     scheduleAutoCancelJob();
+    startAiAnalyticsScheduler();
     registerPosRoutes(app, {
       pool,
       authRequired,

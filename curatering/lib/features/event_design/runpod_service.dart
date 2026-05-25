@@ -1,5 +1,7 @@
 import '../../services/runpod_service.dart' as current;
 
+typedef EventPromptExpansion = current.EventPromptExpansion;
+
 class RunPodService {
   RunPodService._();
 
@@ -24,6 +26,16 @@ class RunPodService {
       numInferenceSteps: numInferenceSteps,
       guidanceScale: guidanceScale,
       designMeta: designMeta,
+    );
+  }
+
+  static Future<EventPromptExpansion> expandEventPrompt(
+    Map<String, dynamic> eventConfig, {
+    String fallbackPrompt = '',
+  }) {
+    return current.RunPodService.expandEventPrompt(
+      eventConfig,
+      fallbackPrompt: fallbackPrompt,
     );
   }
 }

@@ -7,6 +7,97 @@ import '../config.dart';
 const Duration _runPostTimeout = Duration(seconds: 120);
 const Duration _pollGetTimeout = Duration(seconds: 45);
 
+class EventPromptExpansion {
+  const EventPromptExpansion({
+    required this.positivePrompt,
+    required this.negativePrompt,
+    required this.themeTokens,
+    required this.lightingTokens,
+    required this.styleTokens,
+    required this.decorTokens,
+    required this.decorElements,
+    required this.visualKeywords,
+    this.recommendedStrength,
+  });
+
+  final String positivePrompt;
+  final String negativePrompt;
+  final List<String> themeTokens;
+  final List<String> lightingTokens;
+  final List<String> styleTokens;
+  final List<String> decorTokens;
+  final List<String> decorElements;
+  final List<String> visualKeywords;
+  final double? recommendedStrength;
+
+  Map<String, dynamic> toSdxlMeta() {
+    return {
+      'positive_prompt': positivePrompt,
+      if (negativePrompt.isNotEmpty) 'negative_prompt': negativePrompt,
+      'theme_tokens': themeTokens,
+      'lighting_tokens': lightingTokens,
+      'style_tokens': styleTokens,
+      'decor_tokens': decorTokens,
+      'decor_elements': decorElements,
+      'visual_keywords': visualKeywords,
+      if (recommendedStrength != null)
+        'recommended_strength': recommendedStrength,
+      'nlp_expansion': toJson(),
+    };
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'positive_prompt': positivePrompt,
+      'negative_prompt': negativePrompt,
+      'theme_tokens': themeTokens,
+      'lighting_tokens': lightingTokens,
+      'style_tokens': styleTokens,
+      'decor_tokens': decorTokens,
+      'decor_elements': decorElements,
+      'visual_keywords': visualKeywords,
+      if (recommendedStrength != null)
+        'recommended_strength': recommendedStrength,
+    };
+  }
+
+  factory EventPromptExpansion.fromJson(
+    Map<String, dynamic> json, {
+    String fallbackPrompt = '',
+  }) {
+    List<String> strings(dynamic value) {
+      return (value as List? ?? const [])
+          .map((item) => '$item'.trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+
+    double? number(dynamic value) {
+      if (value is num) return value.toDouble();
+      return double.tryParse('$value');
+    }
+
+    final positive =
+        '${json['positive_prompt'] ?? json['prompt'] ?? fallbackPrompt}'.trim();
+    if (positive.isEmpty) {
+      throw Exception('NLP prompt expansion returned no positive prompt.');
+    }
+    return EventPromptExpansion(
+      positivePrompt: positive,
+      negativePrompt: '${json['negative_prompt'] ?? ''}'.trim(),
+      themeTokens: strings(json['theme_tokens']),
+      lightingTokens: strings(json['lighting_tokens']),
+      styleTokens: strings(json['style_tokens']),
+      decorTokens: strings(json['decor_tokens']),
+      decorElements: strings(json['decor_elements']),
+      visualKeywords: strings(
+        json['visual_keywords'] ?? json['visual_direction'],
+      ),
+      recommendedStrength: number(json['recommended_strength']),
+    );
+  }
+}
+
 /// Calls the Curatering API RunPod proxy ([`/api/public/runpod/run`], status).
 /// `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` live only on the server (e.g. Railway).
 class RunPodService {
@@ -28,6 +119,13 @@ class RunPodService {
 
   static Uri _statusUri(String jobId) => Uri.parse(
     '$_proxyBase/api/public/runpod/status/${Uri.encodeComponent(jobId)}',
+  );
+
+  static Uri _publicNlpRunUri() =>
+      Uri.parse('$_proxyBase/api/public/runpod/nlp/run');
+
+  static Uri _publicNlpStatusUri(String jobId) => Uri.parse(
+    '$_proxyBase/api/public/runpod/nlp/status/${Uri.encodeComponent(jobId)}',
   );
 
   static String _normalizeB64(String raw) {
@@ -72,6 +170,24 @@ class RunPodService {
     return null;
   }
 
+  static Map<String, dynamic> _map(dynamic value) {
+    return value is Map
+        ? Map<String, dynamic>.from(value)
+        : <String, dynamic>{};
+  }
+
+  static Map<String, dynamic> _extractNlpPayload(Map<String, dynamic> data) {
+    final output = _map(data['output']);
+    final result = _map(output['result']);
+    if (result.isNotEmpty) return result;
+    final analysis = _map(output['analysis']);
+    if (analysis.isNotEmpty) return analysis;
+    if (output.isNotEmpty) return output;
+    final nested = _map(data['result']);
+    if (nested.isNotEmpty) return nested;
+    return data;
+  }
+
   static Future<String?> generateImage(String prompt) async {
     try {
       _ensureBase();
@@ -107,6 +223,54 @@ class RunPodService {
       }
     } catch (e) {
       throw Exception('Failed to generate image: $e');
+    }
+  }
+
+  static Future<EventPromptExpansion> expandEventPrompt(
+    Map<String, dynamic> eventConfig, {
+    String fallbackPrompt = '',
+  }) async {
+    try {
+      _ensureBase();
+      final input = <String, dynamic>{
+        ...eventConfig,
+        'task_type': 'event_prompt_expansion',
+      };
+      final response = await http
+          .post(
+            _publicNlpRunUri(),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'input': input}),
+          )
+          .timeout(_runPostTimeout);
+
+      if (response.statusCode != 200) {
+        _throwHttp(response);
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final status = _normalizeStatus(data['status']);
+      final jobId = _extractJobId(data);
+
+      if (_statusIsCompleted(status) || data['output'] != null) {
+        return EventPromptExpansion.fromJson(
+          _extractNlpPayload(data),
+          fallbackPrompt: fallbackPrompt,
+        );
+      }
+      if (_statusIsFailed(status)) {
+        throw Exception(_formatRunpodFailure(data));
+      }
+      if (jobId == null || jobId.isEmpty) {
+        throw Exception('NLP prompt expansion did not return a job id.');
+      }
+      final completed = await _pollPublicNlpForCompletion(jobId);
+      return EventPromptExpansion.fromJson(
+        _extractNlpPayload(completed),
+        fallbackPrompt: fallbackPrompt,
+      );
+    } catch (e) {
+      throw Exception('Failed to expand event prompt: $e');
     }
   }
 
@@ -323,6 +487,58 @@ class RunPodService {
     final totalSeconds = _maxPollAttempts * _pollIntervalSeconds;
     throw Exception(
       'Job timed out after ${totalSeconds}s waiting for the AI worker. Try again in a moment.',
+    );
+  }
+
+  static Future<Map<String, dynamic>> _pollPublicNlpForCompletion(
+    String jobId,
+  ) async {
+    int attempts = 0;
+    Object? lastError;
+
+    while (attempts < _maxPollAttempts) {
+      await Future.delayed(const Duration(seconds: _pollIntervalSeconds));
+      attempts++;
+
+      try {
+        final response = await http
+            .get(_publicNlpStatusUri(jobId))
+            .timeout(_pollGetTimeout);
+
+        if (response.statusCode == 429) {
+          throw Exception('Too many requests — wait a moment and try again.');
+        }
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          final status = _normalizeStatus(data['status']);
+
+          if (_statusIsCompleted(status)) return data;
+          if (_statusIsFailed(status)) {
+            throw Exception(_formatRunpodFailure(data));
+          }
+        } else {
+          _throwHttp(response);
+        }
+      } on Exception catch (e) {
+        final msg = e.toString();
+        if (msg.contains('Job failed') ||
+            msg.contains('AI generation exceeded') ||
+            msg.contains('Worker returned')) {
+          rethrow;
+        }
+        lastError = e;
+        print('NLP polling error (attempt $attempts): $e');
+      } catch (e) {
+        lastError = e;
+        print('NLP polling error (attempt $attempts): $e');
+      }
+    }
+
+    if (lastError is Exception) throw lastError;
+    final totalSeconds = _maxPollAttempts * _pollIntervalSeconds;
+    throw Exception(
+      'NLP task timed out after ${totalSeconds}s waiting for the AI worker. Try again in a moment.',
     );
   }
 

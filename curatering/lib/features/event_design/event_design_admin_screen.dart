@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/antd_message.dart';
 import 'event_design_categories.dart';
 import 'events_feature_api.dart';
 
@@ -62,14 +63,10 @@ class _EventDesignAdminScreenState extends State<EventDesignAdminScreen> {
         staffPassword: widget.staffPassword,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Event design categories saved.')),
-      );
+      showAntdMessage(context, 'Event design categories saved.');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e'), backgroundColor: Colors.red.shade700),
-      );
+      showAntdMessage(context, '$e', type: AntdMessageType.error);
     } finally {
       if (mounted) setState(() => _saving = false);
     }

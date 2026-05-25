@@ -275,10 +275,13 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
     final ids =
         _selectedSetDishIds.where(availableIds.contains).toList()..sort();
     if (ids.isEmpty) return [];
+    final originalIds = _visibleSetDishIds(set)..sort();
     return [
       {
         'kind': 'set',
         'setMenuName': set.name,
+        'originalDishIds': originalIds,
+        'originalDishCount': originalIds.length,
         'dishIds': ids,
         'dishNames': ids.map((id) => _dishNameById[id] ?? id).toList(),
       },
@@ -508,6 +511,9 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
   Widget _buildSetDishCustomizer() {
     final selected = _selectedSet;
     if (selected == null) return const SizedBox.shrink();
+    final originalIds = _visibleSetDishIds(selected).toSet();
+    final addedCount =
+        _selectedSetDishIds.where((id) => !originalIds.contains(id)).length;
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Column(
@@ -517,6 +523,17 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
             'Customize "${selected.name}" with catering dishes',
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
+          if (addedCount > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              '$addedCount added dish(es) may incur additional fees.',
+              style: const TextStyle(
+                color: AntdTokens.warning,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           for (final d in widget.cateringDishes)
             CheckboxListTile(

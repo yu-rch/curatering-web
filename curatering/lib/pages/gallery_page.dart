@@ -181,6 +181,37 @@ class _GalleryPageState extends State<GalleryPage> {
     );
   }
 
+  Widget _buildFilterDropdown({
+    required String title,
+    required String value,
+    required List<DropdownMenuItem<String>> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          initialValue: value,
+          isExpanded: true,
+          decoration: InputDecoration(
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+          ),
+          items: items,
+          onChanged: onChanged,
+        ),
+      ],
+    );
+  }
+
   Widget _buildGallerySearchField({required String hintText}) {
     return TextField(
       onChanged:
@@ -286,32 +317,24 @@ class _GalleryPageState extends State<GalleryPage> {
                 ),
               ],
             ),
-            _buildFilterChips(
+            _buildFilterDropdown(
               title: 'TAGS',
-              chips: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilterChip(
-                    label: const Text('ALL'),
-                    selected: _selectedGalleryTag == 'ALL',
-                    onSelected:
-                        (_) => setState(() => _selectedGalleryTag = 'ALL'),
-                  ),
-                ),
+              value:
+                  allTags.any(
+                        (tag) =>
+                            tag.toLowerCase() ==
+                            _selectedGalleryTag.toLowerCase(),
+                      )
+                      ? _selectedGalleryTag
+                      : 'ALL',
+              items: [
+                const DropdownMenuItem(value: 'ALL', child: Text('ALL')),
                 ...allTags.map(
-                  (tag) => Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      label: Text(tag),
-                      selected:
-                          _selectedGalleryTag.toLowerCase() ==
-                          tag.toLowerCase(),
-                      onSelected:
-                          (_) => setState(() => _selectedGalleryTag = tag),
-                    ),
-                  ),
+                  (tag) => DropdownMenuItem(value: tag, child: Text(tag)),
                 ),
               ],
+              onChanged:
+                  (tag) => setState(() => _selectedGalleryTag = tag ?? 'ALL'),
             ),
           ],
         ),
@@ -464,34 +487,30 @@ class _GalleryPageState extends State<GalleryPage> {
               allTags.isEmpty
                   ? const []
                   : [
-                    _buildFilterChips(
+                    _buildFilterDropdown(
                       title: 'TAGS',
-                      chips: [
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: FilterChip(
-                            label: const Text('ALL'),
-                            selected: _selectedGalleryTag == 'ALL',
-                            onSelected:
-                                (_) =>
-                                    setState(() => _selectedGalleryTag = 'ALL'),
-                          ),
+                      value:
+                          allTags.any(
+                                (tag) =>
+                                    tag.toLowerCase() ==
+                                    _selectedGalleryTag.toLowerCase(),
+                              )
+                              ? _selectedGalleryTag
+                              : 'ALL',
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'ALL',
+                          child: Text('ALL'),
                         ),
                         ...allTags.map(
-                          (tag) => Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: FilterChip(
-                              label: Text(tag),
-                              selected:
-                                  _selectedGalleryTag.toLowerCase() ==
-                                  tag.toLowerCase(),
-                              onSelected:
-                                  (_) =>
-                                      setState(() => _selectedGalleryTag = tag),
-                            ),
-                          ),
+                          (tag) =>
+                              DropdownMenuItem(value: tag, child: Text(tag)),
                         ),
                       ],
+                      onChanged:
+                          (tag) => setState(
+                            () => _selectedGalleryTag = tag ?? 'ALL',
+                          ),
                     ),
                   ],
         ),

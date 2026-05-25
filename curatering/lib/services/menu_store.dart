@@ -52,7 +52,9 @@ class MenuStore extends ChangeNotifier {
       _error = null;
       notifyListeners();
 
-      final decoded = await ApiClient.instance.getJson('/api/menu/dishes/with-images');
+      final decoded = await ApiClient.instance.getJson(
+        '/api/menu/dishes/with-images',
+      );
       final raw = decoded['dishes'];
 
       if (raw is! List) {
@@ -74,22 +76,24 @@ class MenuStore extends ChangeNotifier {
   // Load single dish with image
   Future<MenuDish?> loadDishWithImage(String dishId) async {
     try {
-      final decoded = await ApiClient.instance.getJson('/api/menu/dishes/$dishId/with-image');
+      final decoded = await ApiClient.instance.getJson(
+        '/api/menu/dishes/$dishId/with-image',
+      );
       final dishData = decoded['dish'];
-      
+
       if (dishData is! Map<String, dynamic>) {
         return null;
       }
-      
+
       final dish = _dishFromJson(dishData);
-      
+
       // Update the dish in the items list
       final index = _items.indexWhere((item) => item.id == dishId);
       if (index != -1) {
         _items[index] = dish;
         notifyListeners();
       }
-      
+
       return dish;
     } catch (e) {
       debugPrint('Error loading dish with image: $e');
@@ -99,29 +103,38 @@ class MenuStore extends ChangeNotifier {
 
   MenuDish _dishFromJson(Map<String, dynamic> json) {
     final rawPrice = json['price'];
-    final normalizedPrice = rawPrice == null
-        ? '0.00'
-        : rawPrice is String
-        ? rawPrice
-        : rawPrice.toString();
+    final normalizedPrice =
+        rawPrice == null
+            ? '0.00'
+            : rawPrice is String
+            ? rawPrice
+            : rawPrice.toString();
 
     return MenuDish(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       price: normalizedPrice,
+      additionalChargeAmount:
+          (json['menu_dishes_additional_charge_amount'] as num?)?.toDouble() ??
+          (json['additionalChargeAmount'] as num?)?.toDouble() ??
+          double.tryParse('${json['additional_charge_amount'] ?? ''}') ??
+          0,
       category: json['category'] as String? ?? 'catering',
       paxOptions: (json['pax_options'] as List<dynamic>?)?.cast<String>() ?? [],
       sauces: (json['sauces'] as List<dynamic>?)?.cast<String>() ?? [],
-      ingredients: (json['ingredients'] as List<dynamic>?)?.cast<String>() ?? [],
+      ingredients:
+          (json['ingredients'] as List<dynamic>?)?.cast<String>() ?? [],
       imageBase64: json['image_base64'] as String?,
       archived: json['archived'] as bool? ?? false,
       available: json['available'] as bool? ?? true,
-      archivedAt: json['archived_at'] != null
-          ? DateTime.tryParse(json['archived_at'] as String)
-          : null,
+      archivedAt:
+          json['archived_at'] != null
+              ? DateTime.tryParse(json['archived_at'] as String)
+              : null,
       type: json['type'] as String? ?? '',
-      mealType: (json['meal_type'] ?? json['mealType'] ?? json['type'] ?? '')
-          .toString(),
+      mealType:
+          (json['meal_type'] ?? json['mealType'] ?? json['type'] ?? '')
+              .toString(),
       setMenus: (json['set_menus'] as List<dynamic>?)?.cast<String>() ?? [],
       publicDescription: json['public_description'] as String? ?? '',
       allergens: json['allergens'] as String? ?? '',
@@ -140,6 +153,7 @@ class MenuStore extends ChangeNotifier {
   Future<void> addDish({
     required String name,
     required String price,
+    double additionalChargeAmount = 0,
     required List<String> paxOptions,
     String? imageBase64,
     String category = 'catering',
@@ -157,6 +171,8 @@ class MenuStore extends ChangeNotifier {
         body: {
           'name': name.trim(),
           'price': price.trim(),
+          'menuDishesAdditionalChargeAmount': additionalChargeAmount,
+          'additionalChargeAmount': additionalChargeAmount,
           'category': category,
           'paxOptions': paxOptions,
           'sauces': sauces,
@@ -169,7 +185,7 @@ class MenuStore extends ChangeNotifier {
           'allergens': allergens.trim(),
         },
       );
-      
+
       final newDish = _dishFromJson(decoded['dish'] as Map<String, dynamic>);
       _items = [..._items, newDish];
       notifyListeners();
@@ -183,6 +199,7 @@ class MenuStore extends ChangeNotifier {
     required String id,
     required String name,
     required String price,
+    double? additionalChargeAmount,
     required List<String> paxOptions,
     String? imageBase64,
     String? category,
@@ -196,13 +213,18 @@ class MenuStore extends ChangeNotifier {
   }) async {
     try {
       final idx = _items.indexWhere((d) => d.id == id);
+      final existingDish = idx >= 0 ? _items[idx] : null;
       final setMenusToKeep = idx >= 0 ? _items[idx].setMenus : <String>[];
+      final resolvedAdditionalCharge =
+          additionalChargeAmount ?? existingDish?.additionalChargeAmount ?? 0;
 
       final decoded = await ApiClient.instance.putJson(
         '/api/menu/dishes/$id',
         body: {
           'name': name.trim(),
           'price': price.trim(),
+          'menuDishesAdditionalChargeAmount': resolvedAdditionalCharge,
+          'additionalChargeAmount': resolvedAdditionalCharge,
           'category': category,
           'paxOptions': paxOptions,
           'sauces': sauces ?? [],
@@ -216,8 +238,10 @@ class MenuStore extends ChangeNotifier {
           'allergens': (allergens ?? '').trim(),
         },
       );
-      
-      final updatedDish = _dishFromJson(decoded['dish'] as Map<String, dynamic>);
+
+      final updatedDish = _dishFromJson(
+        decoded['dish'] as Map<String, dynamic>,
+      );
       _items = _items.map((d) => d.id == id ? updatedDish : d).toList();
       notifyListeners();
     } catch (e) {
@@ -226,12 +250,16 @@ class MenuStore extends ChangeNotifier {
     }
   }
 
-  Future<void> updateDishIngredients(String id, List<String> ingredients) async {
+  Future<void> updateDishIngredients(
+    String id,
+    List<String> ingredients,
+  ) async {
     final dish = _items.firstWhere((d) => d.id == id);
     await updateDish(
       id: id,
       name: dish.name,
       price: dish.price,
+      additionalChargeAmount: dish.additionalChargeAmount,
       paxOptions: dish.paxOptions,
       category: dish.category,
       sauces: dish.sauces,
@@ -251,8 +279,10 @@ class MenuStore extends ChangeNotifier {
         '/api/menu/dishes/$id/archive',
         body: {'archived': archived},
       );
-      
-      final updatedDish = _dishFromJson(decoded['dish'] as Map<String, dynamic>);
+
+      final updatedDish = _dishFromJson(
+        decoded['dish'] as Map<String, dynamic>,
+      );
       _items = _items.map((d) => d.id == id ? updatedDish : d).toList();
       notifyListeners();
     } catch (e) {
@@ -268,11 +298,13 @@ class MenuStore extends ChangeNotifier {
         '/api/menu/dishes/$dishId/add-to-set',
         body: {'setName': setName},
       );
-      
+
       // Update local dish
       final dishIndex = _items.indexWhere((d) => d.id == dishId);
       if (dishIndex != -1) {
-        final updatedSets = List<String>.from(decoded['setMenus'] as List<dynamic>);
+        final updatedSets = List<String>.from(
+          decoded['setMenus'] as List<dynamic>,
+        );
         _items[dishIndex] = _items[dishIndex].copyWith(setMenus: updatedSets);
         notifyListeners();
       }
@@ -289,11 +321,13 @@ class MenuStore extends ChangeNotifier {
         '/api/menu/dishes/$dishId/remove-from-set',
         body: {'setName': setName},
       );
-      
+
       // Update local dish
       final dishIndex = _items.indexWhere((d) => d.id == dishId);
       if (dishIndex != -1) {
-        final updatedSets = List<String>.from(decoded['setMenus'] as List<dynamic>);
+        final updatedSets = List<String>.from(
+          decoded['setMenus'] as List<dynamic>,
+        );
         _items[dishIndex] = _items[dishIndex].copyWith(setMenus: updatedSets);
         notifyListeners();
       }
@@ -303,4 +337,3 @@ class MenuStore extends ChangeNotifier {
     }
   }
 }
-
