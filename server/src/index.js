@@ -1856,7 +1856,7 @@ const AI_SERVICE_SEGMENT_TIMEOUT_RETRIES = Math.max(
 /** RunPod serverless — proxied so API keys never ship in the Flutter web bundle. */
 const RUNPOD_API_KEY = String(process.env.RUNPOD_API_KEY || "").trim();
 const RUNPOD_IMAGE_ENDPOINT_ID = String(
-  process.env.RUNPOD_IMAGE_ENDPOINT_ID || RUNPOD_ENDPOINT_ID,
+  process.env.RUNPOD_IMAGE_ENDPOINT_ID || process.env.RUNPOD_ENDPOINT_ID || "",
 ).trim();
 const RUNPOD_NLP_ENDPOINT_ID = String(
   process.env.RUNPOD_NLP_ENDPOINT_ID ||
