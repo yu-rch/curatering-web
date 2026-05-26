@@ -653,9 +653,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     }).toList(),
                               ),
                             ),
-                            // Redeem/Loyalty Banner
-                            _buildRedeemBanner(),
-                            const SizedBox(height: 16),
                             Divider(color: Colors.grey.shade200, height: 1),
                             Container(
                               padding: const EdgeInsets.all(16),
@@ -915,6 +912,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 24),
+                // Loyalty Rewards section below Notes
+                _buildRedeemBanner(),
               ],
             ),
           ),

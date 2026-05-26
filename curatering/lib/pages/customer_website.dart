@@ -728,7 +728,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   void _showSauceSelectionDialog(MenuDish dish) {
-    String? selectedSauce;
     int quantity = 1;
     final notesCtrl = TextEditingController();
 
@@ -795,18 +794,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                   Text(dish.allergens.trim(), style: TextStyle(fontSize: 12, color: Colors.red.shade700)),
                                 ],
                                 if (dish.sauces.isNotEmpty) ...[
-                                  const SizedBox(height: 12),
-                                  Text('Add-ons', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
-                                  ...dish.sauces.map(
-                                    (sauce) => RadioListTile<String>(
-                                      title: Text(sauce.toUpperCase(), style: GoogleFonts.poppins(fontSize: 13)),
-                                      value: sauce,
-                                      groupValue: selectedSauce,
-                                      onChanged: (value) => setDialogState(() => selectedSauce = value),
-                                      activeColor: Colors.amber.shade700,
-                                      dense: true,
-                                    ),
-                                  ),
+                                  const SizedBox(height: 10),
+                                  Text('Add-on: ${dish.sauces.first} (included)', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
                                 ],
                                 const SizedBox(height: 12),
                                 Text('Notes', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
@@ -849,13 +838,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     const SizedBox(width: 16),
                                     Expanded(
                                       child: ElevatedButton(
-                                        onPressed: dish.sauces.isEmpty || selectedSauce != null
-                                            ? () async {
+                                        onPressed: () async {
+                                              final sauce = dish.sauces.isNotEmpty ? dish.sauces.first : null;
                                               await _withLoadingDialog(
                                                 'Adding to tray...',
                                                 () async {
                                                   for (int j = 0; j < quantity; j++) {
-                                                    CartStore.instance.addItem(dish, selectedSauce: selectedSauce);
+                                                    CartStore.instance.addItem(dish, selectedSauce: sauce);
                                                   }
                                                 },
                                               );
@@ -870,8 +859,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                                   duration: const Duration(seconds: 2),
                                                 );
                                               });
-                                            }
-                                            : null,
+                                            },
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: Colors.amber.shade700,
                                           foregroundColor: Colors.white,
@@ -912,6 +900,35 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       return;
     }
     if (!mounted) return;
+
+    final totalAmount = CartStore.instance.totalAmount;
+    final itemCount = CartStore.instance.items.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text('Proceed to Checkout?'),
+        content: Text(
+          'Total ₱${totalAmount.toStringAsFixed(2)} — $itemCount item${itemCount > 1 ? 's' : ''} in your tray.\nProceed to checkout?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFC024),
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('Proceed'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
     final nav = navigator ?? Navigator.of(context, rootNavigator: true);
     if (!nav.mounted) {
       debugPrint('_navigateToCheckout: navigator not mounted');
@@ -3294,30 +3311,33 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  // Dishes grid
-                  if (dishes.isEmpty)
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(32),
-                        child: Text(
-                          'No dishes available',
-                          style: TextStyle(color: Colors.grey, fontSize: 16),
-                        ),
-                      ),
-                    )
-                  else
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 5,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 10,
-                            childAspectRatio: 0.70,
+                  // Dishes grid with smooth transition
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: dishes.isEmpty
+                      ? const Center(
+                          key: ValueKey('empty'),
+                          child: Padding(
+                            padding: EdgeInsets.all(32),
+                            child: Text(
+                              'No dishes available',
+                              style: TextStyle(color: Colors.grey, fontSize: 16),
+                            ),
                           ),
-                      itemCount: dishes.length,
-                      itemBuilder: (ctx, i) {
+                        )
+                      : GridView.builder(
+                          key: ValueKey(_selectedRestaurantType),
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 5,
+                                crossAxisSpacing: 10,
+                                mainAxisSpacing: 10,
+                                childAspectRatio: 0.70,
+                              ),
+                          itemCount: dishes.length,
+                          itemBuilder: (ctx, i) {
                         final d = dishes[i];
                         return Card(
                           elevation: 2,
@@ -3367,18 +3387,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       const SizedBox(height: 4),
-                                      Text(
-                                        d.sauces.isNotEmpty
-                                            ? d.sauces.join(', ').toUpperCase()
-                                            : '',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontSize: 9,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
                                       const SizedBox(height: 4),
                                       Text(
                                         '₱${d.price}',
@@ -3428,6 +3436,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         );
                       },
                     ),
+                  ),
                 ],
               ),
             ),
