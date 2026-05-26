@@ -401,7 +401,29 @@ class _ThemeTemplate {
 }
 
 class _ManageEventsState extends State<ManageEvents>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
+  late TabController _tabController;
+  bool _showNewEventForm = false;
+
+  static const _stageKeys = [
+    'new_event',
+    'online_inquiries',
+    'for_down_payment',
+    'on_going',
+    'for_full_payment',
+    'completed',
+    'cancelled',
+  ];
+  static const _stageLabels = [
+    'New Event',
+    'Online Inquiries',
+    'For Down Payment',
+    'On Going',
+    'For Full Payment',
+    'Completed',
+    'Cancelled',
+  ];
+
   final TextEditingController _eventSearchController = TextEditingController();
   final TextEditingController _inquirySearchController =
       TextEditingController();
@@ -435,19 +457,35 @@ class _ManageEventsState extends State<ManageEvents>
   List<EventOrderDto> _processingOrdersDto = const <EventOrderDto>[];
   List<EventOrderDto> _postAnalysisOrdersDto = const <EventOrderDto>[];
   List<EventOrderDto> _completedOrdersDto = const <EventOrderDto>[];
+  List<EventOrderDto> _cancelledOrdersDto = const <EventOrderDto>[];
   EventOrderDto? _selectedOnlineInquiryOrder;
   Role? _lastLoadedRole;
 
   @override
   void initState() {
     super.initState();
+    final role = AuthSession.instance.currentRole;
+    final initialTab = role == Role.supervisor ? 3 : 0;
+    _tabController = TabController(
+      length: 7,
+      vsync: this,
+      initialIndex: initialTab,
+    );
+    _tabController.addListener(() {
+      if (_tabController.indexIsChanging) return;
+      final idx = _tabController.index;
+      setState(() {
+        if (idx < EventStatus.values.length) {
+          _selectedStatus = EventStatus.values[idx];
+        }
+      });
+    });
     _allDishes = MenuStore.instance.activeDishes;
     MenuStore.instance.addListener(_onMenuStoreChanged);
     SetMenuStore.instance.loadSetMenus();
     _foodTabController = TabController(length: 2, vsync: this);
     _loadThemeTemplates();
     AuthSession.instance.currentUser.addListener(_handleAuthSessionChange);
-    final role = AuthSession.instance.currentRole;
     if (role == Role.supervisor) {
       _selectedStatus = EventStatus.ongoing;
     }
@@ -476,6 +514,7 @@ class _ManageEventsState extends State<ManageEvents>
 
   @override
   void dispose() {
+    _tabController.dispose();
     AuthSession.instance.currentUser.removeListener(_handleAuthSessionChange);
     MenuStore.instance.removeListener(_onMenuStoreChanged);
     _eventSearchController.dispose();
@@ -491,7 +530,18 @@ class _ManageEventsState extends State<ManageEvents>
     super.dispose();
   }
 
-  void _mutateTableState(VoidCallback fn) => setState(fn);
+  void _mutateTableState(VoidCallback fn) {
+    final oldStatus = _selectedStatus;
+    setState(fn);
+    if (_selectedStatus != oldStatus) {
+      final targetIndex = _selectedStatus.index;
+      if (targetIndex >= 0 &&
+          targetIndex < _tabController.length &&
+          targetIndex != _tabController.index) {
+        _tabController.animateTo(targetIndex);
+      }
+    }
+  }
 
   void _handleAuthSessionChange() {
     if (!mounted || _ordersLoading) return;
@@ -728,11 +778,11 @@ class _ManageEventsState extends State<ManageEvents>
       // print('DEBUG: Current role = $role'); // Debug line
 
       if (role == null) {
-        // print('DEBUG: Role is null, returning empty lists');
         _onlineInquiryOrders = const <EventOrderDto>[];
         _processingOrdersDto = const <EventOrderDto>[];
         _postAnalysisOrdersDto = const <EventOrderDto>[];
         _completedOrdersDto = const <EventOrderDto>[];
+        _cancelledOrdersDto = const <EventOrderDto>[];
         _selectedOnlineInquiryOrder = null;
         return;
       }
@@ -769,6 +819,11 @@ class _ManageEventsState extends State<ManageEvents>
             roleType: 'supervisor',
             compact: true,
           ),
+          EventsApi.instance.listOrders(
+            status: 'cancelled',
+            roleType: 'supervisor',
+            compact: true,
+          ),
         ]);
         _processingOrdersDto = [
           ...lists[0],
@@ -779,6 +834,7 @@ class _ManageEventsState extends State<ManageEvents>
         _onlineInquiryOrders = const <EventOrderDto>[];
         _postAnalysisOrdersDto = lists[4];
         _completedOrdersDto = lists[5];
+        _cancelledOrdersDto = lists[6];
       } else if (role == Role.manager || role == Role.superAdmin) {
         final lists = await Future.wait<List<EventOrderDto>>([
           EventsApi.instance.listOrders(
@@ -816,6 +872,11 @@ class _ManageEventsState extends State<ManageEvents>
             roleType: 'manager',
             compact: true,
           ),
+          EventsApi.instance.listOrders(
+            status: 'cancelled',
+            roleType: 'manager',
+            compact: true,
+          ),
         ]);
         _onlineInquiryOrders = lists[0];
         _processingOrdersDto = [
@@ -826,12 +887,13 @@ class _ManageEventsState extends State<ManageEvents>
         ];
         _postAnalysisOrdersDto = lists[5];
         _completedOrdersDto = lists[6];
+        _cancelledOrdersDto = lists[7];
       } else {
-        // print('DEBUG: Unknown role, returning empty lists');
         _onlineInquiryOrders = const <EventOrderDto>[];
         _processingOrdersDto = const <EventOrderDto>[];
         _postAnalysisOrdersDto = const <EventOrderDto>[];
         _completedOrdersDto = const <EventOrderDto>[];
+        _cancelledOrdersDto = const <EventOrderDto>[];
       }
       _selectedOnlineInquiryOrder = null;
       ManageEventsOrdersCache.instance.save(
@@ -843,12 +905,11 @@ class _ManageEventsState extends State<ManageEvents>
       );
     } catch (e) {
       ManageEventsOrdersCache.instance.clear();
-      // print('DEBUG: Error in _refreshOrders: $e'); // Debug line
-      // print('DEBUG: Error type: ${e.runtimeType}'); // Debug line
       _onlineInquiryOrders = const <EventOrderDto>[];
       _processingOrdersDto = const <EventOrderDto>[];
       _postAnalysisOrdersDto = const <EventOrderDto>[];
       _completedOrdersDto = const <EventOrderDto>[];
+      _cancelledOrdersDto = const <EventOrderDto>[];
       _selectedOnlineInquiryOrder = null;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -6860,104 +6921,245 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
+  List<EventOrderDto> get _newEventOrders => _processingOrdersDto.where((o) {
+        final s = o.status.trim().toLowerCase();
+        return s == 'new_event' || s == 'for_processing';
+      }).toList();
+
+  int _orderCountForTab(int tabIndex) {
+    switch (tabIndex) {
+      case 0:
+        return _newEventOrders.length;
+      case 1:
+        return _onlineInquiryOrders.length;
+      case 2:
+        return _downpaymentOrders.length;
+      case 3:
+        return _ongoingOrders.length;
+      case 4:
+        return _postAnalysisOrdersDto.length;
+      default:
+        return 0;
+    }
+  }
+
+  Widget _tabCountBadge(int count) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFC024),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        '$count',
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF242424),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNewEventTab(bool isNarrow) {
+    if (_showNewEventForm) {
+      return Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            color: Colors.grey.shade50,
+            child: Row(
+              children: [
+                TextButton.icon(
+                  onPressed: () => setState(() => _showNewEventForm = false),
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('Back to list'),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _buildBodyContent(EventStatus.newEvent, isNarrow),
+          ),
+        ],
+      );
+    }
+    final orders = _newEventOrders;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_isManager)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: () => setState(() => _showNewEventForm = true),
+                icon: const Icon(Icons.add_circle_outline),
+                label: const Text('CREATE NEW EVENT'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFFFC024),
+                  foregroundColor: Colors.black,
+                ),
+              ),
+            ),
+          ),
+        Expanded(
+          child: SingleChildScrollView(
+            child: _buildOrdersTablePanel(
+              title: 'New Events',
+              orders: orders,
+              emptyMessage: 'No new events.',
+              actionCells: (dto) => [
+                _eventIconAction(
+                  icon: Icons.visibility_outlined,
+                  tooltip: 'View details',
+                  permissionKey:
+                      ActionPermissionKeys.manageEventsViewDetails,
+                  onPressed: () => _showEventOrderDetailModal(dto),
+                ),
+                if (!_isSupervisor)
+                  _eventIconAction(
+                    icon: Icons.check_circle_outline,
+                    tooltip: 'Finalize',
+                    permissionKey:
+                        ActionPermissionKeys.manageEventsFinalize,
+                    onPressed: () async {
+                      try {
+                        final full =
+                            await _resolveOrderForSelection(dto);
+                        if (!mounted) return;
+                        await _openFinalizeOnlineInquiryDialog(full);
+                      } catch (e) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content:
+                                Text('Could not open finalize: $e'),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCancelledTab(bool isNarrow) {
+    return SingleChildScrollView(
+      child: _buildOrdersTablePanel(
+        title: 'Cancelled',
+        orders: _cancelledOrdersDto,
+        emptyMessage: 'No cancelled events.',
+        actionCells: (dto) => [
+          _eventIconAction(
+            icon: Icons.visibility_outlined,
+            tooltip: 'View details',
+            permissionKey: ActionPermissionKeys.manageEventsViewDetails,
+            onPressed: () => _showEventOrderDetailModal(dto),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AppScaffold(
-      showSearch: false,
-      child: Container(
-        color: const Color(0xFFF7F8FA),
-        padding: const EdgeInsets.all(20),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final isNarrow = constraints.maxWidth < 1100;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Manage Events',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF1F1F1F),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Track inquiries, process events, and finalize outcomes.',
-                  style: TextStyle(color: Colors.grey.shade700),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: Colors.black.withValues(alpha: 0.08),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 1100;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              color: const Color(0xFF242424),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              child: Row(
+                children: [
+                  Text(
+                    _stageLabels[_tabController.index].toUpperCase(),
+                    style: const TextStyle(
+                      color: Color(0xFFFFC024),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                      letterSpacing: 1.2,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
                   ),
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Refresh',
+                    onPressed:
+                        _ordersLoading ? null : _refreshOrdersFromButton,
+                    icon: _ordersLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFFFFC024),
+                            ),
+                          )
+                        : const Icon(
+                            Icons.refresh,
+                            color: Color(0xFFFFC024),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            Material(
+              color: Colors.white,
+              elevation: 2,
+              shadowColor: Colors.black26,
+              child: TabBar(
+                controller: _tabController,
+                isScrollable: true,
+                indicatorColor: const Color(0xFFFFC024),
+                labelColor: const Color(0xFFFFC024),
+                unselectedLabelColor: Colors.grey.shade700,
+                tabAlignment: TabAlignment.start,
+                tabs: List.generate(_stageLabels.length, (i) {
+                  final count = _orderCountForTab(i);
+                  return Tab(
                     child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (!_isSupervisor) ...[
-                          _buildEventTabButton('New Event', 0),
-                          const SizedBox(width: 2),
-                          _buildEventTabButton('Online Inquiries', 1),
-                          const SizedBox(width: 2),
-                          _buildEventTabButton('For Downpayment', 2),
-                          const SizedBox(width: 2),
-                        ],
-                        _buildEventTabButton('Ongoing', 3),
-                        if (!_isSupervisor) ...[
-                          const SizedBox(width: 2),
-                          _buildEventTabButton('For Full Payment', 4),
-                          const SizedBox(width: 2),
-                          _buildEventTabButton('Completed', 5),
+                        Text(_stageLabels[i]),
+                        if (i <= 4 && count > 0) ...[
+                          const SizedBox(width: 6),
+                          _tabCountBadge(count),
                         ],
                       ],
                     ),
-                  ),
+                  );
+                }),
+              ),
+            ),
+            Expanded(
+              child: Container(
+                color: const Color(0xFFF7F8FA),
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildNewEventTab(isNarrow),
+                    _buildOnlineInquiriesView(isNarrow),
+                    _buildForDownpaymentTableView(isNarrow),
+                    _buildOngoingTableView(isNarrow),
+                    _buildForFullPaymentTableView(isNarrow),
+                    _buildCompletedEventsView(isNarrow),
+                    _buildCancelledTab(isNarrow),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child:
-                      _selectedStatus.index == 0
-                          ? _buildBodyContent(EventStatus.newEvent, isNarrow)
-                          : _selectedStatus.index == 1
-                          ? _buildBodyContent(
-                            EventStatus.onlineInquiries,
-                            isNarrow,
-                          )
-                          : _selectedStatus.index == 2
-                          ? _buildBodyContent(
-                            EventStatus.forDownpayment,
-                            isNarrow,
-                          )
-                          : _selectedStatus.index == 3
-                          ? _buildBodyContent(EventStatus.ongoing, isNarrow)
-                          : _selectedStatus.index == 4
-                          ? _buildBodyContent(
-                            EventStatus.forFullPayment,
-                            isNarrow,
-                          )
-                          : _buildBodyContent(EventStatus.completed, isNarrow),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

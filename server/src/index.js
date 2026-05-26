@@ -1,4 +1,4 @@
-import "dotenv/config";
+﻿import "dotenv/config";
 import crypto from "node:crypto";
 import dns from "node:dns";
 import express from "express";
@@ -68,7 +68,7 @@ import {
   getTrayDraftItemsByCustomerId,
   clearTrayDraftForCustomer,
 } from "./tray_drafts_api.js";
-import { customerIdFromRequest } from "./customer_auth.js";
+import { customerIdFromRequest, resolveCustomerAccountCustomerId } from "./customer_auth.js";
 import { createPublicRateLimiter } from "./public_rate_limit.js";
 import {
   ensureRestaurantPosColumns,
@@ -326,7 +326,7 @@ function normalizeRunpodInput(input) {
     const maxLen = Number(process.env.RUNPOD_MAX_INIT_IMAGE_B64_LEN || 8_000_000);
     if (s.length > maxLen) {
       const err = new Error(
-        `init_image_base64 exceeds ${maxLen} characters — use a smaller venue photo`,
+        `init_image_base64 exceeds ${maxLen} characters â€” use a smaller venue photo`,
       );
       err.code = "payload_too_large";
       throw err;
@@ -549,7 +549,7 @@ async function handleRunpodImageStatus(req, res) {
   }
 }
 
-/** Public image proxy to RunPod — API key stays in server env (Railway). */
+/** Public image proxy to RunPod â€” API key stays in server env (Railway). */
 app.post("/api/public/runpod/run", publicRateLimit, handleRunpodImageRun);
 app.get("/api/public/runpod/status/:jobId", handleRunpodImageStatus);
 app.post("/api/public/runpod/image/run", publicRateLimit, handleRunpodImageRun);
@@ -1832,7 +1832,7 @@ const sql = connectionString
 
 if (!connectionString) {
   console.error(
-    "[startup] DATABASE_URL is not set — link Postgres on Railway or set DATABASE_URL in service variables.",
+    "[startup] DATABASE_URL is not set â€” link Postgres on Railway or set DATABASE_URL in service variables.",
   );
 }
 
@@ -1854,7 +1854,7 @@ const AI_SERVICE_SEGMENT_TIMEOUT_RETRIES = Math.max(
   Number(process.env.AI_SERVICE_SEGMENT_TIMEOUT_RETRIES || 1),
 );
 
-/** RunPod serverless — proxied so API keys never ship in the Flutter web bundle. */
+/** RunPod serverless â€” proxied so API keys never ship in the Flutter web bundle. */
 const RUNPOD_API_KEY = String(process.env.RUNPOD_API_KEY || "").trim();
 const RUNPOD_IMAGE_ENDPOINT_ID = String(
   process.env.RUNPOD_IMAGE_ENDPOINT_ID || process.env.RUNPOD_ENDPOINT_ID || "",
@@ -1941,7 +1941,7 @@ function resolveThemeTintColor(prompt, fallback = "#f4511e") {
   return String(fallback || "#f4511e").toLowerCase();
 }
 
-/** Large base64 theme boards — omit from list endpoints; client loads full order by id for detail. */
+/** Large base64 theme boards â€” omit from list endpoints; client loads full order by id for detail. */
 function compactEventOrderRow(row) {
   const out = { ...row };
   const td = out.themeDesign;
@@ -2005,7 +2005,7 @@ const SEATING_MAX_TABLES = 40;
 const SEATING_MAX_SEATS = 1200;
 const SEATING_MAX_FLOOR_B64_CHARS = 1_500_000;
 
-/** Preset venue footprints (client “shape placer”); must match Flutter `kVenueFloorShapeOptions`. */
+/** Preset venue footprints (client â€œshape placerâ€); must match Flutter `kVenueFloorShapeOptions`. */
 const SEATING_VENUE_FLOOR_SHAPES = new Set([
   "banquet_rect",
   "theater",
@@ -2946,7 +2946,7 @@ async function sendCustomerNotificationEmail({ to, subject, text, html, attachme
   if (!to) return;
   if (!isEmailConfigured()) {
     console.warn(
-      "[email] Skipping notification — set RESEND_API_KEY and RESEND_FROM on this host",
+      "[email] Skipping notification â€” set RESEND_API_KEY and RESEND_FROM on this host",
     );
     return;
   }
@@ -2960,7 +2960,7 @@ async function sendCustomerNotificationEmail({ to, subject, text, html, attachme
   }
 }
 
-/** Fire-and-forget — never block API responses on SMTP. */
+/** Fire-and-forget â€” never block API responses on SMTP. */
 function sendCustomerNotificationEmailAsync(payload) {
   void sendCustomerNotificationEmail(payload);
 }
@@ -4247,7 +4247,7 @@ app.post("/api/super-admin/users", authRequired, requireSuperAdmin, async (req, 
           );
           if (cnt.rows[0].n >= Number(cap)) {
             return res.status(400).json({
-              message: `Role limit reached: at most ${Number(cap)} active ${role} account(s). Raise the cap under Manage Accounts → Role limits.`,
+              message: `Role limit reached: at most ${Number(cap)} active ${role} account(s). Raise the cap under Manage Accounts â†’ Role limits.`,
             });
           }
         }
@@ -4681,15 +4681,15 @@ function buildHeuristicFeedbackAnalysis(feedbacks) {
   const withRemarks = feedbacks.filter((f) => String(f.remarks || "").trim().length > 0);
 
   const summary = `Based on ${count} review(s), average rating is ${avg != null ? avg.toFixed(1) : "n/a"} stars. `
-    + `${high.length} positive (4–5★), ${low.length} critical (1–2★), ${withRemarks.length} included written remarks.`;
+    + `${high.length} positive (4â€“5â˜…), ${low.length} critical (1â€“2â˜…), ${withRemarks.length} included written remarks.`;
 
   let interpretation = "Overall sentiment appears ";
   if (avg != null) {
-    if (avg >= 4.2) interpretation += "strong — customers are generally satisfied.";
-    else if (avg >= 3.5) interpretation += "mixed — some areas may need attention.";
-    else interpretation += "weak — investigate recurring complaints in remarks.";
+    if (avg >= 4.2) interpretation += "strong â€” customers are generally satisfied.";
+    else if (avg >= 3.5) interpretation += "mixed â€” some areas may need attention.";
+    else interpretation += "weak â€” investigate recurring complaints in remarks.";
   } else {
-    interpretation += "unclear — star ratings are missing on some rows.";
+    interpretation += "unclear â€” star ratings are missing on some rows.";
   }
 
   const recommendations = [];
@@ -4708,7 +4708,7 @@ function buildHeuristicFeedbackAnalysis(feedbacks) {
   );
   if (avg != null && avg < 4) {
     recommendations.push(
-      "Consider a short customer recovery offer (discount or free item) for 1–2★ orders within 48 hours.",
+      "Consider a short customer recovery offer (discount or free item) for 1â€“2â˜… orders within 48 hours.",
     );
   }
 
@@ -5190,7 +5190,7 @@ function isNonEmptyWebsiteContent(content) {
   );
 }
 
-/** One-time / lazy migration: legacy rows and website-content.json → canonical row. */
+/** One-time / lazy migration: legacy rows and website-content.json â†’ canonical row. */
 async function migrateWebsiteContentIfNeeded() {
   try {
     const canonical = await pool.query(
@@ -5214,7 +5214,7 @@ async function migrateWebsiteContentIfNeeded() {
 
     if (legacy.rows.length > 0 && isNonEmptyWebsiteContent(legacy.rows[0].content)) {
       await writeWebsiteContent(legacy.rows[0].content);
-      console.log("[website-content] Migrated legacy DB row → canonical id");
+      console.log("[website-content] Migrated legacy DB row â†’ canonical id");
       return;
     }
 
@@ -6760,7 +6760,7 @@ app.post(
               `Hello ${customerDisplayName},\n\n` +
               `Your catering inquiry (${orderId}) has been updated with a revised cost estimation.\n` +
               `Estimated total: PHP ${Number(totalCost || 0).toFixed(2)}.\n` +
-              `Labor: PHP ${laborCost.toFixed(2)} · Travel: PHP ${travelCost.toFixed(2)}.\n\n` +
+              `Labor: PHP ${laborCost.toFixed(2)} Â· Travel: PHP ${travelCost.toFixed(2)}.\n\n` +
               `Please review your inquiry details in Curatering.\n\n` +
               `- Curatering Team`,
           });
@@ -7223,7 +7223,7 @@ app.put(
   },
 );
 
-// Debug endpoints — development only
+// Debug endpoints â€” development only
 if (process.env.NODE_ENV !== "production") {
 app.get("/api/debug/test-account", async (req, res) => {
   try {
@@ -7478,7 +7478,7 @@ async function seedSuperAdminIfNeeded() {
   if (!email || !password) {
     if (process.env.NODE_ENV === "production") {
       console.warn(
-        "[startup] SEED_SUPER_ADMIN_EMAIL/PASSWORD not set — skipping default admin seed in production",
+        "[startup] SEED_SUPER_ADMIN_EMAIL/PASSWORD not set â€” skipping default admin seed in production",
       );
       return;
     }
@@ -7499,7 +7499,7 @@ async function seedSuperAdminIfNeeded() {
         [userId, testEmail, passwordHash, testFullName],
       );
       console.warn(
-        "[startup] Created dev super-admin admin@curatering.test / admin123 — set SEED_SUPER_ADMIN_* in production",
+        "[startup] Created dev super-admin admin@curatering.test / admin123 â€” set SEED_SUPER_ADMIN_* in production",
       );
     }
     return;
@@ -7532,8 +7532,8 @@ async function resolveRestaurantOrderEmail(order) {
   }
   if (!order.customer_id) return null;
   const r = await pool.query(
-    'SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1',
-    [order.customer_id],
+    `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1`,
+    [String(order.customer_id)],
   );
   return r.rowCount > 0 ? r.rows[0].email : null;
 }
@@ -7580,7 +7580,7 @@ let authSchemaPromise = Promise.resolve();
 
 function scheduleBootstrapRetry() {
   if (process.env.DB_INIT_FATAL === '1') {
-    console.error('[startup] DB_INIT_FATAL=1 — not scheduling retry');
+    console.error('[startup] DB_INIT_FATAL=1 â€” not scheduling retry');
     return;
   }
   if (bootstrapRetryTimer) return;
@@ -7615,7 +7615,7 @@ function runDatabaseBootstrap() {
     }))
     .then(() => {
       dbReady = true;
-      console.log('[startup] Auth schema ready — customer login enabled');
+      console.log('[startup] Auth schema ready â€” customer login enabled');
       return runInitDbWithRetries();
     })
     .then(() => seedSuperAdminIfNeeded())
@@ -7851,8 +7851,8 @@ async function registerRoutesAfterDbInit() {
           const eventLabel =
             (row.event_title || row.customer_name || 'your event').toString();
           const subject = isDown
-            ? `Order summary (down payment) — ${eventLabel}`
-            : `Order summary — ${eventLabel}`;
+            ? `Order summary (down payment) â€” ${eventLabel}`
+            : `Order summary â€” ${eventLabel}`;
           const text =
             `Hello,\n\n` +
             `Please find your order summary attached for ${eventLabel}.\n\n` +
@@ -8867,8 +8867,8 @@ async function registerRoutesAfterDbInit() {
         // For logged-in customers, fetch their email from account if not provided
         if (customerId && !orderEmail) {
           const acctRow = await pool.query(
-            'SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1',
-            [customerId],
+            `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1`,
+            [String(customerId)],
           );
           if (acctRow.rows[0]?.email) {
             orderEmail = String(acctRow.rows[0].email).trim().toLowerCase();
@@ -9014,8 +9014,8 @@ async function registerRoutesAfterDbInit() {
         const notifyEmail = customerId
           ? (
               await pool.query(
-                'SELECT email, full_name FROM customer_accounts WHERE id = $1 LIMIT 1',
-                [customerId],
+                `SELECT email, full_name FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1`,
+                [String(customerId)],
               )
             ).rows[0]?.email
           : orderEmail;
@@ -9421,7 +9421,7 @@ async function registerRoutesAfterDbInit() {
         const selectSql = buildRestaurantOrderSelectSql(roCols);
 
         const acct = await pool.query(
-          'SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1',
+          'SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1',
           [req.customer.id],
         );
         const customerEmail =
@@ -10601,7 +10601,7 @@ async function registerRoutesAfterDbInit() {
         await ensureCateringEventOrdersCanonicalColumns();
         const customerId = req.customer.id;
         const customerResult = await pool.query(
-          `SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1;`,
+          `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1;`,
           [customerId]
         );
         if (customerResult.rowCount === 0) {
@@ -10631,7 +10631,7 @@ async function registerRoutesAfterDbInit() {
           const customerId = req.customer.id;
           const { orderId } = req.params;
           const cr = await pool.query(
-            `SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1`,
+            `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1`,
             [customerId],
           );
           if (cr.rowCount === 0) {
@@ -10677,7 +10677,7 @@ async function registerRoutesAfterDbInit() {
           return res.status(400).json({ error: n.error });
         }
         const cr = await pool.query(
-          `SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1`,
+          `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1`,
           [customerId],
         );
         if (cr.rowCount === 0) {
@@ -10732,7 +10732,7 @@ async function registerRoutesAfterDbInit() {
         }
 
         const customerResult = await pool.query(
-          `SELECT email, full_name FROM customer_accounts WHERE id = $1 LIMIT 1;`,
+          `SELECT email, full_name FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1;`,
           [customerId]
         );
         if (customerResult.rowCount === 0) {
@@ -10819,7 +10819,7 @@ async function registerRoutesAfterDbInit() {
         }
 
         const customerResult = await pool.query(
-          `SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1;`,
+          `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1;`,
           [customerId]
         );
         if (customerResult.rowCount === 0) {
@@ -10965,7 +10965,7 @@ async function registerRoutesAfterDbInit() {
         const customerId = req.customer.id;
 
         const accountResult = await pool.query(
-          `SELECT * FROM customer_accounts WHERE id = $1`,
+          `SELECT * FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1`,
           [customerId],
         );
 
@@ -11096,7 +11096,7 @@ async function registerRoutesAfterDbInit() {
 
         // Get current password hash
         const result = await pool.query(
-          'SELECT password_hash FROM customer_accounts WHERE id = $1',
+          'SELECT password_hash FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1',
           [customerId]
         );
 

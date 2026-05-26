@@ -465,7 +465,7 @@ async function createStaffCateringOrder(pool, body) {
 }
 
 const CASHIER_ONLINE_ORDER_WHERE = `
-  (COALESCE(order_source, 'WEB_APP') IN ('WEB_APP', 'MOBILE_APP'))
+  COALESCE(order_source, 'WEB_APP') NOT IN ('POS_MOBILE', 'POS_WEB')
   AND (
     user_email IS NOT NULL AND trim(user_email) <> ''
     OR customer_id IS NOT NULL
@@ -683,9 +683,9 @@ export function registerPosRoutes(app, {
               `UPDATE customer_accounts
                SET restaurant_loyalty_points = COALESCE(restaurant_loyalty_points, 0) + $2,
                    updated_at = now()
-               WHERE id = $1`,
-              [order.customer_id, points],
-            );
+               WHERE id::text = $1 OR customer_id::text = $1`,
+              [String(order.customer_id), points],
+            ).catch(() => {});
           }
         }
         const email = await resolveRestaurantOrderEmail(order);
@@ -737,13 +737,15 @@ export function registerPosRoutes(app, {
            order_status, payment_method,
            order_source, pos_customer_label, payment_proof,
            payment_uploaded, cashier_amount_received_initial, amount_paid,
-           change_given, pos_claimed_at, note
+           change_given, pos_claimed_at, note,
+           submitted_order_dt_stamp, last_updated_order_status_dt_stamp
          ) VALUES (
            $1, $2, '', ${itemsSql}, $4,
            'Walk-in', NULL, NULL,
            'IN_PREPARATION', $5,
            'POS_WEB', $6, $7,
-           $10, $8, $8, $9, now(), $11
+           $10, $8, $8, $9, now(), $11,
+           now(), now()
          )
          RETURNING *`,
         [

@@ -143,6 +143,12 @@ class CashierPosApi {
     return _asOrderList(data);
   }
 
+  Future<Map<String, dynamic>> getOrderDetail(dynamic orderId) async {
+    final data = await _post('/api/cashier/pos/online-orders/$orderId/detail');
+    if (data is Map) return Map<String, dynamic>.from(data);
+    throw Exception('Invalid order detail response');
+  }
+
   Future<List<Map<String, dynamic>>> loadMenu() async {
     final res = await http.get(Uri.parse('$apiBaseUrl/api/mobile/menu'));
     if (res.statusCode != 200) throw Exception(_errorMessage(res));

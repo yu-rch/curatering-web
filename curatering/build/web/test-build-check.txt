@@ -1,0 +1,1 @@
+BUILD OK - This is the fresh build from 2026-05-26 session. If you can see this file at http://localhost:3000/test-build-check.txt then the server IS serving the correct build folder.

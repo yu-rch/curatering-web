@@ -1093,6 +1093,14 @@ export async function initDb() {
     console.log('Migration check for event_orders points_earned:', err.message);
   }
 
+  // Migration: Add include_minimal_event_styling column to catering_orders
+  try {
+    await pool.query(`ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS include_minimal_event_styling BOOLEAN DEFAULT FALSE`);
+    console.log('Migration: Added include_minimal_event_styling column to catering_orders');
+  } catch (err) {
+    console.log('Migration check for catering_orders include_minimal_event_styling:', err.message);
+  }
+
 
   try {
     await pool.query(
