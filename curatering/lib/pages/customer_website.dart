@@ -18,7 +18,6 @@ import '../models/menu_dish.dart';
 import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
 import '../services/public_events_api.dart';
-import '../services/customer_design_board_store.dart';
 import '../services/website_content_store.dart';
 import '../services/cart_store.dart';
 import '../services/loyalty_rewards_store.dart';
@@ -1131,9 +1130,20 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
+  void _goToCustomerPage(String path) {
+    Navigator.pushReplacementNamed(context, customerRoute(path));
+  }
+
+  Widget _footerPageLink(String label, String path) {
+    return TextButton(
+      onPressed: () => _goToCustomerPage(path),
+      child: Text(label, style: const TextStyle(color: Color(0xFFF5F7F9))),
+    );
+  }
+
   Widget _footer(WebsiteContentStore w) {
     return Container(
-      color: const Color(0xFFFFC107),
+      color: const Color(0xFF242424),
       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -1177,46 +1187,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextButton(
-                  onPressed: () => setState(() => _navIndex = 1),
-                  child: const Text(
-                    'GALLERY',
-                    style: TextStyle(color: Colors.black),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => _navIndex = 2),
-                  child: const Text(
-                    'MENU',
-                    style: TextStyle(color: Colors.black),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => _navIndex = 3),
-                  child: const Text(
-                    'RESTAURANT',
-                    style: TextStyle(color: Colors.black),
-                  ),
-                ),
+                _footerPageLink('GALLERY', '/gallery'),
+                _footerPageLink('MENU', '/catering-menu'),
+                _footerPageLink('RESTAURANT', '/restaurant'),
               ],
             ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextButton(
-                  onPressed: () => setState(() => _navIndex = 4),
-                  child: const Text(
-                    'INQUIRE NOW',
-                    style: TextStyle(color: Colors.black),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => _navIndex = 5),
-                  child: const Text(
-                    'CONTACT US',
-                    style: TextStyle(color: Colors.black),
-                  ),
-                ),
+                _footerPageLink('INQUIRE NOW', '/inquire'),
+                _footerPageLink('CONTACT US', '/contact-us'),
                 TextButton(
                   onPressed:
                       () => showCustomerFooterFeedback(
@@ -1226,7 +1206,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       ),
                   child: const Text(
                     'FEEDBACK',
-                    style: TextStyle(color: Colors.black),
+                    style: TextStyle(color: const Color(0xFFF5F7F9)),
                   ),
                 ),
               ],
@@ -1627,25 +1607,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
-  Future<void> _saveLatestEventToDesignBoard(WebsiteContentStore w) async {
-    if (w.latestEventCollageBase64.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No event photos to save yet.')),
-      );
-      return;
-    }
-    await CustomerDesignBoardStore.instance.addPhotos(
-      w.latestEventCollageBase64,
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Saved to your design board.'),
-        backgroundColor: Color(0xFF1DB954),
-      ),
-    );
-  }
-
   Widget _buildLatestEventSection(WebsiteContentStore w) {
     return Stack(
       children: [
@@ -1748,22 +1709,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           );
                         },
                       ),
-                      const SizedBox(height: 12),
-                      if (!widget.contentEditable)
-                        FilledButton(
-                          onPressed: () => _saveLatestEventToDesignBoard(w),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFC024),
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 12,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                   _editChip(() async {
