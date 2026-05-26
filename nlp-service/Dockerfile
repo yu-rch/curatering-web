@@ -42,4 +42,4 @@ ENTRYPOINT []
 # START RUNPOD HANDLER
 # =========================================================
 
-CMD ["python3", "-u", "handler.py"]
+CMD ["python3", "-u", "app/handler.py"]
