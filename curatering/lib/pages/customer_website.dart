@@ -571,6 +571,115 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     }
   }
 
+  void _showTrackOrderDialog() {
+    final orderNoCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    bool loading = false;
+    Map<String, dynamic>? result;
+    String? error;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.local_shipping, color: Colors.amber.shade700),
+              const SizedBox(width: 8),
+              Text('Track Your Order', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+            ],
+          ),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Enter your order number and phone number to track your order.', style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: orderNoCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Order Number',
+                    hintText: 'e.g. ORD-001',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    prefixIcon: const Icon(Icons.receipt_long),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: phoneCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Phone Number',
+                    hintText: 'e.g. 09123456789',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    prefixIcon: const Icon(Icons.phone),
+                  ),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(error!, style: TextStyle(color: Colors.red.shade700, fontSize: 12)),
+                ],
+                if (result != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Order #${result!['order_no'] ?? orderNoCtrl.text}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        Text('Status: ${result!['status'] ?? 'Unknown'}', style: TextStyle(color: Colors.grey.shade700)),
+                        if (result!['fulfillment_stage'] != null)
+                          Text('Stage: ${result!['fulfillment_stage']}', style: TextStyle(color: Colors.grey.shade700)),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+            if (result == null)
+              ElevatedButton(
+                onPressed: loading ? null : () async {
+                  if (orderNoCtrl.text.trim().isEmpty || phoneCtrl.text.trim().isEmpty) {
+                    setDialogState(() => error = 'Please fill in both fields');
+                    return;
+                  }
+                  setDialogState(() { loading = true; error = null; });
+                  try {
+                    final res = await http.get(
+                      Uri.parse('$apiBaseUrl/api/restaurant/orders/track?order_no=${Uri.encodeComponent(orderNoCtrl.text.trim())}&phone=${Uri.encodeComponent(phoneCtrl.text.trim())}'),
+                    ).timeout(const Duration(seconds: 15));
+                    if (res.statusCode == 200) {
+                      final data = jsonDecode(res.body);
+                      setDialogState(() { result = data is Map<String, dynamic> ? data : {'status': 'Found'}; loading = false; });
+                    } else {
+                      setDialogState(() { error = 'Order not found. Please check your details.'; loading = false; });
+                    }
+                  } catch (e) {
+                    setDialogState(() { error = 'Unable to track order. Please try again.'; loading = false; });
+                  }
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade700, foregroundColor: Colors.white),
+                child: loading ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('Track'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _onMenuChanged() {
     if (mounted) setState(() {});
     if (_isCustomerLoggedIn) {
@@ -620,140 +729,170 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   void _showSauceSelectionDialog(MenuDish dish) {
     String? selectedSauce;
+    int quantity = 1;
+    final notesCtrl = TextEditingController();
 
     showDialog(
       context: context,
       builder:
           (context) => StatefulBuilder(
             builder:
-                (context, setDialogState) => AlertDialog(
-                  title: Text(
-                    'Add to tray',
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                  ),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        dish.name,
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      if (dish.publicDescription.trim().isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Text(
-                          dish.publicDescription.trim(),
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey.shade800,
-                            height: 1.35,
-                          ),
-                        ),
-                      ],
-                      if (dish.ingredients.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Text(
-                          'Ingredients: ${dish.ingredients.join(', ')}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                      ],
-                      if (dish.allergens.trim().isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          'Allergens: ${dish.allergens.trim()}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.red.shade700,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      if (dish.sauces.isEmpty)
-                        const Text('No add-ons selected for this dish.')
-                      else
-                        ...dish.sauces.map(
-                          (sauce) => RadioListTile<String>(
-                            title: Text(
-                              sauce.toUpperCase(),
-                              style: GoogleFonts.poppins(fontSize: 13),
+                (context, setDialogState) => Dialog(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 480, maxHeight: 620),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Dish image
+                        if (dish.imageBase64 != null && dish.imageBase64!.isNotEmpty)
+                          ClipRRect(
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                            child: _b64Image(dish.imageBase64, fit: BoxFit.cover, height: 160),
+                          )
+                        else
+                          Container(
+                            height: 120,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade200,
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                             ),
-                            value: sauce,
-                            groupValue: selectedSauce,
-                            onChanged: (value) {
-                              setDialogState(() => selectedSauce = value);
-                            },
-                            activeColor: Colors.amber.shade700,
+                            child: const Icon(Icons.fastfood, size: 48, color: Colors.grey),
+                          ),
+                        // Content
+                        Flexible(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(dish.name, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 4),
+                                Text('₱${dish.price}', style: TextStyle(fontSize: 15, color: Colors.amber.shade800, fontWeight: FontWeight.w600)),
+                                if (dish.publicDescription.trim().isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  Text(dish.publicDescription.trim(), style: TextStyle(fontSize: 13, color: Colors.grey.shade800, height: 1.35)),
+                                ],
+                                if (dish.ingredients.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  Text('Ingredients', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+                                  const SizedBox(height: 4),
+                                  Wrap(
+                                    spacing: 6, runSpacing: 4,
+                                    children: dish.ingredients.map((ing) => Chip(
+                                      label: Text(ing, style: const TextStyle(fontSize: 11)),
+                                      visualDensity: VisualDensity.compact,
+                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    )).toList(),
+                                  ),
+                                ],
+                                if (dish.allergens.trim().isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  Text('Allergens', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.red.shade700)),
+                                  const SizedBox(height: 4),
+                                  Text(dish.allergens.trim(), style: TextStyle(fontSize: 12, color: Colors.red.shade700)),
+                                ],
+                                if (dish.sauces.isNotEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  Text('Add-ons', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+                                  ...dish.sauces.map(
+                                    (sauce) => RadioListTile<String>(
+                                      title: Text(sauce.toUpperCase(), style: GoogleFonts.poppins(fontSize: 13)),
+                                      value: sauce,
+                                      groupValue: selectedSauce,
+                                      onChanged: (value) => setDialogState(() => selectedSauce = value),
+                                      activeColor: Colors.amber.shade700,
+                                      dense: true,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 12),
+                                Text('Notes', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+                                const SizedBox(height: 4),
+                                TextField(
+                                  controller: notesCtrl,
+                                  decoration: InputDecoration(
+                                    hintText: 'Special instructions...',
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  ),
+                                  maxLines: 2,
+                                ),
+                                const SizedBox(height: 16),
+                                // Quantity and Add to Tray
+                                Row(
+                                  children: [
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        border: Border.all(color: Colors.grey.shade400),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.remove, size: 18),
+                                            onPressed: quantity > 1 ? () => setDialogState(() => quantity--) : null,
+                                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                          ),
+                                          Text('$quantity', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600)),
+                                          IconButton(
+                                            icon: const Icon(Icons.add, size: 18),
+                                            onPressed: () => setDialogState(() => quantity++),
+                                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: dish.sauces.isEmpty || selectedSauce != null
+                                            ? () async {
+                                              await _withLoadingDialog(
+                                                'Adding to tray...',
+                                                () async {
+                                                  for (int j = 0; j < quantity; j++) {
+                                                    CartStore.instance.addItem(dish, selectedSauce: selectedSauce);
+                                                  }
+                                                },
+                                              );
+                                              Navigator.pop(context);
+                                              final rootCtx = this.context;
+                                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                                if (!mounted) return;
+                                                showAppSnackBar(
+                                                  rootCtx,
+                                                  '${dish.name} x$quantity added to tray',
+                                                  icon: Icons.shopping_bag_outlined,
+                                                  duration: const Duration(seconds: 2),
+                                                );
+                                              });
+                                            }
+                                            : null,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.amber.shade700,
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(vertical: 14),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                        child: Text(
+                                          'ADD TO TRAY  ₱${((double.tryParse(dish.price) ?? 0) * quantity).toStringAsFixed(0)}',
+                                          style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                    ],
+                      ],
+                    ),
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text(
-                        'Cancel',
-                        style: GoogleFonts.poppins(color: Colors.grey.shade600),
-                      ),
-                    ),
-                    ElevatedButton(
-                      onPressed:
-                          dish.sauces.isEmpty || selectedSauce != null
-                              ? () async {
-                                final ok = await _confirmAction(
-                                  title: 'Add to tray?',
-                                  message:
-                                      selectedSauce == null
-                                          ? 'Add ${dish.name} to your tray?'
-                                          : 'Add ${dish.name} with $selectedSauce to your tray?',
-                                  confirmLabel: 'Add to tray',
-                                );
-                                if (!ok) return;
-                                await _withLoadingDialog(
-                                  'Adding to tray...',
-                                  () async {
-                                    CartStore.instance.addItem(
-                                      dish,
-                                      selectedSauce: selectedSauce,
-                                    );
-                                  },
-                                );
-                                Navigator.pop(context);
-                                final rootCtx = this.context;
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  if (!mounted) return;
-                                  showAppSnackBar(
-                                    rootCtx,
-                                    selectedSauce == null
-                                        ? '${dish.name} added to tray'
-                                        : '${dish.name} with $selectedSauce added to tray',
-                                    icon: Icons.shopping_bag_outlined,
-                                    duration: const Duration(seconds: 2),
-                                  );
-                                  _scaffoldKey.currentState?.openEndDrawer();
-                                });
-                              }
-                              : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.amber.shade700,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: Text(
-                        selectedSauce == null && dish.sauces.isEmpty
-                            ? 'Add to Tray'
-                            : 'Add to Tray',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
                 ),
           ),
     );
@@ -2987,16 +3126,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     final restaurantDishes =
         allDishes.where((d) {
           final category = d.category.trim().toLowerCase();
-          final isRestaurantCategory =
-              category == 'restaurant' ||
-              category == 'main_course' ||
-              category == 'noodles' ||
-              category == 'appetizer' ||
-              category == 'rice' ||
-              category == 'dessert' ||
-              category == 'drinks' ||
-              category == 'drink';
-          return isRestaurantCategory || d.effectiveMealType.isNotEmpty;
+          return category == 'restaurant';
         }).toList();
     final cartItems = CartStore.instance.items;
     final totalAmount = CartStore.instance.totalAmount;
@@ -3063,7 +3193,19 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           ),
                         ),
                       ),
-                      if (!_isCustomerLoggedIn)
+                      if (!_isCustomerLoggedIn) ...[
+                        OutlinedButton.icon(
+                          onPressed: _showTrackOrderDialog,
+                          icon: const Icon(Icons.local_shipping_outlined, size: 16),
+                          label: const Text('TRACK ORDER', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.amber.shade800,
+                            side: BorderSide(color: Colors.amber.shade700),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         ElevatedButton(
                           onPressed: _handleLogin,
                           style: ElevatedButton.styleFrom(
@@ -3085,6 +3227,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             ),
                           ),
                         ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -3246,37 +3389,36 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                         ),
                                       ),
                                       const SizedBox(height: 4),
-                                      if (_isCustomerLoggedIn)
-                                        SizedBox(
-                                          height: 28,
-                                          child: ElevatedButton(
-                                            onPressed:
-                                                d.available
-                                                    ? () => _addToCart(d)
-                                                    : null,
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor:
-                                                  d.available
-                                                      ? const Color(0xFF1E1E1E)
-                                                      : Colors.grey.shade500,
-                                              foregroundColor: Colors.white,
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 16,
-                                                  ),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
-                                              ),
-                                            ),
-                                            child: Text(
+                                      SizedBox(
+                                        height: 28,
+                                        child: ElevatedButton(
+                                          onPressed:
                                               d.available
-                                                  ? 'Add to tray'
-                                                  : 'Not Available',
-                                              style: TextStyle(fontSize: 11),
+                                                  ? () => _addToCart(d)
+                                                  : null,
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor:
+                                                d.available
+                                                    ? const Color(0xFF1E1E1E)
+                                                    : Colors.grey.shade500,
+                                            foregroundColor: Colors.white,
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                  horizontal: 16,
+                                                ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
                                             ),
                                           ),
+                                          child: Text(
+                                            d.available
+                                                ? 'Add to tray'
+                                                : 'Not Available',
+                                            style: TextStyle(fontSize: 11),
+                                          ),
                                         ),
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -3492,11 +3634,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                               ),
-                              child: Text(
-                                _isCustomerLoggedIn
-                                    ? 'CHECKOUT'
-                                    : 'LOG IN TO ORDER',
-                                style: const TextStyle(
+                              child: const Text(
+                                'CHECKOUT',
+                                style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                 ),

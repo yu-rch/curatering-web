@@ -9372,6 +9372,37 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
+    app.get('/api/restaurant/orders/track', async (req, res) => {
+      try {
+        const { order_no, phone } = req.query;
+        if (!order_no || !phone) {
+          return res.status(400).json({ error: 'order_no and phone are required' });
+        }
+        const result = await pool.query(
+          `SELECT order_id, order_status, fulfillment_stage, customer_name, delivery_address, created_at
+           FROM restaurant_orders
+           WHERE order_id = $1 AND phone = $2
+           LIMIT 1`,
+          [order_no.trim(), phone.trim()],
+        );
+        if (result.rowCount === 0) {
+          return res.status(404).json({ error: 'Order not found' });
+        }
+        const row = result.rows[0];
+        res.json({
+          order_no: row.order_id,
+          status: row.order_status,
+          fulfillment_stage: row.fulfillment_stage,
+          customer_name: row.customer_name,
+          delivery_address: row.delivery_address,
+          created_at: row.created_at,
+        });
+      } catch (error) {
+        console.error('[track-order]', error.message);
+        res.status(500).json({ error: 'Unable to track order' });
+      }
+    });
+
     app.get('/api/restaurant/orders', customerAuthRequired, async (req, res) => {
       try {
         const roCols = await ensureRestaurantOrdersCanonicalColumns();
