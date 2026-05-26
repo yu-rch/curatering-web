@@ -1,13 +1,23 @@
 import gc
 import json
 import os
-import re
 import traceback
+import time
 from datetime import datetime, timezone
+
+# =========================================================
+# ENV
+# =========================================================
 
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
+os.environ["CUDA_LAUNCH_BLOCKING"] = "0"
+
+# =========================================================
+# IMPORTS
+# =========================================================
 
 import runpod
 import torch
@@ -15,7 +25,7 @@ from supabase import create_client
 from vllm import LLM, SamplingParams
 
 # =========================================================
-# PERFORMANCE SETTINGS
+# PERFORMANCE
 # =========================================================
 
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -27,7 +37,7 @@ torch.set_float32_matmul_precision("high")
 
 MODEL_NAME = os.getenv(
     "NLP_MODEL_NAME",
-    "microsoft/Phi-3-mini-4k-instruct"
+    "mistralai/Mistral-7B-Instruct-v0.2"
 )
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -37,9 +47,7 @@ SUPABASE_KEY = (
 )
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError(
-        "Missing SUPABASE credentials"
-    )
+    raise ValueError("Missing Supabase credentials")
 
 supabase = create_client(
     SUPABASE_URL,
@@ -47,27 +55,45 @@ supabase = create_client(
 )
 
 # =========================================================
-# LOAD MODEL
+# MODEL
 # =========================================================
 
-print("====================================")
-print("Loading NLP model...")
-print("MODEL:", MODEL_NAME)
-print("CUDA:", torch.cuda.is_available())
+llm = None
 
-if torch.cuda.is_available():
-    print("GPU:", torch.cuda.get_device_name(0))
+def get_llm():
 
-print("====================================")
+    global llm
 
-llm = LLM(
-    model=MODEL_NAME,
-    dtype="float16",
-    gpu_memory_utilization=0.60,
-    max_model_len=1024,
-    trust_remote_code=True,
-    enforce_eager=True,
-)
+    if llm is None:
+
+        print("====================================")
+        print("Loading Mistral model...")
+        print("MODEL:", MODEL_NAME)
+        print("CUDA:", torch.cuda.is_available())
+
+        if torch.cuda.is_available():
+            print("GPU:", torch.cuda.get_device_name(0))
+
+        print("====================================")
+
+        llm = LLM(
+            model=MODEL_NAME,
+            dtype="float16",
+            gpu_memory_utilization=0.75,
+            max_model_len=2048,
+            trust_remote_code=True,
+            enforce_eager=False,
+        )
+
+        warmup()
+
+        print("Model loaded successfully")
+
+    return llm
+
+# =========================================================
+# SAMPLING
+# =========================================================
 
 sampling_params = SamplingParams(
     temperature=0.15,
@@ -75,14 +101,24 @@ sampling_params = SamplingParams(
     max_tokens=300,
 )
 
-print("NLP model loaded successfully.")
-
 # =========================================================
 # HELPERS
 # =========================================================
 
-def clean_text(value):
+def cleanup():
 
+    gc.collect()
+
+    if torch.cuda.is_available():
+
+        try:
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        except Exception:
+            pass
+
+
+def clean_text(value):
     return str(value or "").strip()
 
 
@@ -116,48 +152,67 @@ def extract_json(text):
 
     try:
         return json.loads(text)
-    except Exception:
-        pass
-
-    try:
-
-        match = re.search(
-            r"\{.*\}",
-            text,
-            re.DOTALL
-        )
-
-        if match:
-            return json.loads(match.group(0))
 
     except Exception:
         pass
+
+    start = text.find("{")
+    end = text.rfind("}")
+
+    if start != -1 and end != -1:
+
+        try:
+            return json.loads(
+                text[start:end + 1]
+            )
+
+        except Exception:
+            return None
 
     return None
 
 
-def cleanup():
+# =========================================================
+# WARMUP
+# =========================================================
 
-    gc.collect()
+def warmup():
 
-    if torch.cuda.is_available():
+    try:
 
-        try:
-            torch.cuda.empty_cache()
-        except Exception:
-            pass
+        print("Warming up model...")
+
+        get_llm().generate(
+            ['Return JSON: {"status":"ok"}'],
+            sampling_params
+        )
+
+        print("Warmup complete")
+
+    except Exception as e:
+
+        print("Warmup failed:", e)
 
 
 # =========================================================
-# MODEL GENERATION
+# GENERATION
 # =========================================================
 
 def generate_json(prompt):
 
-    outputs = llm.generate(
+    model = get_llm()
+
+    start = time.time()
+
+    outputs = model.generate(
         [prompt],
         sampling_params
     )
+
+    elapsed = time.time() - start
+
+    if elapsed > 25:
+        print(f"Slow generation: {elapsed:.2f}s")
 
     raw = outputs[0].outputs[0].text.strip()
 
@@ -169,7 +224,7 @@ def generate_json(prompt):
 
 
 # =========================================================
-# FEEDBACK ANALYSIS
+# FEEDBACK
 # =========================================================
 
 def build_feedback_prompt(feedbacks):
@@ -180,7 +235,7 @@ def build_feedback_prompt(feedbacks):
     ])
 
     return f"""
-<|user|>
+[INST]
 You are a customer feedback analysis AI.
 
 Return ONLY valid JSON.
@@ -196,8 +251,7 @@ Schema:
 
 Feedback:
 {combined}
-
-<|assistant|>
+[/INST]
 """.strip()
 
 
@@ -236,23 +290,14 @@ def normalize_feedback(parsed):
 
 
 # =========================================================
-# DASHBOARD ANALYSIS
+# DASHBOARD
 # =========================================================
 
 def build_dashboard_prompt(data):
 
     return f"""
-<|user|>
+[INST]
 You are an AI business intelligence assistant.
-
-Analyze:
-- sales
-- operations
-- order trends
-- customer behavior
-- revenue trends
-- risks
-- opportunities
 
 Return ONLY valid JSON.
 
@@ -271,10 +316,9 @@ Schema:
   ]
 }}
 
-Dashboard data:
+Dashboard Data:
 {json.dumps(data, ensure_ascii=False)}
-
-<|assistant|>
+[/INST]
 """.strip()
 
 
@@ -284,86 +328,36 @@ def normalize_dashboard(parsed):
         return None
 
     return {
-        "summary": clean_text(
-            parsed.get("summary")
-        ),
-        "insights": safe_list(
-            parsed.get("insights")
-        ),
-        "trends": safe_list(
-            parsed.get("trends")
-        ),
-        "problems": safe_list(
-            parsed.get("problems")
-        ),
-        "recommendations": safe_list(
-            parsed.get("recommendations")
-        ),
+        "summary": clean_text(parsed.get("summary")),
+        "insights": safe_list(parsed.get("insights")),
+        "trends": safe_list(parsed.get("trends")),
+        "problems": safe_list(parsed.get("problems")),
+        "recommendations": safe_list(parsed.get("recommendations")),
         "alerts": parsed.get("alerts") or [],
     }
 
 
 # =========================================================
-# EVENT PROMPT EXPANSION
+# EVENT PROMPT
 # =========================================================
 
 def fallback_prompt(data):
 
-    event_type = clean_text(
-        data.get("event_type")
-    )
-
-    theme = clean_text(
-        data.get("theme")
-        or data.get("style")
-    )
-
-    mood = clean_text(
-        data.get("mood")
-    )
-
-    colors = safe_list(
-        data.get("colors")
-        or data.get("color_palette")
-    )
-
-    decor = safe_list(
-        data.get("decor")
-        or data.get("decor_elements")
-    )
-
     return ", ".join([
-        x for x in [
-            f"{event_type} luxury venue"
-            if event_type else "",
-
-            f"{theme} theme"
-            if theme else "",
-
-            f"{mood} atmosphere"
-            if mood else "",
-
-            f"{', '.join(colors)} palette"
-            if colors else "",
-
-            f"{', '.join(decor)} decorations"
-            if decor else "",
-
-            "photorealistic",
-            "cinematic lighting",
-            "luxury event styling",
-        ]
-        if x
+        clean_text(data.get("event_type")),
+        clean_text(data.get("theme")),
+        clean_text(data.get("mood")),
+        "luxury event",
+        "cinematic lighting",
+        "photorealistic"
     ])
 
 
 def build_event_prompt(data):
 
     return f"""
-<|user|>
-You are an SDXL event design prompt engineer.
-
-Generate optimized SDXL prompts.
+[INST]
+You are an SDXL prompt engineer.
 
 Return ONLY valid JSON.
 
@@ -378,17 +372,9 @@ Schema:
   "recommended_strength": 0.58
 }}
 
-Rules:
-- Keep architecture realistic
-- Preserve venue layout
-- Avoid distorted geometry
-- Avoid cartoons
-- Optimize for SDXL realism
-
 Event Data:
 {json.dumps(data, ensure_ascii=False)}
-
-<|assistant|>
+[/INST]
 """.strip()
 
 
@@ -399,8 +385,8 @@ def normalize_event(parsed, data):
         return {
             "positive_prompt": fallback_prompt(data),
             "negative_prompt": (
-                "distorted room, warped walls, "
-                "blurry, cartoon, text, watermark"
+                "distorted room, blurry, cartoon, "
+                "text, watermark"
             ),
             "theme_tokens": [],
             "style_tokens": [],
@@ -416,48 +402,35 @@ def normalize_event(parsed, data):
 
         "negative_prompt": clean_text(
             parsed.get("negative_prompt")
-        ) or (
-            "distorted room, warped walls, "
-            "blurry, cartoon, text, watermark"
         ),
 
         "theme_tokens": safe_list(
-            parsed.get("theme_tokens"),
-            12
+            parsed.get("theme_tokens")
         ),
 
         "style_tokens": safe_list(
-            parsed.get("style_tokens"),
-            12
+            parsed.get("style_tokens")
         ),
 
         "lighting_tokens": safe_list(
-            parsed.get("lighting_tokens"),
-            12
+            parsed.get("lighting_tokens")
         ),
 
         "decor_tokens": safe_list(
-            parsed.get("decor_tokens"),
-            12
+            parsed.get("decor_tokens")
         ),
 
-        "recommended_strength": min(
-            0.65,
-            max(
-                0.50,
-                float(
-                    parsed.get(
-                        "recommended_strength",
-                        0.58
-                    )
-                )
+        "recommended_strength": float(
+            parsed.get(
+                "recommended_strength",
+                0.58
             )
-        )
+        ),
     }
 
 
 # =========================================================
-# SUPABASE HELPERS
+# SUPABASE
 # =========================================================
 
 def fetch_pending_feedback(limit=50):

@@ -2,9 +2,11 @@ __pycache__
 *.pyc
 *.pyo
 *.pyd
+.env
 .git
 .gitignore
-.env
 venv
-huggingface
 node_modules
+dist
+build
+*.log
