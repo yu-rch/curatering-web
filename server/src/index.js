@@ -215,6 +215,7 @@ const _corsOriginSuffixes = (() => {
 
 const _corsLocalhostPatterns = [
   /^https?:\/\/localhost(?::\d+)?$/i,
+  /^https?:\/\/[\w-]+\.localhost(?::\d+)?$/i,
   /^http:\/\/127\.0\.0\.1(?::\d+)?$/i,
 ];
 

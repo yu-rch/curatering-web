@@ -1841,17 +1841,41 @@ async function ensureMenuDishesAllergensTable() {
   } else if (cols.has('allergen_id') && cols.has('allergen_name')) {
     // Already has the correct mobile schema — nothing to do
   } else if (cols.has('id') && cols.has('name') && !cols.has('allergen_id')) {
-    // Web-created schema (id, name) — migrate to mobile schema (allergen_id, allergen_name)
+    // Web-created schema (id, name) — the original data is in a legacy table.
+    // Drop this empty web-created table and restore from legacy instead.
+    let restoredFromLegacy = false;
     try {
-      await pool.query(`ALTER TABLE menu_dishes_allergens RENAME COLUMN id TO allergen_id`);
-      await pool.query(`ALTER TABLE menu_dishes_allergens RENAME COLUMN name TO allergen_name`);
-      console.log('Migration: renamed menu_dishes_allergens columns id→allergen_id, name→allergen_name');
-    } catch (err) {
-      console.log('Migration: menu_dishes_allergens column rename:', err.message);
+      const { rows: legacyTables } = await pool.query(
+        `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'menu_dishes_allergens_legacy%'`,
+      );
+      for (const { tablename } of legacyTables) {
+        const lCols = await getTableColumnNames(tablename);
+        if (lCols.has('allergen_id') && lCols.has('allergen_name')) {
+          // Legacy table has the real data — drop web-created table, rename legacy back
+          await pool.query(`DROP TABLE menu_dishes_allergens`);
+          await pool.query(`ALTER TABLE ${tablename} RENAME TO menu_dishes_allergens`);
+          console.log(`Migration: restored menu_dishes_allergens from ${tablename} (dropped web-created empty table)`);
+          restoredFromLegacy = true;
+          break;
+        }
+      }
+    } catch (e) {
+      console.log('Migration: legacy restore attempt:', e.message);
+    }
+
+    if (!restoredFromLegacy) {
+      // No legacy table with data found — just rename columns on the web-created table
+      try {
+        await pool.query(`ALTER TABLE menu_dishes_allergens RENAME COLUMN id TO allergen_id`);
+        await pool.query(`ALTER TABLE menu_dishes_allergens RENAME COLUMN name TO allergen_name`);
+        console.log('Migration: renamed menu_dishes_allergens columns id→allergen_id, name→allergen_name');
+      } catch (err) {
+        console.log('Migration: menu_dishes_allergens column rename:', err.message);
+      }
     }
   }
 
-  // Drop any remaining legacy tables
+  // Drop any remaining legacy tables (only after data is safely in main table)
   try {
     const { rows: legacyTables } = await pool.query(
       `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'menu_dishes_allergens_legacy%'`,
