@@ -62,6 +62,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   @override
   void initState() {
     super.initState();
+    unawaited(CartStore.instance.init());
     WebsiteContentStore.instance.ensureLoaded().then((_) {
       if (mounted) setState(() {});
     });

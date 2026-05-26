@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
 
-import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:flutter/foundation.dart';
@@ -27,12 +26,10 @@ import '../widgets/antd_buttons.dart';
 import '../widgets/antd_form_field.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_tokens.dart';
-import '../widgets/centered_viewport_scroll.dart';
 import '../widgets/customer_website_topbar.dart';
 import '../widgets/allergen_selector_field.dart';
 import '../widgets/inquiry_menu_selection_dialog.dart';
 import '../widgets/map_picker.dart';
-import '../widgets/venue_autocomplete_field.dart';
 import '../widgets/event_venue_map_preview.dart';
 import '../utils/inquiry_pricing.dart';
 import '../widgets/antd_dialog.dart';
@@ -67,7 +64,7 @@ EdgeInsets websitePagePadding(BuildContext context, {double vertical = 24}) {
 const String kInquiryTypeCatering = 'CATERING';
 const String kInquiryTypeCateringWithEventStyling =
     'CATERING WITH EVENT STYLING';
-const int kMinCateringOnlyPax = 30;
+const int kMinCateringOnlyPax = 20;
 const int kMinCateringEventPax = 50;
 const int kInquiryLandingEventStylingMinPax = 50;
 const double kPesosPerPax = kCateringInquiryPricePerGuest;
@@ -102,35 +99,31 @@ const Color _darkHeader = Color(0xFF1E1E1E);
 // ---------------------------------------------------------------------------
 // Stepper steps
 // ---------------------------------------------------------------------------
-enum _InquiryStep { package, eventInfo, menu, themeDesign, review }
+enum _InquiryStep { packages, guestCount, form, completed }
 
 String _stepLabel(_InquiryStep step) {
   switch (step) {
-    case _InquiryStep.package:
-      return 'Package';
-    case _InquiryStep.eventInfo:
-      return 'Event Info';
-    case _InquiryStep.menu:
-      return 'Menu';
-    case _InquiryStep.themeDesign:
-      return 'Theme Design';
-    case _InquiryStep.review:
-      return 'Review';
+    case _InquiryStep.packages:
+      return 'Catering Packages';
+    case _InquiryStep.guestCount:
+      return 'Enter number of guests';
+    case _InquiryStep.form:
+      return 'Fill inquiry form';
+    case _InquiryStep.completed:
+      return 'Completed';
   }
 }
 
 int _stepNumber(_InquiryStep step) {
   switch (step) {
-    case _InquiryStep.package:
+    case _InquiryStep.packages:
       return 1;
-    case _InquiryStep.eventInfo:
+    case _InquiryStep.guestCount:
       return 2;
-    case _InquiryStep.menu:
+    case _InquiryStep.form:
       return 3;
-    case _InquiryStep.themeDesign:
+    case _InquiryStep.completed:
       return 4;
-    case _InquiryStep.review:
-      return 5;
   }
 }
 
@@ -165,7 +158,7 @@ class InquirePage extends StatefulWidget {
 
 class _InquirePageState extends State<InquirePage> {
   // ---- Step management ----
-  _InquiryStep _currentStep = _InquiryStep.package;
+  _InquiryStep _currentStep = _InquiryStep.packages;
   _SideTab _activeSideTab = _SideTab.eventInfo;
 
   // ---- Landing / package selection ----
@@ -379,16 +372,12 @@ class _InquirePageState extends State<InquirePage> {
   // Steps logic
   // ===========================================================================
 
-  List<_InquiryStep> get _visibleSteps {
-    final steps = <_InquiryStep>[
-      _InquiryStep.package,
-      _InquiryStep.eventInfo,
-      _InquiryStep.menu,
-    ];
-    if (_isEventStyling) steps.add(_InquiryStep.themeDesign);
-    steps.add(_InquiryStep.review);
-    return steps;
-  }
+  List<_InquiryStep> get _visibleSteps => const [
+    _InquiryStep.packages,
+    _InquiryStep.guestCount,
+    _InquiryStep.form,
+    _InquiryStep.completed,
+  ];
 
   void _goToStep(_InquiryStep step) {
     if (!_visibleSteps.contains(step)) return;
@@ -412,7 +401,7 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   // ===========================================================================
-  // Landing page logic (Step 1: Package)
+  // Step 1 → Step 2 → Step 3 navigation
   // ===========================================================================
 
   int? get _landingPaxParsed {
@@ -421,7 +410,11 @@ class _InquirePageState extends State<InquirePage> {
     return int.tryParse(raw);
   }
 
-  void _proceedFromLanding() {
+  void _proceedFromPackages() {
+    setState(() => _currentStep = _InquiryStep.guestCount);
+  }
+
+  void _proceedFromGuestCount() {
     final pax = _landingPaxParsed;
     if (pax == null || pax < 1) {
       showAntdMessage(context, 'Enter how many guests you will have.');
@@ -435,7 +428,7 @@ class _InquirePageState extends State<InquirePage> {
         ? 'catering+event'
         : 'catering';
     setState(() {
-      _currentStep = _InquiryStep.eventInfo;
+      _currentStep = _InquiryStep.form;
     });
   }
 
@@ -1185,6 +1178,7 @@ class _InquirePageState extends State<InquirePage> {
           _submittedCateringId =
               submittedId.isEmpty ? null : submittedId;
           _formSubmitted = true;
+          _currentStep = _InquiryStep.completed;
         });
       }
     } catch (e) {
@@ -1207,7 +1201,7 @@ class _InquirePageState extends State<InquirePage> {
   void _resetInquiryForm() {
     setState(() {
       _inquiryType = kInquiryTypeCatering;
-      _currentStep = _InquiryStep.package;
+      _currentStep = _InquiryStep.packages;
       _activeSideTab = _SideTab.eventInfo;
       _curateOwn = false;
       _menuChoicePicked = false;
@@ -1361,8 +1355,7 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   String _composeEventDesignPrompt() {
-    final eventType =
-        _resolvedCategory(_selectedEventType, _eventTypeDesignOtherController);
+    final eventType = _resolvedEventType();
     final style = _resolvedCategory(_selectedStyle, _styleOtherController);
     final mood = _resolvedCategory(_selectedMood, _moodOtherController);
     final colors =
@@ -1371,7 +1364,7 @@ class _InquirePageState extends State<InquirePage> {
         _resolvedMultiSelectWithOther(_selectedDecor, _decorOtherController);
     final notes = _designPromptController.text.trim();
     return <String>[
-      if (eventType != null && eventType.isNotEmpty)
+      if (eventType.isNotEmpty)
         '$eventType event venue'
       else
         'event venue',
@@ -1403,8 +1396,7 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   Map<String, dynamic> _eventDesignConfig() {
-    final eventType =
-        _resolvedCategory(_selectedEventType, _eventTypeDesignOtherController);
+    final eventType = _resolvedEventType();
     final style = _resolvedCategory(_selectedStyle, _styleOtherController);
     final mood = _resolvedCategory(_selectedMood, _moodOtherController);
     final colors =
@@ -1414,7 +1406,7 @@ class _InquirePageState extends State<InquirePage> {
     final notes = _designPromptController.text.trim();
     return {
       'task_type': 'event_prompt_expansion',
-      if (eventType != null && eventType.isNotEmpty)
+      if (eventType.isNotEmpty)
         'event_type': eventType.trim().toLowerCase(),
       if (style != null && style.isNotEmpty) ...{
         'theme': style.trim(),
@@ -1462,7 +1454,7 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   Future<void> _generateDesignPrompt() async {
-    if (_selectedEventType == null &&
+    if (_resolvedEventType().isEmpty &&
         _selectedStyle == null &&
         _selectedMood == null &&
         _selectedColors.isEmpty &&
@@ -1676,19 +1668,19 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   // ===========================================================================
-  // BUILD - Step 1: Package selection page
+  // BUILD - Step 1: Catering Packages page
   // ===========================================================================
 
-  Widget _buildPackagePage(BuildContext context) {
-    final pax = _landingPaxParsed;
+  Widget _buildPackagesPage(BuildContext context) {
     final content = WebsiteContentStore.instance;
-    final isCateringWithEvent = pax != null && pax >= kInquiryLandingEventStylingMinPax;
+    final isCateringOnly =
+        _inquiryType.trim().toUpperCase() == kInquiryTypeCatering;
 
     return Center(
       child: SingleChildScrollView(
         padding: websitePagePadding(context),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
+          constraints: const BoxConstraints(maxWidth: 620),
           child: Card(
             elevation: 4,
             shape: RoundedRectangleBorder(
@@ -1728,16 +1720,105 @@ class _InquirePageState extends State<InquirePage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 28),
                   Text(
-                    'How many guests will you have?',
+                    'Choose your catering package',
                     textAlign: TextAlign.center,
                     style: Theme.of(context)
                         .textTheme
                         .titleMedium
                         ?.copyWith(fontWeight: FontWeight.w700),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
+                  GestureDetector(
+                    onTap: () => setState(() {
+                      _inquiryType = kInquiryTypeCatering;
+                      _serviceType = 'catering';
+                    }),
+                    child: _buildPackageCard(
+                      title: 'Catering Only',
+                      description:
+                          'Food catering service for your event — delicious dishes prepared and served by our culinary team. Minimum $kMinCateringOnlyPax pax.',
+                      selected: isCateringOnly,
+                      highlighted: isCateringOnly,
+                      icon: Icons.restaurant,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  GestureDetector(
+                    onTap: () => setState(() {
+                      _inquiryType = kInquiryTypeCateringWithEventStyling;
+                      _serviceType = 'catering+event';
+                    }),
+                    child: _buildPackageCard(
+                      title: 'Catering with Event Styling',
+                      description:
+                          'Full food catering plus event design & décor — styling, setup, and thematic decorations handled by our team. Minimum $kMinCateringEventPax pax.',
+                      selected: !isCateringOnly,
+                      highlighted: !isCateringOnly,
+                      icon: Icons.celebration,
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity,
+                    child: AntdPrimaryButton(
+                      label: 'NEXT',
+                      onPressed: _proceedFromPackages,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // BUILD - Step 2: Enter number of guests
+  // ===========================================================================
+
+  Widget _buildGuestCountPage(BuildContext context) {
+    final pax = _landingPaxParsed;
+    final isCateringWithEvent =
+        pax != null && pax >= kInquiryLandingEventStylingMinPax;
+    final showMinimalStylingCheckbox =
+        pax == null || pax < kInquiryLandingEventStylingMinPax;
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: websitePagePadding(context),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'How many guests will you have?',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.getFont(
+                      _primaryFont,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: _darkHeader,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'This determines your package and pricing.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 24),
                   TextField(
                     controller: _landingPaxController,
                     keyboardType: TextInputType.number,
@@ -1759,67 +1840,102 @@ class _InquirePageState extends State<InquirePage> {
                   ),
                   if (pax != null && pax > 0) ...[
                     const SizedBox(height: 16),
-                    // Package cards
-                    _buildPackageCard(
-                      title: 'Catering Only',
-                      description: 'Food catering service for your event. Minimum $kMinCateringOnlyPax guests.',
-                      selected: !isCateringWithEvent,
-                      highlighted: !isCateringWithEvent,
-                      icon: Icons.restaurant,
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isCateringWithEvent
+                            ? const Color(0xFFFFF8E1)
+                            : Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isCateringWithEvent
+                              ? _accentYellow
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                isCateringWithEvent
+                                    ? Icons.celebration
+                                    : Icons.restaurant,
+                                color: _darkHeader,
+                                size: 22,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  isCateringWithEvent
+                                      ? 'Catering with Event Styling'
+                                      : 'Catering Only',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color: _darkHeader,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Estimated: ₱${(pax * kPesosPerPax).toStringAsFixed(0)} '
+                            '(₱${kPesosPerPax.toStringAsFixed(0)} × $pax guests)',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                          if (isCateringWithEvent) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              'With $pax guests, this inquiry qualifies for Catering with Event Styling.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green.shade800,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
+                  ],
+                  if (showMinimalStylingCheckbox) ...[
                     const SizedBox(height: 12),
-                    _buildPackageCard(
-                      title: 'Catering with Event Styling',
-                      description: 'Full catering plus event decoration & styling. Minimum $kMinCateringEventPax guests.',
-                      selected: isCateringWithEvent,
-                      highlighted: isCateringWithEvent,
-                      icon: Icons.celebration,
+                    CheckboxListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      value: _includeMinimalStyling,
+                      onChanged: (v) =>
+                          setState(() => _includeMinimalStyling = v ?? false),
+                      title: const Text(
+                        'I would like to include minimal event styling',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                      controlAffinity: ListTileControlAffinity.leading,
                     ),
-                    const SizedBox(height: 16),
-                    if (!isCateringWithEvent) ...[
-                      CheckboxListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        value: _includeMinimalStyling,
-                        onChanged: (v) =>
-                            setState(() => _includeMinimalStyling = v ?? false),
-                        title: const Text(
-                          'I would like to include minimal event styling',
-                          style: TextStyle(fontSize: 14),
-                        ),
-                        controlAffinity: ListTileControlAffinity.leading,
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    Text(
-                      'Estimated: ₱${(pax * kPesosPerPax).toStringAsFixed(0)} '
-                      '(₱${kPesosPerPax.toStringAsFixed(0)} × $pax guests)',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                    if (isCateringWithEvent) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        'With $pax guests, this inquiry qualifies for Catering with Event Styling.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.green.shade800,
-                        ),
-                      ),
-                    ],
                   ],
                   const SizedBox(height: 28),
-                  SizedBox(
-                    width: double.infinity,
-                    child: AntdPrimaryButton(
-                      label: 'NEXT',
-                      onPressed: _proceedFromLanding,
-                    ),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => setState(
+                          () => _currentStep = _InquiryStep.packages,
+                        ),
+                        icon: const Icon(Icons.arrow_back, size: 16),
+                        label: const Text('Back'),
+                      ),
+                      const Spacer(),
+                      AntdPrimaryButton(
+                        label: 'NEXT',
+                        onPressed: _proceedFromGuestCount,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -2092,11 +2208,11 @@ class _InquirePageState extends State<InquirePage> {
               width: double.infinity,
               child: OutlinedButton.icon(
                 onPressed: () => setState(() {
-                  _currentStep = _InquiryStep.package;
+                  _currentStep = _InquiryStep.guestCount;
                   _attemptedSubmit = false;
                 }),
                 icon: const Icon(Icons.arrow_back, size: 16),
-                label: const Text('Back to Package'),
+                label: const Text('Back to Guest Count'),
               ),
             ),
           ),
@@ -3358,18 +3474,34 @@ class _InquirePageState extends State<InquirePage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildFormSectionTitle('Event Type'),
-              _buildDropdown(
-                _eventTypes,
-                _selectedEventType,
-                (val) => setState(() => _selectedEventType = val),
-              ),
-              if (_selectedEventType == 'Other') ...[
-                const SizedBox(height: 8),
-                AntdOutlineInput(
-                  controller: _eventTypeDesignOtherController,
-                  hintText: 'Describe your event type',
+              DropdownButtonFormField<String>(
+                value: _resolvedEventType().isNotEmpty
+                    ? (_eventTypes.contains(_resolvedEventType())
+                        ? _resolvedEventType()
+                        : null)
+                    : null,
+                items: _eventTypes
+                    .map((item) =>
+                        DropdownMenuItem(value: item, child: Text(item)))
+                    .toList(),
+                onChanged: null,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  filled: true,
+                  fillColor: Colors.grey.shade100,
+                  helperText: 'Set in Event Information tab',
+                  helperStyle: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade500,
+                    fontStyle: FontStyle.italic,
+                  ),
                 ),
-              ],
+                hint: Text(_resolvedEventType().isNotEmpty
+                    ? _resolvedEventType()
+                    : 'Set in Event Information'),
+              ),
             ],
           ),
           Column(
@@ -3710,15 +3842,15 @@ class _InquirePageState extends State<InquirePage> {
           CustomerWebsiteTopBar(
             showCartAndCustomerAuth: !widget.contentEditable,
           ),
-          // Progress bar
           _buildProgressBar(),
-          // Content
           Expanded(
-            child: _formSubmitted
+            child: _formSubmitted || _currentStep == _InquiryStep.completed
                 ? _buildCompletedPage()
-                : _currentStep == _InquiryStep.package
-                    ? _buildPackagePage(context)
-                    : _buildThreeColumnLayout(context),
+                : _currentStep == _InquiryStep.packages
+                    ? _buildPackagesPage(context)
+                    : _currentStep == _InquiryStep.guestCount
+                        ? _buildGuestCountPage(context)
+                        : _buildThreeColumnLayout(context),
           ),
         ],
       ),

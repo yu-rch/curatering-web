@@ -548,6 +548,9 @@ export function registerPosRoutes(app, {
       const supplemental = Number(req.body?.supplemental_amount_received);
       const total = Number(order.total_cost || order.total_amount || 0);
 
+      const pkVal = order.order_id || order.id;
+      const pkWhere = `(order_id = $1 OR id::text = $1)`;
+
       if (action === "confirm") {
         const primary = Number.isFinite(amountReceived) ? amountReceived : total;
         const secondary = Number.isFinite(supplemental) ? supplemental : 0;
@@ -558,8 +561,8 @@ export function registerPosRoutes(app, {
              SET cashier_amount_received_initial = $2,
                  balance_proof_pending_review = FALSE,
                  updated_at = now()
-             WHERE id = $1`,
-            [order.id, primary],
+             WHERE ${pkWhere}`,
+            [pkVal, primary],
           );
           return res.json({ ok: true, status: "PAYMENT INSUFFICIENT" });
         }
@@ -574,9 +577,10 @@ export function registerPosRoutes(app, {
                amount_paid = $2,
                change_given = $4,
                balance_proof_pending_review = FALSE,
+               last_updated_order_status_dt_stamp = now(),
                updated_at = now()
-           WHERE id = $1`,
-          [order.id, primary, secondary, change > 0 ? change : 0],
+           WHERE ${pkWhere}`,
+          [pkVal, primary, secondary, change > 0 ? change : 0],
         );
         const email = await resolveRestaurantOrderEmail(order);
         if (email) {
@@ -594,8 +598,8 @@ export function registerPosRoutes(app, {
           `UPDATE restaurant_orders
            SET cashier_amount_received_initial = $2,
                updated_at = now()
-           WHERE id = $1`,
-          [order.id, Number.isFinite(amountReceived) ? amountReceived : 0],
+           WHERE ${pkWhere}`,
+          [pkVal, Number.isFinite(amountReceived) ? amountReceived : 0],
         );
         return res.json({ ok: true, status: "PAYMENT INSUFFICIENT" });
       }
@@ -610,9 +614,10 @@ export function registerPosRoutes(app, {
                cashier_amount_received_initial = $2,
                amount_paid = $2,
                change_given = $3,
+               last_updated_order_status_dt_stamp = now(),
                updated_at = now()
-           WHERE id = $1`,
-          [order.id, paid, change > 0 ? change : 0],
+           WHERE ${pkWhere}`,
+          [pkVal, paid, change > 0 ? change : 0],
         );
         return res.json({ ok: true, status: "ORDER CONFIRMED WITH OVERPAYMENT" });
       }
@@ -656,15 +661,16 @@ export function registerPosRoutes(app, {
       const tracking = String(req.body?.delivery_tracking_url || "").trim();
       const orderStatus = orderStatusFromFulfillmentStage(stage);
 
-      const fields = ["order_status = $2", "updated_at = now()"];
-      const vals = [order.id, orderStatus];
+      const pkVal = order.order_id || order.id;
+      const fields = ["order_status = $2", "updated_at = now()", "last_updated_order_status_dt_stamp = now()"];
+      const vals = [pkVal, orderStatus];
       if (tracking) {
         fields.push(`delivery_tracking_url = $${fields.length + 1}`);
         vals.push(tracking);
       }
 
       await pool.query(
-        `UPDATE restaurant_orders SET ${fields.join(", ")} WHERE id = $1`,
+        `UPDATE restaurant_orders SET ${fields.join(", ")} WHERE order_id = $1 OR id::text = $1`,
         vals,
       );
 
@@ -675,8 +681,8 @@ export function registerPosRoutes(app, {
           await pool.query(
             `UPDATE restaurant_orders
              SET loyalty_points_restaurant_obtained = $2
-             WHERE id = $1`,
-            [order.id, points],
+             WHERE order_id = $1 OR id::text = $1`,
+            [pkVal, points],
           );
           if (order.customer_id) {
             await pool.query(
@@ -807,14 +813,16 @@ export function registerPosRoutes(app, {
     try {
       const order = await getOrderById(pool, req.params.orderId);
       if (!order) return res.status(404).json({ error: "Order not found" });
+      const pk = order.order_id || order.id;
       await pool.query(
         `UPDATE restaurant_orders
          SET pos_claimed_at = COALESCE(pos_claimed_at, now()),
              pos_claimed = TRUE,
              order_status = 'DELIVERED',
+             last_updated_order_status_dt_stamp = now(),
              updated_at = now()
-         WHERE id = $1`,
-        [order.id],
+         WHERE order_id = $1 OR id::text = $1`,
+        [pk],
       );
       res.json({ ok: true });
     } catch (e) {
@@ -827,11 +835,14 @@ export function registerPosRoutes(app, {
     try {
       const order = await getOrderById(pool, req.params.orderId);
       if (!order) return res.status(404).json({ error: "Order not found" });
+      const pk = order.order_id || order.id;
       await pool.query(
         `UPDATE restaurant_orders
-         SET order_status = 'CANCELLED', updated_at = now()
-         WHERE id = $1`,
-        [order.id],
+         SET order_status = 'CANCELLED',
+             last_updated_order_status_dt_stamp = now(),
+             updated_at = now()
+         WHERE order_id = $1 OR id::text = $1`,
+        [pk],
       );
       res.json({ ok: true });
     } catch (e) {

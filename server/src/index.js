@@ -8852,7 +8852,8 @@ async function registerRoutesAfterDbInit() {
           orderSource,
         } = req.body || {};
 
-        const customerId = req.customer?.id ?? null;
+        const tokenId = req.customer?.id ?? null;
+        const customerId = tokenId ? await resolveCustomerAccountCustomerId(tokenId) : null;
         const submittedEmail = userEmail ?? guestContactEmail;
         let orderEmail = submittedEmail
           ? String(submittedEmail).trim().toLowerCase()
@@ -9077,7 +9078,8 @@ async function registerRoutesAfterDbInit() {
         const order = existing.rows[0];
 
         if (req.customer?.id) {
-          if (order.customer_id && String(order.customer_id) !== String(req.customer.id)) {
+          const resolvedCustId = await resolveCustomerAccountCustomerId(req.customer.id);
+          if (order.customer_id && String(order.customer_id) !== resolvedCustId && String(order.customer_id) !== String(req.customer.id)) {
             return res.status(403).json({ error: 'Order not found' });
           }
         } else {
@@ -9149,9 +9151,10 @@ async function registerRoutesAfterDbInit() {
           return res.status(400).json({ error: 'Invalid order id' });
         }
 
+        const resolvedCustId = await resolveCustomerAccountCustomerId(req.customer.id);
         const result = await pool.query(
-          `SELECT * FROM restaurant_orders WHERE ${lookup.sql} AND customer_id::text = $2`,
-          [lookup.value, req.customer.id],
+          `SELECT * FROM restaurant_orders WHERE ${lookup.sql} AND (customer_id::text = $2 OR customer_id::text = $3)`,
+          [lookup.value, resolvedCustId, req.customer.id],
         );
 
         if (result.rows.length === 0) {
@@ -9177,12 +9180,13 @@ async function registerRoutesAfterDbInit() {
           return res.status(400).json({ error: 'Invalid order id' });
         }
 
+        const resolvedCustIdFollowup = await resolveCustomerAccountCustomerId(req.customer.id);
         const existing = await pool.query(
           `SELECT *
            FROM restaurant_orders
-           WHERE ${lookup.sql} AND customer_id::text = $2
+           WHERE ${lookup.sql} AND (customer_id::text = $2 OR customer_id::text = $3)
            LIMIT 1`,
-          [lookup.value, req.customer.id],
+          [lookup.value, resolvedCustIdFollowup, req.customer.id],
         );
         if (existing.rowCount === 0) {
           return res.status(404).json({ error: 'Order not found' });
@@ -9429,23 +9433,25 @@ async function registerRoutesAfterDbInit() {
             ? String(acct.rows[0].email).trim().toLowerCase()
             : null;
 
+        const resolvedCustId = await resolveCustomerAccountCustomerId(req.customer.id);
+
         const emailMatchParts = [];
         if (roCols.has('user_email')) {
-          emailMatchParts.push(`lower(COALESCE(user_email::text, '')) = $2`);
+          emailMatchParts.push(`lower(COALESCE(user_email::text, '')) = $3`);
         }
         const emailClause =
           customerEmail && emailMatchParts.length > 0
-            ? `OR ($2::text IS NOT NULL AND (${emailMatchParts.join(' OR ')}))`
+            ? `OR ($3::text IS NOT NULL AND (${emailMatchParts.join(' OR ')}))`
             : '';
 
         const result = await pool.query(
           `SELECT ${selectSql}
            FROM restaurant_orders
-           WHERE customer_id::text = $1 ${emailClause}
+           WHERE (customer_id::text = $1 OR customer_id::text = $2) ${emailClause}
            ORDER BY created_at DESC NULLS LAST`,
           customerEmail && emailMatchParts.length > 0
-            ? [req.customer.id, customerEmail]
-            : [req.customer.id],
+            ? [resolvedCustId, req.customer.id, customerEmail]
+            : [resolvedCustId, req.customer.id],
         );
 
         const orders = result.rows.map((order) =>
@@ -10134,6 +10140,7 @@ async function registerRoutesAfterDbInit() {
         if (nextStatus) {
           updateFields.push(`order_status = $${paramIndex++}`);
           updateValues.push(nextStatus);
+          updateFields.push(`last_updated_order_status_dt_stamp = now()`);
         }
         
         if (payment_status === 'paid' || payment_status === 'confirmed') {

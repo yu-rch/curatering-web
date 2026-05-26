@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../auth/auth_session.dart';
 import '../services/cashier_pos_api.dart';
@@ -19,9 +21,8 @@ class CashierPosShell extends StatefulWidget {
   State<CashierPosShell> createState() => _CashierPosShellState();
 }
 
-class _CashierPosShellState extends State<CashierPosShell>
-    with SingleTickerProviderStateMixin {
-  late TabController _tab;
+class _CashierPosShellState extends State<CashierPosShell> {
+  int _selectedTab = 0;
   Timer? _clockTimer;
   String _clock = '';
 
@@ -41,18 +42,15 @@ class _CashierPosShellState extends State<CashierPosShell>
   Uint8List? _gcashProofBytes;
   String? _gcashProofBase64;
 
-  // Menu tab state
   String _menuSearch = '';
   String _menuCategory = 'ALL';
 
-  // Online orders tab state
   String _onlineSearch = '';
   String _onlinePendingFilter = 'all';
   String _onlinePreparingFilter = 'all';
   int _onlineSubTab = 0;
   PosOrderView? _selectedOnlineOrder;
 
-  // Walk-in tab state
   String _walkSearch = '';
   int _walkInSubTab = 0;
   Map<String, dynamic>? _selectedWalkIn;
@@ -60,15 +58,6 @@ class _CashierPosShellState extends State<CashierPosShell>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 3, vsync: this);
-    _tab.addListener(() {
-      if (!mounted) return;
-      setState(() {});
-      if (!_tab.indexIsChanging) {
-        if (_tab.index == 1) _refreshOnline();
-        if (_tab.index == 2) _refreshWalkIn();
-      }
-    });
     _updateClock();
     _clockTimer = Timer.periodic(
       const Duration(seconds: 1),
@@ -79,7 +68,6 @@ class _CashierPosShellState extends State<CashierPosShell>
 
   @override
   void dispose() {
-    _tab.dispose();
     _clockTimer?.cancel();
     _walkInLabelCtrl.dispose();
     _amountCtrl.dispose();
@@ -89,12 +77,18 @@ class _CashierPosShellState extends State<CashierPosShell>
 
   void _updateClock() {
     final now = DateTime.now();
-    final h = now.hour > 12 ? now.hour - 12 : (now.hour == 0 ? 12 : now.hour);
+    final h = now.hour > 12
+        ? now.hour - 12
+        : (now.hour == 0 ? 12 : now.hour);
     final m = now.minute.toString().padLeft(2, '0');
     final s = now.second.toString().padLeft(2, '0');
     final ap = now.hour >= 12 ? 'PM' : 'AM';
     if (mounted) setState(() => _clock = '$h:$m:$s $ap');
   }
+
+  // ---------------------------------------------------------------------------
+  // Data refresh
+  // ---------------------------------------------------------------------------
 
   Future<void> _refreshAll() async {
     setState(() {
@@ -151,7 +145,9 @@ class _CashierPosShellState extends State<CashierPosShell>
     } catch (_) {}
   }
 
-  // --- Helpers ---
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
 
   double _toMoney(dynamic value) {
     if (value is num) return value.toDouble();
@@ -163,11 +159,10 @@ class _CashierPosShellState extends State<CashierPosShell>
     return int.tryParse(value?.toString().trim() ?? '') ?? 1;
   }
 
-  double get _trayTotal => _tray.fold<double>(0, (s, it) {
-        final q = _toQty(it['qty']);
-        final p = _toMoney(it['price']);
-        return s + q * p;
-      });
+  double get _trayTotal => _tray.fold<double>(
+        0,
+        (s, it) => s + _toQty(it['qty']) * _toMoney(it['price']),
+      );
 
   int get _trayItemCount =>
       _tray.fold<int>(0, (s, it) => s + _toQty(it['qty']));
@@ -176,26 +171,28 @@ class _CashierPosShellState extends State<CashierPosShell>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  // --- Menu data from MenuStore (restaurant dishes only) ---
+  List<dynamic> _orderItems(Map<String, dynamic> raw) {
+    return (raw['tray_items'] ?? raw['lines'] ?? raw['items'] ?? [])
+        as List<dynamic>;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Menu data — restaurant dishes only
+  // ---------------------------------------------------------------------------
 
   List<MenuDish> get _restaurantDishes {
-    return MenuStore.instance.activeDishes.where((d) {
-      return d.category.trim().toLowerCase() == 'restaurant';
-    }).toList();
+    return MenuStore.instance.activeDishes
+        .where((d) => d.category.trim().toLowerCase() == 'restaurant')
+        .toList();
   }
 
   List<String> get _categoryChips {
     final types = <String>{'ALL'};
     for (final dish in _restaurantDishes) {
       final mt = dish.effectiveMealType.trim().toUpperCase();
-      if (mt.isNotEmpty) {
-        types.add(mt);
-      } else {
-        types.add('OTHERS');
-      }
+      types.add(mt.isNotEmpty ? mt : 'OTHERS');
     }
-    final list = types.toList();
-    list.sort();
+    final list = types.toList()..sort();
     list.remove('ALL');
     list.insert(0, 'ALL');
     return list;
@@ -210,19 +207,22 @@ class _CashierPosShellState extends State<CashierPosShell>
     final selectedType = _menuCategory.trim().toLowerCase();
     final search = _menuSearch.trim().toLowerCase();
     return _restaurantDishes.where((d) {
-      final matchesType = selectedType == 'all' || _dishMealType(d) == selectedType;
-      if (!matchesType) return false;
+      if (selectedType != 'all' && _dishMealType(d) != selectedType) {
+        return false;
+      }
       if (search.isEmpty) return true;
       return d.name.toLowerCase().contains(search) ||
           d.publicDescription.toLowerCase().contains(search);
     }).toList();
   }
 
-  // --- Add to Tray dialog (POS version, adapted from restaurant page) ---
+  // ---------------------------------------------------------------------------
+  // Add-to-tray dialog (matches restaurant_order_page.dart)
+  // ---------------------------------------------------------------------------
 
   void _showAddToTrayDialog(MenuDish dish) {
     int quantity = 1;
-    String? selectedAddOn = dish.sauces.isNotEmpty ? null : null;
+    String? selectedAddOn;
     int addOnQty = 1;
     final notesCtrl = TextEditingController();
 
@@ -234,19 +234,24 @@ class _CashierPosShellState extends State<CashierPosShell>
           final totalPrice = dishPrice * quantity;
 
           return Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480, maxHeight: 640),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Image header
                   Stack(
                     children: [
                       RepaintBoundary(
                         child: dish.imageBase64?.isNotEmpty == true
                             ? ClipRRect(
-                                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                                borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(16),
+                                ),
                                 child: Image.memory(
                                   base64Decode(dish.imageBase64!),
                                   fit: BoxFit.cover,
@@ -259,9 +264,12 @@ class _CashierPosShellState extends State<CashierPosShell>
                                 height: 120,
                                 decoration: BoxDecoration(
                                   color: Colors.grey.shade200,
-                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                                  borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(16),
+                                  ),
                                 ),
-                                child: const Icon(Icons.fastfood, size: 48, color: Colors.grey),
+                                child: const Icon(Icons.fastfood,
+                                    size: 48, color: Colors.grey),
                               ),
                       ),
                       Positioned(
@@ -271,14 +279,17 @@ class _CashierPosShellState extends State<CashierPosShell>
                           color: Colors.black54,
                           shape: const CircleBorder(),
                           child: IconButton(
-                            icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                            icon: const Icon(Icons.close,
+                                color: Colors.white, size: 20),
                             onPressed: () => Navigator.pop(dialogCtx),
-                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            constraints: const BoxConstraints(
+                                minWidth: 36, minHeight: 36),
                           ),
                         ),
                       ),
                     ],
                   ),
+                  // Body
                   Flexible(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.all(20),
@@ -286,47 +297,80 @@ class _CashierPosShellState extends State<CashierPosShell>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(dish.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                          Text(dish.name,
+                              style: const TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 4),
-                          Text('₱${dish.price}', style: TextStyle(fontSize: 15, color: Colors.amber.shade800, fontWeight: FontWeight.w600)),
+                          Text('₱${dish.price}',
+                              style: TextStyle(
+                                  fontSize: 15,
+                                  color: Colors.amber.shade800,
+                                  fontWeight: FontWeight.w600)),
                           if (dish.publicDescription.trim().isNotEmpty) ...[
                             const SizedBox(height: 10),
-                            Text(dish.publicDescription.trim(), style: TextStyle(fontSize: 13, color: Colors.grey.shade800, height: 1.35)),
+                            Text(dish.publicDescription.trim(),
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey.shade800,
+                                    height: 1.35)),
                           ],
                           if (dish.ingredients.isNotEmpty) ...[
                             const SizedBox(height: 10),
-                            const Text('Ingredients', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                            const Text('Ingredients',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13)),
                             const SizedBox(height: 4),
                             Wrap(
                               spacing: 6,
                               runSpacing: 4,
-                              children: dish.ingredients.map((ing) => Chip(
-                                label: Text(ing, style: const TextStyle(fontSize: 11)),
-                                visualDensity: VisualDensity.compact,
-                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              )).toList(),
+                              children: dish.ingredients
+                                  .map((ing) => Chip(
+                                        label: Text(ing,
+                                            style:
+                                                const TextStyle(fontSize: 11)),
+                                        visualDensity: VisualDensity.compact,
+                                        materialTapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ))
+                                  .toList(),
                             ),
                           ],
                           if (dish.allergens.trim().isNotEmpty) ...[
                             const SizedBox(height: 10),
-                            Text('Allergens', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.red.shade700)),
+                            Text('Allergens',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                    color: Colors.red.shade700)),
                             const SizedBox(height: 4),
-                            Text(dish.allergens.trim(), style: TextStyle(fontSize: 12, color: Colors.red.shade700)),
+                            Text(dish.allergens.trim(),
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.red.shade700)),
                           ],
                           if (dish.sauces.isNotEmpty) ...[
                             const SizedBox(height: 12),
-                            const Text('Add-on', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                            const Text('Add-on',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13)),
                             const SizedBox(height: 6),
                             DropdownButtonFormField<String?>(
                               value: selectedAddOn,
                               decoration: InputDecoration(
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8)),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
                                 isDense: true,
                               ),
                               items: [
-                                const DropdownMenuItem<String?>(value: null, child: Text('None')),
-                                ...dish.sauces.map((s) => DropdownMenuItem<String?>(value: s, child: Text(s))),
+                                const DropdownMenuItem<String?>(
+                                    value: null, child: Text('None')),
+                                ...dish.sauces.map((s) =>
+                                    DropdownMenuItem<String?>(
+                                        value: s, child: Text(s))),
                               ],
                               onChanged: (val) => setDialogState(() {
                                 selectedAddOn = val;
@@ -337,26 +381,41 @@ class _CashierPosShellState extends State<CashierPosShell>
                               const SizedBox(height: 8),
                               Row(
                                 children: [
-                                  Text('Qty:', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                                  Text('Qty:',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade700)),
                                   const SizedBox(width: 8),
                                   Container(
                                     decoration: BoxDecoration(
-                                      border: Border.all(color: Colors.grey.shade400),
+                                      border: Border.all(
+                                          color: Colors.grey.shade400),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         IconButton(
-                                          icon: const Icon(Icons.remove, size: 16),
-                                          onPressed: addOnQty > 1 ? () => setDialogState(() => addOnQty--) : null,
-                                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                          icon: const Icon(Icons.remove,
+                                              size: 16),
+                                          onPressed: addOnQty > 1
+                                              ? () => setDialogState(
+                                                  () => addOnQty--)
+                                              : null,
+                                          constraints: const BoxConstraints(
+                                              minWidth: 32, minHeight: 32),
                                         ),
-                                        Text('$addOnQty', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                                        Text('$addOnQty',
+                                            style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600)),
                                         IconButton(
-                                          icon: const Icon(Icons.add, size: 16),
-                                          onPressed: () => setDialogState(() => addOnQty++),
-                                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                          icon:
+                                              const Icon(Icons.add, size: 16),
+                                          onPressed: () =>
+                                              setDialogState(() => addOnQty++),
+                                          constraints: const BoxConstraints(
+                                              minWidth: 32, minHeight: 32),
                                         ),
                                       ],
                                     ),
@@ -366,14 +425,18 @@ class _CashierPosShellState extends State<CashierPosShell>
                             ],
                           ],
                           const SizedBox(height: 12),
-                          const Text('Notes', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          const Text('Notes',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 13)),
                           const SizedBox(height: 4),
                           TextField(
                             controller: notesCtrl,
                             decoration: InputDecoration(
                               hintText: 'Special instructions...',
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8)),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
                             ),
                             maxLines: 2,
                           ),
@@ -382,22 +445,33 @@ class _CashierPosShellState extends State<CashierPosShell>
                             children: [
                               Container(
                                 decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey.shade400),
+                                  border:
+                                      Border.all(color: Colors.grey.shade400),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     IconButton(
-                                      icon: const Icon(Icons.remove, size: 18),
-                                      onPressed: quantity > 1 ? () => setDialogState(() => quantity--) : null,
-                                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                      icon:
+                                          const Icon(Icons.remove, size: 18),
+                                      onPressed: quantity > 1
+                                          ? () =>
+                                              setDialogState(() => quantity--)
+                                          : null,
+                                      constraints: const BoxConstraints(
+                                          minWidth: 36, minHeight: 36),
                                     ),
-                                    Text('$quantity', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                                    Text('$quantity',
+                                        style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600)),
                                     IconButton(
                                       icon: const Icon(Icons.add, size: 18),
-                                      onPressed: () => setDialogState(() => quantity++),
-                                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                      onPressed: () =>
+                                          setDialogState(() => quantity++),
+                                      constraints: const BoxConstraints(
+                                          minWidth: 36, minHeight: 36),
                                     ),
                                   ],
                                 ),
@@ -412,24 +486,33 @@ class _CashierPosShellState extends State<CashierPosShell>
                                         'dish_id': dish.id,
                                         'image_base64': dish.imageBase64,
                                         'dip': selectedAddOn ?? '',
-                                        'dip_qty': selectedAddOn != null ? addOnQty : 0,
+                                        'dip_qty': selectedAddOn != null
+                                            ? addOnQty
+                                            : 0,
                                         'qty': quantity,
                                         'price': dishPrice,
                                         'note': notesCtrl.text.trim(),
                                       });
                                     });
                                     Navigator.pop(dialogCtx);
-                                    _snack('${dish.name} x$quantity added to tray');
+                                    _snack(
+                                        '${dish.name} x$quantity added to tray');
                                   },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: AntdTokens.brandPrimary,
-                                    foregroundColor: AntdTokens.brandOnPrimary,
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    foregroundColor:
+                                        AntdTokens.brandOnPrimary,
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 14),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(8)),
                                   ),
                                   child: Text(
                                     'ADD TO TRAY  ₱${totalPrice.toStringAsFixed(0)}',
-                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13),
                                   ),
                                 ),
                               ),
@@ -439,7 +522,8 @@ class _CashierPosShellState extends State<CashierPosShell>
                           Center(
                             child: TextButton(
                               onPressed: () => Navigator.pop(dialogCtx),
-                              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                              child: const Text('Cancel',
+                                  style: TextStyle(color: Colors.grey)),
                             ),
                           ),
                         ],
@@ -455,9 +539,11 @@ class _CashierPosShellState extends State<CashierPosShell>
     );
   }
 
-  // --- Walk-in submission ---
+  // ---------------------------------------------------------------------------
+  // Checkout confirmation → walk-in submission
+  // ---------------------------------------------------------------------------
 
-  Future<void> _submitWalkIn() async {
+  Future<void> _handleCheckout() async {
     if (_tray.isEmpty) {
       _snack('Add items to the tray');
       return;
@@ -477,13 +563,98 @@ class _CashierPosShellState extends State<CashierPosShell>
         return;
       }
     }
+
+    // Confirmation dialog with order summary
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text('Confirm Order'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_walkInLabelCtrl.text.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                        'Customer: ${_walkInLabelCtrl.text.trim()}',
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ..._tray.map((item) {
+                  final name = item['item_name']?.toString() ?? 'Dish';
+                  final qty = _toQty(item['qty']);
+                  final price = _toMoney(item['price']);
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      children: [
+                        Expanded(
+                            child: Text('$name  x$qty',
+                                style: const TextStyle(fontSize: 13))),
+                        Text('₱${(price * qty).toStringAsFixed(2)}',
+                            style: const TextStyle(fontSize: 13)),
+                      ],
+                    ),
+                  );
+                }),
+                const Divider(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Total:',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 15)),
+                    Text('₱${_trayTotal.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 15)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text('Payment: $_paymentMethod',
+                    style: TextStyle(
+                        fontSize: 13, color: Colors.grey.shade700)),
+                Text('Received: ₱${received.toStringAsFixed(2)}',
+                    style: TextStyle(
+                        fontSize: 13, color: Colors.grey.shade700)),
+                if (received > _trayTotal)
+                  Text(
+                      'Change: ₱${(received - _trayTotal).toStringAsFixed(2)}',
+                      style: TextStyle(
+                          fontSize: 13, color: Colors.green.shade700)),
+                const SizedBox(height: 14),
+                const Text('Proceed with this order?',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Proceed'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
     try {
       final result = await CashierPosApi.instance.submitWalkInOrder(
         paymentMethod: _paymentMethod,
         amountReceived: received,
         posCustomerLabel: _walkInLabelCtrl.text.trim(),
         items: _tray,
-        note: _paymentMethod == 'GCASH' ? 'Ref#: ${_gcashRefCtrl.text.trim()}' : '',
+        note: _paymentMethod == 'GCASH'
+            ? 'Ref#: ${_gcashRefCtrl.text.trim()}'
+            : '',
         paymentProofBase64: _gcashProofBase64,
       );
       setState(() {
@@ -517,20 +688,40 @@ class _CashierPosShellState extends State<CashierPosShell>
     }
   }
 
-  // --- Online order actions ---
+  // ---------------------------------------------------------------------------
+  // Online order actions
+  // ---------------------------------------------------------------------------
 
   Future<void> _confirmPayment(PosOrderView order) async {
     final paidCtrl = TextEditingController(
       text: order.total.toStringAsFixed(2),
     );
+    final amtBefore = _toMoney(order.raw['amount_received'] ?? 0);
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Confirm · ${order.orderNo}'),
-        content: TextField(
-          controller: paidCtrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Amount received'),
+        title: Text('Confirm Payment · ${order.orderNo}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Order total: ₱${order.total.toStringAsFixed(2)}'),
+            if (amtBefore > 0)
+              Text('Previously received: ₱${amtBefore.toStringAsFixed(2)}',
+                  style: TextStyle(
+                      fontSize: 13, color: Colors.grey.shade700)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: paidCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Amount received',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -607,9 +798,11 @@ class _CashierPosShellState extends State<CashierPosShell>
           children: [
             Text('Order: ${order.orderNo}'),
             const SizedBox(height: 8),
-            Text('Tracking URL: ${trackingUrl.isEmpty ? "(none)" : trackingUrl}'),
+            Text(
+                'Tracking URL: ${trackingUrl.isEmpty ? "(none)" : trackingUrl}'),
             const SizedBox(height: 12),
-            const Text('Are you sure you want to mark this order as Out for Delivery?'),
+            const Text(
+                'Are you sure you want to mark this order as Out for Delivery?'),
           ],
         ),
         actions: [
@@ -640,6 +833,25 @@ class _CashierPosShellState extends State<CashierPosShell>
   }
 
   Future<void> _markDelivered(PosOrderView order) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mark as Delivered'),
+        content: Text(
+            'Confirm that order ${order.orderNo} has been delivered?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
     try {
       await CashierPosApi.instance.patchFulfillment(
         order.raw['id'],
@@ -658,7 +870,8 @@ class _CashierPosShellState extends State<CashierPosShell>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Mark order claimed?'),
-        content: Text('Confirm when ${o.orderNo} has been picked up by the customer.'),
+        content: Text(
+            'Confirm when ${o.orderNo} has been picked up by the customer.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -710,102 +923,122 @@ class _CashierPosShellState extends State<CashierPosShell>
     }
   }
 
-  // --- Online order filters ---
+  // ---------------------------------------------------------------------------
+  // Online order filters
+  // ---------------------------------------------------------------------------
 
-  List<PosOrderView> get _pendingOnline {
-    return _online
-        .map(PosOrderView.new)
-        .where((o) => !isWalkIn(o))
-        .where((o) =>
-            o.fulfillmentStage.toUpperCase() == 'PENDING_CASHIER' ||
-            o.fulfillmentStage.isEmpty)
-        .where((o) => matchesPendingFilter(o, _onlinePendingFilter))
-        .where((o) => _matchesOnlineSearch(o))
-        .toList();
-  }
+  List<PosOrderView> get _pendingOnline => _online
+      .map(PosOrderView.new)
+      .where((o) => !isWalkIn(o))
+      .where((o) =>
+          o.fulfillmentStage.toUpperCase() == 'PENDING_CASHIER' ||
+          o.fulfillmentStage.isEmpty)
+      .where((o) => matchesPendingFilter(o, _onlinePendingFilter))
+      .where(_matchesOnlineSearch)
+      .toList();
 
-  List<PosOrderView> get _preparingOnline {
-    return _online
-        .map(PosOrderView.new)
-        .where((o) => !isWalkIn(o))
-        .where((o) =>
-            o.fulfillmentStage.toUpperCase() == 'IN_PREPARATION' ||
-            o.status.toUpperCase().contains('ORDER CONFIRMED'))
-        .where((o) => matchesPreparingFilter(o, _onlinePreparingFilter))
-        .where((o) => _matchesOnlineSearch(o))
-        .toList();
-  }
+  List<PosOrderView> get _preparingOnline => _online
+      .map(PosOrderView.new)
+      .where((o) => !isWalkIn(o))
+      .where((o) =>
+          o.fulfillmentStage.toUpperCase() == 'IN_PREPARATION' ||
+          o.status.toUpperCase().contains('ORDER CONFIRMED'))
+      .where((o) => matchesPreparingFilter(o, _onlinePreparingFilter))
+      .where(_matchesOnlineSearch)
+      .toList();
 
-  List<PosOrderView> get _outForDeliveryOnline {
-    return _online
-        .map(PosOrderView.new)
-        .where((o) => !isWalkIn(o))
-        .where((o) => o.fulfillmentStage.toUpperCase() == 'OUT_FOR_DELIVERY')
-        .where((o) => _matchesOnlineSearch(o))
-        .toList();
-  }
+  List<PosOrderView> get _outForDeliveryOnline => _online
+      .map(PosOrderView.new)
+      .where((o) => !isWalkIn(o))
+      .where((o) => o.fulfillmentStage.toUpperCase() == 'OUT_FOR_DELIVERY')
+      .where(_matchesOnlineSearch)
+      .toList();
 
-  List<PosOrderView> get _deliveredOnline {
-    return _online
-        .map(PosOrderView.new)
-        .where((o) => !isWalkIn(o))
-        .where((o) => o.fulfillmentStage.toUpperCase() == 'DELIVERED')
-        .where((o) => _matchesOnlineSearch(o))
-        .toList();
-  }
+  List<PosOrderView> get _deliveredOnline => _online
+      .map(PosOrderView.new)
+      .where((o) => !isWalkIn(o))
+      .where((o) => o.fulfillmentStage.toUpperCase() == 'DELIVERED')
+      .where(_matchesOnlineSearch)
+      .toList();
 
-  List<PosOrderView> get _cancelledOnline {
-    return _online
-        .map(PosOrderView.new)
-        .where((o) => !isWalkIn(o))
-        .where((o) => o.status.toUpperCase().contains('CANCEL'))
-        .where((o) => _matchesOnlineSearch(o))
-        .toList();
-  }
+  List<PosOrderView> get _cancelledOnline => _online
+      .map(PosOrderView.new)
+      .where((o) => !isWalkIn(o))
+      .where((o) => o.status.toUpperCase().contains('CANCEL'))
+      .where(_matchesOnlineSearch)
+      .toList();
 
   bool _matchesOnlineSearch(PosOrderView o) {
     final q = _onlineSearch.trim().toLowerCase();
     if (q.isEmpty) return true;
     return o.orderNo.toLowerCase().contains(q) ||
         o.status.toLowerCase().contains(q) ||
-        (o.raw['customer_display_name'] ?? '').toString().toLowerCase().contains(q) ||
-        (o.raw['user_email'] ?? '').toString().toLowerCase().contains(q);
+        (o.raw['customer_display_name'] ?? '')
+            .toString()
+            .toLowerCase()
+            .contains(q) ||
+        (o.raw['user_email'] ?? '')
+            .toString()
+            .toLowerCase()
+            .contains(q);
   }
 
-  // --- Build ---
+  // ---------------------------------------------------------------------------
+  // Tracking URL launcher
+  // ---------------------------------------------------------------------------
+
+  Future<void> _launchTrackingUrl(String url) async {
+    var target = url.trim();
+    if (target.isNotEmpty &&
+        !target.startsWith('http://') &&
+        !target.startsWith('https://')) {
+      target = 'https://$target';
+    }
+    final uri = Uri.tryParse(target);
+    if (uri == null) {
+      _snack('Invalid tracking URL');
+      return;
+    }
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      _snack('Could not open tracking link');
+    }
+  }
+
+  // =========================================================================
+  // BUILD
+  // =========================================================================
 
   @override
   Widget build(BuildContext context) {
     final user = AuthSession.instance.currentUser.value;
-    final cashierName = (user?.fullName ?? user?.email ?? 'CASHIER').toUpperCase();
-
-    final tabLabel = _tab.index == 0
-        ? 'NEW ORDER'
-        : _tab.index == 1
-            ? 'ONLINE ORDERS'
-            : 'WALK-IN ORDERS';
+    final cashierName =
+        (user?.fullName ?? user?.email ?? 'CASHIER').toUpperCase();
+    const tabLabels = ['NEW ORDER', 'ONLINE ORDERS', 'WALK-IN ORDERS'];
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.black87,
         foregroundColor: Colors.white,
-        leading: Builder(
-          builder: (ctx) => IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () => Scaffold.of(ctx).openDrawer(),
-          ),
-        ),
-        title: Text(
-          cashierName,
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.5,
-            fontSize: 16,
-          ),
+        automaticallyImplyLeading: false,
+        title: Row(
+          children: [
+            const Icon(Icons.storefront, size: 22),
+            const SizedBox(width: 10),
+            Text(
+              cashierName,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+                fontSize: 16,
+              ),
+            ),
+          ],
         ),
         actions: [
-          if (_tab.index == 0 && _trayItemCount > 0)
+          if (_selectedTab == 0 && _trayItemCount > 0)
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: Container(
@@ -830,13 +1063,14 @@ class _CashierPosShellState extends State<CashierPosShell>
             padding: const EdgeInsets.only(right: 10),
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: AntdTokens.brandPrimary,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  tabLabel,
+                  tabLabels[_selectedTab],
                   style: const TextStyle(
                     color: AntdTokens.brandOnPrimary,
                     fontWeight: FontWeight.w800,
@@ -860,104 +1094,112 @@ class _CashierPosShellState extends State<CashierPosShell>
             ),
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: Material(
-            color: Colors.white,
-            elevation: 2,
-            shadowColor: Colors.black26,
-            child: TabBar(
-              controller: _tab,
-              indicatorColor: AntdTokens.brandPrimary,
-              labelColor: AntdTokens.brandPrimary,
-              unselectedLabelColor: Colors.grey.shade700,
-              tabs: const [
-                Tab(text: 'New Order'),
-                Tab(text: 'Online Orders'),
-                Tab(text: 'Walk-In Orders'),
-              ],
-            ),
-          ),
-        ),
       ),
-      drawer: _buildDrawer(context),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(_error!, style: const TextStyle(color: Colors.red)),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: _refreshAll,
-                        child: const Text('Retry'),
+      body: Row(
+        children: [
+          _buildSidebar(),
+          Container(width: 1, color: Colors.grey.shade300),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(_error!,
+                                style: const TextStyle(color: Colors.red)),
+                            const SizedBox(height: 12),
+                            FilledButton(
+                              onPressed: _refreshAll,
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : IndexedStack(
+                        index: _selectedTab,
+                        children: [
+                          _buildNewOrderTab(),
+                          _buildOnlineOrdersTab(),
+                          _buildWalkInTab(),
+                        ],
                       ),
-                    ],
-                  ),
-                )
-              : TabBarView(
-                  controller: _tab,
-                  children: [
-                    _buildNewOrderTab(),
-                    _buildOnlineOrdersTab(),
-                    _buildWalkInTab(),
-                  ],
-                ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildDrawer(BuildContext context) {
-    final user = AuthSession.instance.currentUser.value;
-    return Drawer(
-      child: SafeArea(
+  // ---------------------------------------------------------------------------
+  // Left sidebar navigation + logout
+  // ---------------------------------------------------------------------------
+
+  Widget _buildSidebar() {
+    return Container(
+      width: 82,
+      color: const Color(0xFF1E1E1E),
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          _sidebarTab(0, Icons.add_shopping_cart, 'New\nOrder'),
+          _sidebarTab(1, Icons.cloud_queue, 'Online'),
+          _sidebarTab(2, Icons.storefront_outlined, 'Walk-In'),
+          const Spacer(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Divider(color: Colors.white24, height: 1),
+          ),
+          const SizedBox(height: 8),
+          _sidebarAction(Icons.refresh, 'Refresh', Colors.white60, _refreshAll),
+          const SizedBox(height: 4),
+          _sidebarAction(Icons.logout, 'Logout', Colors.red.shade400, () {
+            AuthSession.instance.clear();
+          }),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
+  Widget _sidebarTab(int index, IconData icon, String label) {
+    final active = _selectedTab == index;
+    return InkWell(
+      onTap: () {
+        setState(() => _selectedTab = index);
+        if (index == 1) _refreshOnline();
+        if (index == 2) _refreshWalkIn();
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: active
+              ? AntdTokens.brandPrimary.withAlpha(40)
+              : Colors.transparent,
+          border: Border(
+            left: BorderSide(
+              color: active ? AntdTokens.brandPrimary : Colors.transparent,
+              width: 3,
+            ),
+          ),
+        ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              color: Colors.black87,
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.storefront, color: Colors.white, size: 36),
-                  const SizedBox(height: 12),
-                  Text(
-                    user?.fullName ?? 'Cashier',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                    ),
-                  ),
-                  if (user?.email != null)
-                    Text(
-                      user!.email,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13,
-                      ),
-                    ),
-                ],
+            Icon(icon,
+                color: active ? AntdTokens.brandPrimary : Colors.white70,
+                size: 24),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: active ? AntdTokens.brandPrimary : Colors.white70,
+                fontSize: 10,
+                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                height: 1.2,
               ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.refresh),
-              title: const Text('Refresh all data'),
-              onTap: () {
-                Navigator.pop(context);
-                _refreshAll();
-              },
-            ),
-            const Spacer(),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Logout', style: TextStyle(color: Colors.red)),
-              onTap: () {
-                Navigator.pop(context);
-                AuthSession.instance.clear();
-              },
             ),
           ],
         ),
@@ -965,9 +1207,34 @@ class _CashierPosShellState extends State<CashierPosShell>
     );
   }
 
-  // ============================================================
-  // TAB 0: NEW ORDER (Menu grid + Tray sidebar)
-  // ============================================================
+  Widget _sidebarAction(
+      IconData icon, String label, Color color, VoidCallback onTap) {
+    return Tooltip(
+      message: label,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: 22),
+              const SizedBox(height: 2),
+              Text(label,
+                  style: TextStyle(
+                      color: color,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // =========================================================================
+  // TAB 0 — NEW ORDER (menu grid + tray sidebar)
+  // =========================================================================
 
   Widget _buildNewOrderTab() {
     final dishes = _filteredDishes;
@@ -993,18 +1260,21 @@ class _CashierPosShellState extends State<CashierPosShell>
           height: 50,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             itemCount: _categoryChips.length,
             itemBuilder: (_, i) {
               final type = _categoryChips[i];
-              final isSelected = type.toLowerCase() == _menuCategory.toLowerCase();
+              final selected =
+                  type.toLowerCase() == _menuCategory.toLowerCase();
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: FilterChip(
                   label: Text(type),
-                  selected: isSelected,
+                  selected: selected,
                   selectedColor: AntdTokens.brandPrimary.withAlpha(80),
-                  onSelected: (_) => setState(() => _menuCategory = type),
+                  onSelected: (_) =>
+                      setState(() => _menuCategory = type),
                 ),
               );
             },
@@ -1016,9 +1286,13 @@ class _CashierPosShellState extends State<CashierPosShell>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.restaurant_menu, size: 64, color: Colors.grey.shade400),
+                      Icon(Icons.restaurant_menu,
+                          size: 64, color: Colors.grey.shade400),
                       const SizedBox(height: 16),
-                      Text('No items available', style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
+                      Text('No items available',
+                          style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey.shade600)),
                     ],
                   ),
                 )
@@ -1027,14 +1301,16 @@ class _CashierPosShellState extends State<CashierPosShell>
                   child: GridView.builder(
                     key: ValueKey(_menuCategory),
                     padding: const EdgeInsets.all(12),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 5,
                       crossAxisSpacing: 10,
                       mainAxisSpacing: 10,
                       childAspectRatio: 0.70,
                     ),
                     itemCount: dishes.length,
-                    itemBuilder: (context, i) => _buildDishCard(dishes[i]),
+                    itemBuilder: (context, i) =>
+                        _buildDishCard(dishes[i]),
                   ),
                 ),
         ),
@@ -1043,8 +1319,7 @@ class _CashierPosShellState extends State<CashierPosShell>
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 780;
-        if (wide) {
+        if (constraints.maxWidth >= 780) {
           return Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1067,7 +1342,8 @@ class _CashierPosShellState extends State<CashierPosShell>
     final price = double.tryParse(dish.price) ?? 0;
     return Card(
       elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1075,7 +1351,8 @@ class _CashierPosShellState extends State<CashierPosShell>
           Expanded(
             flex: 3,
             child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(12)),
               child: RepaintBoundary(
                 child: dish.imageBase64?.isNotEmpty == true
                     ? Image.memory(
@@ -1120,11 +1397,16 @@ class _CashierPosShellState extends State<CashierPosShell>
                   SizedBox(
                     height: 28,
                     child: ElevatedButton(
-                      onPressed: dish.available ? () => _showAddToTrayDialog(dish) : null,
+                      onPressed: dish.available
+                          ? () => _showAddToTrayDialog(dish)
+                          : null,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: dish.available ? AntdTokens.brandOnPrimary : Colors.grey.shade500,
+                        backgroundColor: dish.available
+                            ? AntdTokens.brandOnPrimary
+                            : Colors.grey.shade500,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
@@ -1143,6 +1425,10 @@ class _CashierPosShellState extends State<CashierPosShell>
       ),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Tray sidebar (desktop) / bottom bar (narrow)
+  // ---------------------------------------------------------------------------
 
   Widget _buildTraySidebar(double subtotal) {
     return Container(
@@ -1163,9 +1449,7 @@ class _CashierPosShellState extends State<CashierPosShell>
         children: [
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Color(0xFF1E1E1E),
-            ),
+            decoration: const BoxDecoration(color: Color(0xFF1E1E1E)),
             child: Row(
               children: [
                 const Icon(Icons.shopping_cart, color: Colors.white),
@@ -1182,7 +1466,8 @@ class _CashierPosShellState extends State<CashierPosShell>
                 ),
                 Text(
                   '$_trayItemCount ${_trayItemCount == 1 ? 'item' : 'items'}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  style:
+                      const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
               ],
             ),
@@ -1193,14 +1478,19 @@ class _CashierPosShellState extends State<CashierPosShell>
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.shopping_cart_outlined, size: 48, color: Colors.grey.shade400),
+                        Icon(Icons.shopping_cart_outlined,
+                            size: 48, color: Colors.grey.shade400),
                         const SizedBox(height: 16),
-                        Text('Your tray is empty', style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
+                        Text('Your tray is empty',
+                            style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade600)),
                       ],
                     ),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 8),
                     itemCount: _tray.length,
                     itemBuilder: (_, i) => _buildTrayLine(_tray[i], i),
                   ),
@@ -1209,7 +1499,8 @@ class _CashierPosShellState extends State<CashierPosShell>
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.grey.shade50,
-              border: Border(top: BorderSide(color: Colors.grey.shade200)),
+              border:
+                  Border(top: BorderSide(color: Colors.grey.shade200)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1231,35 +1522,47 @@ class _CashierPosShellState extends State<CashierPosShell>
                   ),
                   items: const [
                     DropdownMenuItem(value: 'CASH', child: Text('CASH')),
-                    DropdownMenuItem(value: 'GCASH', child: Text('GCASH')),
+                    DropdownMenuItem(
+                        value: 'GCASH', child: Text('GCASH')),
                   ],
-                  onChanged: (v) => setState(() => _paymentMethod = v ?? 'CASH'),
+                  onChanged: (v) =>
+                      setState(() => _paymentMethod = v ?? 'CASH'),
                 ),
                 if (_paymentMethod == 'GCASH') ...[
                   const SizedBox(height: 8),
                   TextField(
                     controller: _gcashRefCtrl,
+                    maxLength: 13,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                    ],
                     decoration: const InputDecoration(
                       labelText: 'GCash Reference Number',
                       isDense: true,
+                      counterText: '',
                     ),
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
                     onPressed: _pickGcashProof,
                     icon: const Icon(Icons.upload_file, size: 18),
-                    label: Text(_gcashProofBytes != null ? 'Proof uploaded ✓' : 'Upload payment proof'),
+                    label: Text(_gcashProofBytes != null
+                        ? 'Proof uploaded'
+                        : 'Upload payment proof'),
                   ),
                   if (_gcashProofBytes != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(6),
-                        child: Image.memory(
-                          _gcashProofBytes!,
-                          height: 60,
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
+                        child: RepaintBoundary(
+                          child: Image.memory(
+                            _gcashProofBytes!,
+                            height: 60,
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                          ),
                         ),
                       ),
                     ),
@@ -1267,7 +1570,8 @@ class _CashierPosShellState extends State<CashierPosShell>
                 const SizedBox(height: 8),
                 TextField(
                   controller: _amountCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true),
                   decoration: InputDecoration(
                     labelText: 'Amount received',
                     hintText: subtotal.toStringAsFixed(2),
@@ -1278,24 +1582,25 @@ class _CashierPosShellState extends State<CashierPosShell>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Total:', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-                    Text('₱${subtotal.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                    const Text('Total:',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 15)),
+                    Text('₱${subtotal.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 15)),
                   ],
                 ),
                 const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: AntdTokens.brandPrimary,
-                          foregroundColor: AntdTokens.brandOnPrimary,
-                        ),
-                        onPressed: _tray.isEmpty ? null : _submitWalkIn,
-                        child: const Text('CHECKOUT'),
-                      ),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AntdTokens.brandPrimary,
+                      foregroundColor: AntdTokens.brandOnPrimary,
                     ),
-                  ],
+                    onPressed: _tray.isEmpty ? null : _handleCheckout,
+                    child: const Text('CHECKOUT'),
+                  ),
                 ),
               ],
             ),
@@ -1320,7 +1625,7 @@ class _CashierPosShellState extends State<CashierPosShell>
                 backgroundColor: AntdTokens.brandPrimary,
                 foregroundColor: AntdTokens.brandOnPrimary,
               ),
-              onPressed: _tray.isEmpty ? null : () => _showTraySheet(),
+              onPressed: _tray.isEmpty ? null : _showTraySheet,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -1328,8 +1633,10 @@ class _CashierPosShellState extends State<CashierPosShell>
                   if (_trayItemCount > 0) ...[
                     const SizedBox(width: 10),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      constraints: const BoxConstraints(
+                          minWidth: 22, minHeight: 22),
                       alignment: Alignment.center,
                       decoration: const BoxDecoration(
                         color: Colors.red,
@@ -1376,9 +1683,14 @@ class _CashierPosShellState extends State<CashierPosShell>
                       padding: const EdgeInsets.all(14),
                       child: Row(
                         children: [
-                          const Text('YOUR TRAY', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.8)),
+                          const Text('YOUR TRAY',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.8)),
                           const Spacer(),
-                          IconButton(onPressed: () => Navigator.pop(ctx), icon: const Icon(Icons.close)),
+                          IconButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              icon: const Icon(Icons.close)),
                         ],
                       ),
                     ),
@@ -1387,10 +1699,12 @@ class _CashierPosShellState extends State<CashierPosShell>
                           ? const Center(child: Text('No dishes yet.'))
                           : ListView.builder(
                               controller: scrollController,
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12),
                               itemCount: _tray.length,
                               itemBuilder: (_, i) {
-                                return _buildTrayLine(_tray[i], i, onChanged: () {
+                                return _buildTrayLine(_tray[i], i,
+                                    onChanged: () {
                                   setSheetState(() {});
                                   setState(() {});
                                 });
@@ -1402,7 +1716,10 @@ class _CashierPosShellState extends State<CashierPosShell>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text('Total ₱${_trayTotal.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                          Text(
+                              'Total ₱${_trayTotal.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w800)),
                           const SizedBox(height: 10),
                           Row(
                             children: [
@@ -1419,14 +1736,16 @@ class _CashierPosShellState extends State<CashierPosShell>
                               Expanded(
                                 child: FilledButton(
                                   style: FilledButton.styleFrom(
-                                    backgroundColor: AntdTokens.brandPrimary,
-                                    foregroundColor: AntdTokens.brandOnPrimary,
+                                    backgroundColor:
+                                        AntdTokens.brandPrimary,
+                                    foregroundColor:
+                                        AntdTokens.brandOnPrimary,
                                   ),
                                   onPressed: _tray.isEmpty
                                       ? null
                                       : () {
                                           Navigator.pop(ctx);
-                                          _submitWalkIn();
+                                          _handleCheckout();
                                         },
                                   child: const Text('CHECKOUT'),
                                 ),
@@ -1446,7 +1765,8 @@ class _CashierPosShellState extends State<CashierPosShell>
     );
   }
 
-  Widget _buildTrayLine(Map<String, dynamic> item, int index, {VoidCallback? onChanged}) {
+  Widget _buildTrayLine(Map<String, dynamic> item, int index,
+      {VoidCallback? onChanged}) {
     final name = item['item_name']?.toString() ?? 'Dish';
     final qty = _toQty(item['qty']);
     final price = _toMoney(item['price']);
@@ -1456,7 +1776,8 @@ class _CashierPosShellState extends State<CashierPosShell>
       elevation: 1,
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Row(
           children: [
             if (imageB64 != null && imageB64.isNotEmpty)
@@ -1485,17 +1806,23 @@ class _CashierPosShellState extends State<CashierPosShell>
                     color: Colors.grey.shade200,
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Icon(Icons.fastfood, size: 18, color: Colors.grey),
+                  child: const Icon(Icons.fastfood,
+                      size: 18, color: Colors.grey),
                 ),
               ),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                   Text(
                     '₱${price.toStringAsFixed(2)} × $qty = ₱${(price * qty).toStringAsFixed(2)}',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                    style: TextStyle(
+                        fontSize: 11, color: Colors.grey.shade700),
                   ),
                 ],
               ),
@@ -1504,9 +1831,11 @@ class _CashierPosShellState extends State<CashierPosShell>
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.remove_circle_outline, size: 20),
+                  icon: const Icon(Icons.remove_circle_outline,
+                      size: 20),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
                   onPressed: () {
                     setState(() {
                       if (qty <= 1) {
@@ -1520,12 +1849,16 @@ class _CashierPosShellState extends State<CashierPosShell>
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Text('$qty', style: const TextStyle(fontWeight: FontWeight.w800)),
+                  child: Text('$qty',
+                      style:
+                          const TextStyle(fontWeight: FontWeight.w800)),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.add_circle_outline, size: 20),
+                  icon:
+                      const Icon(Icons.add_circle_outline, size: 20),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
                   onPressed: () {
                     setState(() => item['qty'] = qty + 1);
                     onChanged?.call();
@@ -1539,12 +1872,18 @@ class _CashierPosShellState extends State<CashierPosShell>
     );
   }
 
-  // ============================================================
-  // TAB 1: ONLINE ORDERS (split: list LEFT, detail RIGHT)
-  // ============================================================
+  // =========================================================================
+  // TAB 1 — ONLINE ORDERS (split: list LEFT, detail RIGHT)
+  // =========================================================================
 
   Widget _buildOnlineOrdersTab() {
-    final subTabs = ['Pending', 'Preparing', 'For delivery', 'Delivered', 'Cancelled'];
+    final subTabs = [
+      'Pending',
+      'Preparing',
+      'For Delivery',
+      'Delivered',
+      'Cancelled',
+    ];
     final subLists = [
       _pendingOnline,
       _preparingOnline,
@@ -1565,35 +1904,54 @@ class _CashierPosShellState extends State<CashierPosShell>
                     hintText: 'Search order no / email / status',
                     isDense: true,
                     prefixIcon: const Icon(Icons.search, size: 20),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
-                  onChanged: (v) => setState(() => _onlineSearch = v),
+                  onChanged: (v) =>
+                      setState(() => _onlineSearch = v),
                 ),
               ),
               if (_onlineSubTab == 0)
                 PopupMenuButton<String>(
                   tooltip: 'Filter',
-                  icon: Icon(Icons.filter_list, color: _onlinePendingFilter != 'all' ? AntdTokens.brandPrimary : null),
-                  onSelected: (v) => setState(() => _onlinePendingFilter = v),
+                  icon: Icon(Icons.filter_list,
+                      color: _onlinePendingFilter != 'all'
+                          ? AntdTokens.brandPrimary
+                          : null),
+                  onSelected: (v) =>
+                      setState(() => _onlinePendingFilter = v),
                   itemBuilder: (_) => [
-                    _popupItem('all', 'All', _onlinePendingFilter),
-                    _popupItem('wait_payment', 'Waiting Payment', _onlinePendingFilter),
-                    _popupItem('payment_insufficient', 'Payment Insufficient', _onlinePendingFilter),
-                    _popupItem('wait_balance', 'Balance Review', _onlinePendingFilter),
+                    _popupItem(
+                        'all', 'All', _onlinePendingFilter),
+                    _popupItem('wait_payment', 'Waiting Payment',
+                        _onlinePendingFilter),
+                    _popupItem('payment_insufficient',
+                        'Payment Insufficient', _onlinePendingFilter),
+                    _popupItem('wait_balance', 'Balance Review',
+                        _onlinePendingFilter),
                   ],
                 ),
               if (_onlineSubTab == 1)
                 PopupMenuButton<String>(
                   tooltip: 'Filter',
-                  icon: Icon(Icons.filter_list, color: _onlinePreparingFilter != 'all' ? AntdTokens.brandPrimary : null),
-                  onSelected: (v) => setState(() => _onlinePreparingFilter = v),
+                  icon: Icon(Icons.filter_list,
+                      color: _onlinePreparingFilter != 'all'
+                          ? AntdTokens.brandPrimary
+                          : null),
+                  onSelected: (v) =>
+                      setState(() => _onlinePreparingFilter = v),
                   itemBuilder: (_) => [
-                    _popupItem('all', 'All', _onlinePreparingFilter),
-                    _popupItem('payment_confirmed', 'Payment Confirmed', _onlinePreparingFilter),
-                    _popupItem('overpayment', 'Overpayment', _onlinePreparingFilter),
+                    _popupItem(
+                        'all', 'All', _onlinePreparingFilter),
+                    _popupItem('payment_confirmed',
+                        'Payment Confirmed', _onlinePreparingFilter),
+                    _popupItem('overpayment', 'Overpayment',
+                        _onlinePreparingFilter),
                   ],
                 ),
-              IconButton(icon: const Icon(Icons.refresh), onPressed: _refreshOnline),
+              IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _refreshOnline),
             ],
           ),
         ),
@@ -1604,14 +1962,15 @@ class _CashierPosShellState extends State<CashierPosShell>
             padding: const EdgeInsets.symmetric(horizontal: 12),
             itemCount: subTabs.length,
             itemBuilder: (_, i) {
-              final isActive = _onlineSubTab == i;
+              final active = _onlineSubTab == i;
               final count = subLists[i].length;
               return Padding(
                 padding: const EdgeInsets.only(right: 6),
                 child: ChoiceChip(
                   label: Text('${subTabs[i]} ($count)'),
-                  selected: isActive,
-                  selectedColor: AntdTokens.brandPrimary.withAlpha(80),
+                  selected: active,
+                  selectedColor:
+                      AntdTokens.brandPrimary.withAlpha(80),
                   onSelected: (_) => setState(() {
                     _onlineSubTab = i;
                     _selectedOnlineOrder = null;
@@ -1624,14 +1983,18 @@ class _CashierPosShellState extends State<CashierPosShell>
         const SizedBox(height: 6),
         Expanded(
           child: subLists[_onlineSubTab].isEmpty
-              ? const Center(child: Text('No orders in this stage.'))
+              ? const Center(
+                  child: Text('No orders in this stage.'))
               : ListView.builder(
                   padding: const EdgeInsets.all(12),
                   itemCount: subLists[_onlineSubTab].length,
                   itemBuilder: (_, i) {
                     final o = subLists[_onlineSubTab][i];
-                    final isSelected = _selectedOnlineOrder?.orderNo == o.orderNo;
-                    return _buildOnlineOrderListTile(o, _onlineSubTab, isSelected);
+                    final selected = _selectedOnlineOrder
+                            ?.orderNo ==
+                        o.orderNo;
+                    return _buildOnlineOrderListTile(
+                        o, _onlineSubTab, selected);
                   },
                 ),
         ),
@@ -1647,43 +2010,67 @@ class _CashierPosShellState extends State<CashierPosShell>
     );
   }
 
-  Widget _buildOnlineOrderListTile(PosOrderView o, int tabIdx, bool isSelected) {
-    final customerName = o.raw['customer_display_name']?.toString() ?? o.raw['user_email']?.toString() ?? '';
+  Widget _buildOnlineOrderListTile(
+      PosOrderView o, int tabIdx, bool isSelected) {
+    final customerName =
+        o.raw['customer_display_name']?.toString() ??
+            o.raw['user_email']?.toString() ??
+            '';
     return Card(
       elevation: isSelected ? 4 : 1,
-      color: isSelected ? AntdTokens.brandPrimary.withAlpha(30) : Colors.white,
+      color: isSelected
+          ? AntdTokens.brandPrimary.withAlpha(30)
+          : Colors.white,
       margin: const EdgeInsets.only(bottom: 8),
       child: InkWell(
-        onTap: () => setState(() => _selectedOnlineOrder = o),
+        onTap: () =>
+            setState(() => _selectedOnlineOrder = o),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          padding:
+              const EdgeInsets.fromLTRB(12, 10, 12, 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: _statusBadgeBg(o.status),
-                      borderRadius: BorderRadius.circular(999),
+                      borderRadius:
+                          BorderRadius.circular(999),
                     ),
                     child: Text(
                       o.status,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: _statusBadgeFg(o.status)),
+                      style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color:
+                              _statusBadgeFg(o.status)),
                     ),
                   ),
                   const Spacer(),
-                  Text('₱${o.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  Text(
+                      '₱${o.total.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13)),
                 ],
               ),
               const SizedBox(height: 4),
-              Text(o.orderNo, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+              Text(o.orderNo,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13)),
               if (customerName.isNotEmpty)
-                Text(customerName, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                Text(customerName,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade700)),
             ],
           ),
         ),
@@ -1697,21 +2084,40 @@ class _CashierPosShellState extends State<CashierPosShell>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.receipt_long, size: 64, color: Colors.grey.shade300),
+            Icon(Icons.receipt_long,
+                size: 64, color: Colors.grey.shade300),
             const SizedBox(height: 12),
-            Text('Select an order to view details', style: TextStyle(color: Colors.grey.shade600)),
+            Text('Select an order to view details',
+                style:
+                    TextStyle(color: Colors.grey.shade600)),
           ],
         ),
       );
     }
     final o = _selectedOnlineOrder!;
-    final lines = (o.raw['lines'] ?? o.raw['items'] ?? []) as List<dynamic>;
-    final customerName = o.raw['customer_display_name']?.toString() ?? o.raw['user_email']?.toString() ?? '—';
-    final createdAt = o.raw['created_at']?.toString() ?? '';
-    final deliveryAddress = o.raw['delivery_address']?.toString() ?? '';
-    final note = o.raw['note']?.toString() ?? o.raw['special_instructions']?.toString() ?? '';
-    final paymentMethod = (o.raw['payment_method'] ?? o.raw['payment_mode'] ?? '').toString();
-    final trackingUrl = o.raw['delivery_tracking_url']?.toString() ?? '';
+    final raw = o.raw;
+    final lines = _orderItems(raw);
+    final customerName =
+        raw['customer_display_name']?.toString() ??
+            raw['user_email']?.toString() ??
+            '—';
+    final createdAt = raw['created_at']?.toString() ?? '';
+    final deliveryAddress =
+        raw['delivery_address']?.toString() ?? '';
+    final note = raw['note']?.toString() ??
+        raw['special_instructions']?.toString() ??
+        '';
+    final paymentMethod =
+        (raw['payment_method'] ?? raw['payment_mode'] ?? '')
+            .toString();
+    final trackingUrl =
+        raw['delivery_tracking_url']?.toString() ?? '';
+    final stage = o.fulfillmentStage.toUpperCase();
+    final amountReceived =
+        _toMoney(raw['amount_received'] ?? 0);
+    final proofB64 = (raw['payment_proof'] ??
+            raw['payment_proof_initial'])
+        ?.toString();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -1721,51 +2127,157 @@ class _CashierPosShellState extends State<CashierPosShell>
           Row(
             children: [
               Expanded(
-                child: Text(o.orderNo, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                child: Text(o.orderNo,
+                    style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800)),
               ),
               _buildOnlineDetailActions(o),
             ],
           ),
           const SizedBox(height: 12),
           _detailRow('Status', o.status),
-          _detailRow('Fulfillment', o.fulfillmentStage.isNotEmpty ? o.fulfillmentStage : '—'),
+          _detailRow(
+              'Fulfillment',
+              o.fulfillmentStage.isNotEmpty
+                  ? o.fulfillmentStage
+                  : '—'),
           _detailRow('Customer', customerName),
-          _detailRow('Payment', paymentMethod.isNotEmpty ? paymentMethod : '—'),
-          _detailRow('Total', '₱${o.total.toStringAsFixed(2)}'),
-          if (createdAt.isNotEmpty) _detailRow('Placed', createdAt),
-          if (deliveryAddress.isNotEmpty) _detailRow('Address', deliveryAddress),
-          if (trackingUrl.isNotEmpty) _detailRow('Tracking', trackingUrl),
+          _detailRow('Payment',
+              paymentMethod.isNotEmpty ? paymentMethod : '—'),
+          _detailRow('Total',
+              '₱${o.total.toStringAsFixed(2)}'),
+          if (amountReceived > 0)
+            _detailRow('Amount Received',
+                '₱${amountReceived.toStringAsFixed(2)}'),
+          if (createdAt.isNotEmpty)
+            _detailRow('Placed', createdAt),
+          if (deliveryAddress.isNotEmpty)
+            _detailRow('Address', deliveryAddress),
           if (note.isNotEmpty) _detailRow('Note', note),
-          const Divider(height: 24),
-          const Text('Items', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-          const SizedBox(height: 8),
-          ...lines.map((l) {
-            final ln = l is Map ? l : {};
-            final itemName = ln['item_name'] ?? ln['name'] ?? 'Item';
-            final itemQty = ln['qty'] ?? 1;
-            final itemPrice = _toMoney(ln['price'] ?? ln['unit_price'] ?? 0);
-            final dip = ln['dip']?.toString() ?? '';
-            return Container(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
+
+          // Clickable tracking URL
+          if (trackingUrl.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  SizedBox(
+                    width: 100,
+                    child: Text('Tracking',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade700,
+                            fontSize: 13)),
+                  ),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('$itemName', style: const TextStyle(fontWeight: FontWeight.w600)),
-                        if (dip.isNotEmpty) Text('Add-on: $dip', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                      ],
+                    child: InkWell(
+                      onTap: () =>
+                          _launchTrackingUrl(trackingUrl),
+                      child: Text(
+                        trackingUrl,
+                        style: const TextStyle(
+                            fontSize: 13,
+                            color: AntdTokens.info,
+                            decoration:
+                                TextDecoration.underline),
+                      ),
                     ),
                   ),
-                  Text('×$itemQty', style: const TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(width: 12),
-                  Text('₱${(itemPrice * (itemQty is num ? itemQty.toInt() : 1)).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600)),
                 ],
               ),
-            );
-          }),
+            ),
+
+          // Insufficient / overpayment banners for pending orders
+          if (stage == 'PENDING_CASHIER' ||
+              stage.isEmpty) ...[
+            if (amountReceived > 0 &&
+                amountReceived < o.total)
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border:
+                      Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded,
+                        color: Colors.red.shade700,
+                        size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Insufficient Payment — Received ₱${amountReceived.toStringAsFixed(2)} of ₱${o.total.toStringAsFixed(2)} (₱${(o.total - amountReceived).toStringAsFixed(2)} short)',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red.shade800,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (amountReceived > o.total)
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: Colors.orange.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        color: Colors.orange.shade800,
+                        size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Overpayment — Received ₱${amountReceived.toStringAsFixed(2)} (₱${(amountReceived - o.total).toStringAsFixed(2)} over)',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange.shade800,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+
+          // Payment proof image
+          if (proofB64 != null && proofB64.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('Payment Proof',
+                style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15)),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: RepaintBoundary(
+                child: Image.memory(
+                  base64Decode(proofB64),
+                  height: 200,
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
+                ),
+              ),
+            ),
+          ],
+
+          const Divider(height: 24),
+          const Text('Items',
+              style: TextStyle(
+                  fontWeight: FontWeight.w800, fontSize: 15)),
+          const SizedBox(height: 8),
+          ...lines.map((l) => _buildOrderItemRow(l)),
         ],
       ),
     );
@@ -1774,27 +2286,30 @@ class _CashierPosShellState extends State<CashierPosShell>
   Widget _buildOnlineDetailActions(PosOrderView o) {
     final stage = o.fulfillmentStage.toUpperCase();
     final status = o.status.toUpperCase();
-    if (stage == 'PENDING_CASHIER' || stage.isEmpty) {
-      if (!status.contains('CANCEL')) {
-        return FilledButton.icon(
-          style: FilledButton.styleFrom(
-            backgroundColor: AntdTokens.success,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            minimumSize: const Size(0, 36),
-          ),
-          onPressed: () => _confirmPayment(o),
-          icon: const Icon(Icons.check, size: 16),
-          label: const Text('Confirm Payment'),
-        );
-      }
+
+    if ((stage == 'PENDING_CASHIER' || stage.isEmpty) &&
+        !status.contains('CANCEL')) {
+      return FilledButton.icon(
+        style: FilledButton.styleFrom(
+          backgroundColor: AntdTokens.success,
+          foregroundColor: Colors.white,
+          padding:
+              const EdgeInsets.symmetric(horizontal: 10),
+          minimumSize: const Size(0, 36),
+        ),
+        onPressed: () => _confirmPayment(o),
+        icon: const Icon(Icons.check, size: 16),
+        label: const Text('Confirm Payment'),
+      );
     }
-    if (stage == 'IN_PREPARATION' || status.contains('ORDER CONFIRMED')) {
+    if (stage == 'IN_PREPARATION' ||
+        status.contains('ORDER CONFIRMED')) {
       return FilledButton.icon(
         style: FilledButton.styleFrom(
           backgroundColor: AntdTokens.info,
           foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 10),
           minimumSize: const Size(0, 36),
         ),
         onPressed: () => _showOutForDeliveryDialog(o),
@@ -1807,7 +2322,8 @@ class _CashierPosShellState extends State<CashierPosShell>
         style: FilledButton.styleFrom(
           backgroundColor: AntdTokens.success,
           foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 10),
           minimumSize: const Size(0, 36),
         ),
         onPressed: () => _markDelivered(o),
@@ -1818,65 +2334,23 @@ class _CashierPosShellState extends State<CashierPosShell>
     return const SizedBox.shrink();
   }
 
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(label, style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey.shade700, fontSize: 13)),
-          ),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
-        ],
-      ),
-    );
-  }
-
-  PopupMenuItem<String> _popupItem(String value, String label, String current) {
-    return PopupMenuItem<String>(
-      value: value,
-      child: Row(
-        children: [
-          if (current == value)
-            const Icon(Icons.check, size: 18, color: AntdTokens.brandPrimary),
-          if (current == value) const SizedBox(width: 4),
-          Text(label),
-        ],
-      ),
-    );
-  }
-
-  Color _statusBadgeBg(String status) {
-    final up = status.toUpperCase();
-    if (up.contains('INSUFFICIENT')) return Colors.red.shade100;
-    if (up.contains('CONFIRMED') || up.contains('OVERPAYMENT')) return Colors.green.shade100;
-    if (up.contains('CANCEL')) return Colors.grey.shade300;
-    return Colors.orange.shade100;
-  }
-
-  Color _statusBadgeFg(String status) {
-    final up = status.toUpperCase();
-    if (up.contains('INSUFFICIENT')) return Colors.red.shade900;
-    if (up.contains('CONFIRMED') || up.contains('OVERPAYMENT')) return Colors.green.shade900;
-    if (up.contains('CANCEL')) return Colors.grey.shade900;
-    return Colors.orange.shade900;
-  }
-
-  // ============================================================
-  // TAB 2: WALK-IN ORDERS (split: list LEFT, detail RIGHT)
-  // ============================================================
+  // =========================================================================
+  // TAB 2 — WALK-IN ORDERS (split: list LEFT, detail RIGHT)
+  // =========================================================================
 
   Widget _buildWalkInTab() {
     final qLower = _walkSearch.trim().toLowerCase();
 
-    List<Map<String, dynamic>> filterList(List<Map<String, dynamic>> list) {
+    List<Map<String, dynamic>> filterList(
+        List<Map<String, dynamic>> list) {
       if (qLower.isEmpty) return list;
       return list.where((raw) {
         final o = PosOrderView(raw);
         return o.orderNo.toLowerCase().contains(qLower) ||
-            (raw['pos_customer_label'] ?? '').toString().toLowerCase().contains(qLower);
+            (raw['pos_customer_label'] ?? '')
+                .toString()
+                .toLowerCase()
+                .contains(qLower);
       }).toList();
     }
 
@@ -1898,13 +2372,19 @@ class _CashierPosShellState extends State<CashierPosShell>
                   decoration: InputDecoration(
                     hintText: 'Search order no, label…',
                     isDense: true,
-                    prefixIcon: const Icon(Icons.search, size: 20),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    prefixIcon:
+                        const Icon(Icons.search, size: 20),
+                    border: OutlineInputBorder(
+                        borderRadius:
+                            BorderRadius.circular(8)),
                   ),
-                  onChanged: (v) => setState(() => _walkSearch = v),
+                  onChanged: (v) =>
+                      setState(() => _walkSearch = v),
                 ),
               ),
-              IconButton(icon: const Icon(Icons.refresh), onPressed: _refreshWalkIn),
+              IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _refreshWalkIn),
             ],
           ),
         ),
@@ -1912,17 +2392,20 @@ class _CashierPosShellState extends State<CashierPosShell>
           height: 40,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12),
             itemCount: subTabs.length,
             itemBuilder: (_, i) {
-              final isActive = _walkInSubTab == i;
+              final active = _walkInSubTab == i;
               final count = subLists[i].length;
               return Padding(
                 padding: const EdgeInsets.only(right: 6),
                 child: ChoiceChip(
-                  label: Text('${subTabs[i]} ($count)'),
-                  selected: isActive,
-                  selectedColor: AntdTokens.brandPrimary.withAlpha(80),
+                  label:
+                      Text('${subTabs[i]} ($count)'),
+                  selected: active,
+                  selectedColor:
+                      AntdTokens.brandPrimary.withAlpha(80),
                   onSelected: (_) => setState(() {
                     _walkInSubTab = i;
                     _selectedWalkIn = null;
@@ -1935,14 +2418,22 @@ class _CashierPosShellState extends State<CashierPosShell>
         const SizedBox(height: 6),
         Expanded(
           child: subLists[_walkInSubTab].isEmpty
-              ? const Center(child: Text('No orders in this stage.'))
+              ? const Center(
+                  child:
+                      Text('No orders in this stage.'))
               : ListView.builder(
                   padding: const EdgeInsets.all(12),
-                  itemCount: subLists[_walkInSubTab].length,
+                  itemCount:
+                      subLists[_walkInSubTab].length,
                   itemBuilder: (_, i) {
-                    final raw = subLists[_walkInSubTab][i];
-                    final isSelected = _selectedWalkIn != null && _selectedWalkIn!['id'] == raw['id'];
-                    return _buildWalkInListTile(raw, isSelected);
+                    final raw =
+                        subLists[_walkInSubTab][i];
+                    final selected =
+                        _selectedWalkIn != null &&
+                            _selectedWalkIn!['id'] ==
+                                raw['id'];
+                    return _buildWalkInListTile(
+                        raw, selected);
                   },
                 ),
         ),
@@ -1952,42 +2443,78 @@ class _CashierPosShellState extends State<CashierPosShell>
     return Row(
       children: [
         Expanded(flex: 2, child: listPanel),
-        Container(width: 1, color: Colors.grey.shade300),
-        Expanded(flex: 3, child: _buildWalkInDetailPanel()),
+        Container(
+            width: 1, color: Colors.grey.shade300),
+        Expanded(
+            flex: 3,
+            child: _buildWalkInDetailPanel()),
       ],
     );
   }
 
-  Widget _buildWalkInListTile(Map<String, dynamic> raw, bool isSelected) {
+  Widget _buildWalkInListTile(
+      Map<String, dynamic> raw, bool isSelected) {
     final o = PosOrderView(raw);
-    final label = raw['pos_customer_label']?.toString() ?? '';
-    final paymentMode = (raw['payment_method'] ?? raw['payment_mode'] ?? '').toString().toUpperCase();
+    final label =
+        raw['pos_customer_label']?.toString() ?? '';
+    final paymentMode = (raw['payment_method'] ??
+            raw['payment_mode'] ??
+            '')
+        .toString()
+        .toUpperCase();
 
     return Card(
       elevation: isSelected ? 4 : 1,
-      color: isSelected ? AntdTokens.brandPrimary.withAlpha(30) : Colors.white,
+      color: isSelected
+          ? AntdTokens.brandPrimary.withAlpha(30)
+          : Colors.white,
       margin: const EdgeInsets.only(bottom: 8),
       child: InkWell(
-        onTap: () => setState(() => _selectedWalkIn = raw),
+        onTap: () =>
+            setState(() => _selectedWalkIn = raw),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          padding: const EdgeInsets.fromLTRB(
+              12, 10, 12, 10),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment:
+                CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   if (label.isNotEmpty)
-                    Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)))
+                    Expanded(
+                        child: Text(label,
+                            style: const TextStyle(
+                                fontWeight:
+                                    FontWeight.w800,
+                                fontSize: 14)))
                   else
-                    Expanded(child: Text(o.orderNo, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
-                  Text('₱${o.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    Expanded(
+                        child: Text(o.orderNo,
+                            style: const TextStyle(
+                                fontWeight:
+                                    FontWeight.w700,
+                                fontSize: 13))),
+                  Text(
+                      '₱${o.total.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13)),
                 ],
               ),
               if (label.isNotEmpty)
-                Text(o.orderNo, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                Text(o.orderNo,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color:
+                            Colors.grey.shade700)),
               if (paymentMode.isNotEmpty)
-                Text(paymentMode, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                Text(paymentMode,
+                    style: TextStyle(
+                        fontSize: 11,
+                        color:
+                            Colors.grey.shade600)),
             ],
           ),
         ),
@@ -2001,21 +2528,34 @@ class _CashierPosShellState extends State<CashierPosShell>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.receipt_long, size: 64, color: Colors.grey.shade300),
+            Icon(Icons.receipt_long,
+                size: 64,
+                color: Colors.grey.shade300),
             const SizedBox(height: 12),
-            Text('Select a walk-in order to view details', style: TextStyle(color: Colors.grey.shade600)),
+            Text(
+                'Select a walk-in order to view details',
+                style: TextStyle(
+                    color: Colors.grey.shade600)),
           ],
         ),
       );
     }
     final raw = _selectedWalkIn!;
     final o = PosOrderView(raw);
-    final label = raw['pos_customer_label']?.toString() ?? '';
-    final createdAt = raw['created_at']?.toString() ?? '';
-    final paymentMode = (raw['payment_method'] ?? raw['payment_mode'] ?? '').toString();
+    final label =
+        raw['pos_customer_label']?.toString() ?? '';
+    final createdAt =
+        raw['created_at']?.toString() ?? '';
+    final paymentMode = (raw['payment_method'] ??
+            raw['payment_mode'] ??
+            '')
+        .toString();
     final note = raw['note']?.toString() ?? '';
-    final lines = (raw['lines'] ?? raw['items'] ?? []) as List<dynamic>;
+    final lines = _orderItems(raw);
     final isPreparing = _walkInSubTab == 0;
+    final proofB64 = (raw['payment_proof'] ??
+            raw['payment_proof_initial'])
+        ?.toString();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -2026,11 +2566,22 @@ class _CashierPosShellState extends State<CashierPosShell>
             children: [
               Expanded(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
                   children: [
                     if (label.isNotEmpty)
-                      Text(label, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-                    Text(o.orderNo, style: TextStyle(fontSize: label.isNotEmpty ? 14 : 20, fontWeight: FontWeight.w700)),
+                      Text(label,
+                          style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight:
+                                  FontWeight.w800)),
+                    Text(o.orderNo,
+                        style: TextStyle(
+                            fontSize: label.isNotEmpty
+                                ? 14
+                                : 20,
+                            fontWeight:
+                                FontWeight.w700)),
                   ],
                 ),
               ),
@@ -2039,11 +2590,13 @@ class _CashierPosShellState extends State<CashierPosShell>
                   spacing: 8,
                   children: [
                     OutlinedButton(
-                      onPressed: () => _cancelWalkIn(raw),
+                      onPressed: () =>
+                          _cancelWalkIn(raw),
                       child: const Text('Cancel'),
                     ),
                     FilledButton(
-                      onPressed: () => _claimWalkIn(raw),
+                      onPressed: () =>
+                          _claimWalkIn(raw),
                       child: const Text('Claim'),
                     ),
                   ],
@@ -2051,42 +2604,176 @@ class _CashierPosShellState extends State<CashierPosShell>
             ],
           ),
           const SizedBox(height: 12),
-          _detailRow('Total', '₱${o.total.toStringAsFixed(2)}'),
-          _detailRow('Payment', paymentMode.isNotEmpty ? paymentMode : '—'),
-          if (createdAt.isNotEmpty) _detailRow('Submitted', createdAt),
-          if (note.isNotEmpty) _detailRow('Note', note),
-          const Divider(height: 24),
-          const Text('Items', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-          const SizedBox(height: 8),
-          ...lines.map((l) {
-            final ln = l is Map ? l : {};
-            final itemName = ln['item_name'] ?? ln['name'] ?? 'Item';
-            final itemQty = ln['qty'] ?? 1;
-            final itemPrice = _toMoney(ln['price'] ?? ln['unit_price'] ?? 0);
-            final dip = ln['dip']?.toString() ?? '';
-            return Container(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('$itemName', style: const TextStyle(fontWeight: FontWeight.w600)),
-                        if (dip.isNotEmpty) Text('Add-on: $dip', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                      ],
-                    ),
-                  ),
-                  Text('×$itemQty', style: const TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(width: 12),
-                  Text('₱${(itemPrice * (itemQty is num ? itemQty.toInt() : 1)).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                ],
+          _detailRow('Total',
+              '₱${o.total.toStringAsFixed(2)}'),
+          _detailRow(
+              'Payment',
+              paymentMode.isNotEmpty
+                  ? paymentMode
+                  : '—'),
+          if (createdAt.isNotEmpty)
+            _detailRow('Submitted', createdAt),
+          if (note.isNotEmpty)
+            _detailRow('Note', note),
+
+          // Payment proof for walk-in orders
+          if (proofB64 != null &&
+              proofB64.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('Payment Proof',
+                style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15)),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius:
+                  BorderRadius.circular(8),
+              child: RepaintBoundary(
+                child: Image.memory(
+                  base64Decode(proofB64),
+                  height: 200,
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
+                ),
               ),
-            );
-          }),
+            ),
+          ],
+
+          const Divider(height: 24),
+          const Text('Items',
+              style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15)),
+          const SizedBox(height: 8),
+          ...lines.map((l) => _buildOrderItemRow(l)),
         ],
       ),
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Shared helpers
+  // ---------------------------------------------------------------------------
+
+  Widget _buildOrderItemRow(dynamic l) {
+    final ln = l is Map ? l : <String, dynamic>{};
+    final itemName =
+        ln['item_name'] ?? ln['name'] ?? 'Item';
+    final itemQty = ln['qty'] ?? 1;
+    final itemPrice = _toMoney(
+        ln['price'] ?? ln['unit_price'] ?? 0);
+    final dip = ln['dip']?.toString() ?? '';
+    final itemNote = ln['note']?.toString() ?? '';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      decoration: BoxDecoration(
+          border: Border(
+              bottom: BorderSide(
+                  color: Colors.grey.shade100))),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+              children: [
+                Text('$itemName',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600)),
+                if (dip.isNotEmpty)
+                  Text('Add-on: $dip',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color:
+                              Colors.grey.shade600)),
+                if (itemNote.isNotEmpty)
+                  Text('Note: $itemNote',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color:
+                              Colors.grey.shade500,
+                          fontStyle:
+                              FontStyle.italic)),
+              ],
+            ),
+          ),
+          Text('×$itemQty',
+              style: const TextStyle(
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(width: 12),
+          Text(
+              '₱${(itemPrice * (itemQty is num ? itemQty.toInt() : 1)).toStringAsFixed(2)}',
+              style: const TextStyle(
+                  fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(label,
+                style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                    fontSize: 13)),
+          ),
+          Expanded(
+              child: Text(value,
+                  style: const TextStyle(
+                      fontSize: 13))),
+        ],
+      ),
+    );
+  }
+
+  PopupMenuItem<String> _popupItem(
+      String value, String label, String current) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        children: [
+          if (current == value)
+            const Icon(Icons.check,
+                size: 18,
+                color: AntdTokens.brandPrimary),
+          if (current == value)
+            const SizedBox(width: 4),
+          Text(label),
+        ],
+      ),
+    );
+  }
+
+  Color _statusBadgeBg(String status) {
+    final up = status.toUpperCase();
+    if (up.contains('INSUFFICIENT'))
+      return Colors.red.shade100;
+    if (up.contains('CONFIRMED') ||
+        up.contains('OVERPAYMENT'))
+      return Colors.green.shade100;
+    if (up.contains('CANCEL'))
+      return Colors.grey.shade300;
+    return Colors.orange.shade100;
+  }
+
+  Color _statusBadgeFg(String status) {
+    final up = status.toUpperCase();
+    if (up.contains('INSUFFICIENT'))
+      return Colors.red.shade900;
+    if (up.contains('CONFIRMED') ||
+        up.contains('OVERPAYMENT'))
+      return Colors.green.shade900;
+    if (up.contains('CANCEL'))
+      return Colors.grey.shade900;
+    return Colors.orange.shade900;
   }
 }
