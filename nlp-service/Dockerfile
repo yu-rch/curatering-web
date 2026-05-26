@@ -3,7 +3,7 @@ FROM vllm/vllm-openai:v0.5.4
 WORKDIR /app
 
 # =========================================================
-# INSTALL ONLY YOUR APP DEPENDENCIES
+# INSTALL APP DEPENDENCIES
 # =========================================================
 
 RUN pip install --no-cache-dir \
@@ -33,7 +33,13 @@ ENV VLLM_LOGGING_LEVEL=ERROR
 ENV CUDA_LAUNCH_BLOCKING=0
 
 # =========================================================
-# START
+# OVERRIDE VLLM ENTRYPOINT
+# =========================================================
+
+ENTRYPOINT []
+
+# =========================================================
+# START RUNPOD HANDLER
 # =========================================================
 
 CMD ["python3", "-u", "handler.py"]
