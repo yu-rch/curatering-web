@@ -1735,6 +1735,12 @@ async function ensureMenuCatalogTable(tableName) {
     throw new Error(`ensureMenuCatalogTable: invalid table ${tableName}`);
   }
 
+  if (tableName === 'menu_dishes_allergens') {
+    await ensureMenuDishesAllergensTable();
+    return;
+  }
+
+  // For menu_dishes_meal_types only
   const cols = await getTableColumnNames(tableName);
   if (cols.size === 0) {
     await pool.query(`
@@ -1774,10 +1780,7 @@ async function ensureMenuCatalogTable(tableName) {
   }
 
   try {
-    const indexName =
-      tableName === 'menu_dishes_allergens'
-        ? 'idx_menu_dishes_allergens_name_lower'
-        : 'idx_menu_dishes_meal_types_name_lower';
+    const indexName = 'idx_menu_dishes_meal_types_name_lower';
     await pool.query(
       `CREATE UNIQUE INDEX IF NOT EXISTS ${indexName}
        ON ${tableName} (lower(trim(name)))`,
@@ -1787,13 +1790,97 @@ async function ensureMenuCatalogTable(tableName) {
   }
 }
 
+async function ensureMenuDishesAllergensTable() {
+  const cols = await getTableColumnNames('menu_dishes_allergens');
+
+  if (cols.size === 0) {
+    // Check if a legacy table exists and restore from it
+    const legacyNames = [
+      'menu_dishes_allergens_legacy_junction',
+    ];
+    let restoredFromLegacy = false;
+    for (const legacyName of legacyNames) {
+      const legacyCols = await getTableColumnNames(legacyName);
+      if (legacyCols.size > 0 && legacyCols.has('allergen_id')) {
+        await pool.query(`ALTER TABLE ${legacyName} RENAME TO menu_dishes_allergens`);
+        console.log(`Migration: restored menu_dishes_allergens from ${legacyName}`);
+        restoredFromLegacy = true;
+        break;
+      }
+    }
+
+    if (!restoredFromLegacy) {
+      // Also check for timestamped legacy tables
+      try {
+        const { rows: tables } = await pool.query(
+          `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'menu_dishes_allergens_legacy_%'`,
+        );
+        for (const { tablename } of tables) {
+          const lCols = await getTableColumnNames(tablename);
+          if (lCols.has('allergen_id')) {
+            await pool.query(`ALTER TABLE ${tablename} RENAME TO menu_dishes_allergens`);
+            console.log(`Migration: restored menu_dishes_allergens from ${tablename}`);
+            restoredFromLegacy = true;
+            break;
+          }
+        }
+      } catch (e) {
+        console.log('Migration: legacy table scan:', e.message);
+      }
+    }
+
+    if (!restoredFromLegacy) {
+      await pool.query(`
+        CREATE TABLE menu_dishes_allergens (
+          allergen_id SERIAL PRIMARY KEY,
+          allergen_name TEXT NOT NULL
+        );
+      `);
+      console.log('Migration: created menu_dishes_allergens (allergen_id, allergen_name)');
+    }
+  } else if (cols.has('allergen_id') && cols.has('allergen_name')) {
+    // Already has the correct mobile schema — nothing to do
+  } else if (cols.has('id') && cols.has('name') && !cols.has('allergen_id')) {
+    // Web-created schema (id, name) — migrate to mobile schema (allergen_id, allergen_name)
+    try {
+      await pool.query(`ALTER TABLE menu_dishes_allergens RENAME COLUMN id TO allergen_id`);
+      await pool.query(`ALTER TABLE menu_dishes_allergens RENAME COLUMN name TO allergen_name`);
+      console.log('Migration: renamed menu_dishes_allergens columns id→allergen_id, name→allergen_name');
+    } catch (err) {
+      console.log('Migration: menu_dishes_allergens column rename:', err.message);
+    }
+  }
+
+  // Drop any remaining legacy tables
+  try {
+    const { rows: legacyTables } = await pool.query(
+      `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'menu_dishes_allergens_legacy%'`,
+    );
+    for (const { tablename } of legacyTables) {
+      await pool.query(`DROP TABLE IF EXISTS ${tablename}`);
+      console.log(`Migration: dropped legacy table ${tablename}`);
+    }
+  } catch (e) {
+    console.log('Migration: drop legacy tables:', e.message);
+  }
+
+  try {
+    await pool.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_dishes_allergens_name_lower
+       ON menu_dishes_allergens (lower(trim(allergen_name)))`,
+    );
+  } catch (err) {
+    console.log('Index create (menu_dishes_allergens):', err.message);
+  }
+}
+
 /** @returns {string[]} */
 export async function getMenuAllergenCatalog() {
   try {
     const r = await pool.query(
-      `SELECT name FROM menu_dishes_allergens ORDER BY lower(name) ASC`,
+      `SELECT allergen_name FROM menu_dishes_allergens ORDER BY lower(allergen_name) ASC`,
     );
-    return r.rows.map((row) => String(row.name).trim()).filter(Boolean);
+    return r.rows.map((row) => String(row.allergen_name).trim()).filter(Boolean);
   } catch (e) {
     console.log('getMenuAllergenCatalog:', e.message);
     return [];
@@ -1819,9 +1906,9 @@ export async function upsertMenuAllergensFromSerialized(serialized, basePresetLi
     known.add(p.toLowerCase());
     try {
       await pool.query(
-        `INSERT INTO menu_dishes_allergens (name)
+        `INSERT INTO menu_dishes_allergens (allergen_name)
          SELECT $1 WHERE NOT EXISTS (
-           SELECT 1 FROM menu_dishes_allergens WHERE lower(trim(name)) = lower(trim($1))
+           SELECT 1 FROM menu_dishes_allergens WHERE lower(trim(allergen_name)) = lower(trim($1))
          )`,
         [p],
       );

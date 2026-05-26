@@ -8853,7 +8853,7 @@ async function registerRoutesAfterDbInit() {
 
         const customerId = req.customer?.id ?? null;
         const submittedEmail = userEmail ?? guestContactEmail;
-        const orderEmail = submittedEmail
+        let orderEmail = submittedEmail
           ? String(submittedEmail).trim().toLowerCase()
           : null;
 
@@ -8861,6 +8861,17 @@ async function registerRoutesAfterDbInit() {
           return res.status(400).json({
             error: 'Log in or provide userEmail for guest checkout',
           });
+        }
+
+        // For logged-in customers, fetch their email from account if not provided
+        if (customerId && !orderEmail) {
+          const acctRow = await pool.query(
+            'SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1',
+            [customerId],
+          );
+          if (acctRow.rows[0]?.email) {
+            orderEmail = String(acctRow.rows[0].email).trim().toLowerCase();
+          }
         }
 
         let orderItems = Array.isArray(tray_items)
