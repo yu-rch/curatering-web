@@ -292,9 +292,11 @@ class _LazyMainTabStackState extends State<_LazyMainTabStack> {
 
 class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final ScrollController _pageScrollController = ScrollController();
   int _navIndex = 0;
   int? _galleryDetailIndex;
   String _gallerySearchQuery = '';
+  String _selectedGalleryCategoryId = 'ALL';
   Map<String, dynamic>? _customerData;
   bool _isCustomerLoggedIn = false;
   int _restaurantLoyaltyPoints = 0;
@@ -326,13 +328,72 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     await WebsiteContentStore.instance.ensureLoaded();
     if (mounted) setState(() {});
     MenuStore.instance.addListener(_onMenuChanged);
-    // Ensure dishes are loaded
     if (MenuStore.instance.activeDishes.isEmpty) {
-      await MenuStore.instance.loadDishes();
+      unawaited(MenuStore.instance.loadDishes());
     }
     await CartStore.instance.init();
     CartStore.instance.addListener(_onCartChanged);
     await _checkCustomerAuth();
+  }
+
+  Future<bool> _confirmAction({
+    required String title,
+    required String message,
+    String confirmLabel = 'Confirm',
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(confirmLabel),
+              ),
+            ],
+          ),
+    );
+    return result == true;
+  }
+
+  Future<T?> _withLoadingDialog<T>(
+    String message,
+    Future<T> Function() action,
+  ) async {
+    var shown = true;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (_) => AlertDialog(
+              content: Row(
+                children: [
+                  const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(child: Text(message)),
+                ],
+              ),
+            ),
+      ).then((_) => shown = false),
+    );
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      return await action();
+    } finally {
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      if (mounted && shown) Navigator.of(context, rootNavigator: true).pop();
+    }
   }
 
   Future<void> _checkCustomerAuth() async {
@@ -521,7 +582,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     if (mounted) setState(() {});
   }
 
-  void _addToCart(MenuDish dish) {
+  Future<void> _addToCart(MenuDish dish) async {
     if (!dish.available) {
       showAppSnackBar(
         context,
@@ -532,16 +593,22 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       return;
     }
 
-    // Show sauce selection dialog if dish has multiple sauces
-    if (dish.sauces.length > 1) {
+    if (dish.category == 'restaurant' || dish.supportsAddOns) {
       _showSauceSelectionDialog(dish);
     } else {
-      // Add directly if no sauce or single sauce
+      final ok = await _confirmAction(
+        title: 'Add to tray?',
+        message: 'Add ${dish.name} to your tray?',
+        confirmLabel: 'Add to tray',
+      );
+      if (!ok) return;
       final selectedSauce = dish.sauces.isNotEmpty ? dish.sauces.first : null;
-      CartStore.instance.addItem(dish, selectedSauce: selectedSauce);
+      await _withLoadingDialog('Adding to tray...', () async {
+        CartStore.instance.addItem(dish, selectedSauce: selectedSauce);
+      });
       showAppSnackBar(
         context,
-        '${dish.name} added to cart',
+        '${dish.name} added to tray',
         icon: Icons.shopping_bag_outlined,
         duration: const Duration(seconds: 2),
       );
@@ -561,7 +628,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             builder:
                 (context, setDialogState) => AlertDialog(
                   title: Text(
-                    'Select Sauce',
+                    'Add to tray',
                     style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                   ),
                   content: Column(
@@ -575,21 +642,56 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           color: Colors.grey.shade600,
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      ...dish.sauces.map(
-                        (sauce) => RadioListTile<String>(
-                          title: Text(
-                            sauce.toUpperCase(),
-                            style: GoogleFonts.poppins(fontSize: 13),
+                      if (dish.publicDescription.trim().isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          dish.publicDescription.trim(),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade800,
+                            height: 1.35,
                           ),
-                          value: sauce,
-                          groupValue: selectedSauce,
-                          onChanged: (value) {
-                            setDialogState(() => selectedSauce = value);
-                          },
-                          activeColor: Colors.amber.shade700,
                         ),
-                      ),
+                      ],
+                      if (dish.ingredients.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          'Ingredients: ${dish.ingredients.join(', ')}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                      if (dish.allergens.trim().isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Allergens: ${dish.allergens.trim()}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      if (dish.sauces.isEmpty)
+                        const Text('No add-ons selected for this dish.')
+                      else
+                        ...dish.sauces.map(
+                          (sauce) => RadioListTile<String>(
+                            title: Text(
+                              sauce.toUpperCase(),
+                              style: GoogleFonts.poppins(fontSize: 13),
+                            ),
+                            value: sauce,
+                            groupValue: selectedSauce,
+                            onChanged: (value) {
+                              setDialogState(() => selectedSauce = value);
+                            },
+                            activeColor: Colors.amber.shade700,
+                          ),
+                        ),
                     ],
                   ),
                   actions: [
@@ -602,11 +704,25 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     ),
                     ElevatedButton(
                       onPressed:
-                          selectedSauce != null
-                              ? () {
-                                CartStore.instance.addItem(
-                                  dish,
-                                  selectedSauce: selectedSauce,
+                          dish.sauces.isEmpty || selectedSauce != null
+                              ? () async {
+                                final ok = await _confirmAction(
+                                  title: 'Add to tray?',
+                                  message:
+                                      selectedSauce == null
+                                          ? 'Add ${dish.name} to your tray?'
+                                          : 'Add ${dish.name} with $selectedSauce to your tray?',
+                                  confirmLabel: 'Add to tray',
+                                );
+                                if (!ok) return;
+                                await _withLoadingDialog(
+                                  'Adding to tray...',
+                                  () async {
+                                    CartStore.instance.addItem(
+                                      dish,
+                                      selectedSauce: selectedSauce,
+                                    );
+                                  },
                                 );
                                 Navigator.pop(context);
                                 final rootCtx = this.context;
@@ -616,7 +732,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                   if (!mounted) return;
                                   showAppSnackBar(
                                     rootCtx,
-                                    '${dish.name} with $selectedSauce added to cart',
+                                    selectedSauce == null
+                                        ? '${dish.name} added to tray'
+                                        : '${dish.name} with $selectedSauce added to tray',
                                     icon: Icons.shopping_bag_outlined,
                                     duration: const Duration(seconds: 2),
                                   );
@@ -629,7 +747,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         foregroundColor: Colors.white,
                       ),
                       child: Text(
-                        'Add to Cart',
+                        selectedSauce == null && dish.sauces.isEmpty
+                            ? 'Add to Tray'
+                            : 'Add to Tray',
                         style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                       ),
                     ),
@@ -647,7 +767,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     if (CartStore.instance.items.isEmpty) {
       showAppSnackBar(
         context,
-        'Your cart is empty',
+        'Your tray is empty',
         icon: Icons.shopping_cart_outlined,
       );
       return;
@@ -717,6 +837,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   void dispose() {
     MenuStore.instance.removeListener(_onMenuChanged);
     CartStore.instance.removeListener(_onCartChanged);
+    _pageScrollController.dispose();
     super.dispose();
   }
 
@@ -1130,13 +1251,24 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
-  void _goToCustomerPage(String path) {
-    Navigator.pushReplacementNamed(context, customerRoute(path));
+  void _showCustomerSiteTab(int index) {
+    setState(() {
+      _galleryDetailIndex = null;
+      _navIndex = index;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_pageScrollController.hasClients) return;
+      _pageScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
-  Widget _footerPageLink(String label, String path) {
+  Widget _footerPageLink(String label, int index) {
     return TextButton(
-      onPressed: () => _goToCustomerPage(path),
+      onPressed: () => _showCustomerSiteTab(index),
       child: Text(label, style: const TextStyle(color: Color(0xFFF5F7F9))),
     );
   }
@@ -1187,16 +1319,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _footerPageLink('GALLERY', '/gallery'),
-                _footerPageLink('MENU', '/catering-menu'),
-                _footerPageLink('RESTAURANT', '/restaurant'),
+                _footerPageLink('GALLERY', 1),
+                _footerPageLink('MENU', 2),
+                _footerPageLink('RESTAURANT', 3),
               ],
             ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _footerPageLink('INQUIRE NOW', '/inquire'),
-                _footerPageLink('CONTACT US', '/contact-us'),
+                _footerPageLink('INQUIRE NOW', 4),
+                _footerPageLink('CONTACT US', 5),
                 TextButton(
                   onPressed:
                       () => showCustomerFooterFeedback(
@@ -1261,9 +1393,14 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18),
+          Icon(icon, size: 18, color: Colors.white),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 12))),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 12, color: Colors.white),
+            ),
+          ),
         ],
       ),
     );
@@ -1275,9 +1412,14 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18),
+          Icon(icon, size: 18, color: Colors.white),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 12))),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 12, color: Colors.white),
+            ),
+          ),
         ],
       ),
     );
@@ -1803,50 +1945,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     required String? imageB64,
     required String label,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 10),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: SizedBox(
-          width: 200,
-          height: 200,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (imageB64 != null && imageB64.isNotEmpty)
-                _b64Image(imageB64, fit: BoxFit.cover)
-              else
-                Container(
-                  color: Colors.grey.shade300,
-                  child: const Icon(Icons.fastfood, size: 48),
-                ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 8,
-                  ),
-                  color: Colors.black.withValues(alpha: 0.45),
-                  child: Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return _HoverZoomPhotoTile(
+      imageB64: imageB64,
+      label: label,
+      width: 200,
+      height: 200,
+      margin: const EdgeInsets.only(right: 10),
+      placeholderIcon: Icons.fastfood,
     );
   }
 
@@ -1904,21 +2009,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             scrollDirection: Axis.horizontal,
             children: List.generate(
               5,
-              (i) => Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: SizedBox(
-                    width: 200,
-                    child:
-                        i < w.eventDesignImageBase64.length
-                            ? _b64Image(
-                              w.eventDesignImageBase64[i],
-                              fit: BoxFit.cover,
-                            )
-                            : Container(color: Colors.grey.shade300),
-                  ),
-                ),
+              (i) => _HoverZoomPhotoTile(
+                imageB64:
+                    i < w.eventDesignImageBase64.length
+                        ? w.eventDesignImageBase64[i]
+                        : null,
+                label: 'Event Design ${i + 1}',
+                width: 200,
+                height: 160,
+                margin: const EdgeInsets.only(right: 8),
+                placeholderIcon: Icons.celebration_outlined,
               ),
             ),
           ),
@@ -2047,10 +2147,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount:
                             isMobile(context)
-                                ? 1
-                                : isTablet(context)
                                 ? 2
-                                : 3,
+                                : isTablet(context)
+                                ? 3
+                                : 4,
                         crossAxisSpacing: 16,
                         mainAxisSpacing: 16,
                         childAspectRatio: 0.95,
@@ -2297,6 +2397,18 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           );
         }
 
+        final galleryCategories =
+            w.galleryCategories
+                .where(
+                  (c) => galleryCategoryMatchesSearch(c, _gallerySearchQuery),
+                )
+                .where(
+                  (c) =>
+                      _selectedGalleryCategoryId == 'ALL' ||
+                      c.id == _selectedGalleryCategoryId,
+                )
+                .toList();
+
         return SingleChildScrollView(
           padding: websitePagePadding(context),
           child: Center(
@@ -2339,6 +2451,37 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<String>(
+                    initialValue:
+                        w.galleryCategories.any(
+                              (c) => c.id == _selectedGalleryCategoryId,
+                            )
+                            ? _selectedGalleryCategoryId
+                            : 'ALL',
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      labelText: 'CATEGORY',
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.amber.shade700),
+                      ),
+                    ),
+                    items: [
+                      const DropdownMenuItem(value: 'ALL', child: Text('ALL')),
+                      ...w.galleryCategories.map(
+                        (cat) => DropdownMenuItem(
+                          value: cat.id,
+                          child: Text(cat.label),
+                        ),
+                      ),
+                    ],
+                    onChanged:
+                        (value) => setState(
+                          () => _selectedGalleryCategoryId = value ?? 'ALL',
+                        ),
+                  ),
                   const SizedBox(height: 24),
                   GridView.builder(
                     shrinkWrap: true,
@@ -2346,34 +2489,17 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount:
                           isMobile(context)
-                              ? 1
-                              : isTablet(context)
                               ? 2
-                              : 3,
+                              : isTablet(context)
+                              ? 3
+                              : 4,
                       crossAxisSpacing: 16,
                       mainAxisSpacing: 16,
                       childAspectRatio: 1.1,
                     ),
-                    itemCount:
-                        w.galleryCategories
-                            .where(
-                              (c) => galleryCategoryMatchesSearch(
-                                c,
-                                _gallerySearchQuery,
-                              ),
-                            )
-                            .length,
+                    itemCount: galleryCategories.length,
                     itemBuilder: (ctx, i) {
-                      final filtered =
-                          w.galleryCategories
-                              .where(
-                                (c) => galleryCategoryMatchesSearch(
-                                  c,
-                                  _gallerySearchQuery,
-                                ),
-                              )
-                              .toList();
-                      final c = filtered[i];
+                      final c = galleryCategories[i];
                       final realIndex = w.galleryCategories.indexOf(c);
                       final thumb =
                           c.images.isNotEmpty
@@ -2685,6 +2811,23 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               ),
               const SizedBox(height: 24),
               _buildCateringMealTypeFilters(),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.center,
+                child: FilledButton.icon(
+                  onPressed: () => _showCustomerSiteTab(4),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E1E1E),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 14,
+                    ),
+                  ),
+                  icon: const Icon(Icons.event_available_outlined),
+                  label: const Text('INQUIRE NOW'),
+                ),
+              ),
               const SizedBox(height: 24),
               Card(
                 elevation: 4,
@@ -2744,7 +2887,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             ),
                             child: InkWell(
                               onTap:
-                                  () => showCateringDishInfoDialog(context, d),
+                                  () => showCateringDishInfoDialog(
+                                    context,
+                                    d,
+                                    onInquireNow: () => _showCustomerSiteTab(4),
+                                  ),
                               child: Column(
                                 children: [
                                   Expanded(
@@ -3124,7 +3271,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                             ),
                                             child: Text(
                                               d.available
-                                                  ? 'Add'
+                                                  ? 'Add to tray'
                                                   : 'Not Available',
                                               style: TextStyle(fontSize: 11),
                                             ),
@@ -3484,6 +3631,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           _publicHeader(),
           Expanded(
             child: CustomScrollView(
+              controller: _pageScrollController,
               slivers: [
                 SliverToBoxAdapter(child: body),
                 SliverToBoxAdapter(child: _footer(w)),
@@ -3535,7 +3683,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   const Text(
-                                    'Your cart',
+                                    'Your tray',
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 18,
@@ -3583,7 +3731,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     ),
                                     const SizedBox(height: 16),
                                     Text(
-                                      'Your cart is empty',
+                                      'Your tray is empty',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         fontSize: 17,
@@ -4108,6 +4256,141 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 }
 
+class _HoverZoomPhotoTile extends StatefulWidget {
+  const _HoverZoomPhotoTile({
+    required this.imageB64,
+    required this.label,
+    required this.width,
+    required this.height,
+    required this.margin,
+    required this.placeholderIcon,
+  });
+
+  final String? imageB64;
+  final String label;
+  final double width;
+  final double height;
+  final EdgeInsets margin;
+  final IconData placeholderIcon;
+
+  @override
+  State<_HoverZoomPhotoTile> createState() => _HoverZoomPhotoTileState();
+}
+
+class _HoverZoomPhotoTileState extends State<_HoverZoomPhotoTile> {
+  bool _hovered = false;
+
+  Widget _image({BoxFit fit = BoxFit.cover}) {
+    final image = widget.imageB64;
+    if (image != null && image.isNotEmpty) {
+      return Image.memory(base64Decode(image), fit: fit);
+    }
+    return Container(
+      color: Colors.grey.shade300,
+      child: Icon(
+        widget.placeholderIcon,
+        size: 48,
+        color: Colors.grey.shade700,
+      ),
+    );
+  }
+
+  void _openZoom() {
+    if (widget.imageB64 == null || widget.imageB64!.isEmpty) return;
+    showDialog<void>(
+      context: context,
+      builder:
+          (ctx) => Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 80,
+              vertical: 48,
+            ),
+            child: Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 5,
+                    child: Center(child: _image(fit: BoxFit.contain)),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: IconButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    icon: const Icon(Icons.close),
+                  ),
+                ),
+              ],
+            ),
+          ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: widget.margin,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: _openZoom,
+          child: AnimatedScale(
+            duration: const Duration(milliseconds: 160),
+            scale: _hovered ? 1.04 : 1,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(
+                width: widget.width,
+                height: widget.height,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _image(),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      color: Colors.black.withValues(
+                        alpha: _hovered ? 0.08 : 0,
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        color: Colors.black.withValues(alpha: 0.45),
+                        child: Text(
+                          widget.label,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ContactSection extends StatefulWidget {
   const _ContactSection({
     required this.store,
@@ -4141,11 +4424,33 @@ class _ContactSectionState extends State<_ContactSection> {
     if (_helpNameCtrl.text.trim().isEmpty ||
         _helpEmailCtrl.text.trim().isEmpty ||
         _helpMessageCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill in all fields')),
+      showAntdMessage(
+        context,
+        'Please fill in all message fields',
+        type: AntdMessageType.error,
       );
       return;
     }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Send message?'),
+            content: const Text('Submit this message to Curatering?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Send'),
+              ),
+            ],
+          ),
+    );
+    if (ok != true) return;
 
     setState(() => _submittingHelp = true);
     try {
@@ -4158,16 +4463,16 @@ class _ContactSectionState extends State<_ContactSection> {
         },
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Help request submitted successfully!')),
-      );
+      showAntdMessage(context, 'Message sent successfully');
       _helpNameCtrl.clear();
       _helpEmailCtrl.clear();
       _helpMessageCtrl.clear();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to submit help request')),
+      showAntdMessage(
+        context,
+        'Failed to send message',
+        type: AntdMessageType.error,
       );
     } finally {
       if (mounted) setState(() => _submittingHelp = false);
@@ -4414,7 +4719,7 @@ class _ContactSectionState extends State<_ContactSection> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  // Help Request Form
+                  // Message Us Form
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
@@ -4426,7 +4731,7 @@ class _ContactSectionState extends State<_ContactSection> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'NEED HELP?',
+                          'MESSAGE US',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
@@ -4434,7 +4739,7 @@ class _ContactSectionState extends State<_ContactSection> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'Submit a help request and we\'ll get back to you.',
+                          'Send us a message and we\'ll get back to you.',
                           style: TextStyle(fontSize: 13, color: Colors.grey),
                         ),
                         const SizedBox(height: 16),
@@ -4484,7 +4789,7 @@ class _ContactSectionState extends State<_ContactSection> {
                                         strokeWidth: 2,
                                       ),
                                     )
-                                    : const Text('SUBMIT HELP REQUEST'),
+                                    : const Text('SEND MESSAGE'),
                           ),
                         ),
                       ],

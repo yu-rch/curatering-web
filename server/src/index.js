@@ -8401,7 +8401,7 @@ async function registerRoutesAfterDbInit() {
       while (retryCount < maxRetries) {
         try {
           const result = await pool.query(
-            `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, ingredients,
+            `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, supports_addons, ingredients,
                     image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus,
                     public_description, allergens, meal_type
              FROM menu_dishes
@@ -8433,7 +8433,7 @@ async function registerRoutesAfterDbInit() {
       while (retryCount < maxRetries) {
         try {
           const result = await pool.query(
-            `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, ingredients,
+            `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, supports_addons, ingredients,
                     image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus,
                     public_description, allergens, meal_type
              FROM menu_dishes
@@ -8466,7 +8466,7 @@ async function registerRoutesAfterDbInit() {
         try {
           const { id } = req.params;
           const result = await pool.query(
-            `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, ingredients,
+            `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, supports_addons, ingredients,
                     image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus,
                     public_description, allergens, meal_type
              FROM menu_dishes
@@ -8500,7 +8500,7 @@ async function registerRoutesAfterDbInit() {
     app.get('/api/menu/dishes/all', authRequired, async (req, res) => {
       try {
         const result = await pool.query(
-          `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, ingredients,
+          `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, supports_addons, ingredients,
                   image_base64, archived, available, archived_at, created_at, updated_at, type, meal_type, set_menus,
                   public_description, allergens
            FROM menu_dishes
@@ -8521,6 +8521,7 @@ async function registerRoutesAfterDbInit() {
           category,
           paxOptions,
           sauces,
+          supportsAddOns,
           ingredients,
           imageBase64,
           type,
@@ -8546,8 +8547,8 @@ async function registerRoutesAfterDbInit() {
           : '';
 
         const result = await pool.query(
-          `INSERT INTO menu_dishes (name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, ingredients, image_base64, type, set_menus, available, public_description, allergens, meal_type)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          `INSERT INTO menu_dishes (name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, supports_addons, ingredients, image_base64, type, set_menus, available, public_description, allergens, meal_type)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
            RETURNING *`,
           [
             name,
@@ -8556,6 +8557,7 @@ async function registerRoutesAfterDbInit() {
             dishCategory,
             JSON.stringify(paxOptions || []),
             JSON.stringify(sauces || []),
+            Boolean(supportsAddOns) || (Array.isArray(sauces) && sauces.length > 0),
             JSON.stringify(ingredients || []),
             imageBase64 || null,
             dishCategory === 'restaurant' ? '' : (type || ''),
@@ -8587,6 +8589,7 @@ async function registerRoutesAfterDbInit() {
           category,
           paxOptions,
           sauces,
+          supportsAddOns,
           ingredients,
           imageBase64,
           type,
@@ -8610,10 +8613,10 @@ async function registerRoutesAfterDbInit() {
         const result = await pool.query(
           `UPDATE menu_dishes
            SET name = $1, price = $2, category = $3, pax_options = $4, 
-               sauces = $5, ingredients = $6, image_base64 = $7, type = $8, set_menus = $9,
-               available = $10, public_description = $11, allergens = $12, meal_type = $13,
-               menu_dishes_additional_charge_amount = $14, updated_at = now()
-           WHERE id = $15
+               sauces = $5, supports_addons = $6, ingredients = $7, image_base64 = $8, type = $9, set_menus = $10,
+               available = $11, public_description = $12, allergens = $13, meal_type = $14,
+               menu_dishes_additional_charge_amount = $15, updated_at = now()
+           WHERE id = $16
            RETURNING *`,
           [
             name,
@@ -8621,6 +8624,7 @@ async function registerRoutesAfterDbInit() {
             dishCategory,
             JSON.stringify(paxOptions),
             JSON.stringify(sauces),
+            Boolean(supportsAddOns) || (Array.isArray(sauces) && sauces.length > 0),
             JSON.stringify(ingredients),
             imageBase64,
             dishCategory === 'restaurant' ? '' : type,
@@ -11642,7 +11646,7 @@ async function registerRoutesAfterDbInit() {
         const { setName } = req.params;
         
         const result = await pool.query(
-          `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, ingredients,
+          `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, supports_addons, ingredients,
                   image_base64, archived, type, set_menus, created_at, updated_at,
                   public_description, allergens
            FROM menu_dishes 

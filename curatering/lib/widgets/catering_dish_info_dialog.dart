@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 
 import '../models/menu_dish.dart';
 
-void showCateringDishInfoDialog(BuildContext context, MenuDish dish) {
+void showCateringDishInfoDialog(
+  BuildContext context,
+  MenuDish dish, {
+  VoidCallback? onInquireNow,
+}) {
   final desc = dish.publicDescription.trim();
   final allergens = dish.allergens.trim();
   final ingredients =
@@ -18,41 +22,72 @@ void showCateringDishInfoDialog(BuildContext context, MenuDish dish) {
       return AlertDialog(
         title: Text(dish.name),
         content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
+          constraints: const BoxConstraints(maxWidth: 820),
           child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (dish.imageBase64?.isNotEmpty == true) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: InteractiveViewer(
-                      minScale: 1,
-                      maxScale: 4,
-                      child: Image.memory(
-                        base64Decode(dish.imageBase64!),
-                        fit: BoxFit.contain,
-                      ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 680;
+                final hasImage = dish.imageBase64?.isNotEmpty == true;
+                final image =
+                    hasImage
+                        ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: InteractiveViewer(
+                            minScale: 1,
+                            maxScale: 4,
+                            child: Image.memory(
+                              base64Decode(dish.imageBase64!),
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        )
+                        : Container(
+                          height: 220,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Center(
+                            child: Icon(Icons.restaurant_menu, size: 48),
+                          ),
+                        );
+                final details = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _detailBlock(
+                      'Description',
+                      desc.isEmpty ? 'No description yet.' : desc,
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                _detailBlock(
-                  'Description',
-                  desc.isEmpty ? 'No description yet.' : desc,
-                ),
-                _detailBlock(
-                  'Ingredients',
-                  ingredients.isEmpty
-                      ? 'No ingredients listed.'
-                      : ingredients.join(', '),
-                ),
-                _detailBlock(
-                  'Allergens',
-                  allergens.isEmpty ? 'None listed.' : allergens,
-                ),
-              ],
+                    _detailBlock(
+                      'Ingredients',
+                      ingredients.isEmpty
+                          ? 'No ingredients listed.'
+                          : ingredients.join(', '),
+                    ),
+                    _detailBlock(
+                      'Allergens',
+                      allergens.isEmpty ? 'None listed.' : allergens,
+                    ),
+                  ],
+                );
+
+                if (!wide) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [image, const SizedBox(height: 16), details],
+                  );
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(width: 360, child: image),
+                    const SizedBox(width: 22),
+                    Expanded(child: details),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -60,6 +95,17 @@ void showCateringDishInfoDialog(BuildContext context, MenuDish dish) {
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('CLOSE'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              if (onInquireNow != null) {
+                onInquireNow();
+              } else {
+                Navigator.of(context).pushNamed('/inquire');
+              }
+            },
+            child: const Text('INQUIRE NOW'),
           ),
         ],
       );

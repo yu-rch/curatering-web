@@ -3,10 +3,9 @@ import json
 import os
 import re
 import traceback
-import uuid
-from collections import Counter
 from datetime import datetime, timezone
 
+os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -16,12 +15,19 @@ from supabase import create_client
 from vllm import LLM, SamplingParams
 
 # =========================================================
+# PERFORMANCE SETTINGS
+# =========================================================
+
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.set_float32_matmul_precision("high")
+
+# =========================================================
 # CONFIG
 # =========================================================
 
 MODEL_NAME = os.getenv(
     "NLP_MODEL_NAME",
-    "mistralai/Mistral-7B-Instruct-v0.2"
+    "microsoft/Phi-3-mini-4k-instruct"
 )
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -32,52 +38,76 @@ SUPABASE_KEY = (
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError(
-        "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"
+        "Missing SUPABASE credentials"
     )
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = create_client(
+    SUPABASE_URL,
+    SUPABASE_KEY
+)
 
 # =========================================================
-# VLLM
+# LOAD MODEL
 # =========================================================
 
+print("====================================")
 print("Loading NLP model...")
+print("MODEL:", MODEL_NAME)
+print("CUDA:", torch.cuda.is_available())
+
+if torch.cuda.is_available():
+    print("GPU:", torch.cuda.get_device_name(0))
+
+print("====================================")
 
 llm = LLM(
     model=MODEL_NAME,
     dtype="float16",
-    gpu_memory_utilization=0.72,
-    max_model_len=2048,
-    enforce_eager=True,
+    gpu_memory_utilization=0.60,
+    max_model_len=1024,
     trust_remote_code=True,
+    enforce_eager=True,
 )
 
 sampling_params = SamplingParams(
-    temperature=0.2,
+    temperature=0.15,
     top_p=0.9,
-    max_tokens=350,
+    max_tokens=300,
 )
 
-print("NLP model loaded.")
+print("NLP model loaded successfully.")
 
 # =========================================================
 # HELPERS
 # =========================================================
 
 def clean_text(value):
+
     return str(value or "").strip()
 
 
-def string_list(value, max_items=20):
+def safe_list(value, limit=20):
 
     if not isinstance(value, list):
         return []
 
-    return [
-        str(v).strip()
-        for v in value
-        if str(v).strip()
-    ][:max_items]
+    output = []
+
+    for item in value:
+
+        text = clean_text(item)
+
+        if text:
+            output.append(text)
+
+    return output[:limit]
+
+
+def make_json_safe(data):
+
+    return json.loads(
+        json.dumps(data)
+    )
 
 
 def extract_json(text):
@@ -90,30 +120,50 @@ def extract_json(text):
         pass
 
     try:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
+
+        match = re.search(
+            r"\{.*\}",
+            text,
+            re.DOTALL
+        )
 
         if match:
             return json.loads(match.group(0))
+
     except Exception:
         pass
 
     return None
 
 
-def make_json_safe(data):
-    return json.loads(json.dumps(data))
+def cleanup():
 
+    gc.collect()
+
+    if torch.cuda.is_available():
+
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+
+# =========================================================
+# MODEL GENERATION
+# =========================================================
 
 def generate_json(prompt):
 
-    outputs = llm.generate([prompt], sampling_params)
+    outputs = llm.generate(
+        [prompt],
+        sampling_params
+    )
 
     raw = outputs[0].outputs[0].text.strip()
 
     parsed = extract_json(raw)
 
-    gc.collect()
-    torch.cuda.empty_cache()
+    cleanup()
 
     return raw, parsed
 
@@ -124,12 +174,13 @@ def generate_json(prompt):
 
 def build_feedback_prompt(feedbacks):
 
-    combined = "\n".join(
-        [f"- {f}" for f in feedbacks]
-    )
+    combined = "\n".join([
+        f"- {x}"
+        for x in feedbacks
+    ])
 
     return f"""
-[INST]
+<|user|>
 You are a customer feedback analysis AI.
 
 Return ONLY valid JSON.
@@ -145,8 +196,43 @@ Schema:
 
 Feedback:
 {combined}
-[/INST]
+
+<|assistant|>
 """.strip()
+
+
+def normalize_feedback(parsed):
+
+    if not isinstance(parsed, dict):
+        return None
+
+    sentiment = clean_text(
+        parsed.get("sentiment")
+    ).lower()
+
+    if sentiment not in (
+        "positive",
+        "negative",
+        "neutral",
+        "mixed"
+    ):
+        sentiment = "mixed"
+
+    return {
+        "sentiment": sentiment,
+        "complaints": safe_list(
+            parsed.get("complaints")
+        ),
+        "praises": safe_list(
+            parsed.get("praises")
+        ),
+        "insights": safe_list(
+            parsed.get("insights")
+        ),
+        "recommendations": safe_list(
+            parsed.get("recommendations")
+        ),
+    }
 
 
 # =========================================================
@@ -156,24 +242,23 @@ Feedback:
 def build_dashboard_prompt(data):
 
     return f"""
-[INST]
-You are a business intelligence AI for a catering and restaurant platform.
+<|user|>
+You are an AI business intelligence assistant.
 
 Analyze:
-- sales trends
-- customer behavior
-- order trends
+- sales
 - operations
-- business opportunities
+- order trends
+- customer behavior
+- revenue trends
 - risks
-- popular dishes
+- opportunities
 
 Return ONLY valid JSON.
 
 Schema:
 {{
   "summary": "string",
-  "explainability": ["specific detected factor, metric, or change"],
   "insights": ["string"],
   "trends": ["string"],
   "problems": ["string"],
@@ -181,154 +266,104 @@ Schema:
   "alerts": [
     {{
       "severity": "info | medium | high",
-      "message": "string",
-      "explanation": "string"
+      "message": "string"
     }}
   ]
 }}
 
-Dashboard Data:
+Dashboard data:
 {json.dumps(data, ensure_ascii=False)}
-[/INST]
+
+<|assistant|>
 """.strip()
 
 
-# =========================================================
-# DISH TREND ANALYSIS
-# =========================================================
+def normalize_dashboard(parsed):
 
-def aggregate_dish_trends(rows):
-
-    counter = {}
-    revenue = {}
-
-    for row in rows:
-
-        dish = clean_text(
-            row.get("dish_name")
-        )
-
-        if not dish:
-            continue
-
-        qty = float(row.get("quantity") or 1)
-        price = float(row.get("price") or 0)
-
-        counter[dish] = (
-            counter.get(dish, 0) + qty
-        )
-
-        revenue[dish] = (
-            revenue.get(dish, 0.0)
-            + (qty * price)
-        )
-
-    sorted_dishes = sorted(
-        counter.items(),
-        key=lambda x: x[1],
-        reverse=True
-    )
-
-    top_dishes = []
-
-    for dish, count in sorted_dishes[:10]:
-
-        top_dishes.append({
-            "dish": dish,
-            "orders": round(count, 2),
-            "revenue": round(
-                revenue.get(dish, 0.0),
-                2
-            )
-        })
+    if not isinstance(parsed, dict):
+        return None
 
     return {
-        "top_dishes": top_dishes,
-        "dish_count": len(counter)
+        "summary": clean_text(
+            parsed.get("summary")
+        ),
+        "insights": safe_list(
+            parsed.get("insights")
+        ),
+        "trends": safe_list(
+            parsed.get("trends")
+        ),
+        "problems": safe_list(
+            parsed.get("problems")
+        ),
+        "recommendations": safe_list(
+            parsed.get("recommendations")
+        ),
+        "alerts": parsed.get("alerts") or [],
     }
-
-
-def build_dish_trend_prompt(data):
-
-    return f"""
-[INST]
-You are a restaurant analytics AI.
-
-Analyze dish ordering trends.
-
-Return ONLY valid JSON.
-
-Schema:
-{{
-  "summary": "string",
-  "popular_dishes": ["string"],
-  "declining_dishes": ["string"],
-  "seasonal_patterns": ["string"],
-  "recommendations": ["string"]
-}}
-
-Dish trend data:
-{json.dumps(data, ensure_ascii=False)}
-[/INST]
-""".strip()
 
 
 # =========================================================
 # EVENT PROMPT EXPANSION
 # =========================================================
 
-def token_list(*values, max_items=12):
+def fallback_prompt(data):
 
-    items = []
+    event_type = clean_text(
+        data.get("event_type")
+    )
 
-    for value in values:
+    theme = clean_text(
+        data.get("theme")
+        or data.get("style")
+    )
 
-        if isinstance(value, list):
-            items.extend(value)
-        elif clean_text(value):
-            items.append(value)
+    mood = clean_text(
+        data.get("mood")
+    )
 
-    normalized = []
+    colors = safe_list(
+        data.get("colors")
+        or data.get("color_palette")
+    )
 
-    for item in items:
+    decor = safe_list(
+        data.get("decor")
+        or data.get("decor_elements")
+    )
 
-        text = clean_text(item)
+    return ", ".join([
+        x for x in [
+            f"{event_type} luxury venue"
+            if event_type else "",
 
-        if text and text not in normalized:
-            normalized.append(text)
+            f"{theme} theme"
+            if theme else "",
 
-    return normalized[:max_items]
+            f"{mood} atmosphere"
+            if mood else "",
 
+            f"{', '.join(colors)} palette"
+            if colors else "",
 
-def fallback_event_prompt(data):
+            f"{', '.join(decor)} decorations"
+            if decor else "",
 
-    event_type = clean_text(data.get("event_type") or "event")
-    theme = clean_text(data.get("theme") or data.get("style"))
-    mood = clean_text(data.get("mood"))
-    colors = token_list(data.get("colors"), data.get("color_palette"))
-    decor = token_list(data.get("decor"), data.get("decor_elements"))
-    notes = clean_text(data.get("notes") or data.get("custom_instructions"))
-
-    parts = [
-        f"{event_type} event venue",
-        f"{theme} theme" if theme else "",
-        f"{mood} atmosphere" if mood else "",
-        f"{', '.join(colors)} color palette" if colors else "",
-        f"{', '.join(decor)} decorations" if decor else "",
-        notes,
-        "photorealistic luxury event styling",
-        "realistic venue decorations",
-        "cinematic lighting",
-    ]
-
-    return ", ".join([p for p in parts if p])
+            "photorealistic",
+            "cinematic lighting",
+            "luxury event styling",
+        ]
+        if x
+    ])
 
 
-def build_event_prompt_expansion_prompt(data):
+def build_event_prompt(data):
 
     return f"""
-[INST]
-You expand structured event design data into stable SDXL prompts.
+<|user|>
+You are an SDXL event design prompt engineer.
+
+Generate optimized SDXL prompts.
 
 Return ONLY valid JSON.
 
@@ -340,138 +375,85 @@ Schema:
   "style_tokens": ["string"],
   "lighting_tokens": ["string"],
   "decor_tokens": ["string"],
-  "decor_elements": ["string"],
-  "visual_keywords": ["string"],
   "recommended_strength": 0.58
 }}
 
 Rules:
-- Preserve the venue layout and realistic architecture.
-- Use the event type, theme, mood, colors, decor, and notes as semantic tokens.
-- Keep positive_prompt concise but detailed enough for SDXL.
-- Avoid text, logos, watermarks, distorted rooms, and cartoon rendering.
+- Keep architecture realistic
+- Preserve venue layout
+- Avoid distorted geometry
+- Avoid cartoons
+- Optimize for SDXL realism
 
-Event config:
+Event Data:
 {json.dumps(data, ensure_ascii=False)}
-[/INST]
+
+<|assistant|>
 """.strip()
 
 
-def normalize_event_prompt_expansion(parsed, data):
+def normalize_event(parsed, data):
 
-    source = parsed if isinstance(parsed, dict) else {}
-    fallback_prompt = fallback_event_prompt(data)
-    try:
-        recommended_strength = float(source.get("recommended_strength") or 0.58)
-    except Exception:
-        recommended_strength = 0.58
-    positive_prompt = clean_text(
-        source.get("positive_prompt")
-        or source.get("prompt")
-        or fallback_prompt
-    )
-    negative_prompt = clean_text(
-        source.get("negative_prompt")
-        or "warped architecture, distorted room, melted surfaces, duplicate objects, blurry, low quality, cartoon, CGI, fisheye, text, watermark"
-    )
-    theme = clean_text(data.get("theme") or data.get("style"))
-    mood = clean_text(data.get("mood"))
+    if not isinstance(parsed, dict):
+
+        return {
+            "positive_prompt": fallback_prompt(data),
+            "negative_prompt": (
+                "distorted room, warped walls, "
+                "blurry, cartoon, text, watermark"
+            ),
+            "theme_tokens": [],
+            "style_tokens": [],
+            "lighting_tokens": [],
+            "decor_tokens": [],
+            "recommended_strength": 0.58,
+        }
 
     return {
-        "positive_prompt": positive_prompt,
-        "negative_prompt": negative_prompt,
-        "theme_tokens": string_list(
-            source.get("theme_tokens"),
-            12
-        ) or token_list(data.get("event_type"), theme),
-        "style_tokens": string_list(
-            source.get("style_tokens"),
-            12
-        ) or token_list(theme),
-        "lighting_tokens": string_list(
-            source.get("lighting_tokens"),
-            12
-        ) or token_list(mood),
-        "decor_tokens": string_list(
-            source.get("decor_tokens"),
-            12
-        ) or token_list(data.get("decor"), data.get("decor_elements")),
-        "decor_elements": string_list(
-            source.get("decor_elements"),
-            12
-        ) or token_list(data.get("decor"), data.get("decor_elements")),
-        "visual_keywords": string_list(
-            source.get("visual_keywords") or source.get("visual_direction"),
+        "positive_prompt": clean_text(
+            parsed.get("positive_prompt")
+        ) or fallback_prompt(data),
+
+        "negative_prompt": clean_text(
+            parsed.get("negative_prompt")
+        ) or (
+            "distorted room, warped walls, "
+            "blurry, cartoon, text, watermark"
+        ),
+
+        "theme_tokens": safe_list(
+            parsed.get("theme_tokens"),
             12
         ),
+
+        "style_tokens": safe_list(
+            parsed.get("style_tokens"),
+            12
+        ),
+
+        "lighting_tokens": safe_list(
+            parsed.get("lighting_tokens"),
+            12
+        ),
+
+        "decor_tokens": safe_list(
+            parsed.get("decor_tokens"),
+            12
+        ),
+
         "recommended_strength": min(
             0.65,
             max(
                 0.50,
-                recommended_strength
+                float(
+                    parsed.get(
+                        "recommended_strength",
+                        0.58
+                    )
+                )
             )
-        ),
+        )
     }
-
-
-# =========================================================
-# ALERT DETECTION
-# =========================================================
-
-def detect_dashboard_alerts(data):
-
-    alerts = []
-
-    sales_today = float(
-        data.get("sales_today") or 0
-    )
-
-    sales_yesterday = float(
-        data.get("sales_yesterday") or 0
-    )
-
-    if sales_yesterday > 0:
-
-        diff = (
-            (
-                sales_today - sales_yesterday
-            )
-            / sales_yesterday
-        ) * 100
-
-        if diff <= -30:
-
-            alerts.append({
-                "severity": "high",
-                "message": "Sales dropped significantly",
-                "explanation": f"Sales decreased by {round(abs(diff), 1)}%"
-            })
-
-    pending_orders = int(
-        data.get("pending_orders") or 0
-    )
-
-    if pending_orders >= 30:
-
-        alerts.append({
-            "severity": "medium",
-            "message": "High pending orders",
-            "explanation": "Kitchen operations may be overloaded"
-        })
-
-    low_stock_items = (
-        data.get("low_stock_items") or []
-    )
-
-    if len(low_stock_items) >= 5:
-
-        alerts.append({
-            "severity": "medium",
-            "message": "Low stock warning",
-            "explanation": "Several ingredients are running low"
-        })
-
-    return alerts
 
 
 # =========================================================
@@ -479,11 +461,6 @@ def detect_dashboard_alerts(data):
 # =========================================================
 
 def fetch_pending_feedback(limit=50):
-
-    limit = max(
-        1,
-        min(int(limit), 100)
-    )
 
     response = (
         supabase.table("feedback")
@@ -503,152 +480,21 @@ def mark_feedback(rows, status):
         .isoformat()
     )
 
-    payload = {
-        "status": status,
-        "analyzed_at": timestamp,
-    }
-
     for row in rows:
 
-        supabase.table("feedback").update(
-            payload
-        ).eq(
-            "id",
-            row["id"]
-        ).execute()
+        (
+            supabase.table("feedback")
+            .update({
+                "status": status,
+                "analyzed_at": timestamp,
+            })
+            .eq("id", row["id"])
+            .execute()
+        )
 
 
 # =========================================================
-# ORDER DATA
-# =========================================================
-
-def fetch_dish_orders():
-
-    catering_rows = (
-        supabase.table("catering_order_items")
-        .select("*")
-        .execute()
-    )
-
-    restaurant_rows = (
-        supabase.table("restaurant_order_items")
-        .select("*")
-        .execute()
-    )
-
-    return (
-        (catering_rows.data or [])
-        + (restaurant_rows.data or [])
-    )
-
-
-# =========================================================
-# NORMALIZERS
-# =========================================================
-
-def normalize_dashboard_result(parsed):
-
-    if not isinstance(parsed, dict):
-        return None
-
-    return {
-        "summary": clean_text(
-            parsed.get("summary")
-        ),
-        "explainability": string_list(
-            parsed.get("explainability")
-            or parsed.get("explanation_points")
-            or parsed.get("detected_factors"),
-            10
-        ),
-        "insights": string_list(
-            parsed.get("insights"),
-            5
-        ),
-        "trends": string_list(
-            parsed.get("trends"),
-            5
-        ),
-        "problems": string_list(
-            parsed.get("problems"),
-            5
-        ),
-        "recommendations": string_list(
-            parsed.get("recommendations"),
-            5
-        ),
-        "alerts": parsed.get("alerts") or [],
-    }
-
-
-def normalize_dish_trend_result(parsed):
-
-    if not isinstance(parsed, dict):
-        return None
-
-    return {
-        "summary": clean_text(
-            parsed.get("summary")
-        ),
-        "popular_dishes": string_list(
-            parsed.get("popular_dishes"),
-            10
-        ),
-        "declining_dishes": string_list(
-            parsed.get("declining_dishes"),
-            10
-        ),
-        "seasonal_patterns": string_list(
-            parsed.get("seasonal_patterns"),
-            10
-        ),
-        "recommendations": string_list(
-            parsed.get("recommendations"),
-            10
-        ),
-    }
-
-
-def normalize_feedback_result(parsed):
-
-    if not isinstance(parsed, dict):
-        return None
-
-    sentiment = clean_text(
-        parsed.get("sentiment")
-    ).lower()
-
-    if sentiment not in (
-        "positive",
-        "negative",
-        "neutral",
-        "mixed"
-    ):
-        sentiment = "mixed"
-
-    return {
-        "sentiment": sentiment,
-        "complaints": string_list(
-            parsed.get("complaints"),
-            20
-        ),
-        "praises": string_list(
-            parsed.get("praises"),
-            20
-        ),
-        "insights": string_list(
-            parsed.get("insights"),
-            20
-        ),
-        "recommendations": string_list(
-            parsed.get("recommendations"),
-            20
-        ),
-    }
-
-
-# =========================================================
-# MAIN HANDLER
+# HANDLER
 # =========================================================
 
 def handler(job):
@@ -665,7 +511,9 @@ def handler(job):
             or data.get("task")
         )
 
-        print(f"Task: {task}")
+        print("====================================")
+        print("TASK:", task)
+        print("====================================")
 
         # =================================================
         # HEALTH CHECK
@@ -673,23 +521,15 @@ def handler(job):
 
         if task == "health_check":
 
-            cuda_available = torch.cuda.is_available()
-            gpu_name = ""
-
-            if cuda_available:
-
-                try:
-                    gpu_name = torch.cuda.get_device_name(0)
-                except Exception:
-                    gpu_name = ""
-
             return {
                 "status": "success",
-                "message": "NLP service healthy",
                 "model": MODEL_NAME,
-                "cuda": cuda_available,
-                "gpu": gpu_name,
-                "nlp_online": True,
+                "cuda": torch.cuda.is_available(),
+                "gpu": (
+                    torch.cuda.get_device_name(0)
+                    if torch.cuda.is_available()
+                    else None
+                )
             }
 
         # =================================================
@@ -710,9 +550,10 @@ def handler(job):
                 }
 
             feedbacks = [
-                clean_text(r.get("message"))
-                for r in rows
-                if clean_text(r.get("message"))
+                clean_text(
+                    row.get("message")
+                )
+                for row in rows
             ]
 
             prompt = build_feedback_prompt(
@@ -723,21 +564,27 @@ def handler(job):
                 prompt
             )
 
-            result = normalize_feedback_result(
+            result = normalize_feedback(
                 parsed
             )
 
             if not result:
 
-                mark_feedback(rows, "error")
+                mark_feedback(
+                    rows,
+                    "error"
+                )
 
                 return {
                     "status": "error",
-                    "message": "Invalid model JSON",
+                    "message": "Invalid JSON output",
                     "raw_output": raw,
                 }
 
-            mark_feedback(rows, "analyzed")
+            mark_feedback(
+                rows,
+                "analyzed"
+            )
 
             return make_json_safe({
                 "status": "success",
@@ -756,12 +603,6 @@ def handler(job):
                 or {}
             )
 
-            dashboard_data["detected_alerts"] = (
-                detect_dashboard_alerts(
-                    dashboard_data
-                )
-            )
-
             prompt = build_dashboard_prompt(
                 dashboard_data
             )
@@ -770,7 +611,7 @@ def handler(job):
                 prompt
             )
 
-            result = normalize_dashboard_result(
+            result = normalize_dashboard(
                 parsed
             )
 
@@ -778,50 +619,12 @@ def handler(job):
 
                 return {
                     "status": "error",
-                    "message": "Invalid model JSON",
+                    "message": "Invalid JSON output",
                     "raw_output": raw,
                 }
 
             return make_json_safe({
                 "status": "success",
-                "analysis": result,
-            })
-
-        # =================================================
-        # DISH TRENDS
-        # =================================================
-
-        if task == "dish_trends":
-
-            rows = fetch_dish_orders()
-
-            aggregated = aggregate_dish_trends(
-                rows
-            )
-
-            prompt = build_dish_trend_prompt(
-                aggregated
-            )
-
-            raw, parsed = generate_json(
-                prompt
-            )
-
-            result = normalize_dish_trend_result(
-                parsed
-            )
-
-            if not result:
-
-                return {
-                    "status": "error",
-                    "message": "Invalid model JSON",
-                    "raw_output": raw,
-                }
-
-            return make_json_safe({
-                "status": "success",
-                "aggregated": aggregated,
                 "analysis": result,
             })
 
@@ -834,7 +637,7 @@ def handler(job):
             "event_design"
         ):
 
-            prompt = build_event_prompt_expansion_prompt(
+            prompt = build_event_prompt(
                 data
             )
 
@@ -842,7 +645,7 @@ def handler(job):
                 prompt
             )
 
-            result = normalize_event_prompt_expansion(
+            result = normalize_event(
                 parsed,
                 data
             )
@@ -859,17 +662,12 @@ def handler(job):
 
         return {
             "status": "error",
-            "message": f"Unknown task type: {task}"
+            "message": f"Unknown task: {task}"
         }
 
     except Exception as e:
 
-        gc.collect()
-
-        try:
-            torch.cuda.empty_cache()
-        except Exception:
-            pass
+        cleanup()
 
         return {
             "status": "error",
@@ -882,7 +680,7 @@ def handler(job):
 # START
 # =========================================================
 
-print("Starting NLP Analytics AI...")
+print("Starting NLP AI Service...")
 
 runpod.serverless.start({
     "handler": handler

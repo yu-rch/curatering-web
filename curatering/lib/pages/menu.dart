@@ -195,12 +195,11 @@ class _MenuState extends State<Menu> {
   String? _editingImageBase64;
   String _editingType = ''; // For restaurant dish type grouping
   String _editingMealType = ''; // Catering meal type (menu_dishes.meal_type)
-  Map<String, String> _editingPaxPrices = {};
-  Map<String, TextEditingController> _paxPriceControllers = {};
   int _activeTabIndex = 0;
   bool _isRestaurantGridView = true;
   List<String> _editingPaxOptions = ['1 pax'];
   List<String> _editingSauces = [];
+  bool _editingSupportsAddOns = false;
   bool _editingAvailable = true;
   List<String> _selectedSetDishIds = [];
   String? _selectedSetMenuId;
@@ -336,9 +335,6 @@ class _MenuState extends State<Menu> {
     _typeController.dispose();
     _publicDescriptionController.dispose();
     _allergensController.dispose();
-    for (var controller in _paxPriceControllers.values) {
-      controller.dispose();
-    }
     MenuStore.instance.removeListener(_onMenuChanged);
     SetMenuStore.instance.removeListener(_onSetMenusChanged);
     super.dispose();
@@ -366,9 +362,8 @@ class _MenuState extends State<Menu> {
       _editingType = 'others';
       _typeController.text = 'others';
     }
-    _editingPaxPrices = {};
-    _paxPriceControllers.clear();
     _editingSauces = [];
+    _editingSupportsAddOns = false;
     _newPaxController.clear();
     _newSauceController.clear();
     _publicDescriptionController.clear();
@@ -393,14 +388,8 @@ class _MenuState extends State<Menu> {
             : '0.00';
     _paxController.text = '';
     _editingPaxOptions = dish.paxOptions.toList();
-    _editingPaxPrices = Map.fromEntries(
-      dish.paxOptions.map((pax) => MapEntry(pax, dish.price)),
-    );
-    _paxPriceControllers.clear();
-    for (var pax in _editingPaxOptions) {
-      _paxPriceControllers[pax] = TextEditingController(text: dish.price);
-    }
     _editingSauces = dish.sauces.toList();
+    _editingSupportsAddOns = dish.supportsAddOns || dish.sauces.isNotEmpty;
     _newPaxController.clear();
     _newSauceController.clear();
     _publicDescriptionController.text = dish.publicDescription;
@@ -414,17 +403,6 @@ class _MenuState extends State<Menu> {
     } else {
       _editingMealType = '';
     }
-  }
-
-  void _addPaxOption() {
-    final value = _newPaxController.text.trim();
-    if (value.isEmpty || _editingPaxOptions.contains(value)) return;
-    setState(() {
-      _editingPaxOptions.add(value);
-      _editingPaxPrices[value] = '';
-      _paxPriceControllers[value] = TextEditingController(text: '');
-      _newPaxController.clear();
-    });
   }
 
   void _addSauceOption() {
@@ -615,6 +593,64 @@ class _MenuState extends State<Menu> {
                             }
                           },
                         ),
+                        const SizedBox(height: 12),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Dish has add-ons'),
+                          subtitle: const Text(
+                            'Enable sauce/add-on selection in the customer tray dialog.',
+                          ),
+                          value: _editingSupportsAddOns,
+                          onChanged: (value) {
+                            dialogSetState(() {
+                              _editingSupportsAddOns = value;
+                              if (!value) _editingSauces.clear();
+                            });
+                          },
+                        ),
+                        if (_editingSupportsAddOns) ...[
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              for (final sauce in _editingSauces)
+                                Chip(
+                                  label: Text(sauce),
+                                  onDeleted:
+                                      () => dialogSetState(
+                                        () => _editingSauces.remove(sauce),
+                                      ),
+                                ),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _newSauceController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Add-on / sauce option',
+                                    hintText: 'e.g. Garlic sauce, extra gravy',
+                                  ),
+                                  onSubmitted: (_) {
+                                    _addSauceOption();
+                                    dialogSetState(() {});
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  _addSauceOption();
+                                  dialogSetState(() {});
+                                },
+                                icon: const Icon(Icons.add),
+                                label: const Text('Add'),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                       TextField(
                         controller: _priceController,
@@ -772,8 +808,13 @@ class _MenuState extends State<Menu> {
                                   category: category,
                                   sauces:
                                       category == 'restaurant'
-                                          ? _editingSauces
+                                          ? (_editingSupportsAddOns
+                                              ? _editingSauces
+                                              : const <String>[])
                                           : const [],
+                                  supportsAddOns:
+                                      category == 'restaurant' &&
+                                      _editingSupportsAddOns,
                                   type:
                                       category == 'restaurant'
                                           ? ''
@@ -800,8 +841,13 @@ class _MenuState extends State<Menu> {
                                   category: category,
                                   sauces:
                                       category == 'restaurant'
-                                          ? _editingSauces
+                                          ? (_editingSupportsAddOns
+                                              ? _editingSauces
+                                              : const <String>[])
                                           : const [],
+                                  supportsAddOns:
+                                      category == 'restaurant' &&
+                                      _editingSupportsAddOns,
                                   type:
                                       category == 'restaurant'
                                           ? ''
@@ -863,6 +909,7 @@ class _MenuState extends State<Menu> {
         imageBase64: dish.imageBase64,
         category: dish.category,
         sauces: dish.sauces,
+        supportsAddOns: dish.supportsAddOns,
         ingredients: dish.ingredients,
         type: dish.type,
         mealType: dish.mealType,
@@ -941,6 +988,7 @@ class _MenuState extends State<Menu> {
           imageBase64: d.imageBase64,
           category: d.category,
           sauces: d.sauces,
+          supportsAddOns: d.supportsAddOns,
           ingredients: d.ingredients,
           type: d.type,
           available: d.available,
@@ -1378,6 +1426,7 @@ class _MenuState extends State<Menu> {
                         imageBase64: dish.imageBase64,
                         category: dish.category,
                         sauces: dish.sauces,
+                        supportsAddOns: dish.supportsAddOns,
                         ingredients: dish.ingredients,
                         type: dish.type,
                         mealType: dish.mealType,

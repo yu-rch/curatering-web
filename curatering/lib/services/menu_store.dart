@@ -109,19 +109,36 @@ class MenuStore extends ChangeNotifier {
             : rawPrice is String
             ? rawPrice
             : rawPrice.toString();
+    double? parseDoubleField(Object? value) {
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value.trim());
+      return null;
+    }
+
+    bool parseBoolField(Object? value) {
+      if (value is bool) return value;
+      if (value is num) return value != 0;
+      final text = value?.toString().trim().toLowerCase();
+      return text == 'true' || text == '1' || text == 'yes';
+    }
+
+    final sauces = (json['sauces'] as List<dynamic>?)?.cast<String>() ?? [];
 
     return MenuDish(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       price: normalizedPrice,
       additionalChargeAmount:
-          (json['menu_dishes_additional_charge_amount'] as num?)?.toDouble() ??
-          (json['additionalChargeAmount'] as num?)?.toDouble() ??
-          double.tryParse('${json['additional_charge_amount'] ?? ''}') ??
+          parseDoubleField(json['menu_dishes_additional_charge_amount']) ??
+          parseDoubleField(json['additionalChargeAmount']) ??
+          parseDoubleField(json['additional_charge_amount']) ??
           0,
       category: json['category'] as String? ?? 'catering',
       paxOptions: (json['pax_options'] as List<dynamic>?)?.cast<String>() ?? [],
-      sauces: (json['sauces'] as List<dynamic>?)?.cast<String>() ?? [],
+      sauces: sauces,
+      supportsAddOns:
+          parseBoolField(json['supportsAddOns'] ?? json['supports_addons']) ||
+          sauces.isNotEmpty,
       ingredients:
           (json['ingredients'] as List<dynamic>?)?.cast<String>() ?? [],
       imageBase64: json['image_base64'] as String?,
@@ -158,6 +175,7 @@ class MenuStore extends ChangeNotifier {
     String? imageBase64,
     String category = 'catering',
     List<String> sauces = const [],
+    bool supportsAddOns = false,
     List<String> ingredients = const [],
     String type = '',
     String mealType = '',
@@ -176,6 +194,7 @@ class MenuStore extends ChangeNotifier {
           'category': category,
           'paxOptions': paxOptions,
           'sauces': sauces,
+          'supportsAddOns': supportsAddOns,
           'ingredients': ingredients,
           'imageBase64': imageBase64,
           'type': type,
@@ -204,6 +223,7 @@ class MenuStore extends ChangeNotifier {
     String? imageBase64,
     String? category,
     List<String>? sauces,
+    bool? supportsAddOns,
     List<String>? ingredients,
     String? type,
     String? mealType,
@@ -228,6 +248,8 @@ class MenuStore extends ChangeNotifier {
           'category': category,
           'paxOptions': paxOptions,
           'sauces': sauces ?? [],
+          'supportsAddOns':
+              supportsAddOns ?? existingDish?.supportsAddOns ?? false,
           'ingredients': ingredients ?? [],
           'imageBase64': imageBase64,
           'type': type ?? '',
@@ -263,6 +285,7 @@ class MenuStore extends ChangeNotifier {
       paxOptions: dish.paxOptions,
       category: dish.category,
       sauces: dish.sauces,
+      supportsAddOns: dish.supportsAddOns,
       ingredients: ingredients,
       imageBase64: dish.imageBase64,
       type: dish.type,

@@ -716,6 +716,18 @@ export async function initDb() {
     ADD COLUMN IF NOT EXISTS meal_type TEXT NOT NULL DEFAULT '';
   `);
 
+  await pool.query(`
+    ALTER TABLE menu_dishes
+    ADD COLUMN IF NOT EXISTS supports_addons BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+
+  await pool.query(`
+    UPDATE menu_dishes
+    SET supports_addons = TRUE
+    WHERE supports_addons = FALSE
+      AND jsonb_array_length(COALESCE(sauces, '[]'::jsonb)) > 0
+  `);
+
   // Backfill meal_type from legacy type column for restaurant-style categories.
   await pool.query(`
     UPDATE menu_dishes

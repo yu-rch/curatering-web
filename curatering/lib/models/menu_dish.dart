@@ -7,6 +7,7 @@ class MenuDish {
   final String? imageBase64;
   final String category;
   final List<String> sauces;
+  final bool supportsAddOns;
   final bool archived;
   final bool available;
   final DateTime? archivedAt;
@@ -39,6 +40,7 @@ class MenuDish {
     this.imageBase64,
     this.category = 'catering',
     this.sauces = const [],
+    this.supportsAddOns = false,
     this.archived = false,
     this.available = true,
     this.archivedAt,
@@ -59,6 +61,7 @@ class MenuDish {
     String? imageBase64,
     String? category,
     List<String>? sauces,
+    bool? supportsAddOns,
     bool? archived,
     bool? available,
     DateTime? archivedAt,
@@ -79,6 +82,7 @@ class MenuDish {
       imageBase64: imageBase64 ?? this.imageBase64,
       category: category ?? this.category,
       sauces: sauces ?? this.sauces,
+      supportsAddOns: supportsAddOns ?? this.supportsAddOns,
       archived: archived ?? this.archived,
       available: available ?? this.available,
       archivedAt: archivedAt ?? this.archivedAt,

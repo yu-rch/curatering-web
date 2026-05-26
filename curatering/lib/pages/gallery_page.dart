@@ -151,36 +151,6 @@ class _GalleryPageState extends State<GalleryPage> {
         .toList();
   }
 
-  Widget _buildFilterChips({
-    required String title,
-    required List<Widget> chips,
-  }) {
-    return SizedBox(
-      width: double.infinity,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              title,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 42,
-            child: ListView(
-              padding: EdgeInsets.zero,
-              scrollDirection: Axis.horizontal,
-              children: chips,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildFilterDropdown({
     required String title,
     required String value,
@@ -288,34 +258,26 @@ class _GalleryPageState extends State<GalleryPage> {
             hintText: 'SEARCH BY TAG OR CATEGORY',
           ),
           filters: [
-            _buildFilterChips(
+            _buildFilterDropdown(
               title: 'CATEGORIES',
-              chips: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilterChip(
-                    label: const Text('ALL'),
-                    selected: _selectedGalleryCategoryId == 'ALL',
-                    onSelected:
-                        (_) =>
-                            setState(() => _selectedGalleryCategoryId = 'ALL'),
-                  ),
-                ),
+              value:
+                  w.galleryCategories.any(
+                        (cat) => cat.id == _selectedGalleryCategoryId,
+                      )
+                      ? _selectedGalleryCategoryId
+                      : 'ALL',
+              items: [
+                const DropdownMenuItem(value: 'ALL', child: Text('ALL')),
                 ...w.galleryCategories.map(
-                  (cat) => Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      label: Text(cat.label),
-                      selected: _selectedGalleryCategoryId == cat.id,
-                      onSelected:
-                          (_) => setState(() {
-                            _selectedGalleryCategoryId = cat.id;
-                            _galleryDetailIndex = null;
-                          }),
-                    ),
-                  ),
+                  (cat) =>
+                      DropdownMenuItem(value: cat.id, child: Text(cat.label)),
                 ),
               ],
+              onChanged:
+                  (value) => setState(() {
+                    _selectedGalleryCategoryId = value ?? 'ALL';
+                    _galleryDetailIndex = null;
+                  }),
             ),
             _buildFilterDropdown(
               title: 'TAGS',
@@ -364,10 +326,10 @@ class _GalleryPageState extends State<GalleryPage> {
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount:
                   isMobile(context)
-                      ? 1
-                      : isTablet(context)
                       ? 2
-                      : 3,
+                      : isTablet(context)
+                      ? 3
+                      : 4,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
               childAspectRatio: 1.2,
@@ -443,6 +405,8 @@ class _GalleryPageState extends State<GalleryPage> {
           ),
         const SizedBox(height: 48),
         const PexelsAttributionBadge(photographer: 'Curatering Gallery'),
+        const SizedBox(height: 32),
+        _galleryFooter(w),
       ],
     );
   }
@@ -540,10 +504,10 @@ class _GalleryPageState extends State<GalleryPage> {
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount:
                   isMobile(context)
-                      ? 1
-                      : isTablet(context)
                       ? 2
-                      : 3,
+                      : isTablet(context)
+                      ? 3
+                      : 4,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
             ),
@@ -612,7 +576,39 @@ class _GalleryPageState extends State<GalleryPage> {
               );
             },
           ),
+        const SizedBox(height: 32),
+        _galleryFooter(w),
       ],
+    );
+  }
+
+  Widget _galleryFooter(WebsiteContentStore w) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Wrap(
+        spacing: 24,
+        runSpacing: 8,
+        alignment: WrapAlignment.spaceBetween,
+        children: [
+          Text(
+            w.contactFacebook,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+          Text(
+            w.contactPhone,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+          Text(
+            w.contactEmail,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 }
