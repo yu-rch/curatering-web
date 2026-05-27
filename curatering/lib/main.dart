@@ -163,6 +163,11 @@ Route<dynamic>? _buildRouteForPath(String path) {
           ),
           '/super-admin-dashboard',
         ),
+    '/manager-dashboard':
+        (context) => _staffPage(
+          const RoleGuard(requiredRole: Role.superAdmin, child: Dashboard()),
+          '/manager-dashboard',
+        ),
     '/manage-accounts':
         (context) => _staffPage(
           const RoleGuard(
@@ -629,6 +634,14 @@ class _MyAppState extends State<MyApp> {
                     ),
                   ),
                   '/dashboard',
+                ),
+            '/manager-dashboard':
+                (context) => _staffPage(
+                  const RoleGuard(
+                    requiredRole: Role.superAdmin,
+                    child: Dashboard(),
+                  ),
+                  '/manager-dashboard',
                 ),
             '/manage-accounts':
                 (context) => _staffPage(

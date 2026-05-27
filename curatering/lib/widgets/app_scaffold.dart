@@ -68,11 +68,6 @@ class AppScaffold extends StatelessWidget {
       route: '/reports',
     ),
     _SidebarItemData(
-      icon: Icons.help_outline,
-      label: 'Help Requests',
-      route: '/help-requests',
-    ),
-    _SidebarItemData(
       icon: Icons.swap_horiz,
       label: 'Order History',
       route: '/order-history',

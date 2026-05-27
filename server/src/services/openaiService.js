@@ -122,7 +122,7 @@ export async function analyzeFeedbackBatch(feedbacks) {
 export async function analyzeCustomerFeedbackOverview(feedbacks) {
   const json = await chatJson(
     "You analyze restaurant customer feedback for business operators. Return JSON only.",
-    `Return JSON with summary, interpretation, recommendations, sentiment, key_topics.\nFeedback entries:\n${JSON.stringify(feedbacks)}`,
+    `Return JSON with summary, interpretation, recommendations, sentiment, key_topics, complaints, praises, insights.\nFeedback entries:\n${JSON.stringify(feedbacks)}`,
   );
   return {
     summary: String(json.summary || "").trim(),
@@ -130,6 +130,9 @@ export async function analyzeCustomerFeedbackOverview(feedbacks) {
     recommendations: stringList(json.recommendations, 8),
     sentiment: String(json.sentiment || "mixed").toLowerCase(),
     key_topics: stringList(json.key_topics || json.top_topics, 8),
+    complaints: stringList(json.complaints, 8),
+    praises: stringList(json.praises, 8),
+    insights: stringList(json.insights, 8),
   };
 }
 

@@ -119,6 +119,29 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
     );
   }
 
+  Widget _analysisListSection(String title, List<String> items) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          ...items.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [const Text('• '), Expanded(child: Text(item))],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered;
@@ -178,6 +201,13 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
                                 ),
                               ),
                               const Spacer(),
+                              if (_analysis!.sentiment.trim().isNotEmpty) ...[
+                                AntdStatusTag(
+                                  label: _analysis!.sentiment,
+                                  color: AntdTokens.info,
+                                ),
+                                const SizedBox(width: 8),
+                              ],
                               if (_analysis!.averageStars != null)
                                 AntdStatusTag(
                                   label:
@@ -193,26 +223,20 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
                           ),
                           const SizedBox(height: 8),
                           Text(_analysis!.interpretation),
-                          if (_analysis!.recommendations.isNotEmpty) ...[
-                            const SizedBox(height: 12),
-                            const Text(
-                              'Recommendations',
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(height: 6),
-                            ..._analysis!.recommendations.map(
-                              (r) => Padding(
-                                padding: const EdgeInsets.only(bottom: 4),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text('• '),
-                                    Expanded(child: Text(r)),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
+                          _analysisListSection(
+                            'Key topics',
+                            _analysis!.keyTopics,
+                          ),
+                          _analysisListSection(
+                            'Complaints',
+                            _analysis!.complaints,
+                          ),
+                          _analysisListSection('Praises', _analysis!.praises),
+                          _analysisListSection('Insights', _analysis!.insights),
+                          _analysisListSection(
+                            'Recommendations',
+                            _analysis!.recommendations,
+                          ),
                         ],
                       ),
                     ),

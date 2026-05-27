@@ -714,6 +714,14 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
             onPressed: _loading ? null : _load,
           ),
           AntdSecondaryButton(
+            label: 'Manager Dashboard',
+            icon: Icons.dashboard_customize_outlined,
+            onPressed:
+                () => Navigator.of(
+                  context,
+                ).pushReplacementNamed('/manager-dashboard'),
+          ),
+          AntdSecondaryButton(
             label: _printingPdf ? 'Preparing PDF' : 'Print PDF',
             icon: Icons.picture_as_pdf,
             onPressed:

@@ -1036,6 +1036,22 @@ class _InquirePageState extends State<InquirePage> {
     return 'Other';
   }
 
+  Future<void> _pickEventAddressOnMap() async {
+    final res = await showMapPicker(
+      context: context,
+      initialLatitude: _addressLat,
+      initialLongitude: _addressLng,
+      initialAddress: _address.text.isNotEmpty ? _address.text : null,
+    );
+    if (res == null || !mounted) return;
+    setState(() {
+      _address.text = res.address;
+      _addressLat = res.latitude;
+      _addressLng = res.longitude;
+      _fieldErrors.remove('address');
+    });
+  }
+
   List<Widget> _buildPhase0Content(BuildContext context) {
     void onFieldChanged(String key) {
       if (_fieldErrors.containsKey(key)) {
@@ -1249,6 +1265,7 @@ class _InquirePageState extends State<InquirePage> {
             controller: _address,
             label: 'Venue name, street, city',
             onSelected: (_) => onFieldChanged('address'),
+            onMapPickerPressed: _pickEventAddressOnMap,
           ),
         ),
         AntdFieldShell(
@@ -1265,29 +1282,6 @@ class _InquirePageState extends State<InquirePage> {
                   _fieldErrors.remove('cateringService');
                 }),
           ),
-        ),
-      ),
-      const SizedBox(height: 8),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: OutlinedButton.icon(
-          onPressed: () async {
-            final res = await showMapPicker(
-              context: context,
-              initialLatitude: _addressLat,
-              initialLongitude: _addressLng,
-              initialAddress: _address.text.isNotEmpty ? _address.text : null,
-            );
-            if (res == null || !mounted) return;
-            setState(() {
-              _address.text = res.address;
-              _addressLat = res.latitude;
-              _addressLng = res.longitude;
-              _fieldErrors.remove('address');
-            });
-          },
-          icon: const Icon(Icons.map_outlined, size: 20),
-          label: const Text('Pick on map (OpenStreetMap)'),
         ),
       ),
       if (_address.text.trim().isNotEmpty) ...[

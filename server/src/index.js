@@ -5124,44 +5124,45 @@ function normalizeFeedbackAnalysisPayload(parsed, feedbacks, source) {
   const stars = feedbacks.map((f) => Number(f.stars)).filter((n) => Number.isFinite(n));
   const avg = stars.length ? stars.reduce((a, b) => a + b, 0) / stars.length : null;
   const data = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  const keyTopics = Array.isArray(data.key_topics)
-    ? data.key_topics.map((t) => String(t).trim()).filter(Boolean).slice(0, 8)
-    : [];
-  const recommendations = Array.isArray(data.recommendations)
-    ? data.recommendations.map((r) => String(r).trim()).filter(Boolean).slice(0, 8)
-    : [];
+  const keyTopics = toStringArray(data.key_topics || data.top_topics, 8);
+  const complaints = toStringArray(data.complaints, 8);
+  const praises = toStringArray(data.praises, 8);
+  const insights = toStringArray(data.insights, 8);
+  const recommendations = toStringArray(data.recommendations, 8);
   const sentiment = String(data.sentiment || "").trim();
   const topicText = keyTopics.length ? ` Key topics: ${keyTopics.join(", ")}.` : "";
   const interpretation =
     String(data.interpretation || "").trim() ||
-    (Array.isArray(data.complaints) || Array.isArray(data.praises) || Array.isArray(data.insights)
+    (complaints.length || praises.length || insights.length
       ? [
-          Array.isArray(data.complaints) && data.complaints.length
-            ? `Complaints: ${data.complaints.map((v) => String(v).trim()).filter(Boolean).slice(0, 3).join("; ")}.`
+          complaints.length
+            ? `Complaints: ${complaints.slice(0, 3).join("; ")}.`
             : "",
-          Array.isArray(data.praises) && data.praises.length
-            ? `Praises: ${data.praises.map((v) => String(v).trim()).filter(Boolean).slice(0, 3).join("; ")}.`
+          praises.length
+            ? `Praises: ${praises.slice(0, 3).join("; ")}.`
             : "",
-          Array.isArray(data.insights) && data.insights.length
-            ? `Insights: ${data.insights.map((v) => String(v).trim()).filter(Boolean).slice(0, 3).join("; ")}.`
+          insights.length
+            ? `Insights: ${insights.slice(0, 3).join("; ")}.`
             : "",
         ].filter(Boolean).join(" ")
       : "") ||
     (sentiment || topicText
       ? `Overall sentiment: ${sentiment || "mixed"}.${topicText}`.trim()
       : fallback.interpretation);
-  const nlpRecommendations = Array.isArray(data.insights)
-    ? data.insights.map((r) => String(r).trim()).filter(Boolean).slice(0, 5)
-    : [];
 
   return {
     summary: String(data.summary || "").trim() || fallback.summary,
     interpretation,
     recommendations: recommendations.length
       ? recommendations
-      : nlpRecommendations.length
-        ? nlpRecommendations
+      : insights.length
+        ? insights.slice(0, 5)
         : fallback.recommendations,
+    sentiment,
+    keyTopics,
+    complaints,
+    praises,
+    insights,
     source,
     feedbackCount: feedbacks.length,
     averageStars: avg,

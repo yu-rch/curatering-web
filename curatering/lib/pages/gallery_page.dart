@@ -158,28 +158,19 @@ class _GalleryPageState extends State<GalleryPage> {
     required List<DropdownMenuItem<String>> items,
     required ValueChanged<String?> onChanged,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+    return DropdownButtonFormField<String>(
+      value: value,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: title,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
         ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          value: value,
-          isExpanded: true,
-          decoration: InputDecoration(
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 10,
-            ),
-          ),
-          items: items,
-          onChanged: onChanged,
-        ),
-      ],
+      ),
+      items: items,
+      onChanged: onChanged,
     );
   }
 
@@ -191,6 +182,10 @@ class _GalleryPageState extends State<GalleryPage> {
         hintText: hintText,
         prefixIcon: const Icon(Icons.search),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
+        ),
       ),
     );
   }
@@ -223,30 +218,37 @@ class _GalleryPageState extends State<GalleryPage> {
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final inline = constraints.maxWidth >= 860;
-        final filterColumn = Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var i = 0; i < filters.length; i++) ...[
-              if (i > 0) const SizedBox(height: 12),
-              filters[i],
-            ],
-          ],
-        );
+        const gap = 12.0;
+        final inline = constraints.maxWidth >= 760;
 
         if (!inline) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [searchField, const SizedBox(height: 16), filterColumn],
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: 760,
+              child: Row(
+                children: [
+                  Expanded(flex: 3, child: searchField),
+                  const SizedBox(width: gap),
+                  for (final filter in filters) ...[
+                    Expanded(flex: 2, child: filter),
+                    if (filter != filters.last) const SizedBox(width: gap),
+                  ],
+                ],
+              ),
+            ),
           );
         }
 
         return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            SizedBox(width: 320, child: searchField),
-            const SizedBox(width: 16),
-            Expanded(child: filterColumn),
+            Expanded(flex: 3, child: searchField),
+            const SizedBox(width: gap),
+            for (final filter in filters) ...[
+              Expanded(flex: 2, child: filter),
+              if (filter != filters.last) const SizedBox(width: gap),
+            ],
           ],
         );
       },
@@ -291,6 +293,25 @@ class _GalleryPageState extends State<GalleryPage> {
           ),
           filters: [
             _buildFilterDropdown(
+              title: 'TAGS',
+              value:
+                  allTags.any(
+                        (tag) =>
+                            tag.toLowerCase() ==
+                            _selectedGalleryTag.toLowerCase(),
+                      )
+                      ? _selectedGalleryTag
+                      : 'ALL',
+              items: [
+                const DropdownMenuItem(value: 'ALL', child: Text('ALL')),
+                ...allTags.map(
+                  (tag) => DropdownMenuItem(value: tag, child: Text(tag)),
+                ),
+              ],
+              onChanged:
+                  (tag) => setState(() => _selectedGalleryTag = tag ?? 'ALL'),
+            ),
+            _buildFilterDropdown(
               title: 'CATEGORIES',
               value:
                   w.galleryCategories.any(
@@ -310,25 +331,6 @@ class _GalleryPageState extends State<GalleryPage> {
                     _selectedGalleryCategoryId = value ?? 'ALL';
                     _galleryDetailIndex = null;
                   }),
-            ),
-            _buildFilterDropdown(
-              title: 'TAGS',
-              value:
-                  allTags.any(
-                        (tag) =>
-                            tag.toLowerCase() ==
-                            _selectedGalleryTag.toLowerCase(),
-                      )
-                      ? _selectedGalleryTag
-                      : 'ALL',
-              items: [
-                const DropdownMenuItem(value: 'ALL', child: Text('ALL')),
-                ...allTags.map(
-                  (tag) => DropdownMenuItem(value: tag, child: Text(tag)),
-                ),
-              ],
-              onChanged:
-                  (tag) => setState(() => _selectedGalleryTag = tag ?? 'ALL'),
             ),
           ],
         ),

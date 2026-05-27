@@ -7,6 +7,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../auth/auth_session.dart';
+import '../auth/roles.dart';
 import '../services/dashboard_api.dart';
 import '../utils/order_calculations.dart';
 import '../widgets/app_scaffold.dart';
@@ -1689,6 +1690,7 @@ class _DashboardState extends State<Dashboard> {
   @override
   Widget build(BuildContext context) {
     final s = _summary;
+    final isSuperAdmin = AuthSession.instance.currentRole == Role.superAdmin;
 
     return AppScaffold(
       showSearch: true,
@@ -1719,6 +1721,17 @@ class _DashboardState extends State<Dashboard> {
                           ),
                         ),
                       ),
+                      if (isSuperAdmin) ...[
+                        OutlinedButton.icon(
+                          onPressed:
+                              () => Navigator.of(
+                                context,
+                              ).pushReplacementNamed('/super-admin-dashboard'),
+                          icon: const Icon(Icons.admin_panel_settings_outlined),
+                          label: const Text('Super Admin Dashboard'),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                       OutlinedButton.icon(
                         onPressed:
                             _isPrintingPdf || s == null

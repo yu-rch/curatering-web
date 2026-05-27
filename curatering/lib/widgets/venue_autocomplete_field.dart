@@ -8,6 +8,7 @@ class VenueAutocompleteField extends StatefulWidget {
   final String label;
   final List<String> savedAddresses;
   final ValueChanged<String>? onSelected;
+  final VoidCallback? onMapPickerPressed;
 
   const VenueAutocompleteField({
     super.key,
@@ -15,6 +16,7 @@ class VenueAutocompleteField extends StatefulWidget {
     this.label = 'Venue / address',
     this.savedAddresses = const [],
     this.onSelected,
+    this.onMapPickerPressed,
   });
 
   @override
@@ -44,11 +46,15 @@ class _VenueAutocompleteFieldState extends State<VenueAutocompleteField> {
     }
     Future.delayed(const Duration(milliseconds: 300), () async {
       if (widget.controller.text.trim() != q) return;
-      final local = widget.savedAddresses
-          .where((a) => a.toLowerCase().contains(q.toLowerCase()))
-          .take(5)
-          .toList();
-      final remote = await NominatimService.instance.searchAddresses(q, limit: 5);
+      final local =
+          widget.savedAddresses
+              .where((a) => a.toLowerCase().contains(q.toLowerCase()))
+              .take(5)
+              .toList();
+      final remote = await NominatimService.instance.searchAddresses(
+        q,
+        limit: 5,
+      );
       final merged = <String>{...local, ...remote}.take(8).toList();
       if (mounted && widget.controller.text.trim() == q) {
         setState(() => _suggestions = merged);
@@ -66,7 +72,14 @@ class _VenueAutocompleteFieldState extends State<VenueAutocompleteField> {
           decoration: InputDecoration(
             labelText: widget.label,
             border: const OutlineInputBorder(),
-            suffixIcon: const Icon(Icons.place_outlined),
+            suffixIcon:
+                widget.onMapPickerPressed == null
+                    ? const Icon(Icons.place_outlined)
+                    : IconButton(
+                      tooltip: 'Pick on map',
+                      icon: const Icon(Icons.map_outlined),
+                      onPressed: widget.onMapPickerPressed,
+                    ),
           ),
         ),
         if (_suggestions.isNotEmpty)
@@ -74,19 +87,20 @@ class _VenueAutocompleteFieldState extends State<VenueAutocompleteField> {
             margin: const EdgeInsets.only(top: 4),
             child: ListView(
               shrinkWrap: true,
-              children: _suggestions
-                  .map(
-                    (s) => ListTile(
-                      dense: true,
-                      title: Text(s, style: const TextStyle(fontSize: 13)),
-                      onTap: () {
-                        widget.controller.text = s;
-                        widget.onSelected?.call(s);
-                        setState(() => _suggestions = const []);
-                      },
-                    ),
-                  )
-                  .toList(),
+              children:
+                  _suggestions
+                      .map(
+                        (s) => ListTile(
+                          dense: true,
+                          title: Text(s, style: const TextStyle(fontSize: 13)),
+                          onTap: () {
+                            widget.controller.text = s;
+                            widget.onSelected?.call(s);
+                            setState(() => _suggestions = const []);
+                          },
+                        ),
+                      )
+                      .toList(),
             ),
           ),
       ],
