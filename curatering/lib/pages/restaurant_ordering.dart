@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/menu_dish.dart';
 import '../services/menu_store.dart';
 import '../services/cart_store.dart';
+import '../widgets/antd_message.dart';
 import 'cart_page.dart';
 
 class RestaurantOrderingPage extends StatefulWidget {
@@ -37,36 +38,38 @@ class _RestaurantOrderingPageState extends State<RestaurantOrderingPage> {
 
   List<MenuDish> get _filteredDishes {
     final query = _searchController.text.toLowerCase();
-    final dishes = MenuStore.instance.activeDishes.where((d) => d.category == 'restaurant').toList();
-    
+    final dishes =
+        MenuStore.instance.activeDishes
+            .where((d) => d.category == 'restaurant')
+            .toList();
+
     if (query.isEmpty) return dishes;
-    
+
     return dishes.where((d) => d.name.toLowerCase().contains(query)).toList();
   }
 
   void _addToCart(MenuDish dish) {
     if (!dish.available) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${dish.name} is currently not available'),
-          duration: const Duration(seconds: 2),
-        ),
+      showAntdMessage(
+        context,
+        '${dish.name} is currently not available',
+        type: AntdMessageType.error,
+        duration: const Duration(seconds: 2),
       );
       return;
     }
     CartStore.instance.addItem(dish);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${dish.name} added to cart'),
-        duration: const Duration(seconds: 1),
-      ),
+    showAntdMessage(
+      context,
+      '${dish.name} added to tray',
+      duration: const Duration(seconds: 2),
     );
   }
 
   void _navigateToCart() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const CartPage()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const CartPage()));
   }
 
   @override
@@ -80,7 +83,7 @@ class _RestaurantOrderingPageState extends State<RestaurantOrderingPage> {
           Stack(
             children: [
               IconButton(
-                icon: const Icon(Icons.shopping_cart),
+                icon: const Icon(Icons.shopping_bag_outlined),
                 onPressed: _navigateToCart,
               ),
               if (CartStore.instance.itemCount > 0)
@@ -93,7 +96,10 @@ class _RestaurantOrderingPageState extends State<RestaurantOrderingPage> {
                       color: Colors.red,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
+                    ),
                     child: Text(
                       '${CartStore.instance.itemCount}',
                       style: const TextStyle(color: Colors.white, fontSize: 10),
@@ -142,32 +148,49 @@ class _RestaurantOrderingPageState extends State<RestaurantOrderingPage> {
       }
       dishesByType[type]!.add(dish);
     }
-    
+
     return dishesByType.isEmpty
-        ? Center(child: Text('No restaurant dishes', style: TextStyle(color: Colors.grey.shade600)))
+        ? Center(
+          child: Text(
+            'No restaurant dishes',
+            style: TextStyle(color: Colors.grey.shade600),
+          ),
+        )
         : ListView(
-            children: dishesByType.entries.map((entry) {
-              final type = entry.key;
-              final dishes = entry.value;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                    child: Text(
-                      type,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          children:
+              dishesByType.entries.map((entry) {
+                final type = entry.key;
+                final dishes = entry.value;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0,
+                        vertical: 8.0,
+                      ),
+                      child: Text(
+                        type,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
                     ),
-                  ),
-                  ...dishes.map((dish) => Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-                    child: _buildDishCard(dish),
-                  )),
-                  const SizedBox(height: 16),
-                ],
-              );
-            }).toList(),
-          );
+                    ...dishes.map(
+                      (dish) => Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16.0,
+                          vertical: 4.0,
+                        ),
+                        child: _buildDishCard(dish),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                );
+              }).toList(),
+        );
   }
 
   Widget _buildDishCard(MenuDish dish) {
@@ -195,7 +218,11 @@ class _RestaurantOrderingPageState extends State<RestaurantOrderingPage> {
                   color: Colors.grey.shade300,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.restaurant, size: 40, color: Colors.grey),
+                child: const Icon(
+                  Icons.restaurant,
+                  size: 40,
+                  color: Colors.grey,
+                ),
               ),
             const SizedBox(width: 12),
             Expanded(
@@ -204,12 +231,18 @@ class _RestaurantOrderingPageState extends State<RestaurantOrderingPage> {
                 children: [
                   Text(
                     dish.name,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '₱${dish.price}',
-                    style: TextStyle(color: Colors.amber.shade800, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      color: Colors.amber.shade800,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   if (dish.sauces.isNotEmpty) ...[
                     const SizedBox(height: 4),
@@ -228,7 +261,9 @@ class _RestaurantOrderingPageState extends State<RestaurantOrderingPage> {
               label: Text(dish.available ? 'Add' : 'N/A'),
               style: ElevatedButton.styleFrom(
                 backgroundColor:
-                    dish.available ? const Color(0xFF1E1E1E) : Colors.grey.shade500,
+                    dish.available
+                        ? const Color(0xFF1E1E1E)
+                        : Colors.grey.shade500,
                 foregroundColor: Colors.white,
                 minimumSize: const Size(70, 36),
               ),

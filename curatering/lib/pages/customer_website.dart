@@ -329,7 +329,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     if (mounted) setState(() {});
     MenuStore.instance.addListener(_onMenuChanged);
     if (MenuStore.instance.activeDishes.isEmpty) {
-      unawaited(MenuStore.instance.loadDishes());
+      await MenuStore.instance.loadDishes();
     }
     await CartStore.instance.init();
     CartStore.instance.addListener(_onCartChanged);
@@ -593,110 +593,154 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       return;
     }
 
-    if (dish.category == 'restaurant' || dish.supportsAddOns) {
-      _showSauceSelectionDialog(dish);
-    } else {
-      final ok = await _confirmAction(
-        title: 'Add to tray?',
-        message: 'Add ${dish.name} to your tray?',
-        confirmLabel: 'Add to tray',
-      );
-      if (!ok) return;
-      final selectedSauce = dish.sauces.isNotEmpty ? dish.sauces.first : null;
-      await _withLoadingDialog('Adding to tray...', () async {
-        CartStore.instance.addItem(dish, selectedSauce: selectedSauce);
-      });
-      showAppSnackBar(
-        context,
-        '${dish.name} added to tray',
-        icon: Icons.shopping_bag_outlined,
-        duration: const Duration(seconds: 2),
-      );
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _scaffoldKey.currentState?.openEndDrawer();
-      });
-    }
+    await _showSauceSelectionDialog(dish);
   }
 
-  void _showSauceSelectionDialog(MenuDish dish) {
+  Future<void> _showSauceSelectionDialog(MenuDish dish) async {
     String? selectedSauce;
+    var addOnQuantity = 1;
+    final notesController = TextEditingController();
 
-    showDialog(
+    await showDialog<void>(
       context: context,
       builder:
-          (context) => StatefulBuilder(
+          (dialogContext) => StatefulBuilder(
             builder:
                 (context, setDialogState) => AlertDialog(
                   title: Text(
                     'Add to tray',
                     style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                   ),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        dish.name,
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      if (dish.publicDescription.trim().isNotEmpty) ...[
-                        const SizedBox(height: 10),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          dish.publicDescription.trim(),
-                          style: TextStyle(
+                          dish.name,
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _dishInfoLine(
+                          label: 'Description',
+                          value:
+                              dish.publicDescription.trim().isEmpty
+                                  ? 'No description provided.'
+                                  : dish.publicDescription.trim(),
+                        ),
+                        const SizedBox(height: 8),
+                        _dishInfoLine(
+                          label: 'Ingredients',
+                          value:
+                              dish.ingredients.isEmpty
+                                  ? 'No ingredients listed.'
+                                  : dish.ingredients.join(', '),
+                        ),
+                        const SizedBox(height: 8),
+                        _dishInfoLine(
+                          label: 'Allergens',
+                          value:
+                              dish.allergens.trim().isEmpty
+                                  ? 'No allergens listed.'
+                                  : dish.allergens.trim(),
+                          valueColor:
+                              dish.allergens.trim().isEmpty
+                                  ? Colors.grey.shade700
+                                  : Colors.red.shade700,
+                          valueWeight: FontWeight.w600,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Add-ons',
+                          style: GoogleFonts.poppins(
                             fontSize: 13,
-                            color: Colors.grey.shade800,
-                            height: 1.35,
-                          ),
-                        ),
-                      ],
-                      if (dish.ingredients.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Text(
-                          'Ingredients: ${dish.ingredients.join(', ')}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                      ],
-                      if (dish.allergens.trim().isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          'Allergens: ${dish.allergens.trim()}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.red.shade700,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                      ],
-                      const SizedBox(height: 16),
-                      if (dish.sauces.isEmpty)
-                        const Text('No add-ons selected for this dish.')
-                      else
-                        ...dish.sauces.map(
-                          (sauce) => RadioListTile<String>(
-                            title: Text(
-                              sauce.toUpperCase(),
-                              style: GoogleFonts.poppins(fontSize: 13),
+                        const SizedBox(height: 6),
+                        if (dish.sauces.isEmpty)
+                          Text(
+                            'No add-ons available for this dish.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade700,
                             ),
-                            value: sauce,
-                            groupValue: selectedSauce,
-                            onChanged: (value) {
-                              setDialogState(() => selectedSauce = value);
-                            },
-                            activeColor: Colors.amber.shade700,
+                          )
+                        else
+                          ...dish.sauces.map(
+                            (sauce) => RadioListTile<String>(
+                              title: Text(
+                                sauce.toUpperCase(),
+                                style: GoogleFonts.poppins(fontSize: 13),
+                              ),
+                              value: sauce,
+                              groupValue: selectedSauce,
+                              onChanged: (value) {
+                                setDialogState(() {
+                                  selectedSauce = value;
+                                  addOnQuantity = 1;
+                                });
+                              },
+                              activeColor: Colors.amber.shade700,
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                        if (selectedSauce != null) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Add-on quantity',
+                                  style: GoogleFonts.poppins(fontSize: 13),
+                                ),
+                              ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                onPressed:
+                                    addOnQuantity > 1
+                                        ? () => setDialogState(
+                                          () => addOnQuantity--,
+                                        )
+                                        : null,
+                                icon: const Icon(Icons.remove_circle_outline),
+                              ),
+                              Text(
+                                '$addOnQuantity',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                onPressed:
+                                    () => setDialogState(() => addOnQuantity++),
+                                icon: const Icon(Icons.add_circle_outline),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: notesController,
+                          maxLines: 3,
+                          decoration: const InputDecoration(
+                            labelText: 'Notes',
+                            hintText:
+                                'Optional notes for this dish, e.g. no onions',
+                            border: OutlineInputBorder(),
                           ),
                         ),
-                    ],
+                      ],
+                    ),
                   ),
                   actions: [
                     TextButton(
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () => Navigator.pop(dialogContext),
                       child: Text(
                         'Cancel',
                         style: GoogleFonts.poppins(color: Colors.grey.shade600),
@@ -721,10 +765,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     CartStore.instance.addItem(
                                       dish,
                                       selectedSauce: selectedSauce,
+                                      addOnQuantity: addOnQuantity,
+                                      specialInstructions:
+                                          notesController.text.trim(),
                                     );
                                   },
                                 );
-                                Navigator.pop(context);
+                                Navigator.pop(dialogContext);
                                 final rootCtx = this.context;
                                 WidgetsBinding.instance.addPostFrameCallback((
                                   _,
@@ -757,6 +804,30 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 ),
           ),
     );
+    notesController.dispose();
+  }
+
+  Widget _dishInfoLine({
+    required String label,
+    required String value,
+    Color? valueColor,
+    FontWeight valueWeight = FontWeight.normal,
+  }) {
+    return RichText(
+      text: TextSpan(
+        style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+        children: [
+          TextSpan(
+            text: '$label: ',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          TextSpan(
+            text: value,
+            style: TextStyle(color: valueColor, fontWeight: valueWeight),
+          ),
+        ],
+      ),
+    );
   }
 
   void _openCartSidebar() {
@@ -768,7 +839,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       showAppSnackBar(
         context,
         'Your tray is empty',
-        icon: Icons.shopping_cart_outlined,
+        icon: Icons.shopping_bag_outlined,
       );
       return;
     }
@@ -1033,11 +1104,14 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             ),
           ),
           if (!widget.contentEditable) ...[
-            // Cart Icon
+            // Tray icon
             Stack(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.shopping_cart, color: Colors.white),
+                  icon: const Icon(
+                    Icons.shopping_bag_outlined,
+                    color: Colors.white,
+                  ),
                   onPressed: _openCartSidebar,
                 ),
                 if (CartStore.instance.itemCount > 0)
@@ -1633,7 +1707,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   children: [
                     IconButton(
                       icon: const Icon(
-                        Icons.shopping_cart,
+                        Icons.shopping_bag_outlined,
                         color: Colors.white,
                       ),
                       onPressed: _openCartSidebar,
@@ -3291,7 +3365,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             ),
           ),
         ),
-        // Right side - Cart Sidebar
+        // Right side - Tray sidebar
         Padding(
           padding: const EdgeInsets.only(right: 24, top: 8, bottom: 8),
           child: SizedBox(
@@ -3330,7 +3404,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       ),
                     ),
                   ),
-                  // Cart items
+                  // Tray items
                   Expanded(
                     child:
                         cartItems.isEmpty
@@ -3339,7 +3413,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Icon(
-                                    Icons.shopping_cart_outlined,
+                                    Icons.shopping_bag_outlined,
                                     size: 48,
                                     color: Colors.grey.shade300,
                                   ),
@@ -3674,7 +3748,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         child: Row(
                           children: [
                             const Icon(
-                              Icons.shopping_cart,
+                              Icons.shopping_bag_outlined,
                               color: Colors.white,
                             ),
                             const SizedBox(width: 10),
@@ -3725,7 +3799,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Icon(
-                                      Icons.shopping_cart_outlined,
+                                      Icons.shopping_bag_outlined,
                                       size: 56,
                                       color: Colors.grey.shade400,
                                     ),
@@ -8132,7 +8206,9 @@ class _InquireFormState extends State<_InquireForm> {
                                                       backgroundColor:
                                                           Colors.grey.shade200,
                                                       selectedColor: Colors.blue
-                                                          .withValues(alpha: 0.3),
+                                                          .withValues(
+                                                            alpha: 0.3,
+                                                          ),
                                                       checkmarkColor:
                                                           Colors.blue,
                                                     );

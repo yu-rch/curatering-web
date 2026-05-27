@@ -20,10 +20,7 @@ import 'antd_profile_menu.dart';
 /// Public site header matching the homepage (`CustomerWebsiteScreen`) styling:
 /// dark bar, centered wrap nav, red cart badge, customer login from SharedPreferences.
 class CustomerWebsiteTopBar extends StatefulWidget {
-  const CustomerWebsiteTopBar({
-    super.key,
-    this.showCartAndCustomerAuth = true,
-  });
+  const CustomerWebsiteTopBar({super.key, this.showCartAndCustomerAuth = true});
 
   /// When false (e.g. staff preview with content editing), cart and login strip are hidden.
   final bool showCartAndCustomerAuth;
@@ -102,9 +99,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
       ),
       builder: (ctx) {
         return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.viewInsetsOf(ctx).bottom,
-          ),
+          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
           child: DraggableScrollableSheet(
             expand: false,
             initialChildSize: 0.55,
@@ -131,11 +126,11 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
                         child: Row(
                           children: [
-                            const Icon(Icons.shopping_cart),
+                            const Icon(Icons.shopping_bag_outlined),
                             const SizedBox(width: 8),
                             const Expanded(
                               child: Text(
-                                'Your cart',
+                                'Your tray',
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -155,7 +150,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                             cartItems.isEmpty
                                 ? Center(
                                   child: Text(
-                                    'Your cart is empty',
+                                    'Your tray is empty',
                                     style: TextStyle(
                                       color: Colors.grey.shade600,
                                     ),
@@ -168,9 +163,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                                   itemBuilder: (context, index) {
                                     final item = cartItems[index];
                                     return Card(
-                                      margin: const EdgeInsets.only(
-                                        bottom: 10,
-                                      ),
+                                      margin: const EdgeInsets.only(bottom: 10),
                                       child: Padding(
                                         padding: const EdgeInsets.all(10),
                                         child: Row(
@@ -275,8 +268,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                                       Navigator.of(context).pop();
                                       Navigator.of(this.context).push(
                                         MaterialPageRoute<void>(
-                                          builder:
-                                              (_) => const CheckoutPage(),
+                                          builder: (_) => const CheckoutPage(),
                                         ),
                                       );
                                     },
@@ -309,10 +301,6 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
     return ModalRoute.of(context)?.settings.name ?? '/';
   }
 
-  bool _isActive(BuildContext context, String route) {
-    return _currentRoute(context) == route;
-  }
-
   Widget _navLabel(String label, {required bool active}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -329,11 +317,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
             ),
           ),
           if (active)
-            Container(
-              height: 2,
-              width: 32,
-              color: const Color(0xFFFFC024),
-            ),
+            Container(height: 2, width: 32, color: const Color(0xFFFFC024)),
         ],
       ),
     );
@@ -387,20 +371,20 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
       child: SafeArea(
         bottom: false,
         child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      child: Row(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          InkWell(
+            children: [
+              InkWell(
                 onTap: () => _goHome(context),
-            child: Image.asset(
-              'lib/assets/main-2.png',
+                child: Image.asset(
+                  'lib/assets/main-2.png',
                   height: 34,
-              fit: BoxFit.contain,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
                 child: Wrap(
                   spacing: 2,
                   runSpacing: 4,
@@ -448,20 +432,20 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
               if (widget.showCartAndCustomerAuth) ...[
                 Stack(
                   clipBehavior: Clip.none,
-                      children: [
-                        IconButton(
-                          icon: const Icon(
-                            Icons.shopping_cart,
-                            color: Colors.white,
-                          ),
+                  children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.shopping_bag_outlined,
+                        color: Colors.white,
+                      ),
                       onPressed: _openCart,
-                          tooltip: 'View cart',
-                        ),
+                      tooltip: 'View tray',
+                    ),
                     if (CartStore.instance.itemCount > 0)
-                          Positioned(
+                      Positioned(
                         right: 6,
                         top: 6,
-                            child: Container(
+                        child: Container(
                           padding: const EdgeInsets.all(2),
                           decoration: BoxDecoration(
                             color: Colors.red,
@@ -470,18 +454,18 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                           constraints: const BoxConstraints(
                             minWidth: 18,
                             minHeight: 18,
-                              ),
-                              child: Text(
-                            '${CartStore.instance.itemCount}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                ),
-                            textAlign: TextAlign.center,
-                              ),
-                            ),
                           ),
-                      ],
+                          child: Text(
+                            '${CartStore.instance.itemCount}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(width: 8),
                 if (_isCustomerLoggedIn)
@@ -489,8 +473,8 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                     triggerLabel: _customerData?['fullName'] ?? 'Customer',
                     leading: const Icon(
                       Icons.person_outline,
-                            color: Colors.white,
-                            size: 20,
+                      color: Colors.white,
+                      size: 20,
                     ),
                     items: [
                       AntdProfileMenuItem.header(
@@ -555,21 +539,21 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         },
                       ),
                     ],
-                )
-              else
-                TextButton.icon(
+                  )
+                else
+                  TextButton.icon(
                     onPressed: _handleLogin,
                     icon: const Icon(
                       Icons.login,
                       color: Colors.white,
                       size: 18,
                     ),
-                  label: const Text(
-                    'Login',
-                    style: TextStyle(color: Colors.white),
+                    label: const Text(
+                      'Login',
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
-                ),
-            ],
+              ],
             ],
           ),
         ),

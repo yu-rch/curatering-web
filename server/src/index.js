@@ -5218,6 +5218,7 @@ app.get(
     try {
       const roCols = await ensureRestaurantOrdersCanonicalColumns();
       await ensureFeedbackAnalyticsSchema();
+      await ensureCateringEventOrdersCanonicalColumns();
       const orderIdSql = restaurantOrderIdExpr(roCols);
       const { search } = req.query || {};
       const params = [];
@@ -5247,6 +5248,46 @@ app.get(
         ORDER BY ro.feedback_submitted_at DESC NULLS LAST, ro.updated_at DESC
         LIMIT 1000`,
         params,
+      );
+      const cateringParams = [];
+      let cateringWhereSql = "feedback_stars IS NOT NULL";
+      if (search) {
+        cateringWhereSql += ` AND (
+          COALESCE(catering_id, '') ILIKE $1 OR
+          COALESCE(event_title, '') ILIKE $1 OR
+          COALESCE(customer_name, '') ILIKE $1 OR
+          COALESCE(email_address, '') ILIKE $1 OR
+          COALESCE(feedback_remarks, '') ILIKE $1
+        )`;
+        cateringParams.push(`%${search}%`);
+      }
+      const cateringFeedback = await pool.query(
+        `SELECT
+          id,
+          COALESCE(NULLIF(catering_id, ''), id::text) AS "orderNo",
+          COALESCE(customer_name, contact_person, 'Guest') AS "customerName",
+          COALESCE(email_address, '') AS "customerEmail",
+          feedback_stars AS stars,
+          COALESCE(feedback_remarks, '') AS remarks,
+          feedback_submitted_at AS "submittedAt",
+          'catering' AS source
+        FROM catering_orders
+        WHERE ${cateringWhereSql}
+        UNION ALL
+        SELECT
+          id,
+          COALESCE(NULLIF(catering_id, ''), id::text) AS "orderNo",
+          COALESCE(customer_name, contact_person, 'Guest') AS "customerName",
+          COALESCE(email_address, '') AS "customerEmail",
+          feedback_stars AS stars,
+          COALESCE(feedback_remarks, '') AS remarks,
+          feedback_submitted_at AS "submittedAt",
+          'catering_event' AS source
+        FROM event_orders
+        WHERE ${cateringWhereSql}
+        ORDER BY "submittedAt" DESC NULLS LAST
+        LIMIT 1000`,
+        cateringParams,
       );
       const genericParams = [];
       let genericWhereSql = "WHERE message IS NOT NULL";
@@ -5285,6 +5326,16 @@ app.get(
             remarks: r.remarks || "",
             submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
           })),
+          ...cateringFeedback.rows.map((r) => ({
+            id: String(r.id),
+            orderNo: r.orderNo != null ? `Catering ${String(r.orderNo)}` : "Catering",
+            customerName: r.customerName || "Guest",
+            customerEmail: r.customerEmail || "",
+            stars: Number(r.stars) || 0,
+            remarks: r.remarks || "",
+            submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
+            source: r.source || "catering",
+          })),
           ...generic.rows.map((r) => ({
             id: String(r.id),
             orderNo: "Contact Us",
@@ -5312,6 +5363,7 @@ app.post(
     try {
       const roCols = await ensureRestaurantOrdersCanonicalColumns();
       await ensureFeedbackAnalyticsSchema();
+      await ensureCateringEventOrdersCanonicalColumns();
       const orderIdSql = restaurantOrderIdExpr(roCols);
       const { search } = { ...req.query, ...(req.body || {}) };
       const params = [];
@@ -5340,6 +5392,40 @@ app.post(
         LIMIT 200`,
         params,
       );
+      const cateringParams = [];
+      let cateringWhereSql = "feedback_stars IS NOT NULL";
+      if (search) {
+        cateringWhereSql += ` AND (
+          COALESCE(catering_id, '') ILIKE $1 OR
+          COALESCE(event_title, '') ILIKE $1 OR
+          COALESCE(customer_name, '') ILIKE $1 OR
+          COALESCE(email_address, '') ILIKE $1 OR
+          COALESCE(feedback_remarks, '') ILIKE $1
+        )`;
+        cateringParams.push(`%${search}%`);
+      }
+      const cateringFeedback = await pool.query(
+        `SELECT
+          COALESCE(NULLIF(catering_id, ''), id::text) AS "orderNo",
+          COALESCE(customer_name, contact_person, 'Guest') AS "customerName",
+          feedback_stars AS stars,
+          COALESCE(feedback_remarks, '') AS remarks,
+          feedback_submitted_at AS "submittedAt"
+        FROM catering_orders
+        WHERE ${cateringWhereSql}
+        UNION ALL
+        SELECT
+          COALESCE(NULLIF(catering_id, ''), id::text) AS "orderNo",
+          COALESCE(customer_name, contact_person, 'Guest') AS "customerName",
+          feedback_stars AS stars,
+          COALESCE(feedback_remarks, '') AS remarks,
+          feedback_submitted_at AS "submittedAt"
+        FROM event_orders
+        WHERE ${cateringWhereSql}
+        ORDER BY "submittedAt" DESC NULLS LAST
+        LIMIT 200`,
+        cateringParams,
+      );
       const genericParams = [];
       let genericWhereSql = "WHERE message IS NOT NULL";
       if (search) {
@@ -5367,6 +5453,13 @@ app.post(
       const feedbacks = [
         ...result.rows.map((r) => ({
           orderNo: r.orderNo != null ? String(r.orderNo) : "",
+          customerName: r.customerName || "Guest",
+          stars: Number(r.stars) || 0,
+          remarks: r.remarks || "",
+          submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
+        })),
+        ...cateringFeedback.rows.map((r) => ({
+          orderNo: r.orderNo != null ? `Catering ${String(r.orderNo)}` : "Catering",
           customerName: r.customerName || "Guest",
           stars: Number(r.stars) || 0,
           remarks: r.remarks || "",
@@ -10822,6 +10915,72 @@ async function registerRoutesAfterDbInit() {
       } catch (error) {
         console.error('Error fetching customer event orders:', error);
         res.status(500).json({ error: 'Failed to fetch event orders' });
+      }
+    });
+
+    app.post('/api/customer/events/orders/:orderId/feedback', customerAuthRequired, async (req, res) => {
+      try {
+        await ensureOrderCateringIdColumns();
+        await ensureCateringEventOrdersCanonicalColumns();
+        const { orderId } = req.params;
+        const stars = Number(req.body?.stars ?? req.body?.feedback_stars);
+        const remarks = String(req.body?.remarks ?? req.body?.feedback_remarks ?? '').trim();
+        if (!Number.isFinite(stars) || stars < 1 || stars > 5) {
+          return res.status(400).json({ error: 'Rating must be between 1 and 5 stars' });
+        }
+
+        const customerResult = await pool.query(
+          `SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1;`,
+          [req.customer.id],
+        );
+        if (customerResult.rowCount === 0) {
+          return res.status(404).json({ error: 'Customer not found' });
+        }
+        const customerEmail = customerResult.rows[0].email;
+
+        const existing = await pool.query(
+          `SELECT 'event_orders' AS table_name, id::text AS id, status, feedback_stars
+           FROM event_orders
+           WHERE id::text = $1 AND lower(email_address) = lower($2)
+           UNION ALL
+           SELECT 'catering_orders' AS table_name, id::text AS id, status, feedback_stars
+           FROM catering_orders
+           WHERE id::text = $1 AND lower(email_address) = lower($2)
+           LIMIT 1`,
+          [String(orderId), customerEmail],
+        );
+        if (existing.rowCount === 0) {
+          return res.status(404).json({ error: 'Catering order not found' });
+        }
+        const order = existing.rows[0];
+        if (String(order.status).toLowerCase() !== 'completed') {
+          return res.status(400).json({ error: 'Feedback is only available for completed caterings' });
+        }
+        if (order.feedback_stars != null) {
+          return res.status(409).json({ error: 'Feedback was already submitted for this catering' });
+        }
+
+        await pool.query(
+          `UPDATE ${order.table_name}
+           SET feedback_stars = $2,
+               feedback_remarks = $3,
+               feedback_submitted_at = now(),
+               updated_at = now()
+           WHERE id::text = $1`,
+          [order.id, Math.round(stars), remarks || null],
+        );
+
+        const eventCols = await getTableColumnNames('event_orders');
+        const cateringCols = await getTableColumnNames('catering_orders');
+        const unionSql = buildCustomerCateringOrdersSql(eventCols, cateringCols);
+        const refreshed = await pool.query(unionSql, [customerEmail]);
+        const updatedOrder = refreshed.rows
+          .map((row) => normalizeCustomerCateringOrderRow(row))
+          .find((row) => String(row.id) === String(order.id));
+        return res.json({ ok: true, order: updatedOrder || null });
+      } catch (error) {
+        console.error('Error saving customer catering feedback:', error);
+        res.status(500).json({ error: 'Failed to save feedback' });
       }
     });
 

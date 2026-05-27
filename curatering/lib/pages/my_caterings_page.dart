@@ -14,6 +14,7 @@ import '../widgets/antd_buttons.dart';
 import '../widgets/antd_descriptions.dart';
 import '../widgets/antd_dialog.dart';
 import '../widgets/app_snackbar.dart';
+import '../widgets/customer_order_feedback_dialog.dart';
 import '../widgets/customer_pages_top_bar.dart';
 import '../utils/order_type_utils.dart';
 import '../widgets/seating_plan_canvas.dart';
@@ -296,6 +297,17 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       default:
         return Colors.grey;
     }
+  }
+
+  bool _hasFeedbackSubmitted(Map<String, dynamic> catering) {
+    return catering['feedback_submitted'] == true ||
+        catering['feedbackSubmitted'] == true ||
+        catering['feedback_stars'] != null;
+  }
+
+  bool _canReviewCatering(Map<String, dynamic> catering) {
+    final status = (catering['status'] ?? '').toString().toLowerCase();
+    return status == 'completed' && !_hasFeedbackSubmitted(catering);
   }
 
   String _formatDate(String? dateStr) {
@@ -1460,6 +1472,21 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
         ],
       ),
       actions: [
+        if (_hasFeedbackSubmitted(catering))
+          OutlinedButton.icon(
+            onPressed: null,
+            icon: const Icon(Icons.check_circle_outline, size: 18),
+            label: const Text('Feedback submitted'),
+          ),
+        if (_canReviewCatering(catering))
+          OutlinedButton.icon(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await _submitCateringFeedback(catering);
+            },
+            icon: const Icon(Icons.rate_review_outlined, size: 18),
+            label: const Text('Leave feedback'),
+          ),
         if (isInquiry)
           OutlinedButton.icon(
             onPressed: () async {
@@ -1523,6 +1550,80 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
         ),
       ],
     );
+  }
+
+  Future<void> _submitCateringFeedback(Map<String, dynamic> catering) async {
+    final orderId = catering['id']?.toString();
+    if (orderId == null || orderId.isEmpty) return;
+    final title =
+        (catering['event_title'] ?? catering['eventTitle'] ?? 'Catering')
+            .toString();
+    final result = await showCustomerOrderFeedbackDialog(
+      context,
+      title: 'Feedback · $title',
+      question: 'How was this catering experience?',
+    );
+    if (result == null || !mounted) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('customer_token');
+      if (token == null || token.isEmpty) {
+        throw Exception('Please log in again');
+      }
+      final response = await http
+          .post(
+            Uri.parse(
+              '$_apiBaseUrl/api/customer/events/orders/${Uri.encodeComponent(orderId)}/feedback',
+            ),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'stars': result.stars,
+              'remarks': result.remarks,
+            }),
+          )
+          .timeout(_requestTimeout);
+      final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+      if (response.statusCode != 200) {
+        throw Exception(
+          data is Map
+              ? data['error'] ?? 'Failed to submit feedback'
+              : 'Failed to submit feedback',
+        );
+      }
+      final updated = data is Map ? data['order'] : null;
+      setState(() {
+        _caterings =
+            _caterings.map((entry) {
+              if (entry is! Map) return entry;
+              final current = Map<String, dynamic>.from(entry);
+              if (current['id']?.toString() != orderId) return entry;
+              return updated is Map
+                  ? Map<String, dynamic>.from(updated)
+                  : {
+                    ...current,
+                    'feedback_stars': result.stars,
+                    'feedback_remarks': result.remarks,
+                    'feedback_submitted': true,
+                  };
+            }).toList();
+      });
+      CustomerOrdersCache.instance.setEventOrders(_caterings);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Thank you for your feedback.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+    }
   }
 
   Widget _buildCateringGridTile(Map<String, dynamic> catering) {
@@ -1591,6 +1692,32 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                   color: _getStatusColor(status),
                 ),
               ),
+              if (_hasFeedbackSubmitted(catering)) ...[
+                const SizedBox(height: 6),
+                const Text(
+                  'Feedback submitted',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1B5E20),
+                  ),
+                ),
+              ] else if (_canReviewCatering(catering)) ...[
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => _submitCateringFeedback(catering),
+                    icon: const Icon(Icons.rate_review_outlined, size: 16),
+                    label: const Text('Leave feedback'),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 32),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ),
+              ],
               if (catering['total_cost'] != null ||
                   catering['totalCost'] != null)
                 Padding(
@@ -1997,6 +2124,39 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                                         ),
                                     ],
                                   ),
+                                  if (_hasFeedbackSubmitted(catering)) ...[
+                                    const SizedBox(height: 10),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Chip(
+                                        avatar: const Icon(
+                                          Icons.check_circle,
+                                          size: 18,
+                                          color: Colors.white,
+                                        ),
+                                        label: const Text(
+                                          'Feedback submitted',
+                                          style: TextStyle(color: Colors.white),
+                                        ),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    ),
+                                  ] else if (_canReviewCatering(catering)) ...[
+                                    const SizedBox(height: 10),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: OutlinedButton.icon(
+                                        onPressed:
+                                            () => _submitCateringFeedback(
+                                              catering,
+                                            ),
+                                        icon: const Icon(
+                                          Icons.rate_review_outlined,
+                                        ),
+                                        label: const Text('Leave feedback'),
+                                      ),
+                                    ),
+                                  ],
                                   if (_buildEstimateUpdateBanner(themeDesign) !=
                                       null)
                                     _buildEstimateUpdateBanner(themeDesign)!,

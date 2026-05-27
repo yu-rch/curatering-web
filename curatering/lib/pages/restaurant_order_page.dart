@@ -7,6 +7,7 @@ import '../services/menu_store.dart';
 import '../services/cart_store.dart';
 import '../services/website_content_store.dart';
 import '../models/menu_dish.dart';
+import '../widgets/antd_message.dart';
 import '../widgets/customer_website_topbar.dart';
 import 'checkout_page.dart';
 
@@ -62,9 +63,16 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   @override
   void initState() {
     super.initState();
-    WebsiteContentStore.instance.ensureLoaded().then((_) {
-      if (mounted) setState(() {});
-    });
+    unawaited(_initializeStores());
+  }
+
+  Future<void> _initializeStores() async {
+    await WebsiteContentStore.instance.ensureLoaded();
+    if (MenuStore.instance.activeDishes.isEmpty) {
+      await MenuStore.instance.loadDishes();
+    }
+    await CartStore.instance.init();
+    if (mounted) setState(() {});
   }
 
   @override
@@ -319,7 +327,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
             top: false,
             child: ElevatedButton.icon(
               onPressed: _openCartSidebar,
-              icon: const Icon(Icons.shopping_cart_outlined),
+              icon: const Icon(Icons.shopping_bag_outlined),
               label: Text(
                 'YOUR TRAY · $itemCount ${itemCount == 1 ? 'ITEM' : 'ITEMS'} · ₱${total.toStringAsFixed(2)}',
               ),
@@ -342,9 +350,11 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   Future<void> _proceedToCheckout({VoidCallback? closeOverlay}) async {
     if (CartStore.instance.items.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      showAntdMessage(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Your cart is empty')));
+        'Your tray is empty',
+        type: AntdMessageType.error,
+      );
       return;
     }
 
@@ -360,8 +370,10 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     } catch (e, st) {
       debugPrint('RestaurantOrderPage checkout navigation failed: $e\n$st');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open checkout. ${e.toString()}')),
+      showAntdMessage(
+        context,
+        'Could not open checkout. ${e.toString()}',
+        type: AntdMessageType.error,
       );
     }
   }
@@ -592,7 +604,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                         _addToCart(dish);
                       }
                       : null,
-              child: const Text('Add to cart'),
+              child: const Text('Add to tray'),
             ),
           ],
         );
@@ -632,11 +644,11 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.shopping_cart, color: Colors.white),
+                  const Icon(Icons.shopping_bag_outlined, color: Colors.white),
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
-                      'Your Cart',
+                      'Your Tray',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 18,
@@ -661,13 +673,13 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(
-                              Icons.shopping_cart_outlined,
+                              Icons.shopping_bag_outlined,
                               size: 48,
                               color: Colors.grey.shade400,
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              'Your cart is empty',
+                              'Your tray is empty',
                               style: TextStyle(
                                 fontSize: 16,
                                 color: Colors.grey.shade600,
@@ -853,17 +865,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   }
 
   void _addToCart(MenuDish dish) {
-    if (dish.sauces.isNotEmpty || _defaultAddOns.isNotEmpty) {
-      _showAddToCartOptions(dish);
-      return;
-    }
-    CartStore.instance.addItem(dish);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${dish.name} added to cart'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    _showAddToCartOptions(dish);
   }
 
   void _updateQuantity(CartItem item, int newQuantity) {
@@ -889,9 +891,28 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          _dishDetailBlock(
+                            'Description',
+                            dish.publicDescription.trim().isEmpty
+                                ? 'No description available.'
+                                : dish.publicDescription.trim(),
+                          ),
+                          _dishDetailBlock(
+                            'Ingredients',
+                            dish.ingredients.isEmpty
+                                ? 'No ingredients listed.'
+                                : dish.ingredients.join(', '),
+                          ),
+                          _dishDetailBlock(
+                            'Allergens',
+                            dish.allergens.trim().isEmpty
+                                ? 'No allergens listed.'
+                                : dish.allergens.trim(),
+                          ),
+                          const SizedBox(height: 12),
                           if (dish.sauces.isNotEmpty) ...[
                             const Text(
-                              'Sauce selection',
+                              'Add-ons',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                             for (final sauce in dish.sauces)
@@ -947,34 +968,47 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                             ),
                             const SizedBox(height: 8),
                           ],
-                          const Text(
-                            'Add-ons / toppings',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
+                          if (dish.sauces.isEmpty)
+                            const Text(
+                              'Add-ons',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
                           Wrap(
                             spacing: 8,
                             children:
-                                _defaultAddOns.map((addon) {
-                                  return FilterChip(
-                                    label: Text(addon),
-                                    selected: selectedAddOns.contains(addon),
-                                    onSelected:
-                                        (selected) => setDialogState(() {
-                                          if (selected) {
-                                            selectedAddOns.add(addon);
-                                          } else {
-                                            selectedAddOns.remove(addon);
-                                          }
-                                        }),
-                                  );
-                                }).toList(),
+                                _defaultAddOns.isEmpty
+                                    ? [
+                                      Chip(
+                                        label: const Text(
+                                          'No add-ons available',
+                                        ),
+                                        backgroundColor: Colors.grey.shade100,
+                                      ),
+                                    ]
+                                    : _defaultAddOns.map((addon) {
+                                      return FilterChip(
+                                        label: Text(addon),
+                                        selected: selectedAddOns.contains(
+                                          addon,
+                                        ),
+                                        onSelected:
+                                            (selected) => setDialogState(() {
+                                              if (selected) {
+                                                selectedAddOns.add(addon);
+                                              } else {
+                                                selectedAddOns.remove(addon);
+                                              }
+                                            }),
+                                      );
+                                    }).toList(),
                           ),
                           const SizedBox(height: 12),
                           TextField(
                             controller: noteController,
                             maxLines: 2,
                             decoration: const InputDecoration(
-                              labelText: 'Special instructions',
+                              labelText: 'Notes',
+                              hintText: 'Optional notes for this dish',
                               border: OutlineInputBorder(),
                             ),
                           ),
@@ -997,14 +1031,13 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                           specialInstructions: noteController.text.trim(),
                         );
                         Navigator.of(context).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('${dish.name} added to cart'),
-                            duration: const Duration(seconds: 2),
-                          ),
+                        showAntdMessage(
+                          context,
+                          '${dish.name} added to tray',
+                          duration: const Duration(seconds: 2),
                         );
                       },
-                      child: const Text('Add to cart'),
+                      child: const Text('Add to tray'),
                     ),
                   ],
                 ),

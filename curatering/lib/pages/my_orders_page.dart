@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import '../utils/order_display_utils.dart';
 import '../services/customer_orders_cache.dart';
+import '../widgets/customer_order_feedback_dialog.dart';
 import '../widgets/customer_pages_top_bar.dart';
 import 'customer_website.dart';
 import 'my_caterings_page.dart';
@@ -194,6 +195,8 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
         _isActiveOrder(status) &&
         orderKey.isNotEmpty &&
         (cooldownUntil == null || !cooldownUntil.isAfter(DateTime.now()));
+    final canReview = _canReviewRestaurantOrder(order);
+    final feedbackSubmitted = _hasFeedbackSubmitted(order);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -389,6 +392,31 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                     ),
                   ),
                 ],
+                if (canReview || feedbackSubmitted) ...[
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child:
+                        feedbackSubmitted
+                            ? Chip(
+                              avatar: const Icon(
+                                Icons.check_circle,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                              label: const Text(
+                                'Feedback submitted',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                              backgroundColor: Colors.green,
+                            )
+                            : OutlinedButton.icon(
+                              onPressed: () => _submitRestaurantFeedback(order),
+                              icon: const Icon(Icons.rate_review_outlined),
+                              label: const Text('Leave feedback'),
+                            ),
+                  ),
+                ],
                 if (order['delivery_address'] != null) ...[
                   const SizedBox(height: 12),
                   Row(
@@ -501,6 +529,20 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
     return s != 'delivered' && s != 'cancelled';
   }
 
+  bool _hasFeedbackSubmitted(Map<String, dynamic> order) {
+    return order['feedback_submitted'] == true ||
+        order['feedback_stars'] != null ||
+        order['feedbackSubmitted'] == true;
+  }
+
+  bool _canReviewRestaurantOrder(Map<String, dynamic> order) {
+    final status =
+        (order['status'] ?? order['order_status'] ?? '')
+            .toString()
+            .toLowerCase();
+    return status == 'delivered' && !_hasFeedbackSubmitted(order);
+  }
+
   String _orderKey(Map<String, dynamic> order) {
     for (final key in const ['id', 'order_id', 'order_no']) {
       final value = order[key]?.toString().trim();
@@ -580,6 +622,83 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
       }
     } finally {
       if (mounted) setState(() => _sendingFollowUps.remove(orderKey));
+    }
+  }
+
+  Future<void> _submitRestaurantFeedback(Map<String, dynamic> order) async {
+    final orderKey = _orderKey(order);
+    if (orderKey.isEmpty) return;
+    final result = await showCustomerOrderFeedbackDialog(
+      context,
+      title: 'Feedback · ${_shortOrderId(order['id'], order['order_no'])}',
+      question: 'How was this restaurant order?',
+    );
+    if (result == null || !mounted) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('customer_token');
+      if (token == null || token.isEmpty) {
+        throw Exception('Please log in again');
+      }
+      final response = await http
+          .post(
+            Uri.parse(
+              '$_apiBaseUrl/api/restaurant/orders/${Uri.encodeComponent(orderKey)}/feedback',
+            ),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'stars': result.stars,
+              'remarks': result.remarks,
+            }),
+          )
+          .timeout(_requestTimeout);
+      final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+      if (response.statusCode != 200) {
+        throw Exception(
+          data is Map
+              ? data['error'] ?? 'Failed to submit feedback'
+              : 'Failed to submit feedback',
+        );
+      }
+      final updated = Map<String, dynamic>.from(data['order'] as Map? ?? {});
+      final updatedKey = _orderKey(updated);
+      setState(() {
+        _orders =
+            _orders.map((entry) {
+              if (entry is! Map) return entry;
+              final existing = Map<String, dynamic>.from(entry);
+              if (_orderKey(existing) != orderKey) return existing;
+              return updatedKey.isNotEmpty
+                  ? updated
+                  : {
+                    ...existing,
+                    'feedback_stars': result.stars,
+                    'feedback_remarks': result.remarks,
+                    'feedback_submitted': true,
+                  };
+            }).toList();
+      });
+      CustomerOrdersCache.instance.setRestaurantOrders(
+        _orders
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList(),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Thank you for your feedback.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
     }
   }
 

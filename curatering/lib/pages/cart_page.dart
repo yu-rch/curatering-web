@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../services/cart_store.dart';
+import '../widgets/antd_message.dart';
 import 'checkout_page.dart';
 
 class CartPage extends StatefulWidget {
@@ -29,9 +30,11 @@ class _CartPageState extends State<CartPage> {
 
   void _navigateToCheckout() {
     if (CartStore.instance.items.isEmpty) {
-      ScaffoldMessenger.of(
+      showAntdMessage(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Your cart is empty')));
+        'Your tray is empty',
+        type: AntdMessageType.error,
+      );
       return;
     }
     Navigator.of(
@@ -46,7 +49,7 @@ class _CartPageState extends State<CartPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Your Cart'),
+        title: const Text('Your Tray'),
         backgroundColor: const Color(0xFF1E1E1E),
         foregroundColor: Colors.white,
       ),
@@ -57,13 +60,13 @@ class _CartPageState extends State<CartPage> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      Icons.shopping_cart_outlined,
+                      Icons.shopping_bag_outlined,
                       size: 80,
                       color: Colors.grey.shade400,
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Your cart is empty',
+                      'Your tray is empty',
                       style: TextStyle(
                         fontSize: 18,
                         color: Colors.grey.shade600,

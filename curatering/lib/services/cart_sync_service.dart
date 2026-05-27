@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_client.dart';
 import 'cart_store.dart';
+import 'menu_store.dart';
 import '../models/menu_dish.dart';
 
 /// Service for synchronizing cart between mobile and web platforms.
@@ -12,8 +13,10 @@ class CartSyncService {
 
   CartSyncService._();
 
-  static const String _cartKey = 'cart';
-  static const String _lastSyncKey = 'cart_last_sync';
+  static const String _trayKey = 'tray';
+  static const String _legacyCartKey = 'cart';
+  static const String _lastSyncKey = 'tray_last_sync';
+  static const String _legacyLastSyncKey = 'cart_last_sync';
 
   /// Extract line items from GET /api/tray-draft (prefers non-empty
   /// `tray_items`, then `tray_lines` for web/mobile compatibility).
@@ -57,53 +60,20 @@ class CartSyncService {
     return [];
   }
 
-  /// JSON for `customer_tray_drafts.tray_lines` / `tray_items`.
+  /// Canonical JSON for `customer_tray_drafts.tray_items`.
+  ///
+  /// Keep this intentionally small so web and mobile share the same tray line
+  /// contract. Dish details are hydrated from the menu catalog when displayed.
   static Map<String, dynamic> trayLineToJson(CartItem item) {
     final sauce = item.selectedSauce?.trim();
     final sauceVal = (sauce != null && sauce.isNotEmpty) ? sauce : '';
-    final priceNum = double.tryParse(item.dish.price) ?? 0;
 
     return {
-      'dishId': item.dish.id,
-      'dish_id': item.dish.id,
-      'dishName': item.dish.name,
-      'dish_name': item.dish.name,
-      'name': item.dish.name,
-      'item_name': item.dish.name,
-      'dishPrice': item.dish.price,
-      'dish_price': item.dish.price,
-      'price': priceNum,
-      'additionalChargeAmount': item.dish.additionalChargeAmount,
-      'menu_dishes_additional_charge_amount': item.dish.additionalChargeAmount,
-      'quantity': item.quantity,
-      'qty': item.quantity,
-      'selectedSauce': sauceVal.isEmpty ? null : sauceVal,
-      'selected_sauce': sauceVal.isEmpty ? null : sauceVal,
-      'addOnQuantity': sauceVal.isNotEmpty ? item.addOnQuantity : 1,
-      'addOns': item.addOns,
-      'add_ons': item.addOns,
-      'specialInstructions': item.specialInstructions,
-      'special_instructions': item.specialInstructions,
+      'id': item.dish.id,
       'dip': sauceVal,
+      'qty': item.quantity,
+      'notes': item.specialInstructions?.trim() ?? '',
       'dip_qty': sauceVal.isNotEmpty ? item.addOnQuantity : 1,
-      'notes': item.specialInstructions,
-      'line_subtotal': item.lineSubtotal,
-      'addon_extra_subtotal': item.addonExtraSubtotal,
-      'dish_category': item.dish.category,
-      'dishCategory': item.dish.category,
-      'dish_type': item.dish.type,
-      'dishType': item.dish.type,
-      'meal_type': item.dish.mealType,
-      'mealType': item.dish.mealType,
-      'dish': {
-        'id': item.dish.id,
-        'name': item.dish.name,
-        'price': item.dish.price,
-        'additionalChargeAmount': item.dish.additionalChargeAmount,
-        'category': item.dish.category,
-        'type': item.dish.type,
-        'mealType': item.dish.mealType,
-      },
     };
   }
 
@@ -135,6 +105,13 @@ class CartSyncService {
     final dishId =
         map['dish_id'] ?? map['dishId'] ?? map['id'] ?? map['menu_dish_id'];
     if (dishId == null) return null;
+    MenuDish? catalogDish;
+    for (final dish in MenuStore.instance.activeDishes) {
+      if (dish.id == dishId.toString()) {
+        catalogDish = dish;
+        break;
+      }
+    }
 
     final qty = map['quantity'] ?? map['qty'] ?? map['dip_qty'];
     final quantity =
@@ -150,6 +127,11 @@ class CartSyncService {
       return double.tryParse(value?.toString().trim() ?? '') ?? 0;
     }
 
+    String? nonEmptyString(Object? value) {
+      final text = value?.toString().trim();
+      return text == null || text.isEmpty ? null : text;
+    }
+
     return CartItem(
       dish: MenuDish(
         id: dishId.toString(),
@@ -158,32 +140,51 @@ class CartSyncService {
                     map['dishName'] ??
                     map['item_name'] ??
                     map['name'] ??
+                    catalogDish?.name ??
                     '')
                 .toString(),
         price:
-            (map['dish_price'] ?? map['dishPrice'] ?? map['price'] ?? '0')
+            (map['dish_price'] ??
+                    map['dishPrice'] ??
+                    map['price'] ??
+                    catalogDish?.price ??
+                    '0')
                 .toString(),
         additionalChargeAmount: parseDouble(
           map['additionalChargeAmount'] ??
               map['menu_dishes_additional_charge_amount'] ??
-              map['additional_charge_amount'],
+              map['additional_charge_amount'] ??
+              catalogDish?.additionalChargeAmount,
         ),
         category:
             (map['dish_category'] ??
                     map['dishCategory'] ??
                     map['category'] ??
+                    catalogDish?.category ??
                     'restaurant')
                 .toString(),
         paxOptions: const [],
         type:
-            (map['dish_type'] ?? map['dishType'] ?? map['type'] ?? '')
+            (map['dish_type'] ??
+                    map['dishType'] ??
+                    map['type'] ??
+                    catalogDish?.type ??
+                    '')
                 .toString(),
-        mealType: (map['meal_type'] ?? map['mealType'] ?? '').toString(),
+        mealType:
+            (map['meal_type'] ?? map['mealType'] ?? catalogDish?.mealType ?? '')
+                .toString(),
+        imageBase64: catalogDish?.imageBase64,
+        sauces: catalogDish?.sauces ?? const [],
+        supportsAddOns: catalogDish?.supportsAddOns ?? false,
+        ingredients: catalogDish?.ingredients ?? const [],
+        publicDescription: catalogDish?.publicDescription ?? '',
+        allergens: catalogDish?.allergens ?? '',
       ),
       quantity: quantity < 1 ? 1 : quantity,
-      selectedSauce:
-          (map['selected_sauce'] ?? map['selectedSauce'] ?? map['dip'])
-              ?.toString(),
+      selectedSauce: nonEmptyString(
+        map['selected_sauce'] ?? map['selectedSauce'] ?? map['dip'],
+      ),
       addOnQuantity: dipQty < 0 ? 0 : dipQty,
       addOns:
           ((map['add_ons'] ?? map['addOns']) as List<dynamic>?)
@@ -191,11 +192,11 @@ class CartSyncService {
               .where((e) => e.trim().isNotEmpty)
               .toList() ??
           const [],
-      specialInstructions:
-          (map['special_instructions'] ??
-                  map['specialInstructions'] ??
-                  map['notes'])
-              ?.toString(),
+      specialInstructions: nonEmptyString(
+        map['special_instructions'] ??
+            map['specialInstructions'] ??
+            map['notes'],
+      ),
     );
   }
 
@@ -205,8 +206,10 @@ class CartSyncService {
 
   static Future<void> _persistLocalCart(List<dynamic> cartItems) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_cartKey, jsonEncode(cartItems));
+    await prefs.setString(_trayKey, jsonEncode(cartItems));
+    await prefs.remove(_legacyCartKey);
     await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());
+    await prefs.remove(_legacyLastSyncKey);
   }
 
   /// Sync cart from server to local storage.
@@ -242,8 +245,10 @@ class CartSyncService {
       }
 
       if (trayLoaded) {
-        await prefs.remove(_cartKey);
+        await prefs.remove(_trayKey);
+        await prefs.remove(_legacyCartKey);
         await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());
+        await prefs.remove(_legacyLastSyncKey);
         _applyItemsToStore(const []);
       }
     } catch (e) {
@@ -265,7 +270,7 @@ class CartSyncService {
           final trayData = cartItems.map(trayLineToJson).toList();
           await ApiClient.instance.putJson(
             '/api/tray-draft',
-            body: {'tray_lines': trayData, 'tray_items': trayData},
+            body: {'tray_items': trayData, 'replace': true},
           );
 
           await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());
@@ -282,11 +287,37 @@ class CartSyncService {
     }
   }
 
+  Future<void> addItemToServer(CartItem item) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('customer_token');
+      if (token == null || token.isEmpty) return;
+
+      ApiClient.instance.setCustomerBearer(token);
+      final response = await ApiClient.instance.putJson(
+        '/api/tray-draft',
+        body: {
+          'tray_items': [trayLineToJson(item)],
+          'merge': true,
+        },
+      );
+      final savedItems = _itemsListFromTrayDraftResponse(response);
+      if (savedItems.isNotEmpty) {
+        await _persistLocalCart(savedItems);
+        _applyItemsToStore(savedItems);
+      }
+      await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());
+    } catch (e) {
+      print('Error adding item to server tray: $e');
+    }
+  }
+
   /// Check if sync is needed based on last sync time
   Future<bool> needsSync() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final lastSync = prefs.getString(_lastSyncKey);
+      final lastSync =
+          prefs.getString(_lastSyncKey) ?? prefs.getString(_legacyLastSyncKey);
 
       if (lastSync == null) return true;
 
@@ -316,7 +347,8 @@ class CartSyncService {
   Future<void> syncAfterLogin() async {
     final prefs = await SharedPreferences.getInstance();
     List<dynamic> preLoginCart = const [];
-    final localJson = prefs.getString(_cartKey);
+    final localJson =
+        prefs.getString(_trayKey) ?? prefs.getString(_legacyCartKey);
     if (localJson != null && localJson.isNotEmpty) {
       try {
         final decoded = jsonDecode(localJson);
@@ -342,8 +374,10 @@ class CartSyncService {
   Future<void> clearCart() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_cartKey);
+      await prefs.remove(_trayKey);
+      await prefs.remove(_legacyCartKey);
       await prefs.remove(_lastSyncKey);
+      await prefs.remove(_legacyLastSyncKey);
 
       final token = prefs.getString('customer_token');
       if (token != null && token.isNotEmpty) {

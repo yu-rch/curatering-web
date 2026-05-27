@@ -748,7 +748,7 @@ class _MenuState extends State<Menu> {
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Available for ordering'),
                         subtitle: const Text(
-                          'Unavailable dishes are visible but cannot be added to cart.',
+                          'Unavailable dishes are visible but cannot be added to tray.',
                         ),
                         value: _editingAvailable,
                         onChanged: (value) {
@@ -2221,7 +2221,9 @@ class _MenuState extends State<Menu> {
                   margin: const EdgeInsets.only(left: 16, right: 8, bottom: 16),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+                    border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.08),
+                    ),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
@@ -2386,7 +2388,9 @@ class _MenuState extends State<Menu> {
                   ),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+                    border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.08),
+                    ),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
@@ -2515,7 +2519,9 @@ class _MenuState extends State<Menu> {
                   margin: const EdgeInsets.only(left: 8, right: 16, bottom: 16),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+                    border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.08),
+                    ),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(

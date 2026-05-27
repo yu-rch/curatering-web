@@ -4,7 +4,7 @@ import {
   getTableColumnNames,
 } from "./db.js";
 import { customerAccountCustomerIdFromRequest } from "./customer_auth.js";
-import { normalizeTrayItems } from "./tray_drafts_api.js";
+import { mergeTrayItems, normalizeTrayItems } from "./tray_drafts_api.js";
 
 function itemsArrayFromPayload(payload) {
   if (Array.isArray(payload)) return payload;
@@ -104,12 +104,26 @@ class CartAPI {
       }
 
       const { timestamp } = req.body || {};
-      const cart = normalizeTrayItems(cartItemsFromBody(req.body));
+      const incoming = normalizeTrayItems(cartItemsFromBody(req.body));
+      const replace = req.body?.replace === true || req.body?.mode === "replace";
       const email = await customerEmail(customerId);
 
       client = await pool.connect();
       await client.query("BEGIN");
       await ensureCustomerTrayDraftsSchema();
+      const existing = await client.query(
+        `SELECT tray_items, tray_lines
+         FROM customer_tray_drafts
+         WHERE customer_id = $1
+         LIMIT 1`,
+        [customerId],
+      );
+      const row = existing.rows[0];
+      const existingItems =
+        normalizedTrayItems(row?.tray_items).length > 0
+          ? normalizedTrayItems(row?.tray_items)
+          : normalizedTrayItems(row?.tray_lines);
+      const cart = replace ? incoming : mergeTrayItems(existingItems, incoming);
       await client.query(
         `INSERT INTO customer_tray_drafts (customer_id, user_email, tray_lines, tray_items, updated_at)
          VALUES ($1, $2, $3::jsonb, $3::jsonb, now())

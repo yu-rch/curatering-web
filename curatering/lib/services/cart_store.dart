@@ -1,6 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 import '../models/menu_dish.dart';
 import 'api_client.dart';
 import 'cart_sync_service.dart';
@@ -74,6 +76,11 @@ class CartItem {
       return int.tryParse(value?.toString().trim() ?? '') ?? fallback;
     }
 
+    String? nonEmptyString(Object? value) {
+      final text = value?.toString().trim();
+      return text == null || text.isEmpty ? null : text;
+    }
+
     final dishJson =
         json['dish'] is Map ? Map<String, dynamic>.from(json['dish']) : {};
     return CartItem(
@@ -81,32 +88,32 @@ class CartItem {
         id: (dishJson['id'] ?? '').toString(),
         name: (dishJson['name'] ?? '').toString(),
         price: (dishJson['price'] ?? '0').toString(),
-        additionalChargeAmount:
-            parseDouble(
-              dishJson['additionalChargeAmount'] ??
-                  dishJson['menu_dishes_additional_charge_amount'] ??
-                  dishJson['additional_charge_amount'],
-            ),
+        additionalChargeAmount: parseDouble(
+          dishJson['additionalChargeAmount'] ??
+              dishJson['menu_dishes_additional_charge_amount'] ??
+              dishJson['additional_charge_amount'],
+        ),
         category: (dishJson['category'] ?? 'restaurant').toString(),
         paxOptions: [],
         type: (dishJson['type'] ?? '').toString(),
         mealType:
-            (dishJson['mealType'] ?? dishJson['meal_type'] ?? '')
-                .toString(),
+            (dishJson['mealType'] ?? dishJson['meal_type'] ?? '').toString(),
       ),
       quantity: parseInt(json['quantity'], fallback: 1),
-      selectedSauce: (json['selectedSauce'] ?? json['dip'])?.toString(),
-      addOnQuantity:
-          parseInt(json['addOnQuantity'] ?? json['dip_qty'], fallback: 1),
+      selectedSauce: nonEmptyString(json['selectedSauce'] ?? json['dip']),
+      addOnQuantity: parseInt(
+        json['addOnQuantity'] ?? json['dip_qty'],
+        fallback: 1,
+      ),
       addOns:
           (json['addOns'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .where((e) => e.trim().isNotEmpty)
               .toList() ??
           const [],
-      specialInstructions:
-          (json['specialInstructions'] ?? json['notes'] ?? json['line_note'])
-              ?.toString(),
+      specialInstructions: nonEmptyString(
+        json['specialInstructions'] ?? json['notes'] ?? json['line_note'],
+      ),
     );
   }
 }
@@ -114,6 +121,8 @@ class CartItem {
 class CartStore extends ChangeNotifier {
   static CartStore? _instance;
   static CartStore get instance => _instance ??= CartStore._();
+  static const String _trayKey = 'tray';
+  static const String _legacyCartKey = 'cart';
 
   CartStore._();
 
@@ -165,25 +174,31 @@ class CartStore extends ChangeNotifier {
           ),
     );
 
+    late final CartItem addedLine;
     if (existingIndex >= 0) {
       _items[existingIndex].quantity++;
-    } else {
-      _items.add(
-        CartItem(
-          dish: dish,
-          selectedSauce: selectedSauce,
-          addOnQuantity: normalizedAddOnQuantity,
-          addOns: addOns,
-          specialInstructions: specialInstructions,
-        ),
+      addedLine = CartItem(
+        dish: dish,
+        selectedSauce: selectedSauce,
+        addOnQuantity: normalizedAddOnQuantity,
+        addOns: addOns,
+        specialInstructions: specialInstructions,
       );
+    } else {
+      addedLine = CartItem(
+        dish: dish,
+        selectedSauce: selectedSauce,
+        addOnQuantity: normalizedAddOnQuantity,
+        addOns: addOns,
+        specialInstructions: specialInstructions,
+      );
+      _items.add(addedLine);
     }
 
     _saveCart();
     notifyListeners();
 
-    // Sync to server after adding item
-    CartSyncService.instance.syncToServer();
+    unawaited(CartSyncService.instance.addItemToServer(addedLine));
   }
 
   void removeItem(String dishId) {
@@ -293,7 +308,8 @@ class CartStore extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final cartJson = jsonEncode(_items.map((item) => item.toJson()).toList());
-      await prefs.setString('cart', cartJson);
+      await prefs.setString(_trayKey, cartJson);
+      await prefs.remove(_legacyCartKey);
     } catch (e) {
       debugPrint('Error saving cart: $e');
     }
@@ -302,11 +318,23 @@ class CartStore extends ChangeNotifier {
   Future<void> _loadCart() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final cartJson = prefs.getString('cart');
+      final cartJson =
+          prefs.getString(_trayKey) ?? prefs.getString(_legacyCartKey);
 
       if (cartJson != null) {
         final List<dynamic> decoded = jsonDecode(cartJson);
-        _items = decoded.map((item) => CartItem.fromJson(item)).toList();
+        _items =
+            decoded
+                .map((item) {
+                  final parsed = CartSyncService.parseTrayLineItem(item);
+                  if (parsed != null) return parsed;
+                  if (item is Map) {
+                    return CartItem.fromJson(Map<String, dynamic>.from(item));
+                  }
+                  return null;
+                })
+                .whereType<CartItem>()
+                .toList();
         notifyListeners();
       }
     } catch (e) {

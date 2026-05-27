@@ -5,6 +5,7 @@ import '../theme/website_header_font.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import '../services/cart_store.dart';
+import '../services/cart_sync_service.dart';
 import '../services/customer_orders_cache.dart';
 import '../services/loyalty_rewards_store.dart';
 import '../config.dart';
@@ -13,6 +14,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../widgets/map_picker.dart';
+import '../widgets/antd_message.dart';
 import 'payment_page.dart';
 import '../utils/responsive_layout.dart';
 
@@ -168,22 +170,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
+  void _notify(String message, {bool error = false}) {
+    if (!mounted) return;
+    showAntdMessage(
+      context,
+      message,
+      type: error ? AntdMessageType.error : AntdMessageType.success,
+    );
+  }
+
   Future<void> _handlePlaceOrder() async {
     setState(() => _showValidation = true);
-    // Prevent checkout when the cart is empty (even if user navigates here directly).
+    // Prevent checkout when the tray is empty (even if user navigates here directly).
     if (CartStore.instance.items.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Your cart is empty')));
-      }
+      _notify('Your tray is empty', error: true);
       return;
     }
 
     if (!_isCheckoutValid) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fix the highlighted fields')),
-      );
+      _notify('Please fix the highlighted fields', error: true);
       return;
     }
 
@@ -191,22 +196,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final phoneDigits = _phoneController.text.replaceAll(RegExp(r'\D'), '');
 
     if (_deliveryLat == null || _deliveryLng == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please pin your delivery location on the map.'),
-        ),
-      );
+      _notify('Please pin your delivery location on the map.', error: true);
       return;
     }
 
     final scheduledDelivery = _resolveDeliveryTime();
     if (_deliveryTimeMode == 'LATER' && scheduledDelivery == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please choose a delivery time later than now.'),
-          ),
-        );
+        _notify('Please choose a delivery time later than now.', error: true);
       }
       return;
     }
@@ -218,28 +215,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       final token = prefs.getString('customer_token');
 
       final items =
-          CartStore.instance.items
-              .map(
-                (item) => {
-                  'dishId': item.dish.id,
-                  'name': item.dish.name,
-                  'price': item.dish.price,
-                  'quantity': item.quantity,
-                  'selectedSauce': item.selectedSauce,
-                  'selected_sauce': item.selectedSauce,
-                  'addOnQuantity': item.addOnQuantity,
-                  'dip': item.selectedSauce,
-                  'dip_qty': item.addOnQuantity,
-                  'addOns': item.addOns,
-                  'add_ons': item.addOns,
-                  'specialInstructions': item.specialInstructions,
-                  'special_instructions': item.specialInstructions,
-                  'notes': item.specialInstructions,
-                  'line_subtotal': item.lineSubtotal,
-                  'addon_extra_subtotal': item.addonExtraSubtotal,
-                },
-              )
-              .toList();
+          CartStore.instance.items.map(CartSyncService.trayLineToJson).toList();
 
       final orderData = <String, dynamic>{
         'tray_items': items,
@@ -280,12 +256,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
         }
       } catch (_) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Server error (${response.statusCode}). Please try again.',
-              ),
-            ),
+          _notify(
+            'Server error (${response.statusCode}). Please try again.',
+            error: true,
           );
         }
         return;
@@ -295,12 +268,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
         final rawOrder = data['order'];
         if (rawOrder is! Map) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Order created but response was invalid. Contact support.',
-                ),
-              ),
+            _notify(
+              'Order created but response was invalid. Contact support.',
+              error: true,
             );
           }
           return;
@@ -313,13 +283,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         await _saveAddressToProfile();
         if (mounted) {
           if (orderNo != 'N/A') {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Order $orderNo created. Complete payment to confirm.',
-                ),
-              ),
-            );
+            _notify('Order $orderNo created. Complete payment to confirm.');
           }
           Navigator.of(context, rootNavigator: true).pushReplacement(
             MaterialPageRoute(
@@ -333,22 +297,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
         await prefs.remove('customer_token');
         await prefs.remove('customer_data');
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Session expired. Please log in again.'),
-            ),
-          );
+          _notify('Session expired. Please log in again.', error: true);
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? 'Failed to create order')),
-        );
+        _notify(data['error'] ?? 'Failed to create order', error: true);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        _notify('Error: $e', error: true);
       }
     } finally {
       if (mounted) {
@@ -1242,11 +1198,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     if (picked == null) return false;
     if (_isPastDeliveryTime(picked)) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Delivery time cannot be earlier than now.'),
-          ),
-        );
+        _notify('Delivery time cannot be earlier than now.', error: true);
       }
       return false;
     }
@@ -1601,13 +1553,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     context,
                                     rootNavigator: true,
                                   ).pop();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        '${reward.reward} redeemed successfully!',
-                                      ),
-                                      backgroundColor: Colors.green,
-                                    ),
+                                  _notify(
+                                    '${reward.reward} redeemed successfully!',
                                   );
                                 }
                                 : null,

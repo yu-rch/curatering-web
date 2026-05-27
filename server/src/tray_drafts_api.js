@@ -21,10 +21,7 @@ function asTrayObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
-/**
- * Canonical tray line shape for web + mobile (stored in `tray_lines` + `tray_items`).
- * Includes nested `dish` (web) and flat/snake fields (mobile).
- */
+/** Canonical tray line shape shared by web + mobile in `tray_items`. */
 export function normalizeTrayLineItem(raw) {
   const m = asTrayObject(raw);
   const dish = asTrayObject(m.dish ?? m.menu_item ?? m.menuItem);
@@ -44,13 +41,6 @@ export function normalizeTrayLineItem(raw) {
   ).trim();
   if (!dishId) return null;
 
-  const dishName = String(
-    m.dish_name ?? m.dishName ?? m.item_name ?? m.name ?? dish.name ?? 'Item',
-  ).trim();
-  const priceRaw = m.dish_price ?? m.dishPrice ?? m.price ?? dish.price ?? 0;
-  const priceNum = Number(priceRaw) || 0;
-  const priceStr = String(priceRaw);
-
   const qty = Math.max(
     1,
     Number(m.quantity ?? m.qty ?? m.dip_qty ?? 1) || 1,
@@ -60,46 +50,20 @@ export function normalizeTrayLineItem(raw) {
     m.selectedSauce ??
     (m.dip && String(m.dip).trim() ? m.dip : null);
   const sauceStr = sauceRaw != null ? String(sauceRaw).trim() : '';
-
-  const category = String(
-    m.dish_category ?? m.dishCategory ?? dish.category ?? 'restaurant',
-  );
-  const dishType = String(m.dish_type ?? m.dishType ?? dish.type ?? '');
-  const mealType = String(
-    m.meal_type ?? m.mealType ?? dish.meal_type ?? dish.mealType ?? '',
-  );
+  const rawDipQty = Number(m.dip_qty ?? m.addOnQuantity ?? 1);
+  const dipQty = sauceStr
+    ? Math.max(1, Number.isFinite(rawDipQty) ? Math.floor(rawDipQty) : 1)
+    : 1;
+  const notes = String(
+    m.notes ?? m.special_instructions ?? m.specialInstructions ?? '',
+  ).trim();
 
   return {
-    dishId,
-    dish_id: dishId,
-    dishName,
-    dish_name: dishName,
-    name: dishName,
-    item_name: dishName,
-    dishPrice: priceStr,
-    dish_price: priceStr,
-    price: priceNum,
-    quantity: qty,
-    qty,
-    selectedSauce: sauceStr || null,
-    selected_sauce: sauceStr || null,
+    id: dishId,
     dip: sauceStr,
-    dip_qty: sauceStr ? qty : 0,
-    dish_category: category,
-    dishCategory: category,
-    dish_type: dishType,
-    dishType,
-    meal_type: mealType,
-    mealType,
-    dish: {
-      id: dishId,
-      name: dishName,
-      price: priceStr,
-      category,
-      type: dishType,
-      mealType,
-      meal_type: mealType,
-    },
+    qty,
+    notes,
+    dip_qty: dipQty,
   };
 }
 
@@ -125,8 +89,46 @@ function itemsFromRequestBody(body) {
   return null;
 }
 
-async function upsertTrayDraftItems(customerId, items) {
-  const normalized = normalizeTrayItems(items);
+function trayItemKey(item) {
+  return [
+    String(item.id ?? item.dish_id ?? item.dishId ?? '').trim(),
+    String(item.dip ?? item.selected_sauce ?? item.selectedSauce ?? '').trim(),
+    String(item.notes ?? item.special_instructions ?? item.specialInstructions ?? '').trim(),
+    String(item.dip_qty ?? item.addOnQuantity ?? 1),
+  ].join('|');
+}
+
+export function mergeTrayItems(existingItems, incomingItems) {
+  const merged = new Map();
+  for (const item of normalizeTrayItems(existingItems)) {
+    merged.set(trayItemKey(item), { ...item });
+  }
+  for (const item of normalizeTrayItems(incomingItems)) {
+    const key = trayItemKey(item);
+    const current = merged.get(key);
+    if (current) {
+      current.qty = Math.max(1, Number(current.qty) || 1) + Math.max(1, Number(item.qty) || 1);
+    } else {
+      merged.set(key, { ...item });
+    }
+  }
+  return [...merged.values()];
+}
+
+async function upsertTrayDraftItems(customerId, items, { replace = false } = {}) {
+  let normalized = normalizeTrayItems(items);
+  if (!replace) {
+    const existing = await pool.query(
+      `SELECT tray_items, tray_lines FROM customer_tray_drafts WHERE customer_id = $1`,
+      [customerId],
+    );
+    const row = existing.rows[0];
+    const existingItems =
+      parseItemsArray(row?.tray_items).length > 0
+        ? parseItemsArray(row?.tray_items)
+        : parseItemsArray(row?.tray_lines);
+    normalized = mergeTrayItems(existingItems, normalized);
+  }
   const json = JSON.stringify(normalized);
   await pool.query(
     `INSERT INTO customer_tray_drafts (customer_id, tray_lines, tray_items, updated_at)
@@ -205,7 +207,8 @@ export async function saveTrayDraft(req, res) {
         error: 'items or tray_items array is required',
       });
     }
-    await upsertTrayDraftItems(customerId, items);
+    const replace = req.body?.replace === true || req.body?.mode === 'replace';
+    await upsertTrayDraftItems(customerId, items, { replace });
     const saved = await pool.query(
       `SELECT tray_lines, tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
       [customerId],
@@ -213,7 +216,7 @@ export async function saveTrayDraft(req, res) {
     const row = saved.rows[0];
     const trayLines = row ? parseItemsArray(row.tray_lines) : [];
     const trayItems = row ? parseItemsArray(row.tray_items) : [];
-    const itemsSaved = trayLines.length > 0 ? trayLines : trayItems;
+    const itemsSaved = trayItems.length > 0 ? trayItems : trayLines;
     res.json({
       success: true,
       items: itemsSaved,

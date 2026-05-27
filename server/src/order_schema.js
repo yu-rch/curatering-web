@@ -338,6 +338,9 @@ const EVENT_CATERING_COLUMN_DEFS = [
   ['full_payment_reference', 'TEXT'],
   ['loyalty_points_catering_obtained', 'INTEGER DEFAULT 0'],
   ['loyalty_reward_catering_obtained', 'TEXT'],
+  ['feedback_stars', 'INTEGER'],
+  ['feedback_remarks', 'TEXT'],
+  ['feedback_submitted_at', 'TIMESTAMPTZ'],
   ['address_lat', 'DOUBLE PRECISION'],
   ['address_lng', 'DOUBLE PRECISION'],
   ['seating_plan', "JSONB NOT NULL DEFAULT '{}'::jsonb"],
@@ -756,6 +759,9 @@ export function buildCustomerCateringOrdersSql(eventCols, cateringCols) {
       ${cateringSelectField(eventCols, 'scheduleSlots', ['schedule_slots'], "'[]'::jsonb")},
       ${cateringSelectField(eventCols, 'menu', ['menu'], "'[]'::jsonb")},
       ${cateringSelectField(eventCols, 'totalCost', ['total_cost'], '0')},
+      ${cateringSelectField(eventCols, 'feedback_stars', ['feedback_stars'], 'NULL::int')},
+      ${cateringSelectField(eventCols, 'feedback_remarks', ['feedback_remarks'], 'NULL::text')},
+      ${cateringSelectField(eventCols, 'feedback_submitted_at', ['feedback_submitted_at'], 'NULL::timestamptz')},
       ${eventTheme} AS "themeDesign",
       ${eventSeating} AS "seatingPlan",
       ${cateringSelectField(eventCols, 'createdAt', ['created_at'], 'now()')},
@@ -777,6 +783,9 @@ export function buildCustomerCateringOrdersSql(eventCols, cateringCols) {
       ${cateringSelectField(cateringCols, 'scheduleSlots', ['schedule_slots'], "'[]'::jsonb")},
       ${cateringSelectField(cateringCols, 'menu', ['menu'], "'[]'::jsonb")},
       ${cateringSelectField(cateringCols, 'totalCost', ['total_cost'], '0')},
+      ${cateringSelectField(cateringCols, 'feedback_stars', ['feedback_stars'], 'NULL::int')},
+      ${cateringSelectField(cateringCols, 'feedback_remarks', ['feedback_remarks'], 'NULL::text')},
+      ${cateringSelectField(cateringCols, 'feedback_submitted_at', ['feedback_submitted_at'], 'NULL::timestamptz')},
       ${cateringTheme} AS "themeDesign",
       '{}'::jsonb AS "seatingPlan",
       ${cateringSelectField(cateringCols, 'createdAt', ['created_at'], 'now()')},
@@ -791,6 +800,10 @@ export function normalizeCustomerCateringOrderRow(row) {
   const o = { ...row };
   o.status = normalizeCateringOrderStatus(o.status);
   if (o.createdAt instanceof Date) o.createdAt = o.createdAt.toISOString();
+  if (o.feedback_submitted_at instanceof Date) {
+    o.feedback_submitted_at = o.feedback_submitted_at.toISOString();
+  }
+  o.feedback_submitted = o.feedback_stars != null;
 
   if (typeof o.themeDesign === 'string' && o.themeDesign.trim()) {
     try {

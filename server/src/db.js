@@ -660,6 +660,15 @@ export async function initDb() {
     `);
   }
 
+  for (const table of ['event_orders', 'catering_orders']) {
+    await pool.query(`
+      ALTER TABLE ${table}
+      ADD COLUMN IF NOT EXISTS feedback_stars INTEGER,
+      ADD COLUMN IF NOT EXISTS feedback_remarks TEXT,
+      ADD COLUMN IF NOT EXISTS feedback_submitted_at TIMESTAMPTZ
+    `);
+  }
+
   await pool.query(`
     ALTER TABLE catering_orders
     ADD COLUMN IF NOT EXISTS theme_design JSONB NOT NULL DEFAULT '{}'::jsonb,

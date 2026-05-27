@@ -158,7 +158,7 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
       child: AntdPage(
         title: 'Customer Feedback',
         subtitle:
-            'Feedback is submitted from delivered restaurant orders and the Contact Us page.',
+            'Feedback is submitted from completed restaurant/catering orders and the Contact Us page.',
         actions: [
           AntdSecondaryButton(
             label: 'Refresh',
