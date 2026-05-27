@@ -461,7 +461,7 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
     final found = widget.plan.seats.where((e) => e.id == seatId).toList();
     if (found.isEmpty) return;
     final s = found.first;
-    const dragScale = 1.15;
+    const dragScale = 1.45;
     final atTable = widget.plan.seats.where((e) => e.tableId == table.id).length;
     final step = 1 / math.max(atTable, 1);
     final tangent = (d.delta.dx - d.delta.dy) * 0.0015 * dragScale;

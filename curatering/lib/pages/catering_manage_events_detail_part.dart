@@ -617,20 +617,10 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                   children: [
                     Align(
                       alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: () {
-                          setModal(() {
-                            rows.add({
-                              'employee': '',
-                              'tasks': '',
-                              'schedule_of_tasks': '',
-                              'budget': '',
-                              'status': 'not done',
-                            });
-                          });
-                        },
-                        icon: const Icon(Icons.add),
-                        label: const Text('Add row'),
+                      child: IconButton(
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close),
                       ),
                     ),
                     Expanded(
@@ -645,6 +635,23 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                               child: PagedDataTable(
                                 title: 'Task assignment',
                                 maxTableHeight: constraints.maxHeight,
+                                toolbarActions: [
+                                  AntdSecondaryButton(
+                                    onPressed: () {
+                                      setModal(() {
+                                        rows.add({
+                                          'employee': '',
+                                          'tasks': '',
+                                          'schedule_of_tasks': '',
+                                          'budget': '',
+                                          'status': 'not done',
+                                        });
+                                      });
+                                    },
+                                    icon: Icons.add,
+                                    label: 'Add row',
+                                  ),
+                                ],
                                 columnSpacing: 12,
                                 horizontalMargin: 8,
                                 dataRowMinHeight: 52,
@@ -753,10 +760,55 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close'),
+                ),
                 FilledButton(
                   onPressed: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: ctx,
+                      builder:
+                          (dctx) => AlertDialog(
+                            title: const Text('Save task assignment'),
+                            content: const Text(
+                              'Apply changes to task assignment rows?',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(dctx).pop(false),
+                                child: const Text('Cancel'),
+                              ),
+                              FilledButton(
+                                onPressed: () => Navigator.of(dctx).pop(true),
+                                child: const Text('Save'),
+                              ),
+                            ],
+                          ),
+                    );
+                    if (confirmed != true) return;
+                    BuildContext? loaderCtx;
                     try {
+                      showDialog<void>(
+                        context: ctx,
+                        barrierDismissible: false,
+                        builder: (dctx) {
+                          loaderCtx = dctx;
+                          return const AlertDialog(
+                            content: Row(
+                              children: [
+                                SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                                SizedBox(width: 12),
+                                Text('Saving task assignment...'),
+                              ],
+                            ),
+                          );
+                        },
+                      );
                       await ManagerCateringApi.instance.patchStageData(
                         id: order.id,
                         orderKind: order.orderKind.isNotEmpty
@@ -764,9 +816,15 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                             : (order.orderType == 'catering' ? 'catering' : 'event'),
                         patch: {'task_assignment_rows': rows},
                       );
+                      if (loaderCtx != null && Navigator.of(loaderCtx!).canPop()) {
+                        Navigator.of(loaderCtx!).pop();
+                      }
                       if (ctx.mounted) Navigator.pop(ctx);
                       await _selectManageEventsOrder(order);
                     } catch (e) {
+                      if (loaderCtx != null && Navigator.of(loaderCtx!).canPop()) {
+                        Navigator.of(loaderCtx!).pop();
+                      }
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('Save failed: $e')),

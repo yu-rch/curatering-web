@@ -637,7 +637,9 @@ export function registerPosRoutes(app, {
           await pool.query(
             `UPDATE restaurant_orders
              SET cashier_amount_received_initial = $2,
+                 order_status = 'PAYMENT_INSUFFICIENT',
                  balance_proof_pending_review = FALSE,
+                 last_updated_order_status_dt_stamp = now(),
                  updated_at = now()
              WHERE ${pkWhere}`,
             [pkVal, primary],
@@ -675,6 +677,8 @@ export function registerPosRoutes(app, {
         await pool.query(
           `UPDATE restaurant_orders
            SET cashier_amount_received_initial = $2,
+               order_status = 'PAYMENT_INSUFFICIENT',
+               last_updated_order_status_dt_stamp = now(),
                updated_at = now()
            WHERE ${pkWhere}`,
           [pkVal, Number.isFinite(amountReceived) ? amountReceived : 0],

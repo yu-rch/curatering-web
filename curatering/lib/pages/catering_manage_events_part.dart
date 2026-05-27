@@ -1326,6 +1326,26 @@ extension _ManageEventsTableExt on _ManageEventsState {
     );
   }
 
+  Widget _basicInquiryColumnCell(EventOrderDto dto) {
+    final eventType =
+        dto.eventType.trim().isEmpty ? '—' : dto.eventType.trim();
+    final title = dto.eventTitle.trim().isEmpty
+        ? dto.customerName
+        : dto.eventTitle.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+        ),
+        const SizedBox(height: 2),
+        Text('Type: $eventType', style: const TextStyle(fontSize: 11)),
+      ],
+    );
+  }
+
   Widget _buildOrdersTablePanel({
     required String title,
     required List<EventOrderDto> orders,
@@ -1747,6 +1767,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         DataColumn(label: Text('Service type')),
         DataColumn(label: Text('Event / inquiry')),
         DataColumn(label: Text('Date and time')),
+        DataColumn(label: Text('Actions')),
       ],
       rows: filtered.map((dto) {
         final selected = _selectedManageEventsOrder?.id == dto.id;
@@ -1755,8 +1776,15 @@ extension _ManageEventsTableExt on _ManageEventsState {
           onSelectChanged: (_) => _selectManageEventsOrder(dto),
           cells: [
             DataCell(Text(_orderTypeColumnLabel(dto))),
-            DataCell(_mergedInquiryColumnCell(dto)),
+            DataCell(_basicInquiryColumnCell(dto)),
             DataCell(Text(_formatInquiryDateTime(dto))),
+            DataCell(
+              OutlinedButton.icon(
+                onPressed: () => _openFinalizeOnlineInquiryDialog(dto),
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('Edit'),
+              ),
+            ),
           ],
         );
       }).toList(),

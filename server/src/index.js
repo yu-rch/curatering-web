@@ -8601,6 +8601,7 @@ async function registerRoutesAfterDbInit() {
           allergens,
           menuDishesAdditionalChargeAmount,
           additionalChargeAmount,
+          additional_charge,
         } = req.body || {};
         
         if (!name || !price) {
@@ -8609,7 +8610,7 @@ async function registerRoutesAfterDbInit() {
 
         const dishCategory = category || 'catering';
         const additionalCharge = Number(
-          menuDishesAdditionalChargeAmount ?? additionalChargeAmount ?? 0,
+          menuDishesAdditionalChargeAmount ?? additionalChargeAmount ?? additional_charge ?? 0,
         );
         const resolvedMealType = String(mealType ?? '').trim() || String(type ?? '').trim();
         const mealTypeSaved = resolvedMealType
@@ -8669,11 +8670,12 @@ async function registerRoutesAfterDbInit() {
           allergens,
           menuDishesAdditionalChargeAmount,
           additionalChargeAmount,
+          additional_charge,
         } = req.body || {};
         
         const dishCategory = category || 'catering';
         const additionalCharge = Number(
-          menuDishesAdditionalChargeAmount ?? additionalChargeAmount ?? 0,
+          menuDishesAdditionalChargeAmount ?? additionalChargeAmount ?? additional_charge ?? 0,
         );
         const resolvedMealType = String(mealType ?? '').trim() || String(type ?? '').trim();
         const mealTypeSaved = resolvedMealType

@@ -4429,6 +4429,110 @@ class _ManageEventsState extends State<ManageEvents>
               });
             }
 
+            Future<void> editChecklistRowDialog(int index) async {
+              final item = editableItems[index];
+              final itemCtrl = TextEditingController(text: item.item);
+              final descCtrl = TextEditingController(text: item.description);
+              final qtyCtrl = TextEditingController(text: '${item.quantity}');
+              final costCtrl = TextEditingController(
+                text: item.cost.toStringAsFixed(2),
+              );
+              var completed = item.isCompleted;
+              await showDialog<void>(
+                context: context,
+                builder:
+                    (dctx) => StatefulBuilder(
+                      builder: (dctx, setEditState) => AlertDialog(
+                      title: const Text('Edit checklist row'),
+                      content: SizedBox(
+                        width: 440,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TextField(
+                              controller: itemCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'Item',
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: descCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'Description',
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: qtyCtrl,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Quantity',
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextField(
+                                    controller: costCtrl,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Cost',
+                                      prefixText: 'PHP ',
+                                    ),
+                                    keyboardType: const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            CheckboxListTile(
+                              contentPadding: EdgeInsets.zero,
+                              value: completed,
+                              onChanged: (v) {
+                                if (v == null) return;
+                                setEditState(() => completed = v);
+                              },
+                              title: const Text('Completed'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dctx),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          onPressed: () {
+                            dialogSetState(() {
+                              editableItems[index] = ChecklistItem(
+                                item: itemCtrl.text.trim(),
+                                description: descCtrl.text.trim(),
+                                quantity: int.tryParse(qtyCtrl.text.trim()) ?? 1,
+                                cost: double.tryParse(costCtrl.text.trim()) ?? 0,
+                                isCompleted: completed,
+                                inventoryId: item.inventoryId,
+                              );
+                            });
+                            Navigator.pop(dctx);
+                          },
+                          child: const Text('Apply'),
+                        ),
+                      ],
+                    ),
+                    ),
+              );
+              itemCtrl.dispose();
+              descCtrl.dispose();
+              qtyCtrl.dispose();
+              costCtrl.dispose();
+            }
+
             return AlertDialog(
               title: Text('Checklist for ${order.eventTitle}'),
               content: SizedBox(
@@ -4440,14 +4544,10 @@ class _ManageEventsState extends State<ManageEvents>
                     if (canEditChecklist)
                       Align(
                         alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          onPressed: () => dialogSetState(() {
-                            showNewItemRow = true;
-                            duplicateHighlightIndex = null;
-                            newItemController.clear();
-                          }),
-                          icon: const Icon(Icons.add_circle_outline),
-                          label: const Text('Add item'),
+                        child: IconButton(
+                          tooltip: 'Close',
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close),
                         ),
                       ),
                     Expanded(
@@ -4463,6 +4563,20 @@ class _ManageEventsState extends State<ManageEvents>
                         title: 'Event Checklist',
                         key: ValueKey(editableItems.length),
                         maxTableHeight: tableConstraints.maxHeight,
+                        toolbarActions:
+                            canEditChecklist
+                                ? [
+                                  AntdSecondaryButton(
+                                    onPressed: () => dialogSetState(() {
+                                      showNewItemRow = true;
+                                      duplicateHighlightIndex = null;
+                                      newItemController.clear();
+                                    }),
+                                    icon: Icons.add_circle_outline,
+                                    label: 'Add item',
+                                  ),
+                                ]
+                                : const [],
                         columnSpacing: 12,
                         horizontalMargin: 8,
                         dataRowMinHeight: 52,
@@ -4505,7 +4619,7 @@ class _ManageEventsState extends State<ManageEvents>
                           if (canEditChecklist) ...[
                             const DataColumn(
                               label: Text('Actions'),
-                              columnWidth: FixedColumnWidth(76),
+                              columnWidth: FixedColumnWidth(110),
                             ),
                           ],
                         ],
@@ -4783,24 +4897,36 @@ class _ManageEventsState extends State<ManageEvents>
                                   if (canEditChecklist) ...[
                                     DataCell(
                                       SizedBox(
-                                        width: 68,
-                                        child: IconButton(
-                                          tooltip: 'Remove item',
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                          onPressed: () {
-                                            dialogSetState(() {
-                                              if (duplicateHighlightIndex ==
-                                                  index) {
-                                                duplicateHighlightIndex = null;
-                                              }
-                                              editableItems.removeAt(index);
-                                            });
-                                          },
-                                          icon: const Icon(
-                                            Icons.remove_circle_outline,
-                                            color: Colors.red,
-                                          ),
+                                        width: 104,
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              tooltip: 'Edit item',
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(),
+                                              onPressed: () => editChecklistRowDialog(index),
+                                              icon: const Icon(Icons.edit_outlined),
+                                            ),
+                                            IconButton(
+                                              tooltip: 'Remove item',
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(),
+                                              onPressed: () {
+                                                dialogSetState(() {
+                                                  if (duplicateHighlightIndex ==
+                                                      index) {
+                                                    duplicateHighlightIndex = null;
+                                                  }
+                                                  editableItems.removeAt(index);
+                                                });
+                                              },
+                                              icon: const Icon(
+                                                Icons.remove_circle_outline,
+                                                color: Colors.red,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ),
@@ -4916,19 +5042,6 @@ class _ManageEventsState extends State<ManageEvents>
                         },
                       ),
                     ),
-                    if (canEditChecklist)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: IconButton(
-                          tooltip: 'Add item',
-                          onPressed: () => dialogSetState(() {
-                            showNewItemRow = true;
-                            duplicateHighlightIndex = null;
-                            newItemController.clear();
-                          }),
-                          icon: const Icon(Icons.add_circle_outline),
-                        ),
-                      ),
                     const SizedBox(height: 8),
                     // Bottom action buttons
                     Row(
@@ -4969,7 +5082,7 @@ class _ManageEventsState extends State<ManageEvents>
                           child: const Text('save'),
                         ),
                         const SizedBox(width: 12),
-                        // Cancel button (red outline)
+                        // Close button (red outline)
                         OutlinedButton(
                           onPressed: () => Navigator.of(context).pop(),
                           style: OutlinedButton.styleFrom(
@@ -4983,7 +5096,7 @@ class _ManageEventsState extends State<ManageEvents>
                               vertical: 8,
                             ),
                           ),
-                          child: const Text('cancel'),
+                          child: const Text('close'),
                         ),
                       ],
                     ),
@@ -6690,6 +6803,7 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Widget _buildNewEventCenterContent() {
+    final isMenuTab = _activeNewEventSideTab == _NewEventSideTab.menuAndAllergens;
     Widget body;
     switch (_activeNewEventSideTab) {
       case _NewEventSideTab.eventInfo:
@@ -6709,6 +6823,71 @@ class _ManageEventsState extends State<ManageEvents>
         body = _buildNewEventSubmissionBar();
         break;
     }
+    final nav = Row(
+      children: [
+        if (!_isFirstNewEventSideTab())
+          OutlinedButton.icon(
+            onPressed: _prevNewEventSideTab,
+            icon: const Icon(Icons.arrow_back, size: 16),
+            label: const Text('Previous'),
+          ),
+        const Spacer(),
+        if (_isLastNewEventSideTab())
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFC024).withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check, size: 16),
+                SizedBox(width: 6),
+                Text(
+                  'Review submit actions below',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          )
+        else
+          ElevatedButton.icon(
+            onPressed: _nextNewEventSideTab,
+            icon: const Text('Next'),
+            label: const Icon(Icons.arrow_forward, size: 16),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFC024),
+              foregroundColor: const Color(0xFF1E1E1E),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+      ],
+    );
+
+    if (isMenuTab) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              _newEventSideTabLabel(_activeNewEventSideTab),
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF1E1E1E),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(child: body),
+            const SizedBox(height: 20),
+            nav,
+          ],
+        ),
+      );
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -6725,53 +6904,7 @@ class _ManageEventsState extends State<ManageEvents>
           const SizedBox(height: 12),
           body,
           const SizedBox(height: 20),
-          Row(
-            children: [
-              if (!_isFirstNewEventSideTab())
-                OutlinedButton.icon(
-                  onPressed: _prevNewEventSideTab,
-                  icon: const Icon(Icons.arrow_back, size: 16),
-                  label: const Text('Previous'),
-                ),
-              const Spacer(),
-              if (_isLastNewEventSideTab())
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFC024).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.check, size: 16),
-                      SizedBox(width: 6),
-                      Text(
-                        'Review submit actions below',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                ElevatedButton.icon(
-                  onPressed: _nextNewEventSideTab,
-                  icon: const Text('Next'),
-                  label: const Icon(Icons.arrow_forward, size: 16),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFFC024),
-                    foregroundColor: const Color(0xFF1E1E1E),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                  ),
-                ),
-            ],
-          ),
+          nav,
         ],
       ),
     );
@@ -6820,7 +6953,7 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Widget _buildNewEventSubmissionBar() {
-    final themePicksCount = _themePicks.length;
+    final isCateringOnly = _orderType == 'catering';
     final laborCost =
         double.tryParse(_newEventLaborCostController.text.trim()) ?? 0.0;
     final travelCost =
@@ -6837,63 +6970,67 @@ class _ManageEventsState extends State<ManageEvents>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Theme picks: $themePicksCount',
-                    style: TextStyle(
-                      color: Colors.grey.shade700,
-                      fontWeight: FontWeight.w600,
+                  TextField(
+                    controller: _newEventPaxBufferController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: false,
                     ),
+                    decoration: const InputDecoration(
+                      labelText: 'Pax buffer',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (_) => setState(() {}),
                   ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _newEventPaxBufferController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: false,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Pax buffer',
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                          onChanged: (_) => setState(() {}),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _newEventLaborCostController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Labor cost',
+                      prefixText: 'PHP ',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _newEventTravelCostController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Travel cost',
+                      prefixText: 'PHP ',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: ElevatedButton(
+                      onPressed: isCateringOnly ? null : _showThemeDesignDialog,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            isCateringOnly
+                                ? Colors.grey.shade400
+                                : const Color(0xFF1DB954),
+                      ),
+                      child: Text(
+                        isCateringOnly
+                            ? 'EVENTS THEME DESIGN (Not Available for Catering Only)'
+                            : 'EVENTS THEME DESIGN',
+                        style: TextStyle(
+                          color: isCateringOnly ? Colors.grey.shade700 : Colors.white,
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextField(
-                          controller: _newEventLaborCostController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Labor cost',
-                            prefixText: 'PHP ',
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextField(
-                          controller: _newEventTravelCostController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Travel cost',
-                            prefixText: 'PHP ',
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                   const SizedBox(height: 8),
                   const Text(
@@ -6977,41 +7114,42 @@ class _ManageEventsState extends State<ManageEvents>
                       );
                     }),
                   ],
-                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 220,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                   Text(
                     'Total cost: ${formatPesos(total)}',
+                    textAlign: TextAlign.right,
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       color: Color(0xFFF4511E),
                     ),
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-
-            /// SAVE DRAFT
-            ElevatedButton(
-              onPressed: () {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('Saved draft.')));
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFFA726),
-                foregroundColor: Colors.black,
-              ),
-              child: const Text('SAVE DRAFT'),
-            ),
-
-            const SizedBox(width: 12),
-
-            /// SUBMIT
-            ElevatedButton(
-              onPressed:
-                  _isSubmittingOrder
-                      ? null
-                      : () async {
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Saved draft.')),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFA726),
+                      foregroundColor: Colors.black,
+                    ),
+                    child: const Text('SAVE DRAFT'),
+                  ),
+                  const SizedBox(height: 10),
+                  ElevatedButton(
+                    onPressed:
+                        _isSubmittingOrder
+                            ? null
+                            : () async {
                         // Clear previous errors
                         setState(() {
                           _contactNumberError = null;
@@ -7099,10 +7237,6 @@ class _ManageEventsState extends State<ManageEvents>
                           return;
                         }
 
-                        // Only validate theme picks for catering + event orders
-                        if (!isCateringOnly && _themePicks.isEmpty)
-                          missing.add('Theme picks');
-
                         if (missing.isNotEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
@@ -7155,23 +7289,26 @@ class _ManageEventsState extends State<ManageEvents>
                             _isSubmittingOrder = false;
                           });
                         }
-                      },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1DB954),
+                            },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1DB954),
+                    ),
+                    child:
+                        _isSubmittingOrder
+                            ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
+                            : const Text('SUBMIT'),
+                  ),
+                ],
               ),
-              child:
-                  _isSubmittingOrder
-                      ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
-                          ),
-                        ),
-                      )
-                      : const Text('SUBMIT'),
             ),
           ],
         ),
@@ -7200,25 +7337,6 @@ class _ManageEventsState extends State<ManageEvents>
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: TextField(
-                controller: _eventSearchController,
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  hintText: 'Search',
-                  prefixIcon: const Icon(Icons.search),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-                onChanged: (_) {
-                  setState(() {});
-                },
               ),
             ),
           ],
@@ -7619,11 +7737,6 @@ class _ManageEventsState extends State<ManageEvents>
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              AllergenSelectorField(
-                initialSerialized: _allergensSerialized,
-                onChanged: (s) => _allergensSerialized = s,
-              ),
             ],
           ),
         ),
@@ -7633,18 +7746,21 @@ class _ManageEventsState extends State<ManageEvents>
 
   // Menu View
   Widget _buildEventMenuSection() {
-    final isCateringOnly = _orderType == 'catering';
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Menu',
+          'Menu & Allergens',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
             color: Colors.grey.shade800,
           ),
+        ),
+        const SizedBox(height: 12),
+        AllergenSelectorField(
+          initialSerialized: _allergensSerialized,
+          onChanged: (s) => _allergensSerialized = s,
         ),
         const SizedBox(height: 12),
         Container(
@@ -7721,31 +7837,6 @@ class _ManageEventsState extends State<ManageEvents>
           icon: const Icon(Icons.restaurant_menu, size: 18),
           label: const Text('Open menu picker (dishes or set menu)'),
         ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton(
-            onPressed: isCateringOnly ? null : _showThemeDesignDialog,
-            style: ElevatedButton.styleFrom(
-              backgroundColor:
-                  isCateringOnly
-                      ? Colors.grey.shade400
-                      : const Color(0xFF1DB954),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            child: Text(
-              isCateringOnly
-                  ? 'EVENTS THEME DESIGN (Not Available for Catering Only)'
-                  : 'EVENTS THEME DESIGN',
-              style: TextStyle(
-                color: isCateringOnly ? Colors.grey.shade600 : Colors.white,
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -7787,11 +7878,6 @@ class _ManageEventsState extends State<ManageEvents>
                       Text(
                         dish.name,
                         style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        dish.price,
-                        style: TextStyle(color: Colors.grey.shade600),
                       ),
                     ],
                   ),
@@ -8476,8 +8562,51 @@ class _ManageEventsState extends State<ManageEvents>
     EventOrderDto order,
     List<ChecklistItem> editableItems,
   ) async {
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Save checklist'),
+            content: const Text(
+              'Save checklist changes and update generated checklist output?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true) return;
+
+    BuildContext? loaderContext;
     try {
-      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          loaderContext = ctx;
+          return const AlertDialog(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 12),
+                Text('Saving checklist...'),
+              ],
+            ),
+          );
+        },
+      );
 
       await EventsApi.instance.replaceChecklist(
         orderId: order.id,
@@ -8500,16 +8629,31 @@ class _ManageEventsState extends State<ManageEvents>
                 .toList(),
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Checklist saved successfully!'),
-          backgroundColor: Colors.green,
-        ),
+      if (loaderContext != null && Navigator.of(loaderContext!).canPop()) {
+        Navigator.of(loaderContext!).pop();
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder:
+            (ctx) => AlertDialog(
+              title: const Text('Checklist saved'),
+              content: const Text('Checklist changes were saved successfully.'),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
       );
 
       // Refresh orders
       await _refreshOrders();
     } catch (e) {
+      if (loaderContext != null && Navigator.of(loaderContext!).canPop()) {
+        Navigator.of(loaderContext!).pop();
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

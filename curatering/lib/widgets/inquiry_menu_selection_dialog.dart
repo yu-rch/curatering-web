@@ -570,6 +570,106 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
                 _emitSelection();
               },
             ),
+          const SizedBox(height: 10),
+          _buildSetMenuModificationsPreview(selected),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSetMenuModificationsPreview(SetMenu selected) {
+    final originalIds = _visibleSetDishIds(selected).toSet();
+    final removedIds =
+        originalIds.where((id) => !_selectedSetDishIds.contains(id)).toList()
+          ..sort();
+    final addedIds =
+        _selectedSetDishIds.where((id) => !originalIds.contains(id)).toList()
+          ..sort();
+    if (removedIds.isEmpty && addedIds.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final rows = <Map<String, String>>[];
+    final pairCount = removedIds.length < addedIds.length
+        ? removedIds.length
+        : addedIds.length;
+    for (var i = 0; i < pairCount; i++) {
+      rows.add({
+        'dish': _dishNameById[removedIds[i]] ?? removedIds[i],
+        'action': 'REPLACED',
+        'result': _dishNameById[addedIds[i]] ?? addedIds[i],
+        'charge': '—',
+      });
+    }
+    if (removedIds.length > pairCount) {
+      for (var i = pairCount; i < removedIds.length; i++) {
+        rows.add({
+          'dish': _dishNameById[removedIds[i]] ?? removedIds[i],
+          'action': 'REMOVED',
+          'result': '—',
+          'charge': '—',
+        });
+      }
+    }
+    if (addedIds.length > pairCount) {
+      for (var i = pairCount; i < addedIds.length; i++) {
+        MenuDish? dish;
+        for (final d in widget.cateringDishes) {
+          if (d.id == addedIds[i]) {
+            dish = d;
+            break;
+          }
+        }
+        final addCharge = dish?.additionalChargeAmount ?? 0;
+        rows.add({
+          'dish': '—',
+          'action': 'ADDED',
+          'result': _dishNameById[addedIds[i]] ?? addedIds[i],
+          'charge': addCharge > 0 ? 'PHP ${addCharge.toStringAsFixed(2)}' : '—',
+        });
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Menu modifications',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowHeight: 34,
+              dataRowMinHeight: 34,
+              dataRowMaxHeight: 40,
+              columns: const [
+                DataColumn(label: Text('Dish')),
+                DataColumn(label: Text('Action')),
+                DataColumn(label: Text('Result')),
+                DataColumn(label: Text('Add\'l charge')),
+              ],
+              rows: rows
+                  .map(
+                    (r) => DataRow(
+                      cells: [
+                        DataCell(Text(r['dish']!)),
+                        DataCell(Text(r['action']!)),
+                        DataCell(Text(r['result']!)),
+                        DataCell(Text(r['charge']!)),
+                      ],
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
         ],
       ),
     );
