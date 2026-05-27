@@ -675,7 +675,7 @@ class _InventoryState extends State<Inventory> {
                               : 'This item is marked unavailable.',
                         ),
                         value: _editingAvailable,
-                        activeThumbColor: AntdTokens.success,
+                        activeColor: AntdTokens.success,
                         onChanged:
                             (v) => setModalState(() => _editingAvailable = v),
                       ),
