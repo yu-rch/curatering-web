@@ -145,6 +145,11 @@ class CartSyncService {
             ? rawDipQty.toInt()
             : int.tryParse(rawDipQty?.toString() ?? '') ?? 1;
 
+    double parseDouble(Object? value) {
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString().trim() ?? '') ?? 0;
+    }
+
     return CartItem(
       dish: MenuDish(
         id: dishId.toString(),
@@ -158,10 +163,11 @@ class CartSyncService {
         price:
             (map['dish_price'] ?? map['dishPrice'] ?? map['price'] ?? '0')
                 .toString(),
-        additionalChargeAmount:
-            (map['additionalChargeAmount'] as num?)?.toDouble() ??
-            (map['menu_dishes_additional_charge_amount'] as num?)?.toDouble() ??
-            0,
+        additionalChargeAmount: parseDouble(
+          map['additionalChargeAmount'] ??
+              map['menu_dishes_additional_charge_amount'] ??
+              map['additional_charge_amount'],
+        ),
         category:
             (map['dish_category'] ??
                     map['dishCategory'] ??

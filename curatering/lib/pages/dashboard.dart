@@ -20,6 +20,8 @@ class Dashboard extends StatefulWidget {
 }
 
 class _DashboardState extends State<Dashboard> {
+  static const bool _showAiHealthPanel = false;
+  static const bool _showDishTrendsPanel = false;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _insightPromptController = TextEditingController(
     text:
@@ -51,8 +53,8 @@ class _DashboardState extends State<Dashboard> {
     super.initState();
     _load();
     _loadInsight();
-    _loadDishTrends();
-    _loadAiHealth();
+    if (_showDishTrendsPanel) _loadDishTrends();
+    if (_showAiHealthPanel) _loadAiHealth();
     _startAutoRefresh();
   }
 
@@ -85,8 +87,8 @@ class _DashboardState extends State<Dashboard> {
     await Future.wait([
       _load(forceRefresh: true),
       _loadInsight(),
-      _loadDishTrends(),
-      _loadAiHealth(),
+      if (_showDishTrendsPanel) _loadDishTrends(),
+      if (_showAiHealthPanel) _loadAiHealth(),
     ]);
   }
 
@@ -357,7 +359,7 @@ class _DashboardState extends State<Dashboard> {
     return SizedBox(
       width: 190,
       child: DropdownButtonFormField<String>(
-        initialValue: value,
+        value: value,
         decoration: InputDecoration(
           labelText: label,
           isDense: true,
@@ -1777,10 +1779,14 @@ class _DashboardState extends State<Dashboard> {
                     )
                   else if (s != null) ...[
                     _aiInsightsPanel(),
-                    const SizedBox(height: 16),
-                    _aiHealthPanel(),
-                    const SizedBox(height: 16),
-                    _dishTrendsPanel(),
+                    if (_showAiHealthPanel) ...[
+                      const SizedBox(height: 16),
+                      _aiHealthPanel(),
+                    ],
+                    if (_showDishTrendsPanel) ...[
+                      const SizedBox(height: 16),
+                      _dishTrendsPanel(),
+                    ],
                     const SizedBox(height: 16),
                     if (_showRestaurantSection()) ...[
                       _businessSection(

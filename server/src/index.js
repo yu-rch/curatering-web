@@ -74,6 +74,16 @@ import {
   ensureRestaurantPosColumns,
   registerPosRoutes,
 } from "./posApi.js";
+import {
+  analyzeDashboard,
+  analyzeCustomerFeedbackOverview,
+  analyzeDishTrends,
+  analyzeFeedbackBatch,
+  analyzeSingleFeedback,
+  expandEventPrompt,
+  isOpenAiConfigured,
+  openAiModel,
+} from "./services/openaiService.js";
 
 // Prefer IPv4 when resolving SMTP hosts (avoids ENETUNREACH on IPv6 in many cloud/container networks).
 try {
@@ -233,28 +243,9 @@ function corsOriginMatchesSuffix(origin) {
 }
 
 function corsOrigin(origin, callback) {
-  if (!origin) {
+  if (corsOriginAllowed(origin)) {
     callback(null, true);
     return;
-  }
-  const normalized = normalizeCorsOrigin(origin);
-  if (_corsExactOrigins.has(normalized)) {
-    callback(null, true);
-    return;
-  }
-  if (corsOriginIsCurateringSite(normalized)) {
-    callback(null, true);
-    return;
-  }
-  if (corsOriginMatchesSuffix(normalized)) {
-    callback(null, true);
-    return;
-  }
-  for (const re of _corsLocalhostPatterns) {
-    if (re.test(normalized)) {
-      callback(null, true);
-      return;
-    }
   }
   console.warn(
     "[cors] blocked origin (set CORS_ORIGINS / FRONTEND_URL for your web subdomains):",
@@ -263,7 +254,49 @@ function corsOrigin(origin, callback) {
   callback(null, false);
 }
 
+function corsOriginAllowed(origin) {
+  if (!origin) {
+    return true;
+  }
+  const normalized = normalizeCorsOrigin(origin);
+  if (_corsExactOrigins.has(normalized)) {
+    return true;
+  }
+  if (corsOriginIsCurateringSite(normalized)) {
+    return true;
+  }
+  if (corsOriginMatchesSuffix(normalized)) {
+    return true;
+  }
+  for (const re of _corsLocalhostPatterns) {
+    if (re.test(normalized)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 const app = express();
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (corsOriginAllowed(origin)) {
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", normalizeCorsOrigin(origin));
+      res.setHeader("Vary", "Origin");
+    }
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      req.headers["access-control-request-headers"] ||
+        "Content-Type, Authorization, X-Requested-With, Accept, Origin",
+    );
+  }
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
 app.use(
   cors({
     origin: corsOrigin,
@@ -428,12 +461,12 @@ async function expandEventDesignPromptForRunpod(input) {
   };
 
   try {
-    const output = await runRunpodJobAndWait("nlp", nlpInput);
+    const output = await expandEventPrompt(nlpInput);
     const expansion = normalizeRunpodEventPromptExpansion(output);
     if (!expansion) {
       return {
         ...input,
-        nlp_warning: "NLP prompt expansion returned no usable prompt",
+        nlp_warning: "OpenAI prompt expansion returned no usable prompt",
       };
     }
     return {
@@ -446,7 +479,7 @@ async function expandEventDesignPromptForRunpod(input) {
       nlp_expansion: expansion,
     };
   } catch (e) {
-    console.error("[runpod proxy] event prompt expansion failed:", e?.message || e);
+    console.error("[openai] event prompt expansion failed:", e?.message || e);
     return {
       ...input,
       nlp_warning: String(e?.message || e),
@@ -472,6 +505,23 @@ function sendRunpodNotConfigured(res, service, error) {
     code: "runpod_not_configured",
     service,
   });
+}
+
+function sendOpenAiNotConfigured(res, error) {
+  return res.status(503).json({
+    message: error?.message || "OPENAI_API_KEY is not configured on this server",
+    code: "openai_not_configured",
+    service: "openai",
+  });
+}
+
+function completedOpenAiTask(output, extra = {}) {
+  return {
+    id: null,
+    status: "COMPLETED",
+    output,
+    ...extra,
+  };
 }
 
 function validateRunpodJobId(jobId) {
@@ -572,43 +622,26 @@ async function handlePublicRunpodNlpRun(req, res) {
   try {
     const input = publicNlpInput(req, res);
     if (!input) return;
-    const { res: rp, data } = await runpodProxyRequest("nlp", "/run", {
-      method: "POST",
-      jsonBody: { input },
-    });
-    return res.status(rp.status).json(data);
+    const output = await expandEventPrompt(input);
+    return res.json(completedOpenAiTask(output));
   } catch (e) {
-    if (e?.code === "runpod_not_configured") {
-      return sendRunpodNotConfigured(res, "nlp", e);
+    if (e?.code === "openai_not_configured") {
+      return sendOpenAiNotConfigured(res, e);
     }
-    console.error("[public runpod nlp proxy] POST /run", e);
+    console.error("[public openai nlp proxy] POST /run", e);
     return res.status(502).json({
       message: String(e?.message || e),
-      code: "runpod_proxy_error",
+      code: e?.code || "openai_proxy_error",
     });
   }
 }
 
 async function handlePublicRunpodNlpStatus(req, res) {
-  try {
-    const jobId = String(req.params.jobId || "").trim();
-    if (!validateRunpodJobId(jobId)) {
-      return res.status(400).json({ message: "invalid job id", code: "bad_request" });
-    }
-    const { res: rp, data } = await runpodProxyRequest("nlp", `/status/${encodeURIComponent(jobId)}`, {
-      method: "GET",
-    });
-    return res.status(rp.status).json(data);
-  } catch (e) {
-    if (e?.code === "runpod_not_configured") {
-      return sendRunpodNotConfigured(res, "nlp", e);
-    }
-    console.error("[public runpod nlp proxy] GET /status", e);
-    return res.status(502).json({
-      message: String(e?.message || e),
-      code: "runpod_proxy_error",
-    });
-  }
+  return res.status(410).json({
+    status: "COMPLETED",
+    message: "NLP now runs synchronously through OpenAI; polling is no longer required.",
+    code: "openai_sync_task",
+  });
 }
 
 app.post("/api/public/runpod/nlp/run", publicRateLimit, handlePublicRunpodNlpRun);
@@ -623,19 +656,35 @@ app.post(
     try {
       const input = getRunpodInput(req, res);
       if (!input) return;
-      const { res: rp, data } = await runpodProxyRequest("nlp", "/run", {
-        method: "POST",
-        jsonBody: { input },
-      });
-      return res.status(rp.status).json(data);
-    } catch (e) {
-      if (e?.code === "runpod_not_configured") {
-        return sendRunpodNotConfigured(res, "nlp", e);
+      const taskType = String(input.task_type || input.task || "").trim().toLowerCase();
+      if (taskType === "health_check") {
+        return res.json(
+          completedOpenAiTask({
+            status: "success",
+            model: openAiModel(),
+            openai_configured: isOpenAiConfigured(),
+            nlp_online: isOpenAiConfigured(),
+            message: "NLP is served by OpenAI from the backend.",
+          }),
+        );
       }
-      console.error("[runpod nlp proxy] POST /run", e);
+      const { output, latencyMs } = await runAiGatewayTask(taskType, input);
+      return res.json(completedOpenAiTask(output, { latencyMs }));
+    } catch (e) {
+      if (e?.code === "openai_not_configured") {
+        return sendOpenAiNotConfigured(res, e);
+      }
+      if (e?.code === "unsupported_ai_task") {
+        return res.status(e.status || 400).json({
+          status: "FAILED",
+          message: e.message,
+          code: e.code,
+        });
+      }
+      console.error("[openai nlp proxy] POST /run", e);
       return res.status(502).json({
         message: String(e?.message || e),
-        code: "runpod_proxy_error",
+        code: e?.code || "openai_proxy_error",
       });
     }
   },
@@ -1166,14 +1215,19 @@ async function queryDashboardAnalysisRows(start, end) {
 
 async function runAiGatewayTask(taskType, input, options = {}) {
   const startedAt = Date.now();
-  const output = await runRunpodJobAndWait(
-    "nlp",
-    {
-      ...input,
-      task_type: taskType,
-    },
-    options,
-  );
+  let output;
+  if (taskType === "dashboard_analysis") {
+    output = await analyzeDashboard(input);
+  } else if (taskType === "dish_trends") {
+    output = await analyzeDishTrends(input);
+  } else if (taskType === "event_prompt_expansion" || taskType === "event_design") {
+    output = await expandEventPrompt(input);
+  } else {
+    const err = new Error(`Unsupported OpenAI task: ${taskType}`);
+    err.code = "unsupported_ai_task";
+    err.status = 400;
+    throw err;
+  }
   return {
     output,
     latencyMs: Date.now() - startedAt,
@@ -1321,7 +1375,6 @@ async function analyzeDashboardThroughGateway({
       explainability,
       ...(prompt ? { prompt } : {}),
     },
-    { timeoutMs: DASHBOARD_NLP_TIMEOUT_MS },
   );
   const normalized = normalizeDashboardAiResult(aiResponse);
   if (!normalized.summary) {
@@ -1473,6 +1526,32 @@ async function storeFeedbackAnalysis(input, aiResponse) {
   return result;
 }
 
+async function markFeedbackRowsAnalyzed(feedbackRows) {
+  const ids = (Array.isArray(feedbackRows) ? feedbackRows : [])
+    .map((row) => row?.id)
+    .filter(Boolean);
+  if (ids.length === 0) return;
+  await pool.query(
+    `UPDATE feedback
+     SET status = 'analyzed', analyzed_at = now()
+     WHERE id = ANY($1::uuid[])`,
+    [ids],
+  );
+}
+
+async function analyzeFeedbackInputWithOpenAi(input, feedbackRows) {
+  const aiResponse = Array.isArray(input.feedbacks)
+    ? await analyzeFeedbackBatch(input.feedbacks)
+    : await analyzeSingleFeedback(input.feedback);
+  const result = await storeFeedbackAnalysis(input, aiResponse);
+  await markFeedbackRowsAnalyzed(feedbackRows);
+  return {
+    aiResponse,
+    result,
+    processed: Array.isArray(feedbackRows) ? feedbackRows.length : 0,
+  };
+}
+
 app.post(
   "/api/runpod/nlp/analyze",
   authRequired,
@@ -1482,20 +1561,17 @@ app.post(
     try {
       const input = getFeedbackAnalysisInput(req.body);
       const feedbackRows = await storeFeedbackRows(input);
-      const aiResponse = await runRunpodJobAndWait("nlp", {
-        limit: getFeedbackRunLimit(req.body, feedbackRows.length),
-      });
-      const result = extractRunpodNlpResult(aiResponse) || aiResponse?.analysis || aiResponse;
+      const { result, processed } = await analyzeFeedbackInputWithOpenAi(input, feedbackRows);
       return res.json({
         success: true,
         feedbackIds: feedbackRows.map((row) => String(row.id)),
-        batchId: aiResponse?.batch_id || null,
-        processed: Number(aiResponse?.processed) || 0,
+        batchId: null,
+        processed,
         data: result,
       });
     } catch (e) {
-      if (e?.code === "runpod_not_configured") {
-        return sendRunpodNotConfigured(res, "nlp", e);
+      if (e?.code === "openai_not_configured") {
+        return sendOpenAiNotConfigured(res, e);
       }
       if (e?.code === "bad_request" || e?.code === "payload_too_large") {
         return res.status(e.status || 400).json({
@@ -1503,7 +1579,7 @@ app.post(
           code: e.code,
         });
       }
-      console.error("[runpod nlp feedback] analyze failed", e);
+      console.error("[openai feedback] analyze failed", e);
       return res.status(e?.status || 500).json({
         error: e?.code === "invalid_ai_response" ? "Invalid AI response" : "Feedback analysis failed",
         code: e?.code || "feedback_analysis_failed",
@@ -1516,20 +1592,17 @@ app.post("/api/feedback/analyze", publicRateLimit, async (req, res) => {
   try {
     const input = getFeedbackAnalysisInput(req.body);
     const feedbackRows = await storeFeedbackRows(input);
-    const aiResponse = await runRunpodJobAndWait("nlp", {
-      limit: getFeedbackRunLimit(req.body, feedbackRows.length),
-    });
-    const result = extractRunpodNlpResult(aiResponse) || aiResponse?.analysis || aiResponse;
+    const { result, processed } = await analyzeFeedbackInputWithOpenAi(input, feedbackRows);
     return res.json({
       success: true,
       feedbackIds: feedbackRows.map((row) => String(row.id)),
-      batchId: aiResponse?.batch_id || null,
-      processed: Number(aiResponse?.processed) || 0,
+      batchId: null,
+      processed,
       data: result,
     });
   } catch (e) {
-    if (e?.code === "runpod_not_configured") {
-      return sendRunpodNotConfigured(res, "nlp", e);
+    if (e?.code === "openai_not_configured") {
+      return sendOpenAiNotConfigured(res, e);
     }
     if (e?.code === "bad_request" || e?.code === "payload_too_large") {
       return res.status(e.status || 400).json({
@@ -1537,7 +1610,7 @@ app.post("/api/feedback/analyze", publicRateLimit, async (req, res) => {
         code: e.code,
       });
     }
-    console.error("[feedback analyze] RunPod NLP failed", e);
+    console.error("[feedback analyze] OpenAI failed", e);
     return res.status(e?.status || 500).json({
       error: e?.code === "invalid_ai_response" ? "Invalid AI response" : "Feedback analysis failed",
       code: e?.code || "feedback_analysis_failed",
@@ -1618,8 +1691,8 @@ app.post(
         latencyMs: generated.latencyMs,
       });
     } catch (e) {
-      if (e?.code === "runpod_not_configured") {
-        return sendRunpodNotConfigured(res, "nlp", e);
+      if (e?.code === "openai_not_configured") {
+        return sendOpenAiNotConfigured(res, e);
       }
       console.error("[dashboard analyze] failed", e);
       return res.status(e?.status || 500).json({
@@ -1781,25 +1854,11 @@ app.get(
   (req, res, next) =>
     requireRoles(req, res, next, new Set(["manager", "supervisor", "admin", "super_admin"])),
   async (req, res) => {
-    try {
-      const jobId = String(req.params.jobId || "").trim();
-      if (!validateRunpodJobId(jobId)) {
-        return res.status(400).json({ message: "invalid job id", code: "bad_request" });
-      }
-      const { res: rp, data } = await runpodProxyRequest("nlp", `/status/${encodeURIComponent(jobId)}`, {
-        method: "GET",
-      });
-      return res.status(rp.status).json(data);
-    } catch (e) {
-      if (e?.code === "runpod_not_configured") {
-        return sendRunpodNotConfigured(res, "nlp", e);
-      }
-      console.error("[runpod nlp proxy] GET /status", e);
-      return res.status(502).json({
-        message: String(e?.message || e),
-        code: "runpod_proxy_error",
-      });
-    }
+    return res.status(410).json({
+      status: "COMPLETED",
+      message: "NLP now runs synchronously through OpenAI; polling is no longer required.",
+      code: "openai_sync_task",
+    });
   },
 );
 app.use(express.urlencoded({ limit: REQUEST_BODY_LIMIT, extended: true }));
@@ -1858,32 +1917,16 @@ const RUNPOD_API_KEY = String(process.env.RUNPOD_API_KEY || "").trim();
 const RUNPOD_IMAGE_ENDPOINT_ID = String(
   process.env.RUNPOD_IMAGE_ENDPOINT_ID || RUNPOD_ENDPOINT_ID,
 ).trim();
-const RUNPOD_NLP_ENDPOINT_ID = String(
-  process.env.RUNPOD_NLP_ENDPOINT_ID ||
-    process.env.RUNPOD_NLP_AI_ENDPOINT_ID ||
-    process.env.RUNPOD_TEXT_ENDPOINT_ID ||
-    "",
-).trim();
 const RUNPOD_API_BASE = "https://api.runpod.ai/v2";
-const RUNPOD_NLP_TIMEOUT_MS = Number(process.env.RUNPOD_NLP_TIMEOUT_MS || 300000);
-const DASHBOARD_NLP_TIMEOUT_MS = Math.max(
-  300000,
-  Number(process.env.DASHBOARD_NLP_TIMEOUT_MS || RUNPOD_NLP_TIMEOUT_MS),
-);
-const RUNPOD_NLP_POLL_INTERVAL_MS = Number(process.env.RUNPOD_NLP_POLL_INTERVAL_MS || 2500);
 
-function getRunpodEndpointId(service) {
-  if (service === "nlp") return RUNPOD_NLP_ENDPOINT_ID;
+function getRunpodEndpointId() {
   return RUNPOD_IMAGE_ENDPOINT_ID;
 }
 
 async function runpodProxyRequest(service, pathSuffix, { method = "GET", jsonBody } = {}) {
-  const endpointId = getRunpodEndpointId(service);
+  const endpointId = getRunpodEndpointId();
   if (!RUNPOD_API_KEY || !endpointId) {
-    const envName =
-      service === "nlp"
-        ? "RUNPOD_NLP_ENDPOINT_ID"
-        : "RUNPOD_IMAGE_ENDPOINT_ID or RUNPOD_ENDPOINT_ID";
+    const envName = "RUNPOD_IMAGE_ENDPOINT_ID or RUNPOD_ENDPOINT_ID";
     const err = new Error(`RUNPOD_API_KEY and ${envName} must be set on the server`);
     err.code = "runpod_not_configured";
     err.service = service;
@@ -4770,91 +4813,6 @@ function normalizeFeedbackAnalysisPayload(parsed, feedbacks, source) {
   };
 }
 
-function normalizeRunpodStatus(status) {
-  return status == null ? "" : String(status).trim().toUpperCase();
-}
-
-function runpodStatusIsQueued(status) {
-  return ["IN_QUEUE", "IN_PROGRESS", "QUEUED", "RUNNING", "PROCESSING", "SUBMITTED"].includes(
-    normalizeRunpodStatus(status),
-  );
-}
-
-function runpodStatusIsCompleted(status) {
-  return normalizeRunpodStatus(status) === "COMPLETED";
-}
-
-function runpodStatusIsFailed(status) {
-  return ["FAILED", "CANCELLED", "TIMED_OUT"].includes(normalizeRunpodStatus(status));
-}
-
-function runpodJobIdFromResponse(data) {
-  const direct = data?.id ?? data?.jobId;
-  if (direct != null && String(direct).trim()) return String(direct).trim();
-  const nested = data?.job?.id;
-  if (nested != null && String(nested).trim()) return String(nested).trim();
-  return "";
-}
-
-async function runRunpodJobAndWait(
-  service,
-  input,
-  {
-    timeoutMs = RUNPOD_NLP_TIMEOUT_MS,
-    pollIntervalMs = RUNPOD_NLP_POLL_INTERVAL_MS,
-  } = {},
-) {
-  const started = Date.now();
-  const start = await runpodProxyRequest(service, "/run", {
-    method: "POST",
-    jsonBody: { input },
-  });
-  if (!start.res.ok) {
-    throw new Error(
-      `RunPod ${service} start failed (${start.res.status}): ${
-        start.data?.error || start.data?.message || "upstream error"
-      }`,
-    );
-  }
-  if (runpodStatusIsCompleted(start.data?.status)) {
-    return start.data?.output ?? start.data;
-  }
-  if (runpodStatusIsFailed(start.data?.status)) {
-    throw new Error(start.data?.error || `RunPod ${service} job failed`);
-  }
-
-  const jobId = runpodJobIdFromResponse(start.data);
-  if (!jobId) {
-    if (start.data?.output != null) return start.data.output;
-    throw new Error(`RunPod ${service} did not return a job id`);
-  }
-
-  while (Date.now() - started < timeoutMs) {
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-    const status = await runpodProxyRequest(service, `/status/${encodeURIComponent(jobId)}`, {
-      method: "GET",
-    });
-    if (!status.res.ok) {
-      throw new Error(
-        `RunPod ${service} status failed (${status.res.status}): ${
-          status.data?.error || status.data?.message || "upstream error"
-        }`,
-      );
-    }
-    if (runpodStatusIsCompleted(status.data?.status)) {
-      return status.data?.output ?? status.data;
-    }
-    if (runpodStatusIsFailed(status.data?.status)) {
-      throw new Error(status.data?.error || `RunPod ${service} job failed`);
-    }
-    if (!runpodStatusIsQueued(status.data?.status)) {
-      console.warn("[runpod]", service, "unexpected status", status.data?.status, "job", jobId);
-    }
-  }
-
-  throw new Error(`RunPod ${service} timed out after ${timeoutMs}ms`);
-}
-
 function parseJsonFromText(text) {
   if (!text || typeof text !== "string") return null;
   const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
@@ -4885,115 +4843,14 @@ function extractRunpodNlpResult(output) {
   return parseJsonFromText(output.raw_output || output.text || output.response || "");
 }
 
-async function analyzeFeedbackWithRunPodNlp(feedbacks) {
-  if (!RUNPOD_API_KEY || !RUNPOD_NLP_ENDPOINT_ID) return null;
-  const sample = feedbacks.slice(0, 120).map((f) => ({
-    orderNo: f.orderNo,
-    stars: f.stars,
-    remarks: f.remarks,
-    customerName: f.customerName,
-    submittedAt: f.submittedAt,
-  }));
-  const feedbackText = JSON.stringify(sample);
-  const prompt = `Analyze these ${feedbacks.length} restaurant customer feedback entries for a catering operations team.
-Return ONLY valid JSON with keys:
-summary (string, 2-3 sentences),
-interpretation (string, 2-4 sentences on themes and sentiment),
-recommendations (array of 3-5 short actionable strings for management).
-
-Feedback entries:
-${feedbackText}`;
-
+async function analyzeFeedbackWithAi(feedbacks) {
   try {
-    const output = await runRunpodJobAndWait("nlp", {
-      task: "customer_feedback_analysis",
-      prompt,
-      feedback: feedbackText,
-      feedbacks: sample,
-    });
-    const parsed = extractRunpodNlpResult(output);
-    if (!parsed) throw new Error("RunPod NLP returned no parseable analysis");
-    return normalizeFeedbackAnalysisPayload(parsed, feedbacks, "runpod_nlp");
-  } catch (e) {
-    console.error("[feedback AI] RunPod NLP failed:", e?.message || e);
-    return null;
-  }
-}
-
-async function analyzeFeedbackWithOpenAI(feedbacks) {
-  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
-  if (!apiKey) {
-    return buildHeuristicFeedbackAnalysis(feedbacks);
-  }
-
-  const model = String(process.env.OPENAI_MODEL || "gpt-4o-mini").trim();
-  const sample = feedbacks.slice(0, 120).map((f) => ({
-    orderNo: f.orderNo,
-    stars: f.stars,
-    remarks: f.remarks,
-    customerName: f.customerName,
-    submittedAt: f.submittedAt,
-  }));
-
-  const system = `You analyze restaurant customer order feedback for a catering business operations team.
-Respond ONLY with valid JSON (no markdown) using keys:
-summary (string, 2-3 sentences),
-interpretation (string, 2-4 sentences on themes and sentiment),
-recommendations (array of 3-5 short actionable strings for management).`;
-
-  const user = `Analyze these ${feedbacks.length} customer feedback entries:\n${JSON.stringify(sample)}`;
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45000);
-  try {
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.35,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!resp.ok) {
-      const errText = await resp.text();
-      console.error("[feedback AI] OpenAI error:", resp.status, errText.slice(0, 400));
-      return buildHeuristicFeedbackAnalysis(feedbacks);
-    }
-
-    const data = await resp.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content) return buildHeuristicFeedbackAnalysis(feedbacks);
-
-    let parsed;
-    try {
-      parsed = JSON.parse(content);
-    } catch {
-      return buildHeuristicFeedbackAnalysis(feedbacks);
-    }
-
+    const parsed = await analyzeCustomerFeedbackOverview(feedbacks);
     return normalizeFeedbackAnalysisPayload(parsed, feedbacks, "openai");
   } catch (e) {
-    clearTimeout(timeout);
-    console.error("[feedback AI] request failed:", e?.message || e);
+    console.error("[feedback AI] OpenAI service failed:", e?.message || e);
     return buildHeuristicFeedbackAnalysis(feedbacks);
   }
-}
-
-async function analyzeFeedbackWithAi(feedbacks) {
-  const runpod = await analyzeFeedbackWithRunPodNlp(feedbacks);
-  if (runpod) return runpod;
-  return analyzeFeedbackWithOpenAI(feedbacks);
 }
 
 // Super Admin: Customer feedback (restaurant orders)

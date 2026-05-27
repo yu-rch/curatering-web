@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/menu_dish.dart';
@@ -122,39 +124,64 @@ class MenuStore extends ChangeNotifier {
       return text == 'true' || text == '1' || text == 'yes';
     }
 
-    final sauces = (json['sauces'] as List<dynamic>?)?.cast<String>() ?? [];
+    List<String> parseStringList(Object? value) {
+      if (value is List) {
+        return value
+            .map((item) => item.toString())
+            .where((item) => item.trim().isNotEmpty)
+            .toList();
+      }
+      if (value is String && value.trim().isNotEmpty) {
+        final trimmed = value.trim();
+        try {
+          if (trimmed.startsWith('[')) {
+            final decoded = jsonDecode(trimmed);
+            if (decoded is List) return parseStringList(decoded);
+          }
+        } catch (_) {
+          // Fall through to comma parsing below.
+        }
+        return trimmed
+            .split(',')
+            .map((item) => item.trim())
+            .where((item) => item.isNotEmpty)
+            .toList();
+      }
+      return const [];
+    }
+
+    final sauces = parseStringList(json['sauces']);
 
     return MenuDish(
-      id: json['id'] as String? ?? '',
-      name: json['name'] as String? ?? '',
+      id: (json['id'] ?? '').toString(),
+      name: (json['name'] ?? '').toString(),
       price: normalizedPrice,
       additionalChargeAmount:
           parseDoubleField(json['menu_dishes_additional_charge_amount']) ??
           parseDoubleField(json['additionalChargeAmount']) ??
           parseDoubleField(json['additional_charge_amount']) ??
           0,
-      category: json['category'] as String? ?? 'catering',
-      paxOptions: (json['pax_options'] as List<dynamic>?)?.cast<String>() ?? [],
+      category: (json['category'] ?? 'catering').toString(),
+      paxOptions: parseStringList(json['pax_options']),
       sauces: sauces,
       supportsAddOns:
           parseBoolField(json['supportsAddOns'] ?? json['supports_addons']) ||
           sauces.isNotEmpty,
-      ingredients:
-          (json['ingredients'] as List<dynamic>?)?.cast<String>() ?? [],
-      imageBase64: json['image_base64'] as String?,
+      ingredients: parseStringList(json['ingredients']),
+      imageBase64: json['image_base64']?.toString(),
       archived: json['archived'] as bool? ?? false,
       available: json['available'] as bool? ?? true,
       archivedAt:
           json['archived_at'] != null
               ? DateTime.tryParse(json['archived_at'] as String)
               : null,
-      type: json['type'] as String? ?? '',
+      type: (json['type'] ?? '').toString(),
       mealType:
           (json['meal_type'] ?? json['mealType'] ?? json['type'] ?? '')
               .toString(),
-      setMenus: (json['set_menus'] as List<dynamic>?)?.cast<String>() ?? [],
-      publicDescription: json['public_description'] as String? ?? '',
-      allergens: json['allergens'] as String? ?? '',
+      setMenus: parseStringList(json['set_menus']),
+      publicDescription: (json['public_description'] ?? '').toString(),
+      allergens: (json['allergens'] ?? '').toString(),
     );
   }
 

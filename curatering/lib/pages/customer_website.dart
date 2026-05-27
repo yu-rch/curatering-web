@@ -2453,7 +2453,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
-                    initialValue:
+                    value:
                         w.galleryCategories.any(
                               (c) => c.id == _selectedGalleryCategoryId,
                             )

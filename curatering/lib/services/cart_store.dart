@@ -64,26 +64,40 @@ class CartItem {
   };
 
   factory CartItem.fromJson(Map<String, dynamic> json) {
+    double parseDouble(Object? value) {
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString().trim() ?? '') ?? 0;
+    }
+
+    int parseInt(Object? value, {int fallback = 1}) {
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString().trim() ?? '') ?? fallback;
+    }
+
+    final dishJson =
+        json['dish'] is Map ? Map<String, dynamic>.from(json['dish']) : {};
     return CartItem(
       dish: MenuDish(
-        id: json['dish']['id'],
-        name: json['dish']['name'],
-        price: json['dish']['price'],
+        id: (dishJson['id'] ?? '').toString(),
+        name: (dishJson['name'] ?? '').toString(),
+        price: (dishJson['price'] ?? '0').toString(),
         additionalChargeAmount:
-            (json['dish']['additionalChargeAmount'] as num?)?.toDouble() ?? 0,
-        category: json['dish']['category'] ?? 'restaurant',
+            parseDouble(
+              dishJson['additionalChargeAmount'] ??
+                  dishJson['menu_dishes_additional_charge_amount'] ??
+                  dishJson['additional_charge_amount'],
+            ),
+        category: (dishJson['category'] ?? 'restaurant').toString(),
         paxOptions: [],
-        type: json['dish']['type'] ?? '',
+        type: (dishJson['type'] ?? '').toString(),
         mealType:
-            (json['dish']['mealType'] ?? json['dish']['meal_type'] ?? '')
+            (dishJson['mealType'] ?? dishJson['meal_type'] ?? '')
                 .toString(),
       ),
-      quantity: json['quantity'] ?? 1,
-      selectedSauce: json['selectedSauce'] ?? json['dip'],
+      quantity: parseInt(json['quantity'], fallback: 1),
+      selectedSauce: (json['selectedSauce'] ?? json['dip'])?.toString(),
       addOnQuantity:
-          (json['addOnQuantity'] as num?)?.toInt() ??
-          (json['dip_qty'] as num?)?.toInt() ??
-          1,
+          parseInt(json['addOnQuantity'] ?? json['dip_qty'], fallback: 1),
       addOns:
           (json['addOns'] as List<dynamic>?)
               ?.map((e) => e.toString())

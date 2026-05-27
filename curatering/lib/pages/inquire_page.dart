@@ -1427,7 +1427,7 @@ class _InquirePageState extends State<InquirePage> {
         AntdFieldShell(
           label: 'Event Setting',
           child: DropdownButtonFormField<String>(
-            initialValue: _eventSetting,
+            value: _eventSetting,
             isExpanded: true,
             decoration: const InputDecoration(border: OutlineInputBorder()),
             items: const [
@@ -2716,32 +2716,6 @@ class _InquirePageState extends State<InquirePage> {
         contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
       hint: const Text('Select an option'),
-    );
-  }
-
-  Widget _buildChips(
-    List<String> items,
-    String? selected,
-    Function(String) onSelect,
-  ) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children:
-          items.map((item) {
-            final isSelected = selected == item;
-            return ChoiceChip(
-              label: Text(item),
-              selected: isSelected,
-              onSelected: (_) => onSelect(item),
-              selectedColor: const Color(0xFFFFC024),
-              backgroundColor: Colors.grey.shade200,
-              labelStyle: TextStyle(
-                color: isSelected ? const Color(0xFF1E1E1E) : Colors.black87,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-            );
-          }).toList(),
     );
   }
 

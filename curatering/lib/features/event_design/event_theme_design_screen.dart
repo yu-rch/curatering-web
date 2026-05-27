@@ -310,7 +310,7 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
     ValueChanged<String?> onChanged,
   ) {
     return DropdownButtonFormField<String>(
-      initialValue: value != null && options.contains(value) ? value : null,
+      value: value != null && options.contains(value) ? value : null,
       decoration: InputDecoration(
         labelText: title,
         border: const OutlineInputBorder(),
