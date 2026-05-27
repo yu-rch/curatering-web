@@ -18,6 +18,11 @@ class EventPromptExpansion {
     required this.decorElements,
     required this.visualKeywords,
     this.recommendedStrength,
+    this.cfgScale,
+    this.steps,
+    this.controlnet,
+    this.mode,
+    this.transformationPlan,
   });
 
   final String positivePrompt;
@@ -29,6 +34,11 @@ class EventPromptExpansion {
   final List<String> decorElements;
   final List<String> visualKeywords;
   final double? recommendedStrength;
+  final double? cfgScale;
+  final int? steps;
+  final Map<String, dynamic>? controlnet;
+  final String? mode;
+  final Map<String, dynamic>? transformationPlan;
 
   Map<String, dynamic> toSdxlMeta() {
     return {
@@ -42,6 +52,13 @@ class EventPromptExpansion {
       'visual_keywords': visualKeywords,
       if (recommendedStrength != null)
         'recommended_strength': recommendedStrength,
+      if (recommendedStrength != null) 'strength': recommendedStrength,
+      if (cfgScale != null) 'cfg_scale': cfgScale,
+      if (steps != null) 'steps': steps,
+      if (controlnet != null) 'controlnet': controlnet,
+      if (mode != null && mode!.isNotEmpty) 'mode': mode,
+      if (transformationPlan != null)
+        'transformation_plan': transformationPlan,
       'nlp_expansion': toJson(),
     };
   }
@@ -58,6 +75,13 @@ class EventPromptExpansion {
       'visual_keywords': visualKeywords,
       if (recommendedStrength != null)
         'recommended_strength': recommendedStrength,
+      if (recommendedStrength != null) 'strength': recommendedStrength,
+      if (cfgScale != null) 'cfg_scale': cfgScale,
+      if (steps != null) 'steps': steps,
+      if (controlnet != null) 'controlnet': controlnet,
+      if (mode != null && mode!.isNotEmpty) 'mode': mode,
+      if (transformationPlan != null)
+        'transformation_plan': transformationPlan,
     };
   }
 
@@ -77,6 +101,16 @@ class EventPromptExpansion {
       return double.tryParse('$value');
     }
 
+    int? integer(dynamic value) {
+      if (value is num) return value.round();
+      return int.tryParse('$value');
+    }
+
+    Map<String, dynamic>? map(dynamic value) {
+      if (value is Map) return Map<String, dynamic>.from(value);
+      return null;
+    }
+
     final positive =
         '${json['positive_prompt'] ?? json['prompt'] ?? fallbackPrompt}'.trim();
     if (positive.isEmpty) {
@@ -93,7 +127,12 @@ class EventPromptExpansion {
       visualKeywords: strings(
         json['visual_keywords'] ?? json['visual_direction'],
       ),
-      recommendedStrength: number(json['recommended_strength']),
+      recommendedStrength: number(json['recommended_strength'] ?? json['strength']),
+      cfgScale: number(json['cfg_scale']),
+      steps: integer(json['steps']),
+      controlnet: map(json['controlnet']),
+      mode: json['mode']?.toString(),
+      transformationPlan: map(json['transformation_plan']),
     );
   }
 }
@@ -339,8 +378,8 @@ class RunPodService {
     String prompt, {
     String? user_id,
     String? initImageBase64,
-    double strength = 0.65,
-    int numInferenceSteps = 18,
+    double strength = 0.72,
+    int numInferenceSteps = 30,
     double? guidanceScale,
     Map<String, dynamic>? designMeta,
   }) async {

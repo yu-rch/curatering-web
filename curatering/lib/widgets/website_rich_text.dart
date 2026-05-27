@@ -510,7 +510,7 @@ class _WebsiteRichTextEditorDialogState
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  '#${c.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
+                                  '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
                                   style: const TextStyle(fontSize: 12),
                                 ),
                               ],
@@ -519,7 +519,7 @@ class _WebsiteRichTextEditorDialogState
                       ],
                   onSelected: (c) {
                     final hex =
-                        '#${(c.value & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
+                        '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
                     _wrap('<span style="color:$hex">', '</span>');
                   },
                 ),

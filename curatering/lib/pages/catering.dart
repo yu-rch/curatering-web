@@ -3601,7 +3601,7 @@ class _ManageEventsState extends State<ManageEvents>
                           ),
                           const SizedBox(height: 8),
                           DropdownButtonFormField<DownpaymentAmountOption>(
-                            value: downpaymentOption,
+                            initialValue: downpaymentOption,
                             isExpanded: true,
                             decoration: const InputDecoration(
                               border: OutlineInputBorder(),
@@ -3650,7 +3650,7 @@ class _ManageEventsState extends State<ManageEvents>
                           ),
                           const SizedBox(height: 8),
                           DropdownButtonFormField<FullPaymentAmountOption>(
-                            value: fullPaymentOption,
+                            initialValue: fullPaymentOption,
                             isExpanded: true,
                             decoration: const InputDecoration(
                               border: OutlineInputBorder(),
@@ -3713,7 +3713,7 @@ class _ManageEventsState extends State<ManageEvents>
                         ),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<PaymentService>(
-                          value: selectedPaymentService,
+                          initialValue: selectedPaymentService,
                           isExpanded: true,
                           decoration: const InputDecoration(
                             border: OutlineInputBorder(),
@@ -6371,7 +6371,7 @@ class _ManageEventsState extends State<ManageEvents>
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      value:
+                      initialValue:
                           _eventTypes.contains(_eventType) ? _eventType : null,
                       items:
                           _eventTypes
@@ -6451,7 +6451,7 @@ class _ManageEventsState extends State<ManageEvents>
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<EventFormalityLevel>(
-                value: _formalityLevel,
+                initialValue: _formalityLevel,
                 items:
                     EventFormalityLevel.values
                         .map(
@@ -7146,7 +7146,7 @@ class _ManageEventsState extends State<ManageEvents>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: statusColor.withOpacity(0.1),
+                color: statusColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: statusColor),
               ),

@@ -201,7 +201,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: Colors.black.withOpacity(0.08)),
+        side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -323,7 +323,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                                 decoration: BoxDecoration(
                                   color: _getStatusColor(
                                     status,
-                                  ).withOpacity(0.12),
+                                  ).withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(999),
                                   border: Border.all(
                                     color: _getStatusColor(status),

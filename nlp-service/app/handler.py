@@ -347,8 +347,6 @@ def fallback_prompt(data):
         clean_text(data.get("event_type")),
         clean_text(data.get("theme")),
         clean_text(data.get("mood")),
-        "luxury event",
-        "cinematic lighting",
         "photorealistic"
     ])
 

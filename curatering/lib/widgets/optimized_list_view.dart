@@ -24,9 +24,8 @@ class OptimizedListView<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
-      padding: padding,
-      itemCount: items.length + (isLoadingMore ? 1 : 0),
-      cacheExtent: 200, // Increase cache for smoother scrolling
+      cacheExtent: 200.0, padding: padding,
+      itemCount: items.length + (isLoadingMore ? 1 : 0), // Increase cache for smoother scrolling
       addAutomaticKeepAlives: false, // Disable keep-alive for better memory usage
       addRepaintBoundaries: true, // Add repaint boundaries
       itemBuilder: (context, index) {
@@ -81,13 +80,12 @@ class OptimizedGridView<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
-      padding: padding,
+      cacheExtent: 200.0, padding: padding,
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
         childAspectRatio: childAspectRatio,
       ),
       itemCount: items.length + (isLoadingMore ? 1 : 0),
-      cacheExtent: 200,
       addAutomaticKeepAlives: false,
       addRepaintBoundaries: true,
       itemBuilder: (context, index) {

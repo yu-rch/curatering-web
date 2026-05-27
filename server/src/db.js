@@ -677,13 +677,33 @@ export async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ai_generations (
       id BIGSERIAL PRIMARY KEY,
+      user_id UUID,
       user_email TEXT NOT NULL DEFAULT '',
       image_url TEXT NOT NULL DEFAULT '',
       prompt TEXT NOT NULL DEFAULT '',
+      negative_prompt TEXT,
       design_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
       job_id TEXT,
+      seed BIGINT,
+      generation_mode TEXT,
+      event_type TEXT,
+      style TEXT,
+      mood TEXT,
+      formality TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE ai_generations
+    ADD COLUMN IF NOT EXISTS user_id UUID,
+    ADD COLUMN IF NOT EXISTS negative_prompt TEXT,
+    ADD COLUMN IF NOT EXISTS seed BIGINT,
+    ADD COLUMN IF NOT EXISTS generation_mode TEXT,
+    ADD COLUMN IF NOT EXISTS event_type TEXT,
+    ADD COLUMN IF NOT EXISTS style TEXT,
+    ADD COLUMN IF NOT EXISTS mood TEXT,
+    ADD COLUMN IF NOT EXISTS formality TEXT;
   `);
 
   await pool.query(`

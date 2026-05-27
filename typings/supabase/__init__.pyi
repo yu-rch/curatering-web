@@ -1,0 +1,3 @@
+from typing import Any
+
+def create_client(supabase_url: str, supabase_key: str) -> Any: ...

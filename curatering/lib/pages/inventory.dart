@@ -592,7 +592,7 @@ class _InventoryState extends State<Inventory> {
                         label: 'Category',
                         required: true,
                         child: DropdownButtonFormField<String>(
-                          value: _categoryController.text,
+                          initialValue: _categoryController.text,
                           isExpanded: true,
                           decoration: const InputDecoration(
                             border: InputBorder.none,
@@ -630,7 +630,7 @@ class _InventoryState extends State<Inventory> {
                               label: 'Unit',
                               required: true,
                               child: DropdownButtonFormField<String>(
-                                value:
+                                initialValue:
                                     _units.contains(_unitController.text)
                                         ? _unitController.text
                                         : 'pcs',
@@ -675,7 +675,7 @@ class _InventoryState extends State<Inventory> {
                               : 'This item is marked unavailable.',
                         ),
                         value: _editingAvailable,
-                        activeColor: AntdTokens.success,
+                        activeThumbColor: AntdTokens.success,
                         onChanged:
                             (v) => setModalState(() => _editingAvailable = v),
                       ),
@@ -1139,7 +1139,7 @@ class _InventoryState extends State<Inventory> {
     return SizedBox(
       width: width,
       child: DropdownButtonFormField<T>(
-        value: value,
+        initialValue: value,
         isExpanded: true,
         decoration: InputDecoration(
           labelText: label,

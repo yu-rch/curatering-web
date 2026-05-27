@@ -361,7 +361,7 @@ class _TransactionsState extends State<Transactions> {
                   width: 220,
                   child: DropdownButtonFormField<String>(
                     key: ValueKey('service_$_serviceTypeFilter'),
-                    value: _serviceTypeFilter,
+                    initialValue: _serviceTypeFilter,
                     decoration: const InputDecoration(
                       labelText: 'Service type',
                       isDense: true,
@@ -386,7 +386,7 @@ class _TransactionsState extends State<Transactions> {
                   width: 220,
                   child: DropdownButtonFormField<String>(
                     key: ValueKey('event_$_eventTypeFilter'),
-                    value: _eventTypeFilter,
+                    initialValue: _eventTypeFilter,
                     decoration: const InputDecoration(
                       labelText: 'Event type',
                       isDense: true,
@@ -413,7 +413,7 @@ class _TransactionsState extends State<Transactions> {
                   width: 150,
                   child: DropdownButtonFormField<int?>(
                     key: ValueKey('year_$_completionYearFilter'),
-                    value: _completionYearFilter,
+                    initialValue: _completionYearFilter,
                     decoration: const InputDecoration(
                       labelText: 'Completion year',
                       isDense: true,
@@ -441,7 +441,7 @@ class _TransactionsState extends State<Transactions> {
                   width: 150,
                   child: DropdownButtonFormField<int?>(
                     key: ValueKey('month_$_completionMonthFilter'),
-                    value: _completionMonthFilter,
+                    initialValue: _completionMonthFilter,
                     decoration: const InputDecoration(
                       labelText: 'Completion month',
                       isDense: true,
@@ -470,7 +470,7 @@ class _TransactionsState extends State<Transactions> {
                   width: 140,
                   child: DropdownButtonFormField<int?>(
                     key: ValueKey('day_$_completionDayFilter'),
-                    value: _completionDayFilter,
+                    initialValue: _completionDayFilter,
                     decoration: const InputDecoration(
                       labelText: 'Completion day',
                       isDense: true,

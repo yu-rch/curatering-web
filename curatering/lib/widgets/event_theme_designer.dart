@@ -199,7 +199,7 @@ class _EventThemeDesignerState extends State<EventThemeDesigner> {
 
             // Event Type
             DropdownButtonFormField<String>(
-              value: _selectedEventType,
+              initialValue: _selectedEventType,
               decoration: const InputDecoration(
                 labelText: 'Event Type',
                 border: OutlineInputBorder(),
@@ -238,7 +238,7 @@ class _EventThemeDesignerState extends State<EventThemeDesigner> {
 
             // Color Scheme
             DropdownButtonFormField<String>(
-              value: _selectedColorScheme,
+              initialValue: _selectedColorScheme,
               decoration: const InputDecoration(
                 labelText: 'Color Scheme',
                 border: OutlineInputBorder(),
@@ -277,7 +277,7 @@ class _EventThemeDesignerState extends State<EventThemeDesigner> {
 
             // Style
             DropdownButtonFormField<String>(
-              value: _selectedStyle,
+              initialValue: _selectedStyle,
               decoration: const InputDecoration(
                 labelText: 'Design Style',
                 border: OutlineInputBorder(),
@@ -730,14 +730,14 @@ Requirements:
     try {
       final result = await ApiService.generateTheme(
         imageFile: _selectedImage!,
-        eventType: _selectedEventType ?? 'birthday',
-        colorScheme: _selectedColorScheme ?? 'vibrant',
-        style: _selectedStyle ?? 'modern',
+        eventType: _selectedEventType,
+        colorScheme: _selectedColorScheme,
+        style: _selectedStyle,
         guestCount: _guestCount,
         customPrompt: _customPrompt,
         negativePrompt:
             'blurry, distorted, unrealistic, low quality, artifacts, text, watermark',
-        strength: 0.7,
+        strength: 0.72,
       );
 
       if (result != null &&

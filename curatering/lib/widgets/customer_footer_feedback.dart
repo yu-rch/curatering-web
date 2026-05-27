@@ -120,7 +120,7 @@ Future<void> showCustomerFooterFeedback(
               children: [
                 if (eligible.length > 1) ...[
                   DropdownButtonFormField<Map<String, dynamic>>(
-                    value: selected,
+                    initialValue: selected,
                     decoration: const InputDecoration(
                       labelText: 'Order',
                       isDense: true,

@@ -13,7 +13,7 @@ class RunPodService {
     String prompt, {
     String? user_id,
     String? initImageBase64,
-    double strength = 0.58,
+    double strength = 0.72,
     int numInferenceSteps = 30,
     double? guidanceScale,
     Map<String, dynamic>? designMeta,

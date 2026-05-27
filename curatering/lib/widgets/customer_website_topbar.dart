@@ -16,7 +16,6 @@ import '../pages/my_profile_page.dart';
 import '../services/cart_store.dart';
 import 'antd_message.dart';
 import 'antd_profile_menu.dart';
-import 'antd_tokens.dart';
 
 /// Public site header matching the homepage (`CustomerWebsiteScreen`) styling:
 /// dark bar, centered wrap nav, red cart badge, customer login from SharedPreferences.

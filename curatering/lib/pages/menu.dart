@@ -555,7 +555,7 @@ class _MenuState extends State<Menu> {
                       if (category == 'restaurant') ...[
                         const SizedBox(height: 16),
                         DropdownButtonFormField<String>(
-                          value:
+                          initialValue:
                               _restaurantMealTypes.contains(_editingType)
                                   ? _editingType
                                   : 'others',
@@ -675,7 +675,7 @@ class _MenuState extends State<Menu> {
                       if (category == 'catering') ...[
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
-                          value:
+                          initialValue:
                               kCateringMealTypes.contains(_editingMealType)
                                   ? _editingMealType
                                   : 'main',
@@ -1607,13 +1607,13 @@ class _MenuState extends State<Menu> {
             boxShadow: [
               if (selected)
                 BoxShadow(
-                  color: const Color(0xFFFFC024).withOpacity(0.2),
+                  color: const Color(0xFFFFC024).withValues(alpha: 0.2),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 )
               else
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 4,
                   offset: const Offset(0, 1),
                 ),
@@ -2221,11 +2221,11 @@ class _MenuState extends State<Menu> {
                   margin: const EdgeInsets.only(left: 16, right: 8, bottom: 16),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    border: Border.all(color: Colors.black.withOpacity(0.08)),
+                    border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
+                        color: Colors.black.withValues(alpha: 0.03),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),
@@ -2386,11 +2386,11 @@ class _MenuState extends State<Menu> {
                   ),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    border: Border.all(color: Colors.black.withOpacity(0.08)),
+                    border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
+                        color: Colors.black.withValues(alpha: 0.03),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),
@@ -2515,11 +2515,11 @@ class _MenuState extends State<Menu> {
                   margin: const EdgeInsets.only(left: 8, right: 16, bottom: 16),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    border: Border.all(color: Colors.black.withOpacity(0.08)),
+                    border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
+                        color: Colors.black.withValues(alpha: 0.03),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),

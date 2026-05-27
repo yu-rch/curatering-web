@@ -342,6 +342,57 @@ app.get('/health', (req, res) => {
  * Normalize RunPod worker input for txt2img / img2img.
  * Accepts several client field names for the venue photo; forwards `init_image_base64`.
  */
+function controlnetScaleForDenoise(denoise) {
+  return getControlNet(intensityFromStrength(denoise));
+}
+
+function clampUnit(value, fallback = 0.8) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : fallback;
+}
+
+function requestIntensity(input) {
+  return clampUnit(
+    input?.intensity ??
+      input?.transformation_intensity ??
+      input?.transformationIntensity,
+    input?.strength != null ? intensityFromStrength(input.strength) : 0.8,
+  );
+}
+
+function intensityFromStrength(strength) {
+  const s = Number(strength);
+  if (!Number.isFinite(s)) return 0.8;
+  if (s < 0.55) return 0.3;
+  if (s < 0.7) return 0.55;
+  return 0.8;
+}
+
+function getStrength(intensity) {
+  const value = clampUnit(intensity);
+  if (value < 0.4) return 0.5;
+  if (value < 0.7) return 0.65;
+  return 0.72;
+}
+
+function getControlNet(intensity) {
+  const value = clampUnit(intensity);
+  if (value < 0.4) return 0.85;
+  if (value < 0.7) return 0.65;
+  return 0.55;
+}
+
+function getPreprocessor(intensity) {
+  return "canny";
+}
+
+function getTransformationMode(intensity) {
+  const value = clampUnit(intensity);
+  if (value < 0.4) return "preserve";
+  if (value < 0.7) return "modify";
+  return "rebuild";
+}
+
 function normalizeRunpodInput(input) {
   const out = { ...input };
   const raw =
@@ -364,7 +415,7 @@ function normalizeRunpodInput(input) {
       err.code = "payload_too_large";
       throw err;
     }
-    // Keep aliases for current and legacy SDXL workers. The current worker
+    // Keep aliases for current and legacy image workers. The current worker
     // reads `image_base64`/`venue_image_base64`, while older backend code used
     // `init_image_base64`.
     out.init_image_base64 = s;
@@ -372,44 +423,52 @@ function normalizeRunpodInput(input) {
     out.venue_image_base64 = s;
     delete out.venuePhotoBase64;
   }
-  if (out.strength != null) {
+  const hasInitImage = typeof out.init_image_base64 === "string" && out.init_image_base64.trim();
+  const intensity = requestIntensity(out);
+  if (hasInitImage) {
+    out.strength = getStrength(intensity);
+  } else if (out.strength != null) {
     const st = Number(out.strength);
-    const hasInitImage = typeof out.init_image_base64 === "string" && out.init_image_base64.trim();
-    out.strength = Number.isFinite(st)
-      ? hasInitImage
-        ? Math.min(0.65, Math.max(0.5, st))
-        : Math.min(0.95, Math.max(0.15, st))
-      : hasInitImage
-        ? 0.58
-        : 0.65;
+    out.strength = Number.isFinite(st) ? Math.min(0.95, Math.max(0.15, st)) : 0.65;
   }
+  const dynamicControlnetScale = hasInitImage ? getControlNet(intensity) : null;
+  const preprocessor = getPreprocessor(intensity);
   if (out.controlnet && typeof out.controlnet === "object" && !Array.isArray(out.controlnet)) {
     const scale = Number(out.controlnet.conditioning_scale);
     out.controlnet = {
       ...out.controlnet,
-      conditioning_scale: Number.isFinite(scale)
-        ? Math.min(0.75, Math.max(0.55, scale))
-        : 0.65,
+      enabled: out.controlnet.enabled !== false,
+      preprocessor: String(out.controlnet.preprocessor || preprocessor),
+      conditioning_scale:
+        dynamicControlnetScale ??
+        (Number.isFinite(scale) ? Math.min(0.85, Math.max(0.4, scale)) : 0.45),
+    };
+  } else if (hasInitImage) {
+    out.controlnet = {
+      enabled: true,
+      conditioning_scale: dynamicControlnetScale,
+      preprocessor,
     };
   }
   if (out.controlnet_conditioning_scale != null) {
     const scale = Number(out.controlnet_conditioning_scale);
-    out.controlnet_conditioning_scale = Number.isFinite(scale)
-      ? Math.min(0.75, Math.max(0.55, scale))
-      : 0.65;
+    out.controlnet_conditioning_scale =
+      dynamicControlnetScale ??
+      (Number.isFinite(scale) ? Math.min(0.85, Math.max(0.4, scale)) : 0.45);
+  } else if (dynamicControlnetScale != null) {
+    out.controlnet_conditioning_scale = dynamicControlnetScale;
   }
-  if (out.num_inference_steps != null) {
-    const steps = Number(out.num_inference_steps);
-    out.num_inference_steps = Number.isFinite(steps)
-      ? Math.min(30, Math.max(12, Math.round(steps)))
-      : 20;
-  }
-  if (out.guidance_scale != null) {
-    const guidance = Number(out.guidance_scale);
-    out.guidance_scale = Number.isFinite(guidance)
-      ? Math.min(12, Math.max(1, guidance))
-      : 6.5;
-  }
+  const stepsRaw = out.num_inference_steps ?? out.steps;
+  const steps = Number(stepsRaw);
+  out.num_inference_steps = Number.isFinite(steps)
+    ? Math.min(35, Math.max(25, Math.round(steps)))
+    : 30;
+  out.steps = out.num_inference_steps;
+  const cfgRaw = out.guidance_scale ?? out.cfg_scale;
+  const cfg = Number(cfgRaw);
+  out.guidance_scale = Number.isFinite(cfg) ? Math.min(7.5, Math.max(6.5, cfg)) : 7;
+  out.cfg_scale = out.guidance_scale;
+  out.mode = out.mode || getTransformationMode(intensity);
   return out;
 }
 
@@ -430,8 +489,23 @@ function normalizeRunpodEventPromptExpansion(output) {
   if (!positivePrompt) return null;
   const recommendedStrength = Number(result.recommended_strength);
   return {
+    prompt: positivePrompt,
     positive_prompt: positivePrompt,
     negative_prompt: String(result.negative_prompt || "").trim(),
+    strength: Number.isFinite(Number(result.strength)) ? Number(result.strength) : undefined,
+    cfg_scale: Number.isFinite(Number(result.cfg_scale)) ? Number(result.cfg_scale) : undefined,
+    steps: Number.isFinite(Number(result.steps)) ? Math.round(Number(result.steps)) : undefined,
+    controlnet:
+      result.controlnet && typeof result.controlnet === "object" && !Array.isArray(result.controlnet)
+        ? result.controlnet
+        : undefined,
+    mode: typeof result.mode === "string" ? result.mode : undefined,
+    transformation_plan:
+      result.transformation_plan &&
+      typeof result.transformation_plan === "object" &&
+      !Array.isArray(result.transformation_plan)
+        ? result.transformation_plan
+        : undefined,
     theme_tokens: Array.isArray(result.theme_tokens) ? result.theme_tokens : [],
     visual_direction: Array.isArray(result.visual_direction) ? result.visual_direction : [],
     visual_keywords: Array.isArray(result.visual_keywords) ? result.visual_keywords : [],
@@ -441,7 +515,9 @@ function normalizeRunpodEventPromptExpansion(output) {
     decor_tokens: Array.isArray(result.decor_tokens) ? result.decor_tokens : [],
     negative_tokens: Array.isArray(result.negative_tokens) ? result.negative_tokens : [],
     recommended_strength: Number.isFinite(recommendedStrength)
-      ? Math.min(0.65, Math.max(0.50, recommendedStrength))
+      ? Math.min(0.78, Math.max(0.5, recommendedStrength))
+      : Number.isFinite(Number(result.strength))
+        ? Number(result.strength)
       : undefined,
   };
 }
@@ -478,7 +554,14 @@ async function expandEventDesignPromptForRunpod(input) {
       ...expansion,
       prompt: expansion.positive_prompt,
       negative_prompt: expansion.negative_prompt || input.negative_prompt,
-      strength: expansion.recommended_strength ?? input.strength,
+      strength: expansion.strength ?? expansion.recommended_strength ?? input.strength,
+      cfg_scale: expansion.cfg_scale ?? input.cfg_scale,
+      guidance_scale: expansion.cfg_scale ?? input.guidance_scale,
+      steps: expansion.steps ?? input.steps,
+      num_inference_steps: expansion.steps ?? input.num_inference_steps,
+      controlnet: expansion.controlnet ?? input.controlnet,
+      mode: expansion.mode ?? input.mode,
+      transformation_plan: expansion.transformation_plan ?? input.transformation_plan,
       task_type: "sdxl_event_design",
       nlp_expansion: expansion,
     };
@@ -6204,13 +6287,32 @@ app.get("/api/mobile/ai-generations", async (req, res) => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS ai_generations (
         id BIGSERIAL PRIMARY KEY,
+        user_id UUID,
         user_email TEXT NOT NULL DEFAULT '',
         image_url TEXT NOT NULL DEFAULT '',
         prompt TEXT NOT NULL DEFAULT '',
+        negative_prompt TEXT,
         design_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
         job_id TEXT,
+        seed BIGINT,
+        generation_mode TEXT,
+        event_type TEXT,
+        style TEXT,
+        mood TEXT,
+        formality TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )
+    `);
+    await pool.query(`
+      ALTER TABLE ai_generations
+      ADD COLUMN IF NOT EXISTS user_id UUID,
+      ADD COLUMN IF NOT EXISTS negative_prompt TEXT,
+      ADD COLUMN IF NOT EXISTS seed BIGINT,
+      ADD COLUMN IF NOT EXISTS generation_mode TEXT,
+      ADD COLUMN IF NOT EXISTS event_type TEXT,
+      ADD COLUMN IF NOT EXISTS style TEXT,
+      ADD COLUMN IF NOT EXISTS mood TEXT,
+      ADD COLUMN IF NOT EXISTS formality TEXT
     `);
     const email = String(req.query.email || req.query.userEmail || "").trim().toLowerCase();
     const params = [];

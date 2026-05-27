@@ -376,7 +376,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
                               side: BorderSide(
-                                color: Colors.black.withOpacity(0.08),
+                                color: Colors.black.withValues(alpha: 0.08),
                               ),
                             ),
                             child: Padding(
@@ -439,12 +439,12 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                                     decoration: BoxDecoration(
                                       color: _getStatusColor(
                                         status,
-                                      ).withOpacity(0.1),
+                                      ).withValues(alpha: 0.1),
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(
                                         color: _getStatusColor(
                                           status,
-                                        ).withOpacity(0.3),
+                                        ).withValues(alpha: 0.3),
                                       ),
                                     ),
                                     child: Column(

@@ -262,6 +262,38 @@ class _InquirePageState extends State<InquirePage> {
     return selected;
   }
 
+  static const Map<String, List<String>> _eventThemeDecorMap = {
+    'cinderella': [
+      'royal blue dress princess',
+      'glass slipper centerpiece',
+      'crystal chandeliers',
+    ],
+    'rustic': [
+      'wooden tables',
+      'warm string lights',
+      'greenery centerpieces',
+    ],
+    'modern luxury': [
+      'gold accents',
+      'marble decor',
+      'minimalist floral arrangements',
+    ],
+    'luxury': [
+      'crystal chandeliers',
+      'white floral centerpieces',
+      'gold accents',
+      'cream drapery',
+    ],
+  };
+
+  List<String> _eventThemeDecorFor(String? value) {
+    final lookup = (value ?? '').toLowerCase();
+    return [
+      for (final entry in _eventThemeDecorMap.entries)
+        if (lookup.contains(entry.key)) ...entry.value,
+    ];
+  }
+
   List<String> _resolvedMultiSelectWithOther(
     List<String> selected,
     TextEditingController other,
@@ -1085,7 +1117,7 @@ class _InquirePageState extends State<InquirePage> {
           label: 'Event Type',
           required: true,
           child: DropdownButtonFormField<String>(
-            value: eventTypeValue,
+            initialValue: eventTypeValue,
             isExpanded: true,
             decoration: const InputDecoration(
               border: InputBorder.none,
@@ -1112,7 +1144,7 @@ class _InquirePageState extends State<InquirePage> {
           label: 'Formality',
           required: true,
           child: DropdownButtonFormField<String>(
-            value: _formality,
+            initialValue: _formality,
             isExpanded: true,
             decoration: const InputDecoration(
               border: InputBorder.none,
@@ -1427,7 +1459,7 @@ class _InquirePageState extends State<InquirePage> {
         AntdFieldShell(
           label: 'Event Setting',
           child: DropdownButtonFormField<String>(
-            value: _eventSetting,
+            initialValue: _eventSetting,
             isExpanded: true,
             decoration: const InputDecoration(border: OutlineInputBorder()),
             items: const [
@@ -2705,7 +2737,7 @@ class _InquirePageState extends State<InquirePage> {
     Function(String?) onChanged,
   ) {
     return DropdownButtonFormField<String>(
-      value: value != null && items.contains(value) ? value : null,
+      initialValue: value != null && items.contains(value) ? value : null,
       items:
           items.map((item) {
             return DropdownMenuItem(value: item, child: Text(item));
@@ -2831,22 +2863,21 @@ class _InquirePageState extends State<InquirePage> {
       _decorOtherController,
     );
     final notes = _designPromptController.text.trim();
+    final mappedDecor = _eventThemeDecorFor(style);
 
     final visualPrompt = <String>[
-      if (eventType != null && eventType.isNotEmpty)
-        '$eventType event venue'
-      else
-        'event venue',
-      if (style != null && style.isNotEmpty) '$style theme',
-      if (mood != null && mood.isNotEmpty) '$mood atmosphere',
-      if (colors.isNotEmpty) '${colors.join(', ')} color palette',
-      if (decor.isNotEmpty) '${decor.join(', ')} decorations',
+      'transform venue into ${[
+        if (style != null && style.isNotEmpty) style,
+        if (eventType != null && eventType.isNotEmpty) eventType,
+        'reception',
+      ].join(' ')}',
+      'round banquet tables',
+      if (colors.isNotEmpty) '${colors.join(', ')} accents',
+      ...mappedDecor,
+      if (decor.isNotEmpty) ...decor,
       if (notes.isNotEmpty) notes,
-      'photorealistic event styling',
-      'luxury interior photography',
-      'realistic venue decorations',
-      'cinematic lighting',
-      'ultra detailed',
+      if (mood != null && mood.isNotEmpty) '$mood candle lighting',
+      'photorealistic',
     ].join(', ');
 
     return visualPrompt;
@@ -2901,24 +2932,34 @@ class _InquirePageState extends State<InquirePage> {
     };
   }
 
+  double _eventDesignControlnetForDenoise(double denoise) {
+    if (denoise < 0.55) return 0.85;
+    if (denoise < 0.7) return 0.65;
+    return 0.55;
+  }
+
   Map<String, dynamic> _eventDesignRunpodMeta({
     EventPromptExpansion? expansion,
   }) {
     final config = _eventDesignConfig();
+    final denoise = expansion?.recommendedStrength ?? 0.72;
+    final controlnet = _eventDesignControlnetForDenoise(denoise);
     return {
       ...config,
       'task_type': 'sdxl_event_design',
       'use_nlp_prompt_expansion': false,
       if (expansion != null) ...expansion.toSdxlMeta(),
       'negative_prompt': _eventDesignNegativePrompt(),
-      'guidance_scale': 6.5,
+      'guidance_scale': 7,
       'controlnet': {
-        'enabled': true,
-        'preprocessor': 'canny',
+        'enabled': expansion?.controlnet?['enabled'] ?? true,
+        'preprocessor': expansion?.controlnet?['preprocessor'] ?? 'canny',
         'preserve_venue': true,
-        'conditioning_scale': 0.65,
+        'conditioning_scale':
+            expansion?.controlnet?['conditioning_scale'] ?? controlnet,
       },
-      'controlnet_conditioning_scale': 0.65,
+      'controlnet_conditioning_scale':
+          expansion?.controlnet?['conditioning_scale'] ?? controlnet,
     };
   }
 
@@ -3004,6 +3045,7 @@ class _InquirePageState extends State<InquirePage> {
         _eventDesignConfig(),
         fallbackPrompt: fallbackPrompt,
       );
+      final denoise = expansion.recommendedStrength ?? 0.72;
       final prompt = expansion.positivePrompt;
       if (kDebugMode) {
         debugPrint(
@@ -3018,9 +3060,9 @@ class _InquirePageState extends State<InquirePage> {
         prompt,
         user_id: runpodUserId,
         initImageBase64: venueB64,
-        strength: 0.58,
-        numInferenceSteps: 30,
-        guidanceScale: 6.5,
+        strength: denoise,
+        numInferenceSteps: expansion.steps ?? 30,
+        guidanceScale: expansion.cfgScale ?? 7,
         designMeta: _eventDesignRunpodMeta(expansion: expansion),
       );
 

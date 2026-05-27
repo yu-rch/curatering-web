@@ -1057,7 +1057,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                       if (menuSelectionType == 'preset') ...[
                         const SizedBox(height: 10),
                         DropdownButtonFormField<String>(
-                          value: selectedPresetMenuId,
+                          initialValue: selectedPresetMenuId,
                           decoration: const InputDecoration(
                             labelText: 'Select Catering Menu',
                             border: OutlineInputBorder(),
@@ -1780,7 +1780,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
                               side: BorderSide(
-                                color: Colors.black.withOpacity(0.08),
+                                color: Colors.black.withValues(alpha: 0.08),
                               ),
                             ),
                             child: Padding(

@@ -1,4 +1,5 @@
-# Production SDXL Event Design Handler (Upgraded)
+# pyright: reportMissingModuleSource=false, reportMissingImports=false, reportPrivateImportUsage=false, reportAttributeAccessIssue=false
+# Production SD 1.5 Event Design Handler
 
 import base64
 import gc
@@ -15,15 +16,18 @@ from PIL import Image
 from supabase import create_client
 
 from diffusers import (
-    AutoencoderKL,
     ControlNetModel,
     DPMSolverMultistepScheduler,
-    StableDiffusionXLControlNetImg2ImgPipeline,
-    StableDiffusionXLImg2ImgPipeline,
+    StableDiffusionControlNetImg2ImgPipeline,
 )
-from diffusers.pipelines.controlnet.multicontrolnet import MultiControlNetModel
 
 from controlnet_aux import CannyDetector
+
+from prompt_engine import (
+    clean,
+    compile_generation_payload,
+    controlnet_scale_for_denoise,
+)
 
 
 # =========================================================
@@ -47,27 +51,24 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 HF_HOME = os.getenv("HF_HOME", "/app/huggingface")
 
-SDXL_MODEL_ID = os.getenv(
-    "SDXL_MODEL_ID",
-    "stabilityai/stable-diffusion-xl-base-1.0"
+SD_MODEL_ID = os.getenv(
+    "SD_MODEL_ID",
+    "runwayml/stable-diffusion-v1-5"
 )
 
-SDXL_REFINER_ID = os.getenv(
-    "SDXL_REFINER_ID",
-    "stabilityai/stable-diffusion-xl-refiner-1.0"
+CONTROLNET_MODEL_ID = os.getenv(
+    "SD_CONTROLNET_MODEL_ID",
+    "lllyasviel/control_v11p_sd15_canny"
 )
 
-IMAGE_SIZE = int(os.getenv("SD_IMAGE_SIZE", "1024"))
+IMAGE_SIZE = int(os.getenv("SD_IMAGE_SIZE", "768"))
 MAX_IMAGE_BYTES = int(os.getenv("MAX_INIT_IMAGE_BYTES", "6000000"))
 
-DEFAULT_STRENGTH = float(os.getenv("SD_IMG2IMG_STRENGTH", "0.58"))
-DEFAULT_GUIDANCE = float(os.getenv("SD_GUIDANCE_SCALE", "6.5"))
+DEFAULT_STRENGTH = float(os.getenv("SD_IMG2IMG_STRENGTH", "0.72"))
+DEFAULT_GUIDANCE = float(os.getenv("SD_GUIDANCE_SCALE", "7"))
 DEFAULT_CONTROL_SCALE = float(
-    os.getenv("SD_CONTROLNET_CONDITIONING_SCALE", "0.7")
+    os.getenv("SD_CONTROLNET_CONDITIONING_SCALE", "0.55")
 )
-
-ENABLE_REFINER = os.getenv("ENABLE_REFINER", "true").lower() == "true"
-ENABLE_IP_ADAPTER = os.getenv("ENABLE_IP_ADAPTER", "false").lower() == "true"
 
 
 # =========================================================
@@ -83,40 +84,23 @@ print("====================================")
 # =========================================================
 # CONTROLNETS
 # =========================================================
-print("Loading ControlNet models...")
+print("Loading SD 1.5 Canny ControlNet...")
 
-canny_controlnet = ControlNetModel.from_pretrained(
-    "diffusers/controlnet-canny-sdxl-1.0",
+controlnet = ControlNetModel.from_pretrained(
+    CONTROLNET_MODEL_ID,
     torch_dtype=DTYPE,
 )
-
-depth_controlnet = ControlNetModel.from_pretrained(
-    "diffusers/controlnet-depth-sdxl-1.0",
-    torch_dtype=DTYPE,
-)
-
-controlnet = MultiControlNetModel([
-    canny_controlnet,
-    depth_controlnet,
-])
 
 
 # =========================================================
-# LOAD SDXL PIPELINE
+# LOAD SD 1.5 PIPELINE
 # =========================================================
-print("Loading SDXL pipeline...")
+print("Loading SD 1.5 pipeline...")
 
-vae = AutoencoderKL.from_pretrained(
-    "madebyollin/sdxl-vae-fp16-fix",
-    torch_dtype=DTYPE,
-)
-
-pipe = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
-    SDXL_MODEL_ID,
+pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
+    SD_MODEL_ID,
     controlnet=controlnet,
-    vae=vae,
     torch_dtype=DTYPE,
-    variant="fp16",
     use_safetensors=True,
 )
 
@@ -151,255 +135,9 @@ except Exception as e:
 
 
 # =========================================================
-# OPTIONAL SDXL REFINER
-# =========================================================
-refiner = None
-
-if ENABLE_REFINER:
-    try:
-        print("Loading SDXL refiner...")
-
-        refiner = StableDiffusionXLImg2ImgPipeline.from_pretrained(
-            SDXL_REFINER_ID,
-            vae=vae,
-            torch_dtype=DTYPE,
-            variant="fp16",
-            use_safetensors=True,
-        )
-
-        refiner.scheduler = DPMSolverMultistepScheduler.from_config(
-            refiner.scheduler.config
-        )
-
-        refiner.to(DEVICE)
-
-        try:
-            refiner.enable_xformers_memory_efficient_attention()
-        except Exception:
-            pass
-
-        print("Refiner loaded")
-
-    except Exception as e:
-        print("Refiner failed:", e)
-        refiner = None
-
-
-# =========================================================
-# OPTIONAL IP-ADAPTER
-# =========================================================
-if ENABLE_IP_ADAPTER:
-    try:
-        print("Loading IP Adapter...")
-
-        pipe.load_ip_adapter(
-            "h94/IP-Adapter",
-            subfolder="sdxl_models",
-            weight_name="ip-adapter_sdxl.bin"
-        )
-
-        print("IP Adapter loaded")
-
-    except Exception as e:
-        print("IP Adapter failed:", e)
-
-
-# =========================================================
 # DETECTORS
 # =========================================================
 canny_detector = CannyDetector()
-
-
-# =========================================================
-# THEME MAP
-# =========================================================
-THEME_MAP = {
-    "cinderella": [
-        "(luxury fairytale ballroom:1.4)",
-        "(royal blue drapery:1.3)",
-        "(glass slipper centerpiece:1.5)",
-        "(crystal chandeliers:1.3)",
-        "(magical elegant lighting:1.2)",
-    ],
-
-    "harry potter": [
-        "(floating candles:1.4)",
-        "(gothic banquet hall:1.3)",
-        "(warm magical candlelight:1.3)",
-        "(castle-inspired decor:1.2)",
-    ],
-
-    "garden": [
-        "(lush floral styling:1.4)",
-        "(romantic greenery:1.3)",
-        "(soft natural lighting:1.2)",
-    ],
-}
-
-
-# =========================================================
-# NEGATIVE PROMPTS
-# =========================================================
-GEOMETRY_NEGATIVE = [
-    "warped architecture",
-    "distorted room",
-    "crooked walls",
-    "fisheye",
-    "bad perspective",
-    "warped ceiling",
-    "melted surfaces",
-]
-
-STYLE_NEGATIVE = [
-    "cartoon",
-    "anime",
-    "cgi",
-    "illustration",
-]
-
-ARTIFACT_NEGATIVE = [
-    "duplicate objects",
-    "floating decor",
-    "blurry",
-    "low quality",
-    "watermark",
-    "logo",
-    "text",
-]
-
-
-# =========================================================
-# HELPERS
-# =========================================================
-def clean(value):
-    if value is None:
-        return ""
-
-    if isinstance(value, list):
-        return ", ".join([str(v).strip() for v in value if str(v).strip()])
-
-    return str(value).strip()
-
-
-
-def as_list(value):
-    if isinstance(value, list):
-        return [str(v).strip() for v in value if str(v).strip()]
-
-    text = clean(value)
-
-    if not text:
-        return []
-
-    return [x.strip() for x in text.split(",") if x.strip()]
-
-
-
-def dedupe(items, limit=32):
-    out = []
-    seen = set()
-
-    for item in items:
-        text = str(item or "").strip()
-
-        if not text:
-            continue
-
-        key = text.lower()
-
-        if key in seen:
-            continue
-
-        seen.add(key)
-        out.append(text)
-
-        if len(out) >= limit:
-            break
-
-    return out
-
-
-# =========================================================
-# PROMPT BUILDER
-# =========================================================
-def theme_tokens(data):
-    lookup = " ".join([
-        clean(data.get("theme")),
-        clean(data.get("style")),
-        clean(data.get("prompt")),
-    ]).lower()
-
-    tokens = []
-
-    for key, values in THEME_MAP.items():
-        if key in lookup:
-            tokens.extend(values)
-
-    return dedupe(tokens)
-
-
-
-def build_prompt(data):
-    prompt = clean(data.get("positive_prompt") or data.get("prompt"))
-
-    event_type = clean(data.get("event_type"))
-    mood = clean(data.get("mood"))
-    formality = clean(data.get("formality"))
-
-    colors = as_list(data.get("color_palette") or data.get("colors"))
-    decor = as_list(data.get("decor_elements") or data.get("decor"))
-    semantic_theme = as_list(data.get("theme_tokens"))
-    semantic_style = as_list(data.get("style_tokens"))
-    semantic_lighting = as_list(data.get("lighting_tokens"))
-    semantic_decor = as_list(data.get("decor_tokens"))
-
-    notes = clean(
-        data.get("custom_instructions")
-        or data.get("notes")
-    )
-
-    weighted_parts = [
-        prompt,
-
-        f"({event_type} luxury event venue:1.2)" if event_type else "",
-        f"({mood} atmosphere:1.2)" if mood else "",
-        f"({formality} styling:1.1)" if formality else "",
-
-        f"({', '.join(colors)} color palette:1.3)" if colors else "",
-        f"({', '.join(decor)} decorations:1.2)" if decor else "",
-        f"({', '.join(semantic_theme)} theme details:1.2)" if semantic_theme else "",
-        f"({', '.join(semantic_style)} style details:1.15)" if semantic_style else "",
-        f"({', '.join(semantic_lighting)} lighting:1.2)" if semantic_lighting else "",
-        f"({', '.join(semantic_decor)} decor details:1.15)" if semantic_decor else "",
-
-        "(photorealistic event styling:1.4)",
-        "(luxury interior photography:1.3)",
-        "(cinematic lighting:1.2)",
-        "(ultra detailed:1.2)",
-
-        "(center focal centerpiece:1.4)",
-        "(symmetrical venue layout:1.2)",
-
-        notes,
-    ]
-
-    weighted_parts.extend(theme_tokens(data))
-
-    return ", ".join(dedupe(weighted_parts, 24))
-
-
-
-def build_negative_prompt(data):
-    extra = as_list(data.get("negative_tokens"))
-
-    negatives = (
-        GEOMETRY_NEGATIVE
-        + STYLE_NEGATIVE
-        + ARTIFACT_NEGATIVE
-        + extra
-    )
-
-    return ", ".join(dedupe(negatives, 32))
 
 
 # =========================================================
@@ -486,8 +224,8 @@ def load_base_image(data):
 def generate_canny(image):
     return canny_detector(
         image,
-        detect_resolution=1024,
-        image_resolution=1024,
+        detect_resolution=IMAGE_SIZE,
+        image_resolution=IMAGE_SIZE,
     )
 
 
@@ -499,22 +237,22 @@ def generate_image(data, image, prompt, negative_prompt):
 
     canny_image = generate_canny(image)
 
-    control_images = [
-        canny_image,
-        image,
-    ]
+    control_image = canny_image
 
-    strength = float(data.get("strength", DEFAULT_STRENGTH))
-    guidance = float(data.get("guidance_scale", DEFAULT_GUIDANCE))
+    strength = max(0.5, min(float(data.get("strength", DEFAULT_STRENGTH)), 0.78))
+    guidance = float(data.get("guidance_scale") or data.get("cfg_scale") or DEFAULT_GUIDANCE)
 
+    controlnet_config = data.get("controlnet") if isinstance(data.get("controlnet"), dict) else {}
     control_scale = float(
-        data.get(
-            "controlnet_conditioning_scale",
-            DEFAULT_CONTROL_SCALE,
+        controlnet_config.get(
+            "conditioning_scale",
+            data.get("controlnet_conditioning_scale", controlnet_scale_for_denoise(strength)),
         )
     )
+    control_scale = max(0.45, min(control_scale, 0.85))
 
-    steps = int(data.get("steps", 35))
+    steps = int(data.get("num_inference_steps") or data.get("steps") or 35)
+    steps = max(25, min(steps, 35))
 
     seed = int(data.get("seed", random.randint(1, 999999999)))
 
@@ -530,33 +268,15 @@ def generate_image(data, image, prompt, negative_prompt):
         prompt=prompt,
         negative_prompt=negative_prompt,
         image=image,
-        control_image=control_images,
+        control_image=control_image,
         num_inference_steps=steps,
         guidance_scale=guidance,
         strength=strength,
-        controlnet_conditioning_scale=[
-            control_scale,
-            0.5,
-        ],
+        controlnet_conditioning_scale=control_scale,
         generator=generator,
     )
 
     generated = result.images[0]
-
-    if refiner is not None:
-        print("Running SDXL refiner...")
-
-        refined = refiner(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            image=generated,
-            strength=0.2,
-            guidance_scale=5,
-            num_inference_steps=15,
-            generator=generator,
-        ).images[0]
-
-        return refined, seed
 
     return generated, seed
 
@@ -633,8 +353,10 @@ def handler(event):
                 "message": "Base image required",
             }
 
-        prompt = build_prompt(data)
-        negative_prompt = build_negative_prompt(data)
+        compiled = compile_generation_payload(data)
+        data = {**data, **compiled}
+        prompt = compiled["prompt"]
+        negative_prompt = compiled["negative_prompt"]
 
         generated_image, seed = generate_image(
             data,
@@ -656,7 +378,12 @@ def handler(event):
             "negative_prompt": negative_prompt,
             "image_url": image_url,
             "seed": seed,
-            "generation_mode": "sdxl_controlnet_multi",
+            "generation_mode": "sd15_controlnet_canny",
+            "design_meta": {
+                "mode": compiled["mode"],
+                "controlnet": compiled["controlnet"],
+                "transformation_plan": compiled["transformation_plan"],
+            },
             "event_type": clean(data.get("event_type")),
             "style": clean(data.get("style")),
             "mood": clean(data.get("mood")),
@@ -681,7 +408,9 @@ def handler(event):
             "prompt_used": prompt,
             "negative_prompt_used": negative_prompt,
             "seed": seed,
-            "generation_mode": "production_sdxl_controlnet",
+            "mode": compiled["mode"],
+            "controlnet": compiled["controlnet"],
+            "generation_mode": "production_sd15_controlnet",
             "db_saved": db_saved,
         }
 

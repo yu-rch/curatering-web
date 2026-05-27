@@ -493,7 +493,7 @@ class _CashierPosShellState extends State<CashierPosShell>
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    value: _paymentMethod,
+                    initialValue: _paymentMethod,
                     decoration: const InputDecoration(labelText: 'Payment'),
                     items: const [
                       DropdownMenuItem(value: 'CASH', child: Text('Cash')),

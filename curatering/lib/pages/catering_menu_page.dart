@@ -122,7 +122,7 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
     return SizedBox(
       width: 320,
       child: DropdownButtonFormField<String>(
-        value: validValue,
+        initialValue: validValue,
         isExpanded: true,
         decoration: InputDecoration(
           labelText: 'Filter by set menu',

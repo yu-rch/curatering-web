@@ -1062,7 +1062,7 @@ extension _ThemeEditorPageExtraction on _InquireFormState {
                                                   backgroundColor:
                                                       Colors.grey.shade200,
                                                   selectedColor: Colors.purple
-                                                      .withOpacity(0.3),
+                                                      .withValues(alpha: 0.3),
                                                   checkmarkColor: Colors.purple,
                                                 );
                                               }).toList(),

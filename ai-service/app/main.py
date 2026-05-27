@@ -1,7 +1,7 @@
 import logging
 import os
 import requests
-from fastapi import FastAPI, Request, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -67,7 +67,10 @@ def health_ready():
     }
 
 @app.post("/generate")
-async def generate(payload: GeneratePayload, x_internal_token: str = Header(None)):
+async def generate(
+    payload: GeneratePayload,
+    x_internal_token: str | None = Header(default=None),
+):
     # 1. Validate Flutter request (optional auth layer)
     if not x_internal_token:
         raise HTTPException(status_code=401, detail="Missing token")
@@ -107,11 +110,11 @@ async def generate(payload: GeneratePayload, x_internal_token: str = Header(None
 
 @app.post("/generate-theme")
 async def generate_theme_legacy(
-    image: str = None,
-    event_type: str = None,
-    theme: str = None,
-    mood: str = None,
-    colors: str = None,
+    image: str | None = None,
+    event_type: str | None = None,
+    theme: str | None = None,
+    mood: str | None = None,
+    colors: str | None = None,
     extra: str = ""
 ):
     """Legacy endpoint for Flutter compatibility"""

@@ -8,6 +8,44 @@ import 'events_feature_api.dart';
 import 'runpod_service.dart';
 import 'theme_design_export.dart';
 
+double _controlnetForDenoise(double denoise) {
+  if (denoise < 0.55) return 0.85;
+  if (denoise < 0.7) return 0.65;
+  return 0.55;
+}
+
+const Map<String, List<String>> _themeDecorMap = {
+  'cinderella': [
+    'royal blue dress princess',
+    'glass slipper centerpiece',
+    'crystal chandeliers',
+  ],
+  'rustic': [
+    'wooden tables',
+    'warm string lights',
+    'greenery centerpieces',
+  ],
+  'modern luxury': [
+    'gold accents',
+    'marble decor',
+    'minimalist floral arrangements',
+  ],
+  'luxury': [
+    'crystal chandeliers',
+    'white floral centerpieces',
+    'gold accents',
+    'cream drapery',
+  ],
+};
+
+List<String> _themeDecorFor(String? value) {
+  final lookup = (value ?? '').toLowerCase();
+  return [
+    for (final entry in _themeDecorMap.entries)
+      if (lookup.contains(entry.key)) ...entry.value,
+  ];
+}
+
 class EventThemeDesignScreen extends StatefulWidget {
   const EventThemeDesignScreen({
     super.key,
@@ -137,17 +175,15 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
   }
 
   String _prompt() {
+    final mappedDecor = _themeDecorFor(_style);
     return [
-      '$_eventType event venue',
-      if (_style != null) '$_style theme',
-      if (_mood != null) '$_mood atmosphere',
-      if (_palettes.isNotEmpty) '${_palettes.join(', ')} color palette',
-      if (_decor.isNotEmpty) '${_decor.join(', ')} decorations',
+      'transform venue into ${[_style, _eventType, 'reception'].whereType<String>().join(' ')}',
+      'round banquet tables',
+      if (_palettes.isNotEmpty) '${_palettes.join(', ')} accents',
+      ...mappedDecor,
+      if (_decor.isNotEmpty) ..._decor,
       if (_notes.text.trim().isNotEmpty) _notes.text.trim(),
       'photorealistic',
-      'luxury interior photography',
-      'realistic event styling',
-      'cinematic lighting',
     ].join(', ');
   }
 
@@ -173,6 +209,8 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
   }
 
   Map<String, dynamic> _runpodMeta(EventPromptExpansion expansion) {
+    final denoise = expansion.recommendedStrength ?? 0.72;
+    final controlnet = _controlnetForDenoise(denoise);
     return {
       ..._eventConfig(),
       'task_type': 'sdxl_event_design',
@@ -183,12 +221,14 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
               ? expansion.negativePrompt
               : 'warped architecture, distorted room, melted surfaces, duplicate objects, blurry, low quality, cartoon, CGI, fisheye',
       'controlnet': {
-        'enabled': true,
-        'preprocessor': 'canny',
+        'enabled': expansion.controlnet?['enabled'] ?? true,
+        'preprocessor': expansion.controlnet?['preprocessor'] ?? 'canny',
         'preserve_venue': true,
-        'conditioning_scale': 0.65,
+        'conditioning_scale':
+            expansion.controlnet?['conditioning_scale'] ?? controlnet,
       },
-      'controlnet_conditioning_scale': 0.65,
+      'controlnet_conditioning_scale':
+          expansion.controlnet?['conditioning_scale'] ?? controlnet,
     };
   }
 
@@ -229,13 +269,14 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
         _eventConfig(),
         fallbackPrompt: fallbackPrompt,
       );
+      final denoise = expansion.recommendedStrength ?? 0.72;
       final url = await RunPodService.generateImageWithPolling(
         expansion.positivePrompt,
         user_id: widget.userEmail,
         initImageBase64: _venuePhotosB64.first,
-        strength: expansion.recommendedStrength ?? 0.58,
-        numInferenceSteps: 30,
-        guidanceScale: 6.5,
+        strength: denoise,
+        numInferenceSteps: expansion.steps ?? 30,
+        guidanceScale: expansion.cfgScale ?? 7,
         designMeta: _runpodMeta(expansion),
       );
       if (!mounted) return;
@@ -310,7 +351,7 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
     ValueChanged<String?> onChanged,
   ) {
     return DropdownButtonFormField<String>(
-      value: value != null && options.contains(value) ? value : null,
+      initialValue: value != null && options.contains(value) ? value : null,
       decoration: InputDecoration(
         labelText: title,
         border: const OutlineInputBorder(),

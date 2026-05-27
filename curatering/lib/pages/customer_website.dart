@@ -184,8 +184,8 @@ class _SoftCustomerOverlayPainter extends CustomPainter {
         Paint()
           ..color =
               selected
-                  ? Colors.blue.withOpacity(0.20)
-                  : Colors.orange.withOpacity(0.08)
+                  ? Colors.blue.withValues(alpha: 0.20)
+                  : Colors.orange.withValues(alpha: 0.08)
           ..style = PaintingStyle.fill;
     canvas.drawPath(path, fill);
     canvas.drawPath(path, stroke);
@@ -2453,7 +2453,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
-                    value:
+                    initialValue:
                         w.galleryCategories.any(
                               (c) => c.id == _selectedGalleryCategoryId,
                             )
@@ -3304,7 +3304,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 border: Border.all(color: Colors.grey.shade300),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -4032,7 +4032,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.orange.withOpacity(0.3),
+            color: Colors.orange.withValues(alpha: 0.3),
             spreadRadius: 2,
             blurRadius: 8,
             offset: const Offset(0, 3),
@@ -4063,7 +4063,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       '${_cateringLoyaltyPoints > 0 ? ' · Catering: $_cateringLoyaltyPoints pts' : ''}'
                       ' · Earn $pointsEarned pts on orders ≥ ₱${minimumOrderForPoints.toStringAsFixed(2)}',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.9),
+                        color: Colors.white.withValues(alpha: 0.9),
                         fontSize: 13,
                       ),
                     ),
@@ -4106,7 +4106,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   ),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black.withOpacity(0.2),
+                  backgroundColor: Colors.black.withValues(alpha: 0.2),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
@@ -4129,7 +4129,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   ),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black.withOpacity(0.2),
+                  backgroundColor: Colors.black.withValues(alpha: 0.2),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
@@ -5877,12 +5877,12 @@ class _InquireFormState extends State<_InquireForm> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.black.withOpacity(0.08)),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
         borderRadius: BorderRadius.circular(14),
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 16,
             offset: const Offset(0, 8),
           ),
@@ -7584,7 +7584,7 @@ class _InquireFormState extends State<_InquireForm> {
     Map<String, String>? displayMap,
   }) {
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: value,
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
@@ -8132,7 +8132,7 @@ class _InquireFormState extends State<_InquireForm> {
                                                       backgroundColor:
                                                           Colors.grey.shade200,
                                                       selectedColor: Colors.blue
-                                                          .withOpacity(0.3),
+                                                          .withValues(alpha: 0.3),
                                                       checkmarkColor:
                                                           Colors.blue,
                                                     );
@@ -8331,11 +8331,11 @@ class _InquireFormState extends State<_InquireForm> {
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                              color: Colors.black.withOpacity(0.08),
+                              color: Colors.black.withValues(alpha: 0.08),
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.04),
+                                color: Colors.black.withValues(alpha: 0.04),
                                 blurRadius: 14,
                                 offset: const Offset(0, 6),
                               ),
@@ -8407,7 +8407,7 @@ class _InquireFormState extends State<_InquireForm> {
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                              color: Colors.black.withOpacity(0.08),
+                              color: Colors.black.withValues(alpha: 0.08),
                             ),
                           ),
                           child: Column(

@@ -1400,7 +1400,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.stars, color: Colors.white, size: 28),
@@ -1422,7 +1422,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                       Text(
                         'You have $_currentPoints points',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 0.9),
                           fontSize: 13,
                         ),
                       ),
@@ -1459,7 +1459,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 Text(
                   'Spend ₱$minimumOrderForPoints to earn $pointsEarned points',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha: 0.9),
                     fontSize: 11,
                   ),
                 ),
@@ -1469,7 +1469,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   child: LinearProgressIndicator(
                     value:
                         CartStore.instance.totalAmount / minimumOrderForPoints,
-                    backgroundColor: Colors.white.withOpacity(0.3),
+                    backgroundColor: Colors.white.withValues(alpha: 0.3),
                     valueColor: const AlwaysStoppedAnimation<Color>(
                       Colors.white,
                     ),

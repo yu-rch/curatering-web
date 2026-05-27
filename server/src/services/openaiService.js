@@ -108,6 +108,168 @@ function compactSdxlPrompt(value, maxWords = 70) {
   return out.join(", ");
 }
 
+const themeDecorMap = new Map([
+  [
+    "cinderella",
+    [
+      "royal blue dress princess",
+      "glass slipper centerpiece",
+      "crystal chandeliers",
+    ],
+  ],
+  [
+    "rustic",
+    [
+      "wooden tables",
+      "warm string lights",
+      "greenery centerpieces",
+    ],
+  ],
+  [
+    "modern luxury",
+    [
+      "gold accents",
+      "marble decor",
+      "minimalist floral arrangements",
+    ],
+  ],
+  [
+    "luxury",
+    [
+      "crystal chandeliers",
+      "white floral centerpieces",
+      "gold accents",
+      "cream drapery",
+    ],
+  ],
+]);
+
+const fixedNegativePrompt = [
+  "warped architecture",
+  "distorted room",
+  "crooked walls",
+  "fisheye",
+  "bad perspective",
+  "warped ceiling",
+  "melted surfaces",
+  "cartoon",
+  "anime",
+  "cgi",
+  "illustration",
+  "duplicate objects",
+  "floating decor",
+  "blurry",
+  "low quality",
+  "watermark",
+  "logo",
+  "text",
+].join(", ");
+
+function getStrength(intensity) {
+  const value = Math.min(1, Math.max(0, Number(intensity) || 0));
+  if (value < 0.4) return 0.5;
+  if (value < 0.7) return 0.65;
+  return 0.72;
+}
+
+function getControlNet(intensity) {
+  const value = Math.min(1, Math.max(0, Number(intensity) || 0));
+  if (value < 0.4) return 0.85;
+  if (value < 0.7) return 0.65;
+  return 0.55;
+}
+
+function getPreprocessor(intensity) {
+  return "canny";
+}
+
+function getMode(intensity) {
+  const value = Math.min(1, Math.max(0, Number(intensity) || 0));
+  if (value < 0.4) return "preserve";
+  if (value < 0.7) return "modify";
+  return "rebuild";
+}
+
+function inputIntensity(input) {
+  const raw =
+    input?.intensity ??
+    input?.transformation_intensity ??
+    input?.transformationIntensity;
+  const value = Number(raw);
+  return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0.8;
+}
+
+function cleanPrompt(prompt) {
+  const noWeights = String(prompt || "")
+    .replace(/\(([^:()]+):\d+(?:\.\d+)?\)/g, "$1")
+    .replace(/\bultra detailed\b/gi, "")
+    .replace(/\bmasterpiece\b/gi, "")
+    .replace(/\bcinematic lighting\b/gi, "")
+    .replace(/\bluxury interior photography\b/gi, "")
+    .replace(/\bbeautiful\b/gi, "")
+    .replace(/\bluxury vibe\b/gi, "")
+    .replace(/\bcinematic atmosphere\b/gi, "");
+  return compactSdxlPrompt(noWeights, 60);
+}
+
+function concreteThemeDecor(input) {
+  const lookup = [
+    input?.theme,
+    input?.style,
+    input?.mood,
+    input?.prompt,
+    input?.custom_instructions,
+    input?.notes,
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .join(" ");
+  const out = [];
+  for (const [key, values] of themeDecorMap.entries()) {
+    if (lookup.includes(key)) out.push(...values);
+  }
+  return [...new Set(out)];
+}
+
+function buildTransformationPlan(input, json = {}) {
+  const mappedDecor = concreteThemeDecor(input);
+  const objectsToAdd = [
+    ...stringList(json.objects_to_add, 10),
+    ...mappedDecor,
+    ...stringList(json.furniture, 5),
+    ...stringList(json.materials, 5),
+    ...stringList(json.decor_tokens, 8),
+  ];
+  if (objectsToAdd.length === 0) {
+    objectsToAdd.push("round banquet tables", "white floral centerpieces");
+  }
+  return {
+    theme: String(json.theme || input?.theme || input?.style || input?.event_type || "themed").trim(),
+    objects_to_add: [...new Set(objectsToAdd)].slice(0, 10),
+    objects_to_replace: stringList(json.objects_to_replace, 8),
+    lighting_style: String(json.lighting_style || stringList(json.lighting_tokens, 1)[0] || "warm candle lighting").trim(),
+    mood: String(json.mood || input?.mood || "").trim(),
+  };
+}
+
+function buildTransformationPrompt(input, generatedPrompt, decorTokens, plan) {
+  const parts = [];
+  const eventType = String(input?.event_type || "").trim().toLowerCase();
+  const theme = String(plan?.theme || input?.theme || input?.style || "").trim().toLowerCase();
+  const target = [theme, eventType, "event"]
+    .filter(Boolean)
+    .join(" ");
+  if (target) {
+    parts.push(`transform venue into ${target}`);
+  }
+  parts.push(...(plan?.objects_to_add || decorTokens));
+  for (const item of plan?.objects_to_replace || []) {
+    parts.push(`replace ${item}`);
+  }
+  if (plan?.lighting_style) parts.push(plan.lighting_style);
+  parts.push("photorealistic");
+  return cleanPrompt(parts.filter(Boolean).join(", ") || generatedPrompt);
+}
+
 export async function analyzeFeedback(feedbacks) {
   const list = (Array.isArray(feedbacks) ? feedbacks : [feedbacks])
     .map((item) => String(item || "").trim())
@@ -322,40 +484,39 @@ ${JSON.stringify(data)}
 }
 
 export async function expandEventPrompt(input) {
+  const intensity = inputIntensity(input);
   const prompt = `
-Transform this event design request into SDXL img2img editing prompt JSON.
+Create a structured SD 1.5 img2img transformation plan and payload.
 
 Return ONLY valid JSON.
 
 Schema:
 {
-  "positive_prompt": "concise comma-separated SDXL img2img edit prompt, under 60 meaningful tokens",
-  "negative_prompt": "concise comma-separated negative prompt",
-  "theme_tokens": ["string"],
-  "decor_tokens": ["string"],
-  "lighting_tokens": ["string"],
-  "recommended_strength": 0.5
+  "theme": "string",
+  "objects_to_add": ["physical object string"],
+  "objects_to_replace": ["physical replacement string"],
+  "lighting_style": "physical lighting string",
+  "mood": "optional internal string"
 }
 
 Rules:
-- You are an SDXL prompt engineer.
-- Generate concise SDXL img2img editing prompts.
-- Focus on what should be ADDED.
-- Focus on what should be REPLACED.
-- Focus on what should be TRANSFORMED.
-- Avoid generic environment descriptions.
-- Avoid repeating existing venue details.
-- Keep prompts under 60 meaningful tokens.
-- Avoid repetition.
-- Prioritize requested visual edits, decor, props, palette, focal pieces, and surface transformations.
-- Use cinematic descriptors.
-- Keep architecture realistic.
-- Preserve room geometry.
-- Avoid redundant lighting/style terms.
-- Optimize for photorealism.
-- Remove prose, explanations, and instructions.
-- Return comma-separated edit concepts only.
-- Normalize themes and remove conflicting aesthetics.
+- You are a Transformation Planner for physical environments.
+- Output physical objects only.
+- Convert themes into physical decor, lighting, materials, and furniture.
+- Do not output aesthetic descriptions, weighted tags, emotions, or abstract moods as visible objects.
+- Do not write "beautiful", "luxury vibe", "cinematic atmosphere", "ultra detailed", "masterpiece", or "luxury interior photography".
+- Use visible scene changes: furniture, drapery, centerpieces, lighting fixtures, backdrops, materials.
+- Keep arrays compact and non-repetitive.
+- Convert themes into physical decor, lighting, materials, and furniture.
+- "luxury" must become concrete objects such as crystal chandeliers, floral centerpieces, gold accents, marble decor, cream drapery.
+
+Theme decor map:
+- cinderella: royal blue dress princess, glass slipper centerpiece, crystal chandeliers
+- rustic: wooden tables, warm string lights, greenery centerpieces
+- modern luxury: gold accents, marble decor, minimalist floral arrangements
+
+Ideal final prompt style:
+transform venue into luxury wedding reception, round banquet tables, cream drapery, white floral centerpieces, gold accents, warm candle lighting, crystal chandeliers, photorealistic
 
 Event config:
 ${JSON.stringify(input)}
@@ -363,21 +524,40 @@ ${JSON.stringify(input)}
 
   const json = await createJsonCompletion({
     system:
-      "You are an SDXL prompt engineer. Generate concise SDXL img2img editing prompts focused on added, replaced, and transformed elements.",
+      "You are a scene transformation planner. Return only physical objects and lighting for an SD 1.5 img2img editor.",
     user: prompt,
     temperature: 0.25,
     maxTokens: 450,
   });
 
+  const plan = buildTransformationPlan(input, json);
+  const mappedDecor = concreteThemeDecor(input);
+  const decorTokens = [
+    ...mappedDecor,
+    ...plan.objects_to_add,
+  ];
+  const compiledPrompt = buildTransformationPrompt(input, json.positive_prompt || json.prompt, decorTokens, plan);
+  const controlnet = getControlNet(intensity);
+  const preprocessor = getPreprocessor(intensity);
+  const strength = getStrength(intensity);
+
   return {
-    positive_prompt: compactSdxlPrompt(json.positive_prompt || json.prompt, 60),
-    negative_prompt: compactSdxlPrompt(json.negative_prompt, 35),
-    theme_tokens: stringList(json.theme_tokens),
-    decor_tokens: stringList(json.decor_tokens),
-    lighting_tokens: stringList(json.lighting_tokens),
-    recommended_strength:
-      Number.isFinite(Number(json.recommended_strength))
-        ? Number(json.recommended_strength)
-        : 0.55,
+    prompt: compiledPrompt,
+    positive_prompt: compiledPrompt,
+    negative_prompt: fixedNegativePrompt,
+    strength,
+    recommended_strength: strength,
+    cfg_scale: 7,
+    steps: 30,
+    controlnet: {
+      enabled: true,
+      conditioning_scale: controlnet,
+      preprocessor,
+    },
+    mode: getMode(intensity),
+    transformation_plan: plan,
+    theme_tokens: stringList(json.theme_tokens).concat(mappedDecor).slice(0, 8),
+    decor_tokens: decorTokens.slice(0, 8),
+    lighting_tokens: plan.lighting_style ? [plan.lighting_style] : [],
   };
 }
