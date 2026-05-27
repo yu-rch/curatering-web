@@ -197,8 +197,22 @@ class RunPodService {
   }
 
   static String _nanoResultUrl(String jobId) {
-    return 'https://image.runpod.ai/google-nano-banana-2-edit/'
-        '${Uri.encodeComponent(jobId)}/result.png';
+    return '$_proxyBase/api/public/runpod/image/result/'
+        '${Uri.encodeComponent(jobId)}';
+  }
+
+  static String _proxyRunpodImageUrlIfNeeded(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null ||
+        uri.host != 'image.runpod.ai' ||
+        uri.pathSegments.length < 3) {
+      return value;
+    }
+    if (uri.pathSegments.first != 'google-nano-banana-2-edit' ||
+        uri.pathSegments.last != 'result.png') {
+      return value;
+    }
+    return _nanoResultUrl(uri.pathSegments[1]);
   }
 
   static bool _statusIsQueued(String? status) {
@@ -371,7 +385,8 @@ class RunPodService {
   static String? _imageString(dynamic value, {bool allowBareBase64 = false}) {
     final raw = value?.toString().trim();
     if (raw == null || raw.isEmpty) return null;
-    if (_isHttpUrl(raw) || _isDataImage(raw)) return raw;
+    if (_isHttpUrl(raw)) return _proxyRunpodImageUrlIfNeeded(raw);
+    if (_isDataImage(raw)) return raw;
     if (!allowBareBase64) return null;
 
     final normalized = _normalizeB64(raw);

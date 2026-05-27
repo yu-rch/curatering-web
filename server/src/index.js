@@ -678,11 +678,43 @@ async function handleRunpodImageStatus(req, res) {
   }
 }
 
+async function handleRunpodNanoImageResult(req, res) {
+  try {
+    const jobId = String(req.params.jobId || "").trim();
+    if (!validateRunpodJobId(jobId)) {
+      return res.status(400).json({ message: "invalid job id", code: "bad_request" });
+    }
+
+    const imageUrl = `https://image.runpod.ai/google-nano-banana-2-edit/${encodeURIComponent(jobId)}/result.png`;
+    const upstream = await fetch(imageUrl, { method: "GET" });
+    if (!upstream.ok) {
+      const message = await upstream.text().catch(() => "");
+      return res.status(upstream.status).json({
+        message: message || `RunPod image result unavailable (${upstream.status})`,
+        code: "runpod_image_result_unavailable",
+      });
+    }
+
+    const contentType = upstream.headers.get("content-type") || "image/png";
+    const body = Buffer.from(await upstream.arrayBuffer());
+    res.set("Content-Type", contentType);
+    res.set("Cache-Control", "public, max-age=86400, immutable");
+    return res.status(200).send(body);
+  } catch (e) {
+    console.error("[runpod proxy] GET nano image result", e);
+    return res.status(502).json({
+      message: String(e?.message || e),
+      code: "runpod_image_result_proxy_error",
+    });
+  }
+}
+
 /** Public image proxy to RunPod — API key stays in server env (Railway). */
 app.post("/api/public/runpod/run", publicRateLimit, handleRunpodImageRun);
 app.get("/api/public/runpod/status/:jobId", handleRunpodImageStatus);
 app.post("/api/public/runpod/image/run", publicRateLimit, handleRunpodImageRun);
 app.get("/api/public/runpod/image/status/:jobId", handleRunpodImageStatus);
+app.get("/api/public/runpod/image/result/:jobId", handleRunpodNanoImageResult);
 
 function publicNlpInput(req, res) {
   const input = getRunpodInput(req, res);
