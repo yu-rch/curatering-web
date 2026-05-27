@@ -14,12 +14,7 @@ function dedupeArray(arr) {
   return out;
 }
 
-const SPATIAL_TOKENS = [
-  'center of room',
-  'floor area filled with',
-  'main hall placement',
-  'foreground seating area'
-];
+const ALLOWED_POSITIONS = ['surrounding', 'left side', 'right side', 'background', 'ceiling', 'floor area'];
 
 function normalizeLocation(value) {
   const text = String(value || '').toLowerCase();
@@ -43,19 +38,47 @@ function compileInsertObject(item) {
   return `add ${object}`;
 }
 
+function cleanObject(value) {
+  return String(value || '')
+    .replace(/\b(center|centre|middle)\b/gi, '')
+    .replace(/\bcenterpiece\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function positionForObject(object, index) {
+  const text = String(object || '').toLowerCase();
+  if (/\b(photo booth|booth)\b/.test(text)) return 'background';
+  if (/\b(chandelier|ceiling|fairy light|string light)\b/.test(text)) return 'ceiling';
+  if (/\b(backdrop|arch|drapery|stage|castle)\b/.test(text)) return 'background';
+  if (/\b(tables?|chairs?|seating|furniture)\b/.test(text)) return 'floor area';
+  return ALLOWED_POSITIONS[index % ALLOWED_POSITIONS.length];
+}
+
 function buildPrompt(plannerOutput, strategyOutput) {
   const verb = `transform venue into ${plannerOutput.theme} event`;
   const venueEdit = 'add decor on top of venue photo';
   const emptyFloor = 'empty floor to be filled with event furniture';
+  const main = cleanObject(
+    plannerOutput.main_centerpiece ||
+    (plannerOutput.insert_objects || []).find((item) => normalizeLocation(item && item.location) === 'center')?.object ||
+    (plannerOutput.objects_to_add || plannerOutput.visual_elements || [])[0] ||
+    'main themed centerpiece'
+  );
 
   const visuals = dedupeArray(
-    plannerOutput.objects_to_add || plannerOutput.visual_elements || []
+    (plannerOutput.secondary_objects || plannerOutput.objects_to_add || plannerOutput.visual_elements || [])
+      .map(cleanObject)
+      .filter((item) => item && item.toLowerCase() !== main.toLowerCase())
   ).slice(0, 8);
   const inserts = (plannerOutput.insert_objects || [])
     .map(compileInsertObject)
+    .filter((item) => item && !/\bcenter\b/i.test(item))
+    .slice(0, 8);
+  const decor = (plannerOutput.decor_elements || plannerOutput.decor || [])
+    .map(cleanObject)
     .filter(Boolean)
     .slice(0, 8);
-  const decor = (plannerOutput.decor || []).filter(Boolean).slice(0, 8);
   const replacements = (plannerOutput.objects_to_replace || [])
     .filter(Boolean)
     .map((item) => `replace ${item}`)
@@ -67,10 +90,15 @@ function buildPrompt(plannerOutput, strategyOutput) {
     verb,
     venueEdit,
     emptyFloor,
-    ...SPATIAL_TOKENS,
+    `center ${main} centerpiece`,
     ...inserts,
-    ...visuals,
-    ...decor,
+    ...visuals.map((object, index) => {
+      const position = positionForObject(object, index);
+      return position === 'surrounding'
+        ? `add ${object} surrounding main centerpiece`
+        : `add ${object} on ${position}`;
+    }),
+    ...decor.map((item) => `ambient ${item}`),
     ...replacements,
     ...lighting,
     ...quality

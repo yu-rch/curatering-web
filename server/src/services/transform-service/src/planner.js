@@ -55,9 +55,20 @@ function locationForObject(object, input) {
   const explicit = normalizeLocation(lookup);
   if (explicit) return explicit;
   if (lookup.includes('photo booth')) return 'side wall';
-  if (/\b(table|chair|seating|floor)\b/.test(lookup)) return 'floor area';
+  if (/\b(tables?|chairs?|seating|floor)\b/.test(lookup)) return 'floor area';
   if (/\b(backdrop|arch|stage)\b/.test(lookup)) return 'main hall';
   return '';
+}
+
+function mainCenterpieceFor(input, objects) {
+  const lookup = [
+    input.prompt,
+    input.notes,
+    input.custom_instructions,
+  ].map((value) => String(value || '').toLowerCase()).join(' ');
+  const middleMatch = lookup.match(/\b(?:middle|center|centre)\b\s+([a-z0-9 -]{3,60})/i);
+  if (middleMatch && middleMatch[1]) return middleMatch[1].split(',')[0].trim();
+  return objects[0] || 'main themed centerpiece';
 }
 
 async function callOpenAI(input) {
@@ -129,22 +140,15 @@ async function localPlanner(input) {
 
   const lighting_style = preserve_lighting ? 'warm room lighting' : 'warm candle lighting';
 
+  const objects = [...new Set(objects_to_add)].slice(0, 8);
+  const main_centerpiece = mainCenterpieceFor(input, objects);
+  const mainKey = main_centerpiece.toLowerCase();
   return {
-    transformation_type: input.style_mode || 'theme_transformation',
-    transformation_strength: +intensity.toFixed(2),
-    preserve_structure,
-    preserve_lighting,
-    global_style: theme,
-    theme,
-    insert_objects: [...new Set(objects_to_add)].slice(0, 8).map((object) => ({
-      object,
-      location: locationForObject(object, input)
-    })),
-    objects_to_add: [...new Set(objects_to_add)].slice(0, 8),
-    objects_to_replace: [],
-    decor: [],
-    lighting_style,
-    mood: input.mood || 'playful luxury',
+    main_centerpiece,
+    secondary_objects: objects.filter((object) => object.toLowerCase() !== mainKey).slice(0, 8),
+    character_element: '',
+    decor_elements: lighting_style ? [lighting_style] : [],
+    layout_notes: 'center main centerpiece, floor area furniture, background decor, ceiling lighting',
   };
 }
 

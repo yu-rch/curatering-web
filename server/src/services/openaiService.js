@@ -1,4 +1,10 @@
 import OpenAI from "openai";
+import {
+  SCENE_PLANNER_SYSTEM_PROMPT,
+  compileScenePrompt,
+  normalizeSceneGraph,
+  sceneToLegacyPlan,
+} from "./sceneEngine.js";
 
 const DEFAULT_MODEL = "gpt-4.1-mini";
 
@@ -561,33 +567,33 @@ ${JSON.stringify(data)}
 export async function expandEventPrompt(input) {
   const intensity = inputIntensity(input);
   const prompt = `
-Create a structured SD 1.5 img2img transformation plan and payload.
+Convert this event design request into a strict scene graph for image editing.
 
 Return ONLY valid JSON.
 
 Schema:
 {
-  "global_style": "string",
-  "theme": "string",
-  "insert_objects": [{"object":"physical object string","location":"center | side wall | floor area | foreground seating area | main hall"}],
-  "objects_to_add": ["physical object string"],
-  "objects_to_replace": ["physical replacement string"],
-  "decor": ["physical decor string"],
-  "lighting_style": "physical lighting string",
-  "mood": "optional internal string"
+  "main_centerpiece": "single physical focal object",
+  "secondary_objects": ["3-8 physical support objects"],
+  "character_element": "optional physical character or costume prop",
+  "decor_elements": ["ambient decor only"],
+  "layout_notes": "short controlled spatial notes"
 }
 
 Rules:
-- You are a Transformation Planner for physical environments.
+- You are a spatial scene design AI.
 - Output physical objects only.
+- Must define exactly one main_centerpiece.
+- Must not duplicate focal objects.
+- Must not output multiple centerpieces.
+- Must assign spatial positions logically in layout_notes when needed.
 - Convert themes into physical decor, lighting, materials, and furniture.
 - Do not output aesthetic descriptions, weighted tags, emotions, or abstract moods as visible objects.
 - Do not write "beautiful", "luxury vibe", "cinematic atmosphere", "ultra detailed", "masterpiece", or "luxury interior photography".
 - Use visible scene changes: furniture, drapery, centerpieces, lighting fixtures, backdrops, materials.
-- Final prompt must explicitly include "add decor on top of venue photo".
-- If user says "middle", output location "center".
-- Preserve spatial intent in insert_objects with exact object and location.
-- Use locations like center, side wall, floor area, foreground seating area, main hall.
+- If user says "middle", the relevant object becomes the main_centerpiece.
+- Put furniture, booths, arches, drapery, chandeliers, and props in secondary_objects.
+- Put balloons, flowers, fairy lights, fabrics, and color palette accents in decor_elements.
 - Keep arrays compact and non-repetitive.
 - Convert themes into physical decor, lighting, materials, and furniture.
 - "luxury" must become concrete objects such as crystal chandeliers, floral centerpieces, gold accents, marble decor, cream drapery.
@@ -598,27 +604,41 @@ Theme decor map:
 - modern luxury: gold accents, marble decor, minimalist floral arrangements
 
 Ideal final prompt style:
-transform venue into garden birthday event, center sakura tree centerpiece, add banquet tables on floor area, add photo booth near side wall, blue and red color palette, fairy lights, princess themed decorations, photorealistic
+transform venue into garden birthday event, add decor on top of venue photo, empty floor to be filled with event furniture, center sakura tree centerpiece, add banquet tables on floor area, add photo booth on background, ambient blue and red balloons, ambient fairy lights, photorealistic
 
 Event config:
 ${JSON.stringify(input)}
 `.trim();
 
   const json = await createJsonCompletion({
-    system:
-      "You are a scene transformation planner. Return only physical objects and lighting for an SD 1.5 img2img editor.",
+    system: SCENE_PLANNER_SYSTEM_PROMPT,
     user: prompt,
     temperature: 0.25,
     maxTokens: 450,
   });
 
-  const plan = buildTransformationPlan(input, json);
   const mappedDecor = concreteThemeDecor(input);
-  const decorTokens = [
-    ...mappedDecor,
-    ...plan.objects_to_add,
-  ];
-  const compiledPrompt = buildTransformationPrompt(input, json.positive_prompt || json.prompt, decorTokens, plan);
+  const scene = normalizeSceneGraph(
+    {
+      ...json,
+      secondary_objects: [
+        ...stringList(json.secondary_objects, 8),
+        ...mappedDecor,
+      ],
+      decor_elements: stringList(json.decor_elements || json.decor, 12),
+    },
+    input,
+  );
+  const plan = sceneToLegacyPlan(scene, {
+    theme: json.global_style || input?.theme || input?.style || input?.event_type,
+  });
+  const compiledPrompt = cleanPrompt(
+    compileScenePrompt(scene, {
+      globalStyle:
+        json.global_style ||
+        [input?.theme || input?.style, input?.event_type].filter(Boolean).join(" "),
+    }),
+  );
   const controlnet = getControlNet(intensity);
   const preprocessor = getPreprocessor(intensity);
   const strength = getStrength(intensity);
@@ -637,9 +657,10 @@ ${JSON.stringify(input)}
       preprocessor,
     },
     mode: getMode(intensity),
+    scene_graph: scene,
     transformation_plan: plan,
-    theme_tokens: stringList(json.theme_tokens).concat(mappedDecor).slice(0, 8),
-    decor_tokens: decorTokens.slice(0, 8),
-    lighting_tokens: plan.lighting_style ? [plan.lighting_style] : [],
+    theme_tokens: [scene.main_centerpiece].concat(mappedDecor).slice(0, 8),
+    decor_tokens: scene.secondary_objects.concat(scene.decor_elements).slice(0, 8),
+    lighting_tokens: scene.decor_elements.filter((item) => /light|chandelier/i.test(item)),
   };
 }

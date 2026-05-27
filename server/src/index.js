@@ -508,6 +508,10 @@ function normalizeRunpodEventPromptExpansion(output) {
       !Array.isArray(result.transformation_plan)
         ? result.transformation_plan
         : undefined,
+    scene_graph:
+      result.scene_graph && typeof result.scene_graph === "object" && !Array.isArray(result.scene_graph)
+        ? result.scene_graph
+        : undefined,
     theme_tokens: Array.isArray(result.theme_tokens) ? result.theme_tokens : [],
     visual_direction: Array.isArray(result.visual_direction) ? result.visual_direction : [],
     visual_keywords: Array.isArray(result.visual_keywords) ? result.visual_keywords : [],
@@ -563,6 +567,7 @@ async function expandEventDesignPromptForRunpod(input) {
       num_inference_steps: expansion.steps ?? input.num_inference_steps,
       controlnet: expansion.controlnet ?? input.controlnet,
       mode: expansion.mode ?? input.mode,
+      scene_graph: expansion.scene_graph ?? input.scene_graph,
       transformation_plan: expansion.transformation_plan ?? input.transformation_plan,
       task_type: "sdxl_event_design",
       nlp_expansion: expansion,

@@ -180,12 +180,15 @@ def _append_items(parts, values):
             parts.append(text)
 
 
-SPATIAL_TOKENS = [
-    "center of room",
-    "floor area filled with",
-    "main hall placement",
-    "foreground seating area",
-]
+ALLOWED_POSITIONS = ["surrounding", "left side", "right side", "background", "ceiling", "floor area"]
+
+
+def clean_object(value):
+    return re.sub(
+        r"\s+",
+        " ",
+        re.sub(r"\bcenterpiece\b", "", re.sub(r"\b(center|centre|middle)\b", "", clean(value), flags=re.IGNORECASE), flags=re.IGNORECASE),
+    ).strip()
 
 
 def normalize_location(value):
@@ -194,14 +197,18 @@ def normalize_location(value):
         return ""
     if any(word in text for word in ("middle", "center", "centre")):
         return "center"
-    if "side wall" in text or "wall" in text or "side" in text:
-        return "side wall"
+    if "left" in text:
+        return "left side"
+    if "right" in text:
+        return "right side"
+    if "surrounding" in text or "around" in text:
+        return "surrounding"
+    if "ceiling" in text or "chandelier" in text or "overhead" in text:
+        return "ceiling"
+    if "backdrop" in text or "background" in text or "arch" in text or "stage" in text:
+        return "background"
     if "floor" in text:
         return "floor area"
-    if "front" in text or "foreground" in text:
-        return "foreground seating area"
-    if "main hall" in text or "hall" in text:
-        return "main hall"
     return text
 
 
@@ -232,14 +239,14 @@ def location_for_object(obj, data):
         clean(data.get("theme")),
         clean(obj),
     ]).lower()
-    if any(word in lookup for word in ("middle", "center", "centre")):
-        return "center"
     if "photo booth" in lookup:
-        return "side wall"
-    if any(word in lookup for word in ("table", "chair", "seating", "floor")):
+        return "background"
+    if any(word in lookup for word in ("table", "tables", "chair", "chairs", "seating", "floor")):
         return "floor area"
     if any(word in lookup for word in ("backdrop", "arch", "stage")):
-        return "main hall"
+        return "background"
+    if any(word in lookup for word in ("chandelier", "fairy light", "string light", "ceiling")):
+        return "ceiling"
     return ""
 
 
@@ -250,20 +257,97 @@ def compile_insert_object(item):
         return ""
     if loc == "center":
         return f"center {obj} centerpiece"
-    if loc == "side wall":
-        return f"add {obj} near side wall"
+    if loc == "left side":
+        return f"add {obj} on left side"
+    if loc == "right side":
+        return f"add {obj} on right side"
+    if loc == "surrounding":
+        return f"add {obj} surrounding main centerpiece"
+    if loc == "ceiling":
+        return f"add {obj} on ceiling"
     if loc == "floor area":
         return f"add {obj} on floor area"
-    if loc == "foreground seating area":
-        return f"add {obj} in foreground seating area"
-    if loc == "main hall":
-        return f"add {obj} in main hall placement"
+    if loc == "background":
+        return f"add {obj} on background"
     return f"add {obj}"
 
 
+def position_for_object(obj, index):
+    lookup = clean(obj).lower()
+    if "photo booth" in lookup or "booth" in lookup:
+        return "background"
+    if any(word in lookup for word in ("chandelier", "ceiling", "fairy light", "string light")):
+        return "ceiling"
+    if any(word in lookup for word in ("backdrop", "arch", "drapery", "stage", "castle")):
+        return "background"
+    if any(word in lookup for word in ("table", "tables", "chair", "chairs", "seating", "furniture")):
+        return "floor area"
+    return ALLOWED_POSITIONS[index % len(ALLOWED_POSITIONS)]
+
+
+def scene_from_data(data):
+    raw = data.get("scene_graph") if isinstance(data.get("scene_graph"), dict) else data
+    main = clean_object(raw.get("main_centerpiece"))
+    objects = dedupe([clean_object(x) for x in as_list(raw.get("secondary_objects"))], 8)
+    if not main:
+        center_object = next((item.get("object") for item in as_insert_objects(raw.get("insert_objects")) if item.get("location") == "center"), "")
+        main = clean_object(center_object or (objects[0] if objects else "main themed centerpiece"))
+    main_key = main.lower()
+    secondary = [obj for obj in objects if obj and obj.lower() != main_key][:8]
+    if not secondary:
+        secondary = [
+            clean_object(x)
+            for x in as_list(raw.get("objects_to_add"))
+            if clean_object(x).lower() != main_key
+        ][:8]
+    decor = [
+        clean_object(x)
+        for x in as_list(raw.get("decor_elements") or raw.get("decor"))
+        if clean_object(x) and clean_object(x).lower() != main_key
+    ][:12]
+    return {
+        "theme": clean(raw.get("theme") or data.get("theme") or data.get("style")),
+        "main_centerpiece": main,
+        "secondary_objects": dedupe(secondary, 8),
+        "character_element": clean_object(raw.get("character_element")),
+        "decor_elements": dedupe(decor, 12),
+        "layout_notes": clean(raw.get("layout_notes")),
+    }
+
+
+def compile_scene_prompt(scene):
+    theme = clean(scene.get("theme") or scene.get("layout_notes") or "themed")
+    main = clean_object(scene.get("main_centerpiece") or "main themed centerpiece")
+    parts = [
+        f"transform venue into {theme} event",
+        "add decor on top of venue photo",
+        "empty floor to be filled with event furniture",
+        f"center {main} centerpiece",
+    ]
+    for index, obj in enumerate(as_list(scene.get("secondary_objects"))):
+        text = clean_object(obj)
+        if not text or text.lower() == main.lower():
+            continue
+        loc = position_for_object(text, index)
+        parts.append(compile_insert_object({"object": text, "location": loc}))
+    character = clean_object(scene.get("character_element"))
+    if character and character.lower() != main.lower():
+        parts.append(f"add {character} near main centerpiece")
+    for decor in as_list(scene.get("decor_elements")):
+        text = clean_object(decor)
+        if text and text.lower() != main.lower():
+            parts.append(f"ambient {text}")
+    parts.append("photorealistic")
+    return clean_prompt(", ".join(dedupe(parts, 18)))
+
+
 def build_transformation_plan(data):
+    if isinstance(data.get("scene_graph"), dict):
+        return scene_from_data(data)
     existing = data.get("transformation_plan")
     if isinstance(existing, dict):
+        if existing.get("main_centerpiece"):
+            return scene_from_data({"scene_graph": existing, **data})
         insert_objects = as_insert_objects(existing.get("insert_objects"))
         objects_to_add = dedupe(as_list(existing.get("objects_to_add")), 12)
         if not insert_objects:
@@ -320,6 +404,8 @@ def build_transformation_plan(data):
 
 
 def compile_prompt(plan):
+    if plan.get("main_centerpiece"):
+        return compile_scene_prompt(plan)
     parts = []
     theme = clean(plan.get("theme"))
     if theme:
@@ -328,9 +414,11 @@ def compile_prompt(plan):
         parts.append("transform venue into themed event")
     parts.append("add decor on top of venue photo")
     parts.append("empty floor to be filled with event furniture")
-    _append_items(parts, SPATIAL_TOKENS)
-
-    _append_items(parts, [compile_insert_object(item) for item in plan.get("insert_objects", [])])
+    inserts = [item for item in plan.get("insert_objects", []) if item.get("location") != "center"]
+    center_object = next((item.get("object") for item in plan.get("insert_objects", []) if item.get("location") == "center"), "")
+    if center_object:
+        parts.append(f"center {clean_object(center_object)} centerpiece")
+    _append_items(parts, [compile_insert_object(item) for item in inserts])
     _append_items(parts, as_list(plan.get("objects_to_add")))
     _append_items(parts, as_list(plan.get("decor")))
     for item in as_list(plan.get("objects_to_replace")):
