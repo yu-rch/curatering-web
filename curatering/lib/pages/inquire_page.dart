@@ -96,6 +96,7 @@ class _InquirePageState extends State<InquirePage> {
   bool _submitting = false;
   bool _generatingDesign = false;
   String? _generatedImageUrl;
+  String? _generatedDesignPrompt;
   final List<String> _generatedImageHistory = [];
 
   // Service Type Selection
@@ -270,11 +271,7 @@ class _InquirePageState extends State<InquirePage> {
       'castle arch backdrop',
       'crystal chandeliers',
     ],
-    'rustic': [
-      'wooden tables',
-      'warm string lights',
-      'greenery centerpieces',
-    ],
+    'rustic': ['wooden tables', 'warm string lights', 'greenery centerpieces'],
     'modern luxury': [
       'gold accents',
       'marble decor',
@@ -701,6 +698,7 @@ class _InquirePageState extends State<InquirePage> {
       } else {
         _wantsCustomDesign = false;
         _generatedImageUrl = null;
+        _generatedDesignPrompt = null;
       }
     });
   }
@@ -743,6 +741,9 @@ class _InquirePageState extends State<InquirePage> {
         'event_setting': _eventSetting,
         if (_generatedImageUrl != null && _generatedImageUrl!.trim().isNotEmpty)
           'generatedImageUrl': _generatedImageUrl!.trim(),
+        if (_generatedDesignPrompt != null &&
+            _generatedDesignPrompt!.trim().isNotEmpty)
+          'generatedPrompt': _generatedDesignPrompt!.trim(),
         if (eventType.isNotEmpty) 'eventDesignEventType': eventType,
         if (style.isNotEmpty) 'style': style,
         if (mood.isNotEmpty) 'mood': mood,
@@ -2866,26 +2867,22 @@ class _InquirePageState extends State<InquirePage> {
     );
     final notes = _designPromptController.text.trim();
     final mappedDecor = _eventThemeDecorFor(style);
+    final decorValues = [...mappedDecor, ...decor];
+    String decorPhrase(String value) {
+      final text = value.trim();
+      if (text.isEmpty) return '';
+      return text.toLowerCase().contains('decor') ? text : '$text decor';
+    }
 
     final visualPrompt = <String>[
-      'transform venue into ${[
-        if (style != null && style.isNotEmpty) style,
-        if (eventType != null && eventType.isNotEmpty) eventType,
-        'reception',
-      ].join(' ')}',
-      'add decor on top of venue photo',
-      'empty floor to be filled with event furniture',
-      'center of room',
-      'floor area filled with',
-      'main hall placement',
-      'foreground seating area',
-      'round banquet tables',
-      if (colors.isNotEmpty) '${colors.join(', ')} accents',
-      ...mappedDecor,
-      if (decor.isNotEmpty) ...decor,
+      'use this venue image to make these edits: ${eventType ?? 'event'} party event',
+      if (style != null && style.isNotEmpty) '$style style',
+      if (mood != null && mood.isNotEmpty) '$mood mood/lighting',
+      if (colors.isNotEmpty) '${colors.join(', ')} color palette',
+      for (final item in decorValues)
+        if (decorPhrase(item).isNotEmpty) decorPhrase(item),
       if (notes.isNotEmpty) notes,
-      if (mood != null && mood.isNotEmpty) '$mood candle lighting',
-      'photorealistic',
+      'add chairs and tables',
     ].join(', ');
 
     return visualPrompt;
@@ -2954,7 +2951,7 @@ class _InquirePageState extends State<InquirePage> {
     final controlnet = _eventDesignControlnetForDenoise(denoise);
     return {
       ...config,
-      'task_type': 'sdxl_event_design',
+      'task_type': 'nano_event_design',
       'use_nlp_prompt_expansion': false,
       if (expansion != null) ...expansion.toSdxlMeta(),
       'negative_prompt': _eventDesignNegativePrompt(),
@@ -3047,14 +3044,9 @@ class _InquirePageState extends State<InquirePage> {
     });
 
     try {
-      final fallbackPrompt = _composeEventDesignPrompt();
+      final prompt = _composeEventDesignPrompt();
       final venueB64 = _normalizeVenueB64ForRunpod(venueRaw);
-      final expansion = await RunPodService.expandEventPrompt(
-        _eventDesignConfig(),
-        fallbackPrompt: fallbackPrompt,
-      );
-      final denoise = expansion.recommendedStrength ?? 0.85;
-      final prompt = expansion.positivePrompt;
+      const denoise = 0.85;
       if (kDebugMode) {
         debugPrint(
           'RunPod: POST ${apiBaseUrl}/api/public/runpod/run '
@@ -3069,15 +3061,16 @@ class _InquirePageState extends State<InquirePage> {
         user_id: runpodUserId,
         initImageBase64: venueB64,
         strength: denoise,
-        numInferenceSteps: expansion.steps ?? 30,
-        guidanceScale: expansion.cfgScale ?? 7,
-        designMeta: _eventDesignRunpodMeta(expansion: expansion),
+        numInferenceSteps: 30,
+        guidanceScale: 7,
+        designMeta: _eventDesignRunpodMeta(),
       );
 
       if (imageUrl != null) {
         setState(() {
           _wantsCustomDesign = true;
           _generatedImageUrl = imageUrl;
+          _generatedDesignPrompt = prompt;
           if (!_generatedImageHistory.contains(imageUrl)) {
             _generatedImageHistory.add(imageUrl);
           }

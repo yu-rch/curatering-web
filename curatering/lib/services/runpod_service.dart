@@ -57,8 +57,7 @@ class EventPromptExpansion {
       if (steps != null) 'steps': steps,
       if (controlnet != null) 'controlnet': controlnet,
       if (mode != null && mode!.isNotEmpty) 'mode': mode,
-      if (transformationPlan != null)
-        'transformation_plan': transformationPlan,
+      if (transformationPlan != null) 'transformation_plan': transformationPlan,
       'nlp_expansion': toJson(),
     };
   }
@@ -80,8 +79,7 @@ class EventPromptExpansion {
       if (steps != null) 'steps': steps,
       if (controlnet != null) 'controlnet': controlnet,
       if (mode != null && mode!.isNotEmpty) 'mode': mode,
-      if (transformationPlan != null)
-        'transformation_plan': transformationPlan,
+      if (transformationPlan != null) 'transformation_plan': transformationPlan,
     };
   }
 
@@ -127,7 +125,9 @@ class EventPromptExpansion {
       visualKeywords: strings(
         json['visual_keywords'] ?? json['visual_direction'],
       ),
-      recommendedStrength: number(json['recommended_strength'] ?? json['strength']),
+      recommendedStrength: number(
+        json['recommended_strength'] ?? json['strength'],
+      ),
       cfgScale: number(json['cfg_scale']),
       steps: integer(json['steps']),
       controlnet: map(json['controlnet']),
@@ -358,10 +358,33 @@ class RunPodService {
         return direct;
       }
     }
+    for (final key in const ['images', 'image_urls', 'imageUrls']) {
+      final list = out[key];
+      if (list is List && list.isNotEmpty) {
+        for (final item in list) {
+          final value =
+              item is Map
+                  ? (item['url'] ?? item['image_url'] ?? item['imageUrl'])
+                      ?.toString()
+                      .trim()
+                  : item?.toString().trim();
+          if (value != null &&
+              value.isNotEmpty &&
+              (value.startsWith('http://') || value.startsWith('https://'))) {
+            return value;
+          }
+        }
+      }
+    }
     final nested = out['output'];
     if (nested is Map<String, dynamic>) {
       final nestedUrl = _imageUrlFromOutput(nested);
       if (nestedUrl != null) return nestedUrl;
+    }
+    final result = out['result'];
+    if (result is Map<String, dynamic>) {
+      final resultUrl = _imageUrlFromOutput(result);
+      if (resultUrl != null) return resultUrl;
     }
     final diag = out['diagnostics'];
     if (diag is Map) {

@@ -15,11 +15,7 @@ class ApiService {
       'castle arch backdrop',
       'crystal chandeliers',
     ],
-    'rustic': [
-      'wooden tables',
-      'warm string lights',
-      'greenery centerpieces',
-    ],
+    'rustic': ['wooden tables', 'warm string lights', 'greenery centerpieces'],
     'modern luxury': [
       'gold accents',
       'marble decor',
@@ -61,32 +57,43 @@ class ApiService {
       final bytes = await imageFile.readAsBytes();
       final initB64 = base64Encode(bytes);
       final themeDecor = _themeDecorFor(style);
+      String decorPhrase(String value) {
+        final text = value.trim();
+        if (text.isEmpty) return '';
+        return text.toLowerCase().contains('decor') ? text : '$text decor';
+      }
+
       final prompt =
           StringBuffer()
-            ..write('transform venue into $style $eventType reception')
-            ..write(', ')
-            ..write('add decor on top of venue photo')
-            ..write(', ')
-            ..write('empty floor to be filled with event furniture')
-            ..write(', ')
-            ..write('center of room, floor area filled with, main hall placement, foreground seating area')
-            ..write(', ')
-            ..write('replace empty floor with banquet tables')
-            ..write(', add $colorScheme accents')
             ..write(
-              themeDecor.isNotEmpty
-                  ? ', ${themeDecor.join(', ')}'
-                  : ', round banquet tables, cream drapery, floral centerpieces',
+              'use this venue image to make these edits: $eventType party event',
+            )
+            ..write(', ')
+            ..write('$style style')
+            ..write(', ')
+            ..write('$colorScheme mood/lighting')
+            ..write(', ')
+            ..write('$colorScheme color palette')
+            ..write(', ')
+            ..write(
+              (themeDecor.isNotEmpty
+                      ? themeDecor
+                      : [
+                        'round banquet tables',
+                        'cream drapery',
+                        'floral centerpieces',
+                      ])
+                  .map(decorPhrase)
+                  .join(', '),
             );
       if (customPrompt.trim().isNotEmpty) {
         prompt.write(', ${customPrompt.trim()}');
       }
-      prompt.write(
-        ', photorealistic',
-      );
+      prompt.write(', add chairs and tables');
 
       final eventConfig = {
-        'task_type': 'event_prompt_expansion',
+        'task_type': 'nano_event_design',
+        'use_nlp_prompt_expansion': false,
         'event_type': eventType,
         'theme': style,
         'style': style,
@@ -102,36 +109,27 @@ class ApiService {
         if (customPrompt.trim().isNotEmpty)
           'custom_instructions': customPrompt.trim(),
       };
-      final expansion = await RunPodService.expandEventPrompt(
-        eventConfig,
-        fallbackPrompt: prompt.toString(),
-      );
-      final denoise =
-          (expansion.recommendedStrength ?? strength).clamp(0.75, 0.9).toDouble();
+      final denoise = strength.clamp(0.75, 0.9).toDouble();
       final controlnet = _controlnetForDenoise(denoise);
 
       final imageUrl = await RunPodService.generateImageWithPolling(
-        expansion.positivePrompt,
+        prompt.toString(),
         initImageBase64: initB64,
         strength: denoise,
-        numInferenceSteps: expansion.steps ?? 30,
-        guidanceScale: expansion.cfgScale ?? 7,
+        numInferenceSteps: 30,
+        guidanceScale: 7,
         designMeta: {
           ...eventConfig,
-          'task_type': 'sdxl_event_design',
+          'task_type': 'nano_event_design',
           'use_nlp_prompt_expansion': false,
-          ...expansion.toSdxlMeta(),
-          'controlnet':
-              expansion.controlnet ??
-              {
-                'enabled': true,
-                'preprocessor': 'depth',
-                'preserve_venue': true,
-                'conditioning_scale': controlnet,
-              },
+          'controlnet': {
+            'enabled': true,
+            'preprocessor': 'depth',
+            'preserve_venue': true,
+            'conditioning_scale': controlnet,
+          },
           'controlnet_conditioning_scale': controlnet,
-          if (negativePrompt.trim().isNotEmpty &&
-              expansion.negativePrompt.isEmpty)
+          if (negativePrompt.trim().isNotEmpty)
             'negative_prompt': negativePrompt,
         },
       );

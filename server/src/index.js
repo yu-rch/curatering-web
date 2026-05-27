@@ -404,6 +404,7 @@ function normalizeRunpodInput(input) {
     out.init_image_base64 = s;
     out.image_base64 = s;
     out.venue_image_base64 = s;
+    out.image = s;
     delete out.venuePhotoBase64;
   }
   const hasInitImage = typeof out.init_image_base64 === "string" && out.init_image_base64.trim();
@@ -457,6 +458,7 @@ function normalizeRunpodInput(input) {
 
 function shouldExpandEventDesignPrompt(input) {
   if (input?.nlp_expansion || input?.transformation_plan) return false;
+  if (input?.use_nlp_prompt_expansion === false) return false;
   const taskType = String(input?.task_type || input?.task || "").trim().toLowerCase();
   return (
     taskType === "event_prompt_expansion" ||
@@ -633,9 +635,10 @@ async function handleRunpodImageRun(req, res) {
       }
       throw normErr;
     }
+    const providerInput = prepareRunpodProviderInput(normalized);
     const { res: rp, data } = await runpodProxyRequest("image", "/run", {
       method: "POST",
-      jsonBody: { input: normalized },
+      jsonBody: { input: providerInput },
     });
     if (rp.ok && data?.id) {
       console.log("[runpod proxy] job queued:", data.id, "status:", data.status);
@@ -1990,9 +1993,14 @@ const AI_SERVICE_SEGMENT_TIMEOUT_RETRIES = Math.max(
 );
 
 /** RunPod serverless — proxied so API keys never ship in the Flutter web bundle. */
-const RUNPOD_API_KEY = String(process.env.RUNPOD_API_KEY || "").trim();
+const RUNPOD_API_KEY = String(
+  process.env.RUNPOD_API_KEY_NANO || process.env.RUNPOD_API_KEY || "",
+).trim();
 const RUNPOD_IMAGE_ENDPOINT_ID = String(
-  process.env.RUNPOD_IMAGE_ENDPOINT_ID || RUNPOD_ENDPOINT_ID,
+  process.env.RUNPOD_NANO_ENDPOINT_ID ||
+    process.env.RUNPOD_IMAGE_ENDPOINT_ID ||
+    process.env.RUNPOD_ENDPOINT_ID ||
+    "",
 ).trim();
 const RUNPOD_API_BASE = "https://api.runpod.ai/v2";
 
@@ -2000,11 +2008,47 @@ function getRunpodEndpointId() {
   return RUNPOD_IMAGE_ENDPOINT_ID;
 }
 
+function isNanoRunpodEndpoint() {
+  const endpointId = getRunpodEndpointId().toLowerCase();
+  return (
+    Boolean(String(process.env.RUNPOD_NANO_ENDPOINT_ID || "").trim()) ||
+    endpointId.includes("nano-banana")
+  );
+}
+
+function normalizeNanoImageInput(value) {
+  const image = String(value || "").trim();
+  if (!image) return "";
+  if (/^https?:\/\//i.test(image) || /^data:image\//i.test(image)) return image;
+  return `data:image/png;base64,${image}`;
+}
+
+function prepareRunpodProviderInput(input) {
+  if (!isNanoRunpodEndpoint()) return input;
+  const rawImage =
+    Array.isArray(input.images) && input.images.length > 0
+      ? input.images[0]
+      : input.image ??
+        input.image_base64 ??
+        input.init_image_base64 ??
+        input.venue_image_base64 ??
+        input.base_image;
+  const image = normalizeNanoImageInput(rawImage);
+  return {
+    prompt: input.prompt,
+    resolution: input.resolution || "1k",
+    output_format: input.output_format || "png",
+    enable_safety_checker: input.enable_safety_checker !== false,
+    images: image ? [image] : [],
+  };
+}
+
 async function runpodProxyRequest(service, pathSuffix, { method = "GET", jsonBody } = {}) {
   const endpointId = getRunpodEndpointId();
   if (!RUNPOD_API_KEY || !endpointId) {
-    const envName = "RUNPOD_IMAGE_ENDPOINT_ID or RUNPOD_ENDPOINT_ID";
-    const err = new Error(`RUNPOD_API_KEY and ${envName} must be set on the server`);
+    const keyName = "RUNPOD_API_KEY_NANO or RUNPOD_API_KEY";
+    const envName = "RUNPOD_NANO_ENDPOINT_ID, RUNPOD_IMAGE_ENDPOINT_ID, or RUNPOD_ENDPOINT_ID";
+    const err = new Error(`${keyName} and ${envName} must be set on the server`);
     err.code = "runpod_not_configured";
     err.service = service;
     throw err;

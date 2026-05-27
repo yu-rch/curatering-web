@@ -22,11 +22,7 @@ const Map<String, List<String>> _themeDecorMap = {
     'castle arch backdrop',
     'crystal chandeliers',
   ],
-  'rustic': [
-    'wooden tables',
-    'warm string lights',
-    'greenery centerpieces',
-  ],
+  'rustic': ['wooden tables', 'warm string lights', 'greenery centerpieces'],
   'modern luxury': [
     'gold accents',
     'marble decor',
@@ -95,6 +91,7 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
   final List<String> _venuePhotosB64 = [];
   final List<String> _previousUrls = [];
   String? _generatedUrl;
+  String? _generatedPrompt;
   String? _generateError;
   bool _generating = false;
   bool _saving = false;
@@ -178,20 +175,25 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
 
   String _prompt() {
     final mappedDecor = _themeDecorFor(_style);
+    final decorValues = [...mappedDecor, ..._decor];
+    final eventType = _eventType.trim().isEmpty ? 'event' : _eventType.trim();
+    String decorPhrase(String value) {
+      final text = value.trim();
+      if (text.isEmpty) return '';
+      return text.toLowerCase().contains('decor') ? text : '$text decor';
+    }
+
     return [
-      'transform venue into ${[_style, _eventType, 'reception'].whereType<String>().join(' ')}',
-      'add decor on top of venue photo',
-      'empty floor to be filled with event furniture',
-      'center of room',
-      'floor area filled with',
-      'main hall placement',
-      'foreground seating area',
-      'round banquet tables',
-      if (_palettes.isNotEmpty) '${_palettes.join(', ')} accents',
-      ...mappedDecor,
-      if (_decor.isNotEmpty) ..._decor,
+      'use this venue image to make these edits: $eventType party event',
+      if (_style != null && _style!.trim().isNotEmpty)
+        '${_style!.trim()} style',
+      if (_mood != null && _mood!.trim().isNotEmpty)
+        '${_mood!.trim()} mood/lighting',
+      if (_palettes.isNotEmpty) '${_palettes.join(', ')} color palette',
+      for (final item in decorValues)
+        if (decorPhrase(item).isNotEmpty) decorPhrase(item),
       if (_notes.text.trim().isNotEmpty) _notes.text.trim(),
-      'photorealistic',
+      'add chairs and tables',
     ].join(', ');
   }
 
@@ -216,27 +218,27 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
     };
   }
 
-  Map<String, dynamic> _runpodMeta(EventPromptExpansion expansion) {
-    final denoise = expansion.recommendedStrength ?? 0.85;
+  Map<String, dynamic> _runpodMeta({EventPromptExpansion? expansion}) {
+    final denoise = expansion?.recommendedStrength ?? 0.85;
     final controlnet = _controlnetForDenoise(denoise);
     return {
       ..._eventConfig(),
-      'task_type': 'sdxl_event_design',
+      'task_type': 'nano_event_design',
       'use_nlp_prompt_expansion': false,
-      ...expansion.toSdxlMeta(),
+      if (expansion != null) ...expansion.toSdxlMeta(),
       'negative_prompt':
-          expansion.negativePrompt.isNotEmpty
-              ? expansion.negativePrompt
+          expansion?.negativePrompt.isNotEmpty == true
+              ? expansion!.negativePrompt
               : 'warped architecture, distorted room, melted surfaces, duplicate objects, blurry, low quality, cartoon, CGI, fisheye',
       'controlnet': {
-        'enabled': expansion.controlnet?['enabled'] ?? true,
-        'preprocessor': expansion.controlnet?['preprocessor'] ?? 'depth',
+        'enabled': expansion?.controlnet?['enabled'] ?? true,
+        'preprocessor': expansion?.controlnet?['preprocessor'] ?? 'depth',
         'preserve_venue': true,
         'conditioning_scale':
-            expansion.controlnet?['conditioning_scale'] ?? controlnet,
+            expansion?.controlnet?['conditioning_scale'] ?? controlnet,
       },
       'controlnet_conditioning_scale':
-          expansion.controlnet?['conditioning_scale'] ?? controlnet,
+          expansion?.controlnet?['conditioning_scale'] ?? controlnet,
     };
   }
 
@@ -253,6 +255,7 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
       'venuePhotos': _venuePhotosB64,
       if (_venuePhotosB64.isNotEmpty) 'venuePhotoBase64': _venuePhotosB64.first,
       if (_generatedUrl != null) 'generatedImageUrl': _generatedUrl,
+      if (_generatedPrompt != null) 'generatedPrompt': _generatedPrompt,
       'previousGeneratedImageUrls': [
         if (_generatedUrl != null) _generatedUrl,
         ..._previousUrls,
@@ -272,20 +275,16 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
       _generateError = null;
     });
     try {
-      final fallbackPrompt = _prompt();
-      final expansion = await RunPodService.expandEventPrompt(
-        _eventConfig(),
-        fallbackPrompt: fallbackPrompt,
-      );
-      final denoise = expansion.recommendedStrength ?? 0.85;
+      final prompt = _prompt();
+      const denoise = 0.85;
       final url = await RunPodService.generateImageWithPolling(
-        expansion.positivePrompt,
+        prompt,
         user_id: widget.userEmail,
         initImageBase64: _venuePhotosB64.first,
         strength: denoise,
-        numInferenceSteps: expansion.steps ?? 30,
-        guidanceScale: expansion.cfgScale ?? 7,
-        designMeta: _runpodMeta(expansion),
+        numInferenceSteps: 30,
+        guidanceScale: 7,
+        designMeta: _runpodMeta(),
       );
       if (!mounted) return;
       if (url == null || url.trim().isEmpty) {
@@ -296,6 +295,7 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
           _previousUrls.insert(0, _generatedUrl!);
         }
         _generatedUrl = url;
+        _generatedPrompt = prompt;
       });
     } catch (e) {
       if (!mounted) return;
