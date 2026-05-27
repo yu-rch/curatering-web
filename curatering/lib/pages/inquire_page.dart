@@ -99,6 +99,10 @@ class _InquirePageState extends State<InquirePage> {
   String? _generatedDesignPrompt;
   final List<String> _generatedImageHistory = [];
 
+  String _generatedImageDisplayUrl(String url) {
+    return RunPodService.proxyImageUrlIfNeeded(url);
+  }
+
   // Service Type Selection
   String _serviceType = 'catering'; // 'catering' or 'catering+event'
 
@@ -740,7 +744,7 @@ class _InquirePageState extends State<InquirePage> {
         'eventSetting': _eventSetting,
         'event_setting': _eventSetting,
         if (_generatedImageUrl != null && _generatedImageUrl!.trim().isNotEmpty)
-          'generatedImageUrl': _generatedImageUrl!.trim(),
+          'generatedImageUrl': _generatedImageDisplayUrl(_generatedImageUrl!),
         if (_generatedDesignPrompt != null &&
             _generatedDesignPrompt!.trim().isNotEmpty)
           'generatedPrompt': _generatedDesignPrompt!.trim(),
@@ -2058,6 +2062,10 @@ class _InquirePageState extends State<InquirePage> {
 
   Widget _buildAiDesignPreviewPanel({double minHeight = 280}) {
     final hasGenerated = _generatedImageUrl != null;
+    final generatedDisplayUrl =
+        _generatedImageUrl == null
+            ? null
+            : _generatedImageDisplayUrl(_generatedImageUrl!);
     final hasVenue = _venuePhotoBase64 != null;
 
     Widget previewBox({
@@ -2101,12 +2109,12 @@ class _InquirePageState extends State<InquirePage> {
             onTap:
                 () => _openZoomableImage(
                   image: Image.network(
-                    _generatedImageUrl!,
+                    generatedDisplayUrl,
                     fit: BoxFit.contain,
                   ),
                 ),
             child: Image.network(
-              _generatedImageUrl!,
+              generatedDisplayUrl!,
               fit: BoxFit.cover,
               errorBuilder: (context, error, stack) {
                 return Container(
@@ -2124,7 +2132,7 @@ class _InquirePageState extends State<InquirePage> {
             runSpacing: 8,
             children: [
               OutlinedButton.icon(
-                onPressed: () => _downloadGeneratedImage(_generatedImageUrl!),
+                onPressed: () => _downloadGeneratedImage(generatedDisplayUrl),
                 icon: const Icon(Icons.download, size: 18),
                 label: const Text('Download design'),
               ),
@@ -2151,9 +2159,11 @@ class _InquirePageState extends State<InquirePage> {
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                 itemBuilder: (context, i) {
                   final url = _generatedImageHistory[i];
-                  final selected = url == _generatedImageUrl;
+                  final displayUrl = _generatedImageDisplayUrl(url);
+                  final selected = displayUrl == generatedDisplayUrl;
                   return GestureDetector(
-                    onTap: () => setState(() => _generatedImageUrl = url),
+                    onTap:
+                        () => setState(() => _generatedImageUrl = displayUrl),
                     child: Container(
                       width: 72,
                       decoration: BoxDecoration(
@@ -2167,7 +2177,7 @@ class _InquirePageState extends State<InquirePage> {
                         borderRadius: BorderRadius.circular(6),
                       ),
                       clipBehavior: Clip.antiAlias,
-                      child: Image.network(url, fit: BoxFit.cover),
+                      child: Image.network(displayUrl, fit: BoxFit.cover),
                     ),
                   );
                 },
@@ -2986,7 +2996,7 @@ class _InquirePageState extends State<InquirePage> {
 
   Future<void> _downloadGeneratedImage(String url) async {
     try {
-      final res = await http.get(Uri.parse(url));
+      final res = await http.get(Uri.parse(_generatedImageDisplayUrl(url)));
       if (res.statusCode == 200) {
         await downloadImageBytes(
           Uint8List.fromList(res.bodyBytes),
@@ -3067,12 +3077,13 @@ class _InquirePageState extends State<InquirePage> {
       );
 
       if (imageUrl != null) {
+        final displayUrl = _generatedImageDisplayUrl(imageUrl);
         setState(() {
           _wantsCustomDesign = true;
-          _generatedImageUrl = imageUrl;
+          _generatedImageUrl = displayUrl;
           _generatedDesignPrompt = prompt;
-          if (!_generatedImageHistory.contains(imageUrl)) {
-            _generatedImageHistory.add(imageUrl);
+          if (!_generatedImageHistory.contains(displayUrl)) {
+            _generatedImageHistory.add(displayUrl);
           }
           _genAiError = null;
         });

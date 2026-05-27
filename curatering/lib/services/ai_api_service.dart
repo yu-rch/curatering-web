@@ -141,8 +141,10 @@ class ApiService {
         };
       }
 
-      if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-        final res = await http.get(Uri.parse(imageUrl));
+      final displayImageUrl = RunPodService.proxyImageUrlIfNeeded(imageUrl);
+      if (displayImageUrl.startsWith('http://') ||
+          displayImageUrl.startsWith('https://')) {
+        final res = await http.get(Uri.parse(displayImageUrl));
         if (res.statusCode != 200) {
           return {
             'success': false,
@@ -152,11 +154,11 @@ class ApiService {
         return {
           'success': true,
           'image': base64Encode(res.bodyBytes),
-          'imageUrl': imageUrl,
+          'imageUrl': displayImageUrl,
         };
       }
 
-      return {'success': true, 'image': imageUrl};
+      return {'success': true, 'image': displayImageUrl};
     } catch (e) {
       return {'success': false, 'error': e.toString()};
     }

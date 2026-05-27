@@ -7,6 +7,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import '../../services/runpod_service.dart';
 import '../../utils/image_download.dart';
 
 Future<Uint8List?> themeDesignImageBytes(
@@ -20,9 +21,9 @@ Future<Uint8List?> themeDesignImageBytes(
       return Uint8List.fromList(base64Decode(b64));
     } catch (_) {}
   }
-  final url =
-      '${themeDesign['generatedImageUrl'] ?? themeDesign['imageUrl'] ?? themeDesign['url'] ?? ''}'
-          .trim();
+  final url = RunPodService.proxyImageUrlIfNeeded(
+    '${themeDesign['generatedImageUrl'] ?? themeDesign['imageUrl'] ?? themeDesign['url'] ?? ''}',
+  );
   if (url.isEmpty) return null;
   try {
     final res = await http
@@ -40,9 +41,9 @@ Future<void> showThemeDesignFullscreen(
   Map<String, dynamic> themeDesign,
 ) async {
   final bytes = await themeDesignImageBytes(themeDesign);
-  final url =
-      '${themeDesign['generatedImageUrl'] ?? themeDesign['imageUrl'] ?? ''}'
-          .trim();
+  final url = RunPodService.proxyImageUrlIfNeeded(
+    '${themeDesign['generatedImageUrl'] ?? themeDesign['imageUrl'] ?? ''}',
+  );
   if (bytes == null && url.isEmpty) return;
   if (!context.mounted) return;
   await showDialog<void>(

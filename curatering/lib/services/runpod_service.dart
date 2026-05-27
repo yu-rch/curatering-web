@@ -215,6 +215,15 @@ class RunPodService {
     return _nanoResultUrl(uri.pathSegments[1]);
   }
 
+  static String proxyImageUrlIfNeeded(String value) {
+    return _proxyRunpodImageUrlIfNeeded(value.trim());
+  }
+
+  static bool _isProxiedRunpodResultUrl(String value) {
+    final uri = Uri.tryParse(value);
+    return uri != null && uri.path.contains('/api/public/runpod/image/result/');
+  }
+
   static bool _statusIsQueued(String? status) {
     if (status == null) return false;
     return status == 'IN_QUEUE' ||
@@ -281,7 +290,12 @@ class RunPodService {
         if (_statusIsCompleted(status)) {
           final imageUrl =
               _imageUrlFromAny(data['output']) ?? _imageUrlFromAny(data);
-          if (imageUrl != null) return imageUrl;
+          if (imageUrl != null) {
+            if (_isProxiedRunpodResultUrl(imageUrl)) {
+              await _waitForImageAvailability(imageUrl);
+            }
+            return imageUrl;
+          }
           final outputError =
               _runpodOutputError(data['output']) ?? _runpodOutputError(data);
           if (outputError != null) throw _RunPodTerminalException(outputError);
@@ -563,7 +577,12 @@ class RunPodService {
         if (_statusIsCompleted(status)) {
           final imageUrl =
               _imageUrlFromAny(data['output']) ?? _imageUrlFromAny(data);
-          if (imageUrl != null) return imageUrl;
+          if (imageUrl != null) {
+            if (_isProxiedRunpodResultUrl(imageUrl)) {
+              await _waitForImageAvailability(imageUrl);
+            }
+            return imageUrl;
+          }
           final outputError =
               _runpodOutputError(data['output']) ?? _runpodOutputError(data);
           if (outputError != null) throw _RunPodTerminalException(outputError);
@@ -603,6 +622,7 @@ class RunPodService {
   /// RunPod execution timeout is often 600s; poll long enough for cold GPU + inference.
   static const int _pollIntervalSeconds = 5;
   static const int _maxPollAttempts = 130;
+  static const int _fallbackImageReadyAttempts = 12;
 
   static String _formatRunpodFailure(Map<String, dynamic> data) {
     final err = data['error']?.toString() ?? 'Unknown error';
@@ -640,12 +660,20 @@ class RunPodService {
           if (_statusIsCompleted(status)) {
             final imageUrl =
                 _imageUrlFromAny(data['output']) ?? _imageUrlFromAny(data);
-            if (imageUrl != null) return imageUrl;
+            if (imageUrl != null) {
+              if (_isProxiedRunpodResultUrl(imageUrl)) {
+                await _waitForImageAvailability(imageUrl);
+              }
+              return imageUrl;
+            }
             final outputError =
                 _runpodOutputError(data['output']) ?? _runpodOutputError(data);
             if (outputError != null)
               throw _RunPodTerminalException(outputError);
-            if (fallbackImageUrl != null) return fallbackImageUrl;
+            if (fallbackImageUrl != null) {
+              await _waitForImageAvailability(fallbackImageUrl);
+              return fallbackImageUrl;
+            }
             throw _RunPodTerminalException(_formatNoImageResult(data));
           }
           if (_statusIsFailed(status)) {
@@ -675,6 +703,49 @@ class RunPodService {
     final totalSeconds = _maxPollAttempts * _pollIntervalSeconds;
     throw Exception(
       'Job timed out after ${totalSeconds}s waiting for the AI worker. Try again in a moment.',
+    );
+  }
+
+  static Future<void> _waitForImageAvailability(String imageUrl) async {
+    Object? lastError;
+    int? lastStatus;
+
+    for (var attempt = 0; attempt < _fallbackImageReadyAttempts; attempt++) {
+      try {
+        final response = await http
+            .get(Uri.parse(imageUrl))
+            .timeout(const Duration(seconds: 30));
+        if (response.statusCode == 200) return;
+        lastStatus = response.statusCode;
+        if (![
+          404,
+          425,
+          429,
+          500,
+          502,
+          503,
+          504,
+        ].contains(response.statusCode)) {
+          throw _RunPodTerminalException(
+            'Generated image result is unavailable (HTTP ${response.statusCode}).',
+          );
+        }
+      } on _RunPodTerminalException {
+        rethrow;
+      } catch (e) {
+        lastError = e;
+      }
+
+      await Future.delayed(const Duration(seconds: _pollIntervalSeconds));
+    }
+
+    if (lastStatus != null) {
+      throw _RunPodTerminalException(
+        'Generated image result is not ready yet (HTTP $lastStatus). Try again in a moment.',
+      );
+    }
+    throw _RunPodTerminalException(
+      'Generated image result is not ready yet: ${lastError ?? 'unknown error'}',
     );
   }
 

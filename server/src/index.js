@@ -686,9 +686,26 @@ async function handleRunpodNanoImageResult(req, res) {
     }
 
     const imageUrl = `https://image.runpod.ai/google-nano-banana-2-edit/${encodeURIComponent(jobId)}/result.png`;
-    const upstream = await fetch(imageUrl, { method: "GET" });
+    const maxAttempts = Math.max(1, Number(process.env.RUNPOD_IMAGE_RESULT_FETCH_ATTEMPTS || 12));
+    let upstream = null;
+    let message = "";
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      upstream = await fetch(imageUrl, { method: "GET" });
+      if (upstream.ok) break;
+
+      message = await upstream.text().catch(() => "");
+      if (![404, 425, 429, 500, 502, 503, 504].includes(upstream.status) || attempt === maxAttempts) {
+        break;
+      }
+
+      const retryAfterSec = Number(upstream.headers.get("retry-after"));
+      const delayMs = Number.isFinite(retryAfterSec)
+        ? Math.max(500, retryAfterSec * 1000)
+        : Math.min(5000, 750 * attempt);
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+
     if (!upstream.ok) {
-      const message = await upstream.text().catch(() => "");
       return res.status(upstream.status).json({
         message: message || `RunPod image result unavailable (${upstream.status})`,
         code: "runpod_image_result_unavailable",

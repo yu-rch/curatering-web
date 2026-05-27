@@ -8,6 +8,7 @@ import '../config.dart';
 import '../models/seating_plan.dart';
 import '../services/customer_orders_cache.dart';
 import '../services/menu_store.dart';
+import '../services/runpod_service.dart';
 import '../services/set_menu_store.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_descriptions.dart';
@@ -149,9 +150,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       title: 'Session expired',
       barrierDismissible: false,
       maxWidth: 420,
-      body: const Text(
-        'Your session has expired. Please log in again.',
-      ),
+      body: const Text('Your session has expired. Please log in again.'),
       actions: [
         AntdPrimaryButton(
           label: 'Log in',
@@ -234,8 +233,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       ),
       AntdDescriptionItem(
         label: 'Guests',
-        value:
-            '${catering['guest_count'] ?? catering['guestCount'] ?? '—'}',
+        value: '${catering['guest_count'] ?? catering['guestCount'] ?? '—'}',
       ),
       AntdDescriptionItem(
         label: 'Created',
@@ -253,9 +251,10 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       ),
       AntdDescriptionItem(
         label: 'Allergens',
-        value: (catering['allergens'] ?? '').toString().trim().isEmpty
-            ? '—'
-            : (catering['allergens'] ?? '').toString(),
+        value:
+            (catering['allergens'] ?? '').toString().trim().isEmpty
+                ? '—'
+                : (catering['allergens'] ?? '').toString(),
         span: cols,
       ),
     ];
@@ -382,7 +381,11 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
         children: [
           Row(
             children: [
-              Icon(Icons.price_change_outlined, color: Colors.green.shade800, size: 20),
+              Icon(
+                Icons.price_change_outlined,
+                color: Colors.green.shade800,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -396,7 +399,10 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
             ],
           ),
           const SizedBox(height: 6),
-          Text(message, style: TextStyle(fontSize: 12, color: Colors.green.shade900)),
+          Text(
+            message,
+            style: TextStyle(fontSize: 12, color: Colors.green.shade900),
+          ),
           if (breakdown is Map) ...[
             const SizedBox(height: 8),
             Text(
@@ -424,7 +430,10 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     if ((themeDesign['venuePhotoBase64'] ?? '').toString().trim().isNotEmpty) {
       return true;
     }
-    if ((themeDesign['macrinaColorPalette'] ?? '').toString().trim().isNotEmpty) {
+    if ((themeDesign['macrinaColorPalette'] ?? '')
+        .toString()
+        .trim()
+        .isNotEmpty) {
       return true;
     }
     if ((themeDesign['macrinaTheme'] ?? '').toString().trim().isNotEmpty) {
@@ -436,7 +445,10 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     if (colors is List && colors.isNotEmpty) return true;
     final decor = themeDesign['decorElements'];
     if (decor is List && decor.isNotEmpty) return true;
-    if ((themeDesign['customInstructions'] ?? '').toString().trim().isNotEmpty) {
+    if ((themeDesign['customInstructions'] ?? '')
+        .toString()
+        .trim()
+        .isNotEmpty) {
       return true;
     }
     return false;
@@ -454,29 +466,30 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     showDialog<void>(
       context: context,
       barrierColor: Colors.black87,
-      builder: (ctx) => Dialog(
-        insetPadding: const EdgeInsets.all(16),
-        backgroundColor: Colors.black,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 5,
-                child: Center(child: image),
-              ),
+      builder:
+          (ctx) => Dialog(
+            insetPadding: const EdgeInsets.all(16),
+            backgroundColor: Colors.black,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 5,
+                    child: Center(child: image),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: IconButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    icon: const Icon(Icons.close, color: Colors.white),
+                  ),
+                ),
+              ],
             ),
-            Positioned(
-              top: 8,
-              right: 8,
-              child: IconButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                icon: const Icon(Icons.close, color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
@@ -485,24 +498,28 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     Map<String, dynamic> themeDesign, {
     double height = 160,
   }) {
-    final url = (themeDesign['generatedImageUrl'] ?? '').toString().trim();
+    final url = RunPodService.proxyImageUrlIfNeeded(
+      (themeDesign['generatedImageUrl'] ?? '').toString(),
+    );
     if (url.isNotEmpty) {
       final img = Image.network(
         url,
         height: height,
         width: double.infinity,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => Container(
-          height: height,
-          color: Colors.grey.shade200,
-          child: const Center(child: Icon(Icons.broken_image_outlined)),
-        ),
+        errorBuilder:
+            (_, __, ___) => Container(
+              height: height,
+              color: Colors.grey.shade200,
+              child: const Center(child: Icon(Icons.broken_image_outlined)),
+            ),
       );
       return InkWell(
-        onTap: () => _openThemeImageZoom(
-          context,
-          Image.network(url, fit: BoxFit.contain),
-        ),
+        onTap:
+            () => _openThemeImageZoom(
+              context,
+              Image.network(url, fit: BoxFit.contain),
+            ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: Stack(
@@ -512,7 +529,10 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                 right: 8,
                 bottom: 8,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black54,
                     borderRadius: BorderRadius.circular(6),
@@ -542,16 +562,19 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       final bytes = base64Decode(
         venueB64.startsWith('data:') ? venueB64.split(',').last : venueB64,
       );
-      final mem = Image.memory(bytes, height: height, width: double.infinity, fit: BoxFit.cover);
+      final mem = Image.memory(
+        bytes,
+        height: height,
+        width: double.infinity,
+        fit: BoxFit.cover,
+      );
       return InkWell(
-        onTap: () => _openThemeImageZoom(
-          context,
-          Image.memory(bytes, fit: BoxFit.contain),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: mem,
-        ),
+        onTap:
+            () => _openThemeImageZoom(
+              context,
+              Image.memory(bytes, fit: BoxFit.contain),
+            ),
+        child: ClipRRect(borderRadius: BorderRadius.circular(8), child: mem),
       );
     } catch (_) {
       return null;
@@ -670,10 +693,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
         'guestCount': guestCount,
         'address': address,
         if (venueOnly) 'venueOnly': true,
-        if (!venueOnly) ...{
-          'scheduleSlots': scheduleSlots,
-          'menu': menu,
-        },
+        if (!venueOnly) ...{'scheduleSlots': scheduleSlots, 'menu': menu},
       }),
     );
 
@@ -702,10 +722,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     final status = (catering['status'] ?? '').toString();
     if (!_canEditVenueAndGuests(status)) {
       if (mounted) {
-        showAppSnackBar(
-          context,
-          'This order can no longer be edited.',
-        );
+        showAppSnackBar(context, 'This order can no longer be edited.');
       }
       return;
     }
@@ -789,22 +806,23 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     await SetMenuStore.instance.loadSetMenus();
 
     List<Map<String, dynamic>> buildPresetMenusList() {
-      final dishById = {
-        for (final d in MenuStore.instance.allDishes) d.id: d,
-      };
+      final dishById = {for (final d in MenuStore.instance.allDishes) d.id: d};
       final fromApi =
-          SetMenuStore.instance.activeSetMenus.map((sm) {
-            final names =
-                sm.dishIds
-                    .map((id) => dishById[id]?.name ?? '')
-                    .where((n) => n.isNotEmpty)
-                    .toList();
-            return <String, dynamic>{
-              'id': sm.id,
-              'name': sm.name,
-              'dishes': names,
-            };
-          }).where((m) => (m['dishes'] as List).isNotEmpty).toList();
+          SetMenuStore.instance.activeSetMenus
+              .map((sm) {
+                final names =
+                    sm.dishIds
+                        .map((id) => dishById[id]?.name ?? '')
+                        .where((n) => n.isNotEmpty)
+                        .toList();
+                return <String, dynamic>{
+                  'id': sm.id,
+                  'name': sm.name,
+                  'dishes': names,
+                };
+              })
+              .where((m) => (m['dishes'] as List).isNotEmpty)
+              .toList();
       if (fromApi.isNotEmpty) return fromApi;
       return [
         {
@@ -909,261 +927,248 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-                      TextField(
-                        controller: guestCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Guest Count',
-                          border: OutlineInputBorder(),
-                        ),
+              TextField(
+                controller: guestCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Guest Count',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: venueCtrl,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Venue / Address',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: dateCtrl,
+                      readOnly: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Event Date',
+                        border: OutlineInputBorder(),
                       ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: venueCtrl,
-                        maxLines: 2,
-                        decoration: const InputDecoration(
-                          labelText: 'Venue / Address',
-                          border: OutlineInputBorder(),
-                        ),
+                      onTap: () async {
+                        final now = DateTime.now();
+                        final selected = await showDatePicker(
+                          context: context,
+                          initialDate: now,
+                          firstDate: now.subtract(const Duration(days: 1)),
+                          lastDate: now.add(const Duration(days: 3650)),
+                        );
+                        if (selected != null) {
+                          dateCtrl.text =
+                              '${selected.year}-${selected.month.toString().padLeft(2, '0')}-${selected.day.toString().padLeft(2, '0')}';
+                          setLocalState(() {});
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: startCtrl,
+                      readOnly: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Start Time',
+                        border: OutlineInputBorder(),
                       ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: dateCtrl,
-                              readOnly: true,
-                              decoration: const InputDecoration(
-                                labelText: 'Event Date',
-                                border: OutlineInputBorder(),
+                      onTap: () async {
+                        final initial =
+                            parseTime(startCtrl.text) ??
+                            const TimeOfDay(hour: 9, minute: 0);
+                        final selected = await showTimePicker(
+                          context: context,
+                          initialTime: initial,
+                        );
+                        if (selected != null) {
+                          startCtrl.text = formatTime(selected);
+                          setLocalState(() {});
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: endCtrl,
+                      readOnly: true,
+                      decoration: const InputDecoration(
+                        labelText: 'End Time',
+                        border: OutlineInputBorder(),
+                      ),
+                      onTap: () async {
+                        final initial =
+                            parseTime(endCtrl.text) ??
+                            const TimeOfDay(hour: 12, minute: 0);
+                        final selected = await showTimePicker(
+                          context: context,
+                          initialTime: initial,
+                        );
+                        if (selected != null) {
+                          endCtrl.text = formatTime(selected);
+                          setLocalState(() {});
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Requested Dishes',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('Custom Menu'),
+                    selected: menuSelectionType == 'custom',
+                    onSelected: (_) {
+                      setLocalState(() {
+                        menuSelectionType = 'custom';
+                      });
+                    },
+                  ),
+                  ChoiceChip(
+                    label: const Text('Catering Set Menu'),
+                    selected: menuSelectionType == 'preset',
+                    onSelected: (_) {
+                      setLocalState(() {
+                        menuSelectionType = 'preset';
+                        selectedPresetMenuId ??=
+                            presetMenus.isNotEmpty
+                                ? presetMenus.first['id'].toString()
+                                : null;
+                        if (selectedPresetMenuId != null) {
+                          final selectedPreset = presetMenus.firstWhere(
+                            (m) => m['id'].toString() == selectedPresetMenuId,
+                            orElse: () => presetMenus.first,
+                          );
+                          editableDishes
+                            ..clear()
+                            ..addAll(
+                              (selectedPreset['dishes'] as List<dynamic>).map(
+                                (e) => e.toString(),
                               ),
-                              onTap: () async {
-                                final now = DateTime.now();
-                                final selected = await showDatePicker(
-                                  context: context,
-                                  initialDate: now,
-                                  firstDate: now.subtract(
-                                    const Duration(days: 1),
-                                  ),
-                                  lastDate: now.add(const Duration(days: 3650)),
-                                );
-                                if (selected != null) {
-                                  dateCtrl.text =
-                                      '${selected.year}-${selected.month.toString().padLeft(2, '0')}-${selected.day.toString().padLeft(2, '0')}';
-                                  setLocalState(() {});
-                                }
-                              },
+                            );
+                        }
+                      });
+                    },
+                  ),
+                ],
+              ),
+              if (menuSelectionType == 'preset') ...[
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  value: selectedPresetMenuId,
+                  decoration: const InputDecoration(
+                    labelText: 'Select Catering Menu',
+                    border: OutlineInputBorder(),
+                  ),
+                  items:
+                      presetMenus
+                          .map(
+                            (menu) => DropdownMenuItem<String>(
+                              value: menu['id'].toString(),
+                              child: Text(menu['name'].toString()),
                             ),
+                          )
+                          .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setLocalState(() {
+                      selectedPresetMenuId = value;
+                      final selectedPreset = presetMenus.firstWhere(
+                        (m) => m['id'].toString() == value,
+                        orElse: () => presetMenus.first,
+                      );
+                      editableDishes
+                        ..clear()
+                        ..addAll(
+                          (selectedPreset['dishes'] as List<dynamic>).map(
+                            (e) => e.toString(),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: startCtrl,
-                              readOnly: true,
-                              decoration: const InputDecoration(
-                                labelText: 'Start Time',
-                                border: OutlineInputBorder(),
+                        );
+                    });
+                  },
+                ),
+              ],
+              const SizedBox(height: 8),
+              if (menuSelectionType == 'custom') ...[
+                Text(
+                  'Tap dishes from your catering menu to include them.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 240),
+                  child: SingleChildScrollView(
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children:
+                          cateringPickDishes.map((d) {
+                            final sel = editableDishes.contains(d.name);
+                            return FilterChip(
+                              label: Text(
+                                d.name,
+                                style: const TextStyle(fontSize: 12),
                               ),
-                              onTap: () async {
-                                final initial =
-                                    parseTime(startCtrl.text) ??
-                                    const TimeOfDay(hour: 9, minute: 0);
-                                final selected = await showTimePicker(
-                                  context: context,
-                                  initialTime: initial,
-                                );
-                                if (selected != null) {
-                                  startCtrl.text = formatTime(selected);
-                                  setLocalState(() {});
-                                }
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: endCtrl,
-                              readOnly: true,
-                              decoration: const InputDecoration(
-                                labelText: 'End Time',
-                                border: OutlineInputBorder(),
-                              ),
-                              onTap: () async {
-                                final initial =
-                                    parseTime(endCtrl.text) ??
-                                    const TimeOfDay(hour: 12, minute: 0);
-                                final selected = await showTimePicker(
-                                  context: context,
-                                  initialTime: initial,
-                                );
-                                if (selected != null) {
-                                  endCtrl.text = formatTime(selected);
-                                  setLocalState(() {});
-                                }
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      const Text(
-                        'Requested Dishes',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          ChoiceChip(
-                            label: const Text('Custom Menu'),
-                            selected: menuSelectionType == 'custom',
-                            onSelected: (_) {
-                              setLocalState(() {
-                                menuSelectionType = 'custom';
-                              });
-                            },
-                          ),
-                          ChoiceChip(
-                            label: const Text('Catering Set Menu'),
-                            selected: menuSelectionType == 'preset',
-                            onSelected: (_) {
-                              setLocalState(() {
-                                menuSelectionType = 'preset';
-                                selectedPresetMenuId ??=
-                                    presetMenus.isNotEmpty
-                                        ? presetMenus.first['id'].toString()
-                                        : null;
-                                if (selectedPresetMenuId != null) {
-                                  final selectedPreset = presetMenus.firstWhere(
-                                    (m) =>
-                                        m['id'].toString() ==
-                                        selectedPresetMenuId,
-                                    orElse: () => presetMenus.first,
-                                  );
-                                  editableDishes
-                                    ..clear()
-                                    ..addAll(
-                                      (selectedPreset['dishes']
-                                              as List<dynamic>)
-                                          .map((e) => e.toString()),
-                                    );
-                                }
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                      if (menuSelectionType == 'preset') ...[
-                        const SizedBox(height: 10),
-                        DropdownButtonFormField<String>(
-                          value: selectedPresetMenuId,
-                          decoration: const InputDecoration(
-                            labelText: 'Select Catering Menu',
-                            border: OutlineInputBorder(),
-                          ),
-                          items:
-                              presetMenus
-                                  .map(
-                                    (menu) => DropdownMenuItem<String>(
-                                      value: menu['id'].toString(),
-                                      child: Text(menu['name'].toString()),
-                                    ),
-                                  )
-                                  .toList(),
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setLocalState(() {
-                              selectedPresetMenuId = value;
-                              final selectedPreset = presetMenus.firstWhere(
-                                (m) => m['id'].toString() == value,
-                                orElse: () => presetMenus.first,
-                              );
-                              editableDishes
-                                ..clear()
-                                ..addAll(
-                                  (selectedPreset['dishes'] as List<dynamic>)
-                                      .map((e) => e.toString()),
-                                );
-                            });
-                          },
-                        ),
-                      ],
-                      const SizedBox(height: 8),
-                      if (menuSelectionType == 'custom') ...[
-                        Text(
-                          'Tap dishes from your catering menu to include them.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 240),
-                          child: SingleChildScrollView(
-                            child: Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children:
-                                  cateringPickDishes.map((d) {
-                                    final sel = editableDishes.contains(
-                                      d.name,
-                                    );
-                                    return FilterChip(
-                                      label: Text(
-                                        d.name,
-                                        style: const TextStyle(fontSize: 12),
-                                      ),
-                                      selected: sel,
-                                      onSelected: (on) {
-                                        setLocalState(() {
-                                          if (on) {
-                                            if (!editableDishes.contains(
-                                              d.name,
-                                            )) {
-                                              editableDishes.add(d.name);
-                                            }
-                                          } else {
-                                            editableDishes.remove(d.name);
-                                          }
-                                        });
-                                      },
-                                    );
-                                  }).toList(),
-                            ),
-                          ),
-                        ),
-                      ] else ...[
-                        Text(
-                          'Choose a set menu below; dishes match your inquiry page catalog.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 10),
-                      if (editableDishes.isEmpty)
-                        Text(
-                          'No dishes yet. Add at least one dish.',
-                          style: TextStyle(color: Colors.grey.shade600),
-                        )
-                      else
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: List.generate(editableDishes.length, (i) {
-                            return Chip(
-                              label: Text(editableDishes[i]),
-                              onDeleted: () {
+                              selected: sel,
+                              onSelected: (on) {
                                 setLocalState(() {
-                                  editableDishes.removeAt(i);
+                                  if (on) {
+                                    if (!editableDishes.contains(d.name)) {
+                                      editableDishes.add(d.name);
+                                    }
+                                  } else {
+                                    editableDishes.remove(d.name);
+                                  }
                                 });
                               },
                             );
-                          }),
-                        ),
+                          }).toList(),
+                    ),
+                  ),
+                ),
+              ] else ...[
+                Text(
+                  'Choose a set menu below; dishes match your inquiry page catalog.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+              ],
+              const SizedBox(height: 10),
+              if (editableDishes.isEmpty)
+                Text(
+                  'No dishes yet. Add at least one dish.',
+                  style: TextStyle(color: Colors.grey.shade600),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: List.generate(editableDishes.length, (i) {
+                    return Chip(
+                      label: Text(editableDishes[i]),
+                      onDeleted: () {
+                        setLocalState(() {
+                          editableDishes.removeAt(i);
+                        });
+                      },
+                    );
+                  }),
+                ),
               const SizedBox(height: 20),
               Wrap(
                 spacing: 8,
@@ -1395,10 +1400,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
             builder: (_) {
               final breakdown = themeDesign['costBreakdown'];
               if (breakdown is! Map) {
-                return Text(
-                  '—',
-                  style: TextStyle(color: Colors.grey.shade700),
-                );
+                return Text('—', style: TextStyle(color: Colors.grey.shade700));
               }
               final b = Map<String, dynamic>.from(breakdown);
               return Column(
@@ -1440,10 +1442,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                 style: TextStyle(color: Colors.grey.shade600),
               )
             else
-              SeatingPlanInteractive(
-                plan: seatingPlan,
-                editable: false,
-              ),
+              SeatingPlanInteractive(plan: seatingPlan, editable: false),
             const SizedBox(height: 8),
             TextButton.icon(
               onPressed: () async {
@@ -1488,9 +1487,9 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                 );
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Cancel failed: $e')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('Cancel failed: $e')));
               }
             },
           ),
@@ -1512,9 +1511,9 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                 );
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Confirm failed: $e')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('Confirm failed: $e')));
               }
             },
           ),
@@ -1830,7 +1829,9 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                                         const SizedBox(width: 8),
                                         Tooltip(
                                           message:
-                                              _managerUpdateMessage(themeDesign) ??
+                                              _managerUpdateMessage(
+                                                themeDesign,
+                                              ) ??
                                               'Macrina posted updates. Please review your latest estimate in My Caterings.',
                                           child: const Icon(
                                             Icons.info_outline,
@@ -1907,7 +1908,8 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                                   if (_hasEventThemeDesign(themeDesign)) ...[
                                     const SizedBox(height: 12),
                                     Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         if (_buildThemeImagePreview(
                                               context,
@@ -1917,11 +1919,12 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                                             null) ...[
                                           SizedBox(
                                             width: 96,
-                                            child: _buildThemeImagePreview(
-                                              context,
-                                              themeDesign,
-                                              height: 72,
-                                            )!,
+                                            child:
+                                                _buildThemeImagePreview(
+                                                  context,
+                                                  themeDesign,
+                                                  height: 72,
+                                                )!,
                                           ),
                                           const SizedBox(width: 12),
                                         ],
@@ -1994,10 +1997,13 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                                         ),
                                     ],
                                   ),
-                                  if (_buildEstimateUpdateBanner(themeDesign) != null)
+                                  if (_buildEstimateUpdateBanner(themeDesign) !=
+                                      null)
                                     _buildEstimateUpdateBanner(themeDesign)!,
                                   if (status == 'online_inquiries' &&
-                                      !_hasManagerEstimateUpdate(themeDesign)) ...[
+                                      !_hasManagerEstimateUpdate(
+                                        themeDesign,
+                                      )) ...[
                                     const SizedBox(height: 12),
                                     Container(
                                       width: double.infinity,
