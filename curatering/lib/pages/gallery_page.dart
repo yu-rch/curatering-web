@@ -9,6 +9,7 @@ import '../utils/website_image_utils.dart';
 import '../widgets/centered_viewport_scroll.dart';
 import '../widgets/customer_website_topbar.dart';
 import '../widgets/pexels_attribution_badge.dart';
+import '../widgets/website_rich_text.dart';
 
 // Font constants
 const String _primaryFont = 'Inter';
@@ -194,6 +195,28 @@ class _GalleryPageState extends State<GalleryPage> {
     );
   }
 
+  Widget _galleryImage(String? b64, {BoxFit fit = BoxFit.cover}) {
+    if (b64 == null || b64.trim().isEmpty) {
+      return Container(
+        color: Colors.grey.shade300,
+        child: const Icon(Icons.image_outlined, color: Colors.grey),
+      );
+    }
+    try {
+      final normalized =
+          b64
+              .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
+              .replaceAll('\n', '')
+              .trim();
+      return Image.memory(base64Decode(normalized), fit: fit);
+    } catch (_) {
+      return Container(
+        color: Colors.grey.shade300,
+        child: const Icon(Icons.broken_image_outlined, color: Colors.grey),
+      );
+    }
+  }
+
   Widget _buildGalleryToolbar({
     required Widget searchField,
     required List<Widget> filters,
@@ -243,15 +266,24 @@ class _GalleryPageState extends State<GalleryPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 24),
-        Text(
-          'GALLERY',
+        WebsiteRichText(
+          value: w.galleryTitle,
           style: GoogleFonts.getFont(
             _primaryFont,
             fontSize: 36,
             fontWeight: FontWeight.bold,
             color: const Color(0xFF1E1E1E),
           ),
+          textAlign: TextAlign.center,
         ),
+        if (w.galleryIntro.trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          WebsiteRichText(
+            value: w.galleryIntro,
+            style: const TextStyle(height: 1.35),
+            textAlign: TextAlign.center,
+          ),
+        ],
         const SizedBox(height: 16),
         _buildGalleryToolbar(
           searchField: _buildGallerySearchField(
@@ -350,13 +382,11 @@ class _GalleryPageState extends State<GalleryPage> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      if (cat.images.isNotEmpty)
-                        Image.memory(
-                          base64Decode(cat.images.first.imageBase64),
-                          fit: BoxFit.cover,
-                        )
-                      else
-                        Container(color: Colors.grey.shade300),
+                      _galleryImage(
+                        cat.images.isNotEmpty
+                            ? cat.images.first.imageBase64
+                            : null,
+                      ),
                       Container(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
@@ -524,10 +554,7 @@ class _GalleryPageState extends State<GalleryPage> {
                   fit: StackFit.expand,
                   children: [
                     if (imgData.imageBase64.isNotEmpty)
-                      Image.memory(
-                        base64Decode(imgData.imageBase64),
-                        fit: BoxFit.cover,
-                      )
+                      _galleryImage(imgData.imageBase64)
                     else
                       Container(color: Colors.grey.shade300),
                     if (imgData.tags.isNotEmpty)

@@ -4283,7 +4283,23 @@ class _HoverZoomPhotoTileState extends State<_HoverZoomPhotoTile> {
   Widget _image({BoxFit fit = BoxFit.cover}) {
     final image = widget.imageB64;
     if (image != null && image.isNotEmpty) {
-      return Image.memory(base64Decode(image), fit: fit);
+      try {
+        final normalized =
+            image
+                .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
+                .replaceAll('\n', '')
+                .trim();
+        return Image.memory(
+          base64Decode(normalized),
+          fit: fit,
+          gaplessPlayback: true,
+        );
+      } catch (_) {
+        return Container(
+          color: Colors.grey.shade300,
+          child: const Icon(Icons.broken_image_outlined, size: 42),
+        );
+      }
     }
     return Container(
       color: Colors.grey.shade300,

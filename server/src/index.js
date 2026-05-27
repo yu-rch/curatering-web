@@ -5054,27 +5054,40 @@ function isNonEmptyWebsiteContent(content) {
 async function migrateWebsiteContentIfNeeded() {
   try {
     const canonical = await pool.query(
-      `SELECT content FROM website_content WHERE id = $1::uuid LIMIT 1`,
+      `SELECT content, updated_at FROM website_content WHERE id = $1::uuid LIMIT 1`,
       [WEBSITE_CONTENT_ROW_ID],
     );
-    if (
-      canonical.rows.length > 0 &&
-      isNonEmptyWebsiteContent(canonical.rows[0].content)
-    ) {
-      return;
-    }
+    const canonicalRow = canonical.rows[0] || null;
+    const canonicalHasContent = isNonEmptyWebsiteContent(canonicalRow?.content);
 
-    const legacy = await pool.query(`
-      SELECT content FROM website_content
-      WHERE content IS NOT NULL
+    const latestLegacy = await pool.query(
+      `
+      SELECT content, updated_at FROM website_content
+      WHERE id <> $1::uuid
+        AND content IS NOT NULL
         AND content::text NOT IN ('{}', 'null')
       ORDER BY updated_at DESC NULLS LAST, created_at DESC
       LIMIT 1
-    `);
+    `,
+      [WEBSITE_CONTENT_ROW_ID],
+    );
 
-    if (legacy.rows.length > 0 && isNonEmptyWebsiteContent(legacy.rows[0].content)) {
-      await writeWebsiteContent(legacy.rows[0].content);
-      console.log("[website-content] Migrated legacy DB row → canonical id");
+    const legacyRow = latestLegacy.rows[0] || null;
+    if (legacyRow && isNonEmptyWebsiteContent(legacyRow.content)) {
+      const canonicalUpdated = canonicalRow?.updated_at
+        ? new Date(canonicalRow.updated_at).getTime()
+        : 0;
+      const legacyUpdated = legacyRow.updated_at
+        ? new Date(legacyRow.updated_at).getTime()
+        : 0;
+      if (!canonicalHasContent || legacyUpdated > canonicalUpdated) {
+        await writeWebsiteContent(legacyRow.content);
+        console.log("[website-content] Migrated latest legacy DB row → canonical id");
+        return;
+      }
+    }
+
+    if (canonicalHasContent) {
       return;
     }
 

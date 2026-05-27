@@ -77,6 +77,37 @@ function stringList(value, max = 8) {
     .slice(0, max);
 }
 
+function compactSdxlPrompt(value, maxWords = 70) {
+  const text = String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/[.;]\s*/g, ", ")
+    .trim();
+  if (!text) return "";
+
+  const seen = new Set();
+  const phrases = text
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => {
+      const key = part.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+  const out = [];
+  let words = 0;
+  for (const phrase of phrases) {
+    const count = phrase.split(/\s+/).filter(Boolean).length;
+    if (out.length > 0 && words + count > maxWords) break;
+    out.push(phrase);
+    words += count;
+  }
+
+  return out.join(", ");
+}
+
 export async function analyzeFeedback(feedbacks) {
   const list = (Array.isArray(feedbacks) ? feedbacks : [feedbacks])
     .map((item) => String(item || "").trim())
@@ -298,8 +329,8 @@ Return ONLY valid JSON.
 
 Schema:
 {
-  "positive_prompt": "50-120 token dense visual prompt",
-  "negative_prompt": "string",
+  "positive_prompt": "concise comma-separated SDXL prompt, maximum 60-70 meaningful tokens",
+  "negative_prompt": "concise comma-separated negative prompt",
   "theme_tokens": ["string"],
   "decor_tokens": ["string"],
   "lighting_tokens": ["string"],
@@ -307,25 +338,35 @@ Schema:
 }
 
 Rules:
-- Remove prose and instructions.
-- Keep dense visual concepts only.
+- You are an SDXL prompt engineer.
+- Generate concise, visually dense prompts optimized for SDXL.
+- Maximum 60-70 meaningful tokens.
+- Avoid repetition.
+- Prioritize visual elements.
+- Use cinematic descriptors.
+- Keep architecture realistic.
+- Preserve room geometry.
+- Avoid redundant lighting/style terms.
+- Optimize for photorealism.
+- Remove prose, explanations, and instructions.
+- Return comma-separated dense visual concepts only.
 - Normalize themes and remove conflicting aesthetics.
-- Do not over-emphasize preserving room geometry.
-- Use photorealistic event styling language.
 
 Event config:
 ${JSON.stringify(input)}
 `.trim();
 
   const json = await createJsonCompletion({
-    system: "You create concise SDXL event styling prompts.",
+    system:
+      "You are an SDXL prompt engineer. Generate concise, visually dense prompts optimized for SDXL.",
     user: prompt,
     temperature: 0.25,
+    maxTokens: 450,
   });
 
   return {
-    positive_prompt: String(json.positive_prompt || json.prompt || "").trim(),
-    negative_prompt: String(json.negative_prompt || "").trim(),
+    positive_prompt: compactSdxlPrompt(json.positive_prompt || json.prompt),
+    negative_prompt: compactSdxlPrompt(json.negative_prompt, 35),
     theme_tokens: stringList(json.theme_tokens),
     decor_tokens: stringList(json.decor_tokens),
     lighting_tokens: stringList(json.lighting_tokens),
