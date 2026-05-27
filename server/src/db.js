@@ -990,6 +990,18 @@ export async function initDb() {
     console.log('Migration check for customer_accounts archived:', err.message);
   }
 
+  // Backfill customer_id from customer_code where customer_id is NULL
+  try {
+    await pool.query(`
+      UPDATE customer_accounts
+      SET customer_id = customer_code
+      WHERE customer_id IS NULL AND customer_code IS NOT NULL AND TRIM(customer_code) <> ''
+    `);
+    console.log('Migration: Backfilled customer_id from customer_code');
+  } catch (err) {
+    console.log('Migration customer_id backfill:', err.message);
+  }
+
   try {
     await pool.query(
       `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_address TEXT`,

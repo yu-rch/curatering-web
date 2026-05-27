@@ -164,6 +164,7 @@ class _InquirePageState extends State<InquirePage> {
   // ---- Landing / package selection ----
   final _landingPaxController = TextEditingController();
   bool _includeMinimalStyling = false;
+  int _selectedPackageIndex = 0;
 
   // ---- Inquiry type ----
   String _inquiryType = kInquiryTypeCatering;
@@ -510,6 +511,37 @@ class _InquirePageState extends State<InquirePage> {
     final venue = _eventCity.text.trim().toLowerCase();
     return venue.contains('taguig');
   }
+
+  static final List<Map<String, dynamic>> _locationPackages = [
+    {
+      'title': 'Within Taguig City (below 50 pax) — Catering Only',
+      'description': 'Food catering service within Taguig City for smaller events. Minimum $kMinCateringOnlyPax pax.',
+      'type': kInquiryTypeCatering,
+      'service': 'catering',
+      'icon': Icons.restaurant,
+    },
+    {
+      'title': 'Within Taguig City (50+ pax) — Catering with Event Styling',
+      'description': 'Full food catering plus event design & décor within Taguig City. Minimum $kMinCateringEventPax pax.',
+      'type': kInquiryTypeCateringWithEventStyling,
+      'service': 'catering+event',
+      'icon': Icons.celebration,
+    },
+    {
+      'title': 'Outside Taguig City (below 50 pax) — Catering Only',
+      'description': 'Food catering service for events outside Taguig City. Minimum $kMinCateringOnlyPax pax.',
+      'type': kInquiryTypeCatering,
+      'service': 'catering',
+      'icon': Icons.restaurant,
+    },
+    {
+      'title': 'Outside Taguig City (50+ pax) — Catering with Event Styling',
+      'description': 'Full food catering plus event design & décor for events outside Taguig City. Minimum $kMinCateringEventPax pax.',
+      'type': kInquiryTypeCateringWithEventStyling,
+      'service': 'catering+event',
+      'icon': Icons.celebration,
+    },
+  ];
 
   String get _packageDisplayName {
     if (_isEventStyling) return 'Catering with Event Styling';
@@ -1673,8 +1705,6 @@ class _InquirePageState extends State<InquirePage> {
 
   Widget _buildPackagesPage(BuildContext context) {
     final content = WebsiteContentStore.instance;
-    final isCateringOnly =
-        _inquiryType.trim().toUpperCase() == kInquiryTypeCatering;
 
     return Center(
       child: SingleChildScrollView(
@@ -1722,7 +1752,7 @@ class _InquirePageState extends State<InquirePage> {
                   ),
                   const SizedBox(height: 28),
                   Text(
-                    'Choose your catering package',
+                    'Our Catering Packages',
                     textAlign: TextAlign.center,
                     style: Theme.of(context)
                         .textTheme
@@ -1730,34 +1760,41 @@ class _InquirePageState extends State<InquirePage> {
                         ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 20),
-                  GestureDetector(
-                    onTap: () => setState(() {
-                      _inquiryType = kInquiryTypeCatering;
-                      _serviceType = 'catering';
-                    }),
-                    child: _buildPackageCard(
-                      title: 'Catering Only',
-                      description:
-                          'Food catering service for your event — delicious dishes prepared and served by our culinary team. Minimum $kMinCateringOnlyPax pax.',
-                      selected: isCateringOnly,
-                      highlighted: isCateringOnly,
-                      icon: Icons.restaurant,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  GestureDetector(
-                    onTap: () => setState(() {
-                      _inquiryType = kInquiryTypeCateringWithEventStyling;
-                      _serviceType = 'catering+event';
-                    }),
-                    child: _buildPackageCard(
-                      title: 'Catering with Event Styling',
-                      description:
-                          'Full food catering plus event design & décor — styling, setup, and thematic decorations handled by our team. Minimum $kMinCateringEventPax pax.',
-                      selected: !isCateringOnly,
-                      highlighted: !isCateringOnly,
-                      icon: Icons.celebration,
-                    ),
+                  GridView.count(
+                    crossAxisCount: 2,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 1.1,
+                    children: _locationPackages.map((pkg) {
+                      return Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(pkg['icon'] as IconData, size: 28, color: _darkHeader),
+                            const SizedBox(height: 8),
+                            Text(
+                              pkg['title'] as String,
+                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: _darkHeader),
+                            ),
+                            const SizedBox(height: 6),
+                            Expanded(
+                              child: Text(
+                                pkg['description'] as String,
+                                style: TextStyle(fontSize: 11, color: Colors.grey.shade700, height: 1.4),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
                   ),
                   const SizedBox(height: 28),
                   SizedBox(
@@ -1784,8 +1821,6 @@ class _InquirePageState extends State<InquirePage> {
     final pax = _landingPaxParsed;
     final isCateringWithEvent =
         pax != null && pax >= kInquiryLandingEventStylingMinPax;
-    final showMinimalStylingCheckbox =
-        pax == null || pax < kInquiryLandingEventStylingMinPax;
 
     return Center(
       child: SingleChildScrollView(
@@ -1905,21 +1940,6 @@ class _InquirePageState extends State<InquirePage> {
                       ),
                     ),
                   ],
-                  if (showMinimalStylingCheckbox) ...[
-                    const SizedBox(height: 12),
-                    CheckboxListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      value: _includeMinimalStyling,
-                      onChanged: (v) =>
-                          setState(() => _includeMinimalStyling = v ?? false),
-                      title: const Text(
-                        'I would like to include minimal event styling',
-                        style: TextStyle(fontSize: 14),
-                      ),
-                      controlAffinity: ListTileControlAffinity.leading,
-                    ),
-                  ],
                   const SizedBox(height: 28),
                   Row(
                     children: [
@@ -2030,7 +2050,7 @@ class _InquirePageState extends State<InquirePage> {
       children: [
         // LEFT: Side tabs
         SizedBox(
-          width: 220,
+          width: 300,
           child: _buildSideTabNav(),
         ),
         // CENTER: Content
@@ -2040,7 +2060,7 @@ class _InquirePageState extends State<InquirePage> {
         ),
         // RIGHT: Estimated cost panel
         SizedBox(
-          width: 320,
+          width: 400,
           child: _buildEstimatedCostPanel(),
         ),
       ],
@@ -2352,17 +2372,30 @@ class _InquirePageState extends State<InquirePage> {
           ),
           const Divider(height: 24),
 
-          // Package type
+          // Package type with full description
           _costPanelRow(
             'Package',
             _packageDisplayName,
             isBold: true,
           ),
+          if (_selectedPackageIndex >= 0 && _selectedPackageIndex < _locationPackages.length) ...[
+            const SizedBox(height: 4),
+            Text(
+              _locationPackages[_selectedPackageIndex]['description'] as String,
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600, height: 1.3),
+            ),
+          ],
           const SizedBox(height: 12),
 
-          // Venue info
+          // Venue info (full address)
           if (_eventCity.text.trim().isNotEmpty) ...[
-            _costPanelRow('Venue', _eventCity.text.trim()),
+            const Text('Event Venue', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _darkHeader)),
+            const SizedBox(height: 4),
+            Text(
+              _eventCity.text.trim(),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700, height: 1.3),
+              softWrap: true,
+            ),
             const SizedBox(height: 8),
           ],
 
@@ -2428,20 +2461,26 @@ class _InquirePageState extends State<InquirePage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Estimated Total',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: _darkHeader,
+              const Flexible(
+                child: Text(
+                  'Estimated Total',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: _darkHeader,
+                  ),
                 ),
               ),
-              Text(
-                '₱${(estimate + additionalTotal).toStringAsFixed(2)}',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: _darkHeader,
+              Flexible(
+                child: Text(
+                  '₱${(estimate + additionalTotal).toStringAsFixed(2)}',
+                  textAlign: TextAlign.end,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: _darkHeader,
+                  ),
                 ),
               ),
             ],
@@ -2487,9 +2526,11 @@ class _InquirePageState extends State<InquirePage> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
+          Flexible(
+            flex: 3,
             child: Text(
               label,
+              softWrap: true,
               style: TextStyle(
                 fontSize: isSubtle ? 11 : 13,
                 fontWeight: isBold ? FontWeight.w700 : FontWeight.w400,
@@ -2497,15 +2538,24 @@ class _InquirePageState extends State<InquirePage> {
               ),
             ),
           ),
-          if (value.isNotEmpty)
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: isBold ? FontWeight.w700 : FontWeight.w500,
-                color: _darkHeader,
+          if (value.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Flexible(
+              flex: 2,
+              child: Text(
+                value,
+                textAlign: TextAlign.end,
+                softWrap: true,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isBold ? FontWeight.w700 : FontWeight.w500,
+                  color: _darkHeader,
+                ),
               ),
             ),
+          ],
         ],
       ),
     );
@@ -3340,6 +3390,7 @@ class _InquirePageState extends State<InquirePage> {
                     itemBuilder: (context, i) => Stack(
                       children: [
                         RepaintBoundary(
+                          key: ValueKey('theme_ref_$i'),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
                             child: Image.memory(
@@ -3384,6 +3435,7 @@ class _InquirePageState extends State<InquirePage> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: RepaintBoundary(
+                    key: ValueKey('ai_design_${_aiThemeDesignPayload!['generatedImageUrl']}'),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: Image.network(
@@ -3610,6 +3662,7 @@ class _InquirePageState extends State<InquirePage> {
         if (_venuePhotoBase64 != null) ...[
           const SizedBox(height: 8),
           RepaintBoundary(
+            key: const ValueKey('venue_photo'),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Image.memory(
@@ -3696,6 +3749,7 @@ class _InquirePageState extends State<InquirePage> {
                     ),
                     clipBehavior: Clip.antiAlias,
                     child: RepaintBoundary(
+                      key: ValueKey('gen_history_$url'),
                       child: Image.network(
                         url,
                         fit: BoxFit.cover,

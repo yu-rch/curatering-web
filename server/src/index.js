@@ -74,6 +74,7 @@ import {
   ensureRestaurantPosColumns,
   registerPosRoutes,
 } from "./posApi.js";
+import { registerManagerCateringRoutes } from "./managerCateringApi.js";
 
 // Prefer IPv4 when resolving SMTP hosts (avoids ENETUNREACH on IPv6 in many cloud/container networks).
 try {
@@ -3073,21 +3074,18 @@ function registerCustomerAuthRoutes(app, dbGate) {
 
       let result;
       if (useUuidPk && caCols.has('customer_code')) {
+        const insertCols = ['id', 'customer_code', 'email', 'password_hash', 'full_name', 'contact_number', 'otp_code', 'otp_expiry', 'registration_platform'];
+        const insertVals = [customerId, customerCode, emailNorm, passwordHash, fullName, phone || null, otpCode, otpExpiry, registrationPlatform];
+        if (caCols.has('customer_id')) {
+          insertCols.push('customer_id');
+          insertVals.push(customerCode);
+        }
+        const placeholders = insertVals.map((_, i) => i === 0 ? '$1::uuid' : `$${i + 1}`).join(', ');
         result = await pool.query(
-          `INSERT INTO customer_accounts (id, customer_code, email, password_hash, full_name, contact_number, otp_code, otp_expiry, registration_platform)
-           VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
+          `INSERT INTO customer_accounts (${insertCols.join(', ')})
+           VALUES (${placeholders})
            RETURNING id, email, full_name, is_verified`,
-          [
-            customerId,
-            customerCode,
-            emailNorm,
-            passwordHash,
-            fullName,
-            phone || null,
-            otpCode,
-            otpExpiry,
-            registrationPlatform,
-          ],
+          insertVals,
         );
       } else if (useUuidPk) {
         result = await pool.query(
@@ -9247,6 +9245,43 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
+    app.post('/api/restaurant/orders/:orderId/cancel', customerAuthRequired, async (req, res) => {
+      try {
+        const { orderId } = req.params;
+        const lookup = await restaurantOrderWhereClause(orderId, 1);
+        if (!lookup) return res.status(400).json({ error: 'Invalid order id' });
+
+        const resolvedCustIdCancel = await resolveCustomerAccountCustomerId(req.customer.id);
+        const existing = await pool.query(
+          `SELECT * FROM restaurant_orders WHERE ${lookup.sql} AND (customer_id::text = $2 OR customer_id::text = $3) LIMIT 1`,
+          [lookup.value, resolvedCustIdCancel, req.customer.id],
+        );
+        if (existing.rowCount === 0) return res.status(404).json({ error: 'Order not found' });
+        const order = existing.rows[0];
+        const st = String(order.order_status || '').toUpperCase();
+        if (st === 'DELIVERED' || st === 'CANCELLED') {
+          return res.status(400).json({ error: 'Only pending orders can be cancelled' });
+        }
+        const result = await pool.query(
+          `UPDATE restaurant_orders SET order_status = 'CANCELLED', updated_at = now() WHERE id = $1 RETURNING *`,
+          [order.id],
+        );
+        const updated = result.rows[0];
+        const email = await resolveRestaurantOrderEmail(updated);
+        if (email) {
+          sendCustomerNotificationEmailAsync({
+            to: email,
+            subject: 'Curatering: Order cancelled',
+            text: `Your order ${updated.order_id} has been cancelled per your request.\n\n- Curatering Team`,
+          });
+        }
+        res.json({ ok: true, order: serializeRestaurantOrderRow(updated, parseRestaurantOrderTrayItems(updated)) });
+      } catch (error) {
+        console.error('customer cancel restaurant order:', error);
+        res.status(500).json({ error: 'Failed to cancel order' });
+      }
+    });
+
     app.post(
       '/api/restaurant/orders/:orderId/feedback',
       customerAuthRequired,
@@ -10812,6 +10847,83 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
+    app.post('/api/customer/events/orders/:orderId/follow-up', customerAuthRequired, async (req, res) => {
+      try {
+        const customerId = req.customer.id;
+        const { orderId } = req.params;
+
+        const customerResult = await pool.query(
+          `SELECT email, full_name FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1;`,
+          [customerId]
+        );
+        if (customerResult.rowCount === 0) {
+          return res.status(404).json({ error: 'Customer not found' });
+        }
+
+        const customerEmail = customerResult.rows[0].email;
+        const customerName = customerResult.rows[0].full_name || 'Customer';
+
+        await ensureOrderCateringIdColumns();
+        const eventCols = await getTableColumnNames('event_orders');
+        const cateringCols = await getTableColumnNames('catering_orders');
+
+        const tryFind = async (tableName) => {
+          const cols = tableName === 'event_orders' ? eventCols : cateringCols;
+          const result = await pool.query(
+            `SELECT id, ${cateringIdSelectAlias(cols)}, status
+             FROM ${tableName}
+             WHERE id::text = $1 AND lower(email_address) = lower($2)
+             LIMIT 1`,
+            [orderId, customerEmail]
+          );
+          return result.rows[0] || null;
+        };
+
+        let order = await tryFind('event_orders');
+        let orderType = 'event';
+        if (!order) {
+          order = await tryFind('catering_orders');
+          orderType = 'catering';
+        }
+
+        if (!order) {
+          return res.status(404).json({ error: 'Inquiry not found or not owned by customer.' });
+        }
+
+        const status = order.status || '';
+        if (['completed', 'cancelled'].includes(status)) {
+          return res.status(400).json({ error: 'Follow-up is only available for active inquiries.' });
+        }
+
+        const followupRecipient =
+          process.env.CATERING_FOLLOWUP_EMAIL ||
+          process.env.RESTAURANT_FOLLOWUP_EMAIL ||
+          process.env.SEED_SUPER_ADMIN_EMAIL ||
+          process.env.ADMIN_EMAIL;
+        if (followupRecipient) {
+          try {
+            await sendCustomerNotificationEmail({
+              to: followupRecipient,
+              subject: 'Curatering: Customer inquiry follow-up',
+              text:
+                `A customer requested a follow-up for catering inquiry ${order.catering_id || orderId}.\n\n` +
+                `Customer: ${customerName} (${customerEmail})\n` +
+                `Status: ${status}\n` +
+                `Order Type: ${orderType}\n\n` +
+                `Please review the inquiry in the Catering pipeline.`,
+            });
+          } catch (mailError) {
+            console.error('Inquiry follow-up email failed (non-fatal):', mailError);
+          }
+        }
+
+        return res.json({ ok: true, message: 'Follow-up sent successfully.' });
+      } catch (error) {
+        console.error('Error sending catering inquiry follow-up:', error);
+        res.status(500).json({ error: 'Failed to send follow-up' });
+      }
+    });
+
     app.patch('/api/customer/events/orders/:orderId/edit', customerAuthRequired, async (req, res) => {
       try {
         const customerId = req.customer.id;
@@ -10984,11 +11096,21 @@ async function registerRoutesAfterDbInit() {
         const restaurantPoints = Number(account.restaurant_loyalty_points ?? 0);
         const cateringPoints = Number(account.catering_loyalty_points ?? 0);
 
+        let otherAddresses = [];
+        if (account.other_delivery_addresses) {
+          try {
+            otherAddresses = typeof account.other_delivery_addresses === 'string'
+              ? JSON.parse(account.other_delivery_addresses)
+              : account.other_delivery_addresses;
+          } catch { /* ignore parse errors */ }
+        }
+
         res.json({
           id: account.id != null ? String(account.id) : account.id,
           email: account.email,
           fullName: account.full_name,
           phone: customerPhoneFromRow(account),
+          customerCode: account.customer_code || null,
           createdAt:
             account.created_at instanceof Date
               ? account.created_at.toISOString()
@@ -11001,6 +11123,8 @@ async function registerRoutesAfterDbInit() {
             account.delivery_lat != null ? Number(account.delivery_lat) : null,
           deliveryLng:
             account.delivery_lng != null ? Number(account.delivery_lng) : null,
+          deliveryMapConfirmed: account.delivery_map_confirmed ?? false,
+          otherDeliveryAddresses: Array.isArray(otherAddresses) ? otherAddresses : [],
         });
       } catch (error) {
         console.error('Error fetching customer profile:', error);
@@ -11012,7 +11136,7 @@ async function registerRoutesAfterDbInit() {
     app.put('/api/customer/profile', customerAuthRequired, async (req, res) => {
       try {
         const customerId = req.customer.id;
-        const { fullName, phone, deliveryAddress, deliveryLat, deliveryLng } = req.body || {};
+        const { fullName, phone, deliveryAddress, deliveryLat, deliveryLng, otherDeliveryAddresses } = req.body || {};
 
         // Update customer_accounts
         if (fullName || phone) {
@@ -11048,7 +11172,8 @@ async function registerRoutesAfterDbInit() {
         if (
           deliveryAddress !== undefined ||
           deliveryLat !== undefined ||
-          deliveryLng !== undefined
+          deliveryLng !== undefined ||
+          otherDeliveryAddresses !== undefined
         ) {
           const deliveryUpdates = [];
           const deliveryValues = [];
@@ -11068,6 +11193,11 @@ async function registerRoutesAfterDbInit() {
             p += 1;
             deliveryUpdates.push(`delivery_lng = $${p}`);
             deliveryValues.push(deliveryLng);
+          }
+          if (otherDeliveryAddresses !== undefined) {
+            p += 1;
+            deliveryUpdates.push(`other_delivery_addresses = $${p}::jsonb`);
+            deliveryValues.push(JSON.stringify(Array.isArray(otherDeliveryAddresses) ? otherDeliveryAddresses : []));
           }
 
           deliveryUpdates.push('updated_at = now()');
@@ -11751,6 +11881,7 @@ async function registerRoutesAfterDbInit() {
       resolveRestaurantOrderEmail,
       restaurantFeedbackLink,
     });
+    registerManagerCateringRoutes(app, { pool, authRequired, requireRoles });
 
     routesRegistered = true;
     console.log('[startup] All API routes registered after DB init');

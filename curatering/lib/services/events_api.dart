@@ -10,6 +10,9 @@ class EventsApi {
 
   static final EventsApi instance = EventsApi._();
 
+  /// Parse a catering/event order map from any staff API response.
+  EventOrderDto parseOrder(Map<String, dynamic> map) => _orderFromJson(map);
+
   Future<List<EventOrderDto>> listOrders({
     required String status,
     required String roleType, // manager | supervisor
@@ -530,6 +533,16 @@ class EventsApi {
       );
     }
 
+    final orderKindRaw =
+        (map['orderKind'] ?? map['order_kind'] ?? map['order_type'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+    final orderKind =
+        orderKindRaw == 'catering' || orderKindRaw == 'catering_only'
+            ? 'catering'
+            : 'event';
+
     final checklistRaw = map['checklist'];
     final checklist = <ChecklistItemDto>[];
     for (final c in _toList(checklistRaw)) {
@@ -595,6 +608,8 @@ class EventsApi {
       themeDesign: themeDesign,
       seatingPlan: seatingPlan,
       postAnalysis: postAnalysis,
+      postAnalysisRaw: pm,
+      orderKind: orderKind,
       downPaymentAmount: _toDouble(
         map['downPaymentAmount'] ?? map['down_payment_amount'],
       ),

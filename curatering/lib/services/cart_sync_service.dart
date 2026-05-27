@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_client.dart';
@@ -235,18 +236,30 @@ class CartSyncService {
         return;
       }
 
-      if (trayLoaded) {
-        await prefs.remove(_cartKey);
-        await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());
-        _applyItemsToStore(const []);
+      // Don't clear local tray if server is empty — local is source of truth
+      // Only sync TO server if local has items and server is empty
+      if (trayLoaded && CartStore.instance.items.isNotEmpty) {
+        // Local has items but server is empty — push local to server
+        CartSyncService.instance.syncToServer();
       }
     } catch (e) {
       print('Error syncing cart from server: $e');
     }
   }
 
+  Timer? _syncDebounce;
+  bool _syncing = false;
+
   /// Sync local cart to `customer_tray_drafts.tray_lines` and `tray_items`.
+  /// Debounced to avoid rapid-fire duplicate writes.
   Future<void> syncToServer() async {
+    _syncDebounce?.cancel();
+    _syncDebounce = Timer(const Duration(milliseconds: 500), _doSyncToServer);
+  }
+
+  Future<void> _doSyncToServer() async {
+    if (_syncing) return;
+    _syncing = true;
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
@@ -256,10 +269,23 @@ class CartSyncService {
         final cartItems = CartStore.instance.items;
 
         if (cartItems.isNotEmpty) {
-          final trayData = cartItems.map(trayLineToJson).toList();
+          // Deduplicate by dishId+customizations before sending
+          final deduped = <Map<String, dynamic>>[];
+          for (final item in cartItems) {
+            final json = trayLineToJson(item);
+            final key = '${json['dish_id']}_${json['selectedSauce'] ?? ''}_${json['specialInstructions'] ?? ''}';
+            final existing = deduped.indexWhere((d) =>
+                '${d['dish_id']}_${d['selectedSauce'] ?? ''}_${d['specialInstructions'] ?? ''}' == key);
+            if (existing >= 0) {
+              deduped[existing]['quantity'] = (deduped[existing]['quantity'] as int) + (json['quantity'] as int);
+              deduped[existing]['qty'] = deduped[existing]['quantity'];
+            } else {
+              deduped.add(json);
+            }
+          }
           await ApiClient.instance.putJson(
             '/api/tray-draft',
-            body: {'tray_lines': trayData, 'tray_items': trayData},
+            body: {'tray_lines': deduped, 'tray_items': deduped},
           );
 
           await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());
@@ -273,6 +299,8 @@ class CartSyncService {
       }
     } catch (e) {
       print('Error syncing cart to server: $e');
+    } finally {
+      _syncing = false;
     }
   }
 

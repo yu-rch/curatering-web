@@ -43,6 +43,7 @@ import 'my_orders_page.dart';
 import 'my_caterings_page.dart';
 import 'my_order_tracking_page.dart';
 import 'my_profile_page.dart';
+import 'customer_account_shell.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 part 'customer_website_theme_editor.dart';
@@ -950,18 +951,26 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Future<void> _navigateToMyOrders() async {
-    final result = await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (context) => const MyOrdersPage()));
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const CustomerAccountShell(
+          initialTab: CustomerAccountTab.orders,
+        ),
+      ),
+    );
     if (result == 'login_required' && mounted) {
       await _handleLogin();
     }
   }
 
   Future<void> _navigateToMyCaterings() async {
-    final result = await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (context) => const MyCateringsPage()));
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const CustomerAccountShell(
+          initialTab: CustomerAccountTab.inquiries,
+        ),
+      ),
+    );
     if (result == 'login_required' && mounted) {
       await _handleLogin();
     }
@@ -969,7 +978,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   Future<void> _navigateToOrderTracking() async {
     final result = await Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const MyOrderTrackingPage()),
+      MaterialPageRoute(
+        builder: (_) => const CustomerAccountShell(
+          initialTab: CustomerAccountTab.tracking,
+        ),
+      ),
     );
     if (result == 'login_required' && mounted) {
       await _handleLogin();
@@ -977,13 +990,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Future<void> _navigateToMyProfile() async {
-    final result = await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (context) => const MyProfilePage()));
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const CustomerAccountShell(
+          initialTab: CustomerAccountTab.profile,
+        ),
+      ),
+    );
     if (result == 'login_required' && mounted) {
       await _handleLogin();
     }
-    // Refresh customer data after profile update
     if (result == 'profile_updated' && mounted) {
       await _checkCustomerAuth();
     }

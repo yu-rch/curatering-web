@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../models/menu_dish.dart';
@@ -558,15 +560,20 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
     );
   }
 
+  final Map<String, Uint8List> _imageCache = {};
+
   Widget _dishThumb(MenuDish dish) {
     if (dish.imageBase64?.isNotEmpty != true) {
       return const CircleAvatar(child: Icon(Icons.restaurant, size: 18));
     }
-    return CircleAvatar(
-      backgroundImage: MemoryImage(
-        UriData.parse(
-          'data:image/png;base64,${dish.imageBase64}',
-        ).contentAsBytes(),
+    final bytes = _imageCache.putIfAbsent(
+      dish.id,
+      () => base64Decode(dish.imageBase64!),
+    );
+    return RepaintBoundary(
+      key: ValueKey('thumb_${dish.id}'),
+      child: CircleAvatar(
+        backgroundImage: MemoryImage(bytes),
       ),
     );
   }

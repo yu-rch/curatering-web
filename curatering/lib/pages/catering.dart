@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:printing/printing.dart';
 import '../auth/action_permissions.dart';
 import '../auth/auth_session.dart';
 import '../config/api_config.dart';
@@ -13,6 +14,8 @@ import '../models/event_order.dart';
 import '../models/menu_dish.dart';
 import '../services/api_client.dart';
 import '../services/events_api.dart';
+import '../services/manager_catering_api.dart';
+import '../services/manager_event_documents_service.dart';
 import '../services/menu_store.dart';
 import '../services/order_summary_pdf_service.dart';
 import '../services/set_menu_store.dart';
@@ -31,6 +34,7 @@ import '../utils/web_html.dart' as html;
 import 'customer_website.dart';
 
 part 'catering_manage_events_part.dart';
+part 'catering_manage_events_detail_part.dart';
 // import 'package:segment_anything/segment_anything.dart';
 
 /// Reuse Manage Events order lists briefly so leaving and returning the page
@@ -459,6 +463,9 @@ class _ManageEventsState extends State<ManageEvents>
   List<EventOrderDto> _completedOrdersDto = const <EventOrderDto>[];
   List<EventOrderDto> _cancelledOrdersDto = const <EventOrderDto>[];
   EventOrderDto? _selectedOnlineInquiryOrder;
+  EventOrderDto? _selectedManageEventsOrder;
+  bool _manageEventsDetailLoading = false;
+  String? _manageEventsDetailError;
   Role? _lastLoadedRole;
 
   @override
@@ -478,6 +485,8 @@ class _ManageEventsState extends State<ManageEvents>
         if (idx < EventStatus.values.length) {
           _selectedStatus = EventStatus.values[idx];
         }
+        _selectedManageEventsOrder = null;
+        _manageEventsDetailError = null;
       });
     });
     _allDishes = MenuStore.instance.activeDishes;
@@ -5933,27 +5942,10 @@ class _ManageEventsState extends State<ManageEvents>
               eventDate.isAtSameMomentAs(oneMonthAgo);
         }).toList();
 
-    return SingleChildScrollView(
-      child: _buildOrdersTablePanel(
-        title: 'Completed & cancelled events',
-        orders: orderDtos,
-        emptyMessage: 'No completed or cancelled events in the last 30 days.',
-        actionCells:
-            (dto) => [
-              _eventIconAction(
-                icon: Icons.visibility_outlined,
-                tooltip: 'View details',
-                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
-                onPressed: () => _showEventOrderDetailModal(dto),
-              ),
-              _eventIconAction(
-                icon: Icons.receipt_long_outlined,
-                tooltip: 'Order summary',
-                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
-                onPressed: () => _showOrderSummaryDialog(dto),
-              ),
-            ],
-      ),
+    return _buildOrdersTablePanel(
+      title: 'Completed events',
+      orders: orderDtos,
+      emptyMessage: 'No completed events in the last 30 days.',
     );
   }
 
@@ -7005,44 +6997,11 @@ class _ManageEventsState extends State<ManageEvents>
             ),
           ),
         Expanded(
-          child: SingleChildScrollView(
-            child: _buildOrdersTablePanel(
-              title: 'New Events',
-              orders: orders,
-              emptyMessage: 'No new events.',
-              actionCells: (dto) => [
-                _eventIconAction(
-                  icon: Icons.visibility_outlined,
-                  tooltip: 'View details',
-                  permissionKey:
-                      ActionPermissionKeys.manageEventsViewDetails,
-                  onPressed: () => _showEventOrderDetailModal(dto),
-                ),
-                if (!_isSupervisor)
-                  _eventIconAction(
-                    icon: Icons.check_circle_outline,
-                    tooltip: 'Finalize',
-                    permissionKey:
-                        ActionPermissionKeys.manageEventsFinalize,
-                    onPressed: () async {
-                      try {
-                        final full =
-                            await _resolveOrderForSelection(dto);
-                        if (!mounted) return;
-                        await _openFinalizeOnlineInquiryDialog(full);
-                      } catch (e) {
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content:
-                                Text('Could not open finalize: $e'),
-                          ),
-                        );
-                      }
-                    },
-                  ),
-              ],
-            ),
+          child: _buildOrdersTablePanel(
+            title: 'New Events',
+            orders: orders,
+            emptyMessage: 'No new events.',
+            showGuestsAndTotal: false,
           ),
         ),
       ],
@@ -7050,36 +7009,27 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Widget _buildCancelledTab(bool isNarrow) {
-    return SingleChildScrollView(
-      child: _buildOrdersTablePanel(
-        title: 'Cancelled',
-        orders: _cancelledOrdersDto,
-        emptyMessage: 'No cancelled events.',
-        actionCells: (dto) => [
-          _eventIconAction(
-            icon: Icons.visibility_outlined,
-            tooltip: 'View details',
-            permissionKey: ActionPermissionKeys.manageEventsViewDetails,
-            onPressed: () => _showEventOrderDetailModal(dto),
-          ),
-        ],
-      ),
+    return _buildOrdersTablePanel(
+      title: 'Cancelled',
+      orders: _cancelledOrdersDto,
+      emptyMessage: 'No cancelled events.',
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isNarrow = constraints.maxWidth < 1100;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              color: const Color(0xFF242424),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              child: Row(
+    return AppScaffold(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 1100;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                color: const Color(0xFF242424),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                child: Row(
                 children: [
                   Text(
                     _stageLabels[_tabController.index].toUpperCase(),
@@ -7157,9 +7107,10 @@ class _ManageEventsState extends State<ManageEvents>
                 ),
               ),
             ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      ),
     );
   }
 

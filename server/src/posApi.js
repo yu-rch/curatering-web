@@ -375,6 +375,33 @@ async function patchCateringOrder(pool, id, orderKind, body, { requireStatus = f
   if (Array.isArray(body?.actual_event_images)) {
     addSet("actual_event_images", JSON.stringify(body.actual_event_images), "::jsonb");
   }
+  if (Array.isArray(body?.checklist)) {
+    addSet("checklist", JSON.stringify(body.checklist), "::jsonb");
+  }
+  if (body?.post_analysis && typeof body.post_analysis === "object") {
+    if (cols.has("post_analysis")) {
+      values.push(JSON.stringify(body.post_analysis));
+      sets.push(
+        `post_analysis = COALESCE(post_analysis, '{}'::jsonb) || $${values.length}::jsonb`,
+      );
+    }
+  }
+  if (Array.isArray(body?.additional_costs)) {
+    if (cols.has("post_analysis")) {
+      values.push(JSON.stringify({ additional_costs: body.additional_costs }));
+      sets.push(
+        `post_analysis = COALESCE(post_analysis, '{}'::jsonb) || $${values.length}::jsonb`,
+      );
+    }
+  }
+  if (body?.cost_breakdown != null) {
+    if (cols.has("post_analysis")) {
+      values.push(JSON.stringify({ cost_breakdown: body.cost_breakdown }));
+      sets.push(
+        `post_analysis = COALESCE(post_analysis, '{}'::jsonb) || $${values.length}::jsonb`,
+      );
+    }
+  }
   if (cols.has("stage_entered_at") && status) {
     sets.push("stage_entered_at = now()");
   }
@@ -496,6 +523,14 @@ async function getOrderById(pool, orderId) {
   );
   return r.rows[0] || null;
 }
+
+export {
+  listStaffCateringOrders,
+  getStaffCateringOrder,
+  patchCateringOrder,
+  createStaffCateringOrder,
+  normalizeMobileCateringStage,
+};
 
 export function registerPosRoutes(app, {
   pool,
@@ -665,7 +700,7 @@ export function registerPosRoutes(app, {
       const fields = ["order_status = $2", "updated_at = now()", "last_updated_order_status_dt_stamp = now()"];
       const vals = [pkVal, orderStatus];
       if (tracking) {
-        fields.push(`delivery_tracking_url = $${fields.length + 1}`);
+        fields.push(`delivery_tracking_url = $${vals.length + 1}`);
         vals.push(tracking);
       }
 

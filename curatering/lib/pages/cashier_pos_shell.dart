@@ -124,7 +124,19 @@ class _CashierPosShellState extends State<CashierPosShell> {
   Future<void> _refreshOnline() async {
     try {
       final data = await CashierPosApi.instance.listOnlineOrders();
-      if (mounted) setState(() => _online = data);
+      if (mounted) {
+        setState(() {
+          _online = data;
+          // Update selected order with fresh data
+          if (_selectedOnlineOrder != null) {
+            final id = _selectedOnlineOrder!.orderNo;
+            final fresh = data.cast<Map<String, dynamic>>().where(
+              (r) => PosOrderView(r).orderNo == id,
+            );
+            _selectedOnlineOrder = fresh.isNotEmpty ? PosOrderView(fresh.first) : null;
+          }
+        });
+      }
     } catch (_) {}
   }
 
@@ -693,59 +705,169 @@ class _CashierPosShellState extends State<CashierPosShell> {
   // ---------------------------------------------------------------------------
 
   Future<void> _confirmPayment(PosOrderView order) async {
+    final raw = order.raw;
+    final proofB64 = (raw['payment_proof'] ?? raw['payment_proof_initial'] ?? '').toString();
+    final balanceProofB64 = (raw['payment_proof_balance'] ?? raw['supplemental_payment_proof'] ?? '').toString();
+    final refNumber = (raw['payment_reference_initial'] ?? '').toString();
+    final balanceRef = (raw['payment_reference_balance'] ?? '').toString();
+    final initialPaid = _toMoney(raw['cashier_amount_received'] ?? raw['amount_paid'] ?? 0);
+    final isBalanceReview = initialPaid > 0 && balanceProofB64.isNotEmpty;
+
     final paidCtrl = TextEditingController(
       text: order.total.toStringAsFixed(2),
     );
-    final amtBefore = _toMoney(order.raw['amount_received'] ?? 0);
 
-    final ok = await showDialog<bool>(
+    String? dialogAction;
+
+    await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Confirm Payment · ${order.orderNo}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Order total: ₱${order.total.toStringAsFixed(2)}'),
-            if (amtBefore > 0)
-              Text('Previously received: ₱${amtBefore.toStringAsFixed(2)}',
-                  style: TextStyle(
-                      fontSize: 13, color: Colors.grey.shade700)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: paidCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Amount received',
-                border: OutlineInputBorder(),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final entered = double.tryParse(paidCtrl.text) ?? 0;
+          final isInsufficient = entered > 0 && entered < order.total;
+          final isOverpayment = entered > order.total;
+
+          return AlertDialog(
+            title: Text('Confirm Payment · ${order.orderNo}'),
+            content: SizedBox(
+              width: 420,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Order total: ₱${order.total.toStringAsFixed(2)}',
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+
+                    // Show initial payment info when reviewing balance
+                    if (isBalanceReview) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Initial Payment', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                            Text('Amount: ₱${initialPaid.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12)),
+                            if (refNumber.isNotEmpty)
+                              Text('Ref#: $refNumber', style: const TextStyle(fontSize: 12)),
+                            if (proofB64.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: Image.memory(base64Decode(proofB64), height: 100, fit: BoxFit.contain, gaplessPlayback: true),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text('Balance Payment Proof:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      if (balanceRef.isNotEmpty)
+                        Text('Ref#: $balanceRef', style: const TextStyle(fontSize: 12)),
+                    ] else ...[
+                      // Show initial proof for initial review
+                      if (refNumber.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text('GCash Ref#: $refNumber', style: const TextStyle(fontSize: 13)),
+                        ),
+                    ],
+
+                    // Proof of payment image
+                    if (isBalanceReview && balanceProofB64.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(base64Decode(balanceProofB64), height: 140, fit: BoxFit.contain, gaplessPlayback: true),
+                      ),
+                    ] else if (!isBalanceReview && proofB64.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      const Text('Payment Proof:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(base64Decode(proofB64), height: 140, fit: BoxFit.contain, gaplessPlayback: true),
+                      ),
+                    ],
+
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: paidCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Amount received',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (_) => setDialogState(() {}),
+                    ),
+
+                    // Insufficient/Overpayment indicators
+                    if (isInsufficient)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Insufficient: ₱${(order.total - entered).toStringAsFixed(2)} short',
+                          style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600, fontSize: 12),
+                        ),
+                      ),
+                    if (isOverpayment)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Overpayment: ₱${(entered - order.total).toStringAsFixed(2)} over',
+                          style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.w600, fontSize: 12),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirm'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              if (isInsufficient)
+                OutlinedButton(
+                  onPressed: () { dialogAction = 'insufficient'; Navigator.pop(ctx); },
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700),
+                  child: const Text('Insufficient Payment'),
+                ),
+              if (isOverpayment)
+                OutlinedButton(
+                  onPressed: () { dialogAction = 'confirm'; Navigator.pop(ctx); },
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.orange.shade800),
+                  child: const Text('Accept Overpayment'),
+                ),
+              if (!isInsufficient && !isOverpayment)
+                FilledButton(
+                  onPressed: entered > 0 ? () { dialogAction = 'confirm'; Navigator.pop(ctx); } : null,
+                  child: const Text('Confirm Payment'),
+                ),
+            ],
+          );
+        },
       ),
     );
+
     final paid = double.tryParse(paidCtrl.text) ?? order.total;
     paidCtrl.dispose();
-    if (ok != true) return;
+    if (dialogAction == null) return;
+
     try {
       await CashierPosApi.instance.reviewOnlineOrder(
-        order.raw['id'],
-        action: 'confirm',
+        order.raw['order_id'] ?? order.raw['order_no'] ?? order.raw['id'],
+        action: dialogAction!,
         amountReceived: paid,
       );
       await _refreshOnline();
-      if (mounted) _snack('Payment confirmed');
+      if (mounted) _snack(dialogAction == 'insufficient' ? 'Marked as insufficient' : 'Payment confirmed');
     } catch (e) {
       if (mounted) _snack('$e');
     }
@@ -821,7 +943,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
 
     try {
       await CashierPosApi.instance.patchFulfillment(
-        order.raw['id'],
+        order.raw['order_id'] ?? order.raw['order_no'] ?? order.raw['id'],
         fulfillmentStage: 'OUT_FOR_DELIVERY',
         deliveryTrackingUrl: trackingUrl,
       );
@@ -854,7 +976,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
     if (confirmed != true) return;
     try {
       await CashierPosApi.instance.patchFulfillment(
-        order.raw['id'],
+        order.raw['order_id'] ?? order.raw['order_no'] ?? order.raw['id'],
         fulfillmentStage: 'DELIVERED',
       );
       await _refreshOnline();
@@ -886,7 +1008,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
     );
     if (yes != true) return;
     try {
-      await CashierPosApi.instance.claimWalkIn(raw['id']);
+      await CashierPosApi.instance.claimWalkIn(raw['order_id'] ?? raw['order_no'] ?? raw['id']);
       await _refreshWalkIn();
       if (mounted) _snack('Order claimed');
     } catch (e) {
@@ -915,7 +1037,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
     );
     if (yes != true) return;
     try {
-      await CashierPosApi.instance.cancelWalkIn(raw['id']);
+      await CashierPosApi.instance.cancelWalkIn(raw['order_id'] ?? raw['order_no'] ?? raw['id']);
       await _refreshWalkIn();
       if (mounted) _snack('Order cancelled');
     } catch (e) {
@@ -940,9 +1062,12 @@ class _CashierPosShellState extends State<CashierPosShell> {
   List<PosOrderView> get _preparingOnline => _online
       .map(PosOrderView.new)
       .where((o) => !isWalkIn(o))
-      .where((o) =>
-          o.fulfillmentStage.toUpperCase() == 'IN_PREPARATION' ||
-          o.status.toUpperCase().contains('ORDER CONFIRMED'))
+      .where((o) {
+        final stage = o.fulfillmentStage.toUpperCase();
+        if (stage == 'OUT_FOR_DELIVERY' || stage == 'DELIVERED') return false;
+        return stage == 'IN_PREPARATION' ||
+            o.status.toUpperCase().contains('ORDER CONFIRMED');
+      })
       .where((o) => matchesPreparingFilter(o, _onlinePreparingFilter))
       .where(_matchesOnlineSearch)
       .toList();
@@ -1155,6 +1280,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
           const SizedBox(height: 4),
           _sidebarAction(Icons.logout, 'Logout', Colors.red.shade400, () {
             AuthSession.instance.clear();
+            Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
           }),
           const SizedBox(height: 16),
         ],
@@ -2251,10 +2377,25 @@ class _CashierPosShellState extends State<CashierPosShell> {
               ),
           ],
 
-          // Payment proof image
+          // GCash reference numbers
+          if ((raw['payment_reference_initial'] ?? '').toString().isNotEmpty)
+            _detailRow('Ref# (Initial)', raw['payment_reference_initial'].toString()),
+          if ((raw['payment_reference_balance'] ?? '').toString().isNotEmpty)
+            _detailRow('Ref# (Balance)', raw['payment_reference_balance'].toString()),
+
+          // Amount Paid / Change
+          if ((raw['cashier_amount_received'] ?? raw['amount_paid']) != null)
+            _detailRow('Amount Paid', '₱${_toMoney(raw['cashier_amount_received'] ?? raw['amount_paid'] ?? 0).toStringAsFixed(2)}'),
+          if ((raw['cashier_secondary_amount_received'] ?? raw['cashier_amount_received_balance']) != null &&
+              _toMoney(raw['cashier_secondary_amount_received'] ?? raw['cashier_amount_received_balance'] ?? 0) > 0)
+            _detailRow('Balance Received', '₱${_toMoney(raw['cashier_secondary_amount_received'] ?? raw['cashier_amount_received_balance'] ?? 0).toStringAsFixed(2)}'),
+          if ((raw['change_given']) != null && _toMoney(raw['change_given'] ?? 0) > 0)
+            _detailRow('Change', '₱${_toMoney(raw['change_given'] ?? 0).toStringAsFixed(2)}'),
+
+          // Initial payment proof
           if (proofB64 != null && proofB64.isNotEmpty) ...[
             const SizedBox(height: 16),
-            const Text('Payment Proof',
+            const Text('Initial Payment Proof',
                 style: TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 15)),
@@ -2270,6 +2411,30 @@ class _CashierPosShellState extends State<CashierPosShell> {
                 ),
               ),
             ),
+          ],
+
+          // Balance payment proof
+          if ((raw['payment_proof_balance'] ?? raw['supplemental_payment_proof'] ?? '').toString().isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('Balance Payment Proof',
+                style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15)),
+            const SizedBox(height: 8),
+            Builder(builder: (context) {
+              final balanceProof = (raw['payment_proof_balance'] ?? raw['supplemental_payment_proof']).toString();
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: RepaintBoundary(
+                  child: Image.memory(
+                    base64Decode(balanceProof),
+                    height: 200,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                  ),
+                ),
+              );
+            }),
           ],
 
           const Divider(height: 24),
@@ -2615,6 +2780,14 @@ class _CashierPosShellState extends State<CashierPosShell> {
             _detailRow('Submitted', createdAt),
           if (note.isNotEmpty)
             _detailRow('Note', note),
+          if ((raw['payment_reference_initial'] ?? '').toString().isNotEmpty)
+            _detailRow('Ref#', raw['payment_reference_initial'].toString()),
+          if ((raw['cashier_amount_received'] ?? raw['amount_paid']) != null)
+            _detailRow('Amount Paid', '₱${_toMoney(raw['cashier_amount_received'] ?? raw['amount_paid'] ?? 0).toStringAsFixed(2)}'),
+          if ((raw['amount_received']) != null && _toMoney(raw['amount_received'] ?? 0) > 0)
+            _detailRow('Amount Received', '₱${_toMoney(raw['amount_received'] ?? 0).toStringAsFixed(2)}'),
+          if ((raw['change_given']) != null && _toMoney(raw['change_given'] ?? 0) > 0)
+            _detailRow('Change', '₱${_toMoney(raw['change_given'] ?? 0).toStringAsFixed(2)}'),
 
           // Payment proof for walk-in orders
           if (proofB64 != null &&

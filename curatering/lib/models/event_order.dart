@@ -101,6 +101,12 @@ class EventOrderDto {
   final SeatingPlanData seatingPlan;
   final PostAnalysisDto? postAnalysis;
 
+  /// Full `post_analysis` JSON from the server (task rows, additional costs, proofs, etc.).
+  final Map<String, dynamic> postAnalysisRaw;
+
+  /// `catering` | `event` — which table this order lives in.
+  final String orderKind;
+
   // Payment information
   final double downPaymentAmount;
   final String downPaymentStatus; // pending | paid | cancelled
@@ -142,6 +148,8 @@ class EventOrderDto {
     required this.themeDesign,
     this.seatingPlan = const SeatingPlanData(),
     this.postAnalysis,
+    this.postAnalysisRaw = const {},
+    this.orderKind = 'event',
     this.downPaymentAmount = 0.0,
     this.downPaymentStatus = 'pending',
     this.fullPaymentAmount = 0.0,

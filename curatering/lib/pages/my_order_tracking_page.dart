@@ -7,11 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import '../utils/order_display_utils.dart';
 import '../services/customer_orders_cache.dart';
-import '../widgets/customer_pages_top_bar.dart';
-import 'customer_website.dart';
-import 'my_caterings_page.dart';
-import 'my_orders_page.dart';
-import 'my_profile_page.dart';
 
 class MyOrderTrackingPage extends StatefulWidget {
   const MyOrderTrackingPage({super.key});
@@ -245,19 +240,6 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
     return formatRestaurantOrderNo({'order_no': orderNo, 'id': rawId});
   }
 
-  void _navigateFromTopBar(CustomerPageTab tab) {
-    if (tab == CustomerPageTab.tracking) return;
-    final route = switch (tab) {
-      CustomerPageTab.home => const CustomerWebsiteScreen(),
-      CustomerPageTab.profile => const MyProfilePage(),
-      CustomerPageTab.orders => const MyOrdersPage(),
-      CustomerPageTab.caterings => const MyCateringsPage(),
-      CustomerPageTab.tracking => const MyOrderTrackingPage(),
-    };
-    Navigator.of(
-      context,
-    ).pushReplacement(MaterialPageRoute(builder: (_) => route));
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -280,15 +262,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          CustomerPagesTopBar(
-            currentTab: CustomerPageTab.tracking,
-            onTabSelected: _navigateFromTopBar,
-          ),
-          Expanded(
-            child:
-                _isLoading
+      body: _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : _error != null
                     ? Center(
@@ -602,9 +576,6 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                         },
                       ),
                     ),
-          ),
-        ],
-      ),
     );
   }
 

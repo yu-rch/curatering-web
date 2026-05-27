@@ -8,8 +8,10 @@ import '../config/site_open_tab_stub.dart'
     if (dart.library.html) '../config/site_open_tab_web.dart';
 import '../config/site_routes.dart';
 import '../pages/checkout_page.dart';
+import '../pages/customer_account_shell.dart';
 import '../pages/customer_login.dart';
 import '../pages/my_caterings_page.dart';
+import '../pages/my_inquiries_page.dart';
 import '../pages/my_order_tracking_page.dart';
 import '../pages/my_orders_page.dart';
 import '../pages/my_profile_page.dart';
@@ -504,7 +506,9 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         onSelected: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) => const MyProfilePage(),
+                              builder: (_) => const CustomerAccountShell(
+                                initialTab: CustomerAccountTab.profile,
+                              ),
                             ),
                           );
                         },
@@ -516,7 +520,9 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         onSelected: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) => const MyOrdersPage(),
+                              builder: (_) => const CustomerAccountShell(
+                                initialTab: CustomerAccountTab.orders,
+                              ),
                             ),
                           );
                         },
@@ -528,7 +534,23 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         onSelected: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) => const MyCateringsPage(),
+                              builder: (_) => const CustomerAccountShell(
+                                initialTab: CustomerAccountTab.inquiries,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      AntdProfileMenuItem.action(
+                        id: 'my_inquiries',
+                        icon: Icons.mail_outline,
+                        label: 'My Inquiries',
+                        onSelected: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const CustomerAccountShell(
+                                initialTab: CustomerAccountTab.inquiries,
+                              ),
                             ),
                           );
                         },
@@ -540,7 +562,9 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         onSelected: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) => const MyOrderTrackingPage(),
+                              builder: (_) => const CustomerAccountShell(
+                                initialTab: CustomerAccountTab.tracking,
+                              ),
                             ),
                           );
                         },

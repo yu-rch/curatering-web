@@ -809,112 +809,176 @@ extension _ManageEventsTableExt on _ManageEventsState {
     await _showDownpaymentConfirmationDialog(order);
   }
 
+  Future<void> _selectManageEventsOrder(EventOrderDto dto) async {
+    setState(() {
+      _manageEventsDetailLoading = true;
+      _manageEventsDetailError = null;
+      _selectedManageEventsOrder = dto;
+    });
+    try {
+      final orderKind = dto.orderKind.isNotEmpty
+          ? dto.orderKind
+          : (dto.orderType == 'catering' ? 'catering' : 'event');
+      final raw = await ManagerCateringApi.instance.getItem(
+        id: dto.id,
+        orderKind: orderKind,
+      );
+      if (!mounted) return;
+      setState(() {
+        _selectedManageEventsOrder = EventsApi.instance.parseOrder(raw);
+        _manageEventsDetailLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _manageEventsDetailLoading = false;
+        _manageEventsDetailError = '$e';
+      });
+    }
+  }
+
+  Widget _mergedInquiryColumnCell(EventOrderDto dto) {
+    final eventType =
+        dto.eventType.trim().isEmpty ? '—' : dto.eventType.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          eventType,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+        ),
+        const SizedBox(height: 4),
+        Text(dto.customerName, style: const TextStyle(fontSize: 12)),
+        if (dto.contactPerson.trim().isNotEmpty &&
+            dto.contactPerson.trim() != dto.customerName.trim())
+          Text(dto.contactPerson, style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
+        Text(
+          _formatInquiryDateTime(dto),
+          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+        ),
+      ],
+    );
+  }
+
   Widget _buildOrdersTablePanel({
     required String title,
     required List<EventOrderDto> orders,
     required String emptyMessage,
-    required List<Widget> Function(EventOrderDto dto) actionCells,
+    List<Widget> Function(EventOrderDto dto)? actionCells,
+    bool showGuestsAndTotal = true,
   }) {
     final filtered = _filterEventOrdersByTableFilters(orders);
-    return SizedBox(
-      width: double.infinity,
-      child: Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    tooltip: 'Refresh',
-                    onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
-                    icon:
-                        _ordersLoading
-                            ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                            : const Icon(Icons.refresh),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (filtered.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    emptyMessage,
-                    style: TextStyle(color: Colors.grey.shade600),
+    return _buildManageEventsSplitShell(
+      title: title,
+      emptyMessage: emptyMessage,
+      filters: [_buildEventTableFilters(orders)],
+      columns: [
+        const DataColumn(label: Text('Service type')),
+        const DataColumn(label: Text('Event / inquiry')),
+        if (showGuestsAndTotal) const DataColumn(label: Text('Guests')),
+        if (showGuestsAndTotal) const DataColumn(label: Text('Total')),
+      ],
+      rows: filtered.map((dto) {
+        final selected = _selectedManageEventsOrder?.id == dto.id;
+        return DataRow(
+          selected: selected,
+          onSelectChanged: (_) => _selectManageEventsOrder(dto),
+          cells: [
+            DataCell(Text(_orderTypeColumnLabel(dto))),
+            DataCell(_mergedInquiryColumnCell(dto)),
+            if (showGuestsAndTotal) DataCell(Text('${dto.guestCount}')),
+            if (showGuestsAndTotal)
+              DataCell(
+                Text(
+                  formatPesos(
+                    dto.totalCost > 0
+                        ? dto.totalCost
+                        : computeOrderTotalCost(dto),
                   ),
                 ),
-              PagedDataTable(
-                title: title,
-                fullWidth: true,
-                maxTableHeight: MediaQuery.sizeOf(context).height,
-                filters: [_buildEventTableFilters(orders)],
-                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
-                columns: const [
-                  DataColumn(label: Text('Service type')),
-                  DataColumn(label: Text('Event / customer')),
-                  DataColumn(label: Text('Customer')),
-                  DataColumn(label: Text('Date')),
-                  DataColumn(label: Text('Guests')),
-                  DataColumn(label: Text('Total')),
-                  DataColumn(label: Text('Actions')),
-                ],
-                rows:
-                    filtered.map((dto) {
-                      final title =
-                          dto.eventTitle.isEmpty
-                              ? dto.customerName
-                              : dto.eventTitle;
-                      return DataRow(
-                        cells: [
-                          DataCell(Text(_orderTypeColumnLabel(dto))),
-                          DataCell(
-                            Text(
-                              title,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          DataCell(Text(dto.customerName)),
-                          DataCell(Text(_formatOrderSchedule(dto))),
-                          DataCell(Text('${dto.guestCount}')),
-                          DataCell(
-                            Text(
-                              formatPesos(
-                                dto.totalCost > 0
-                                    ? dto.totalCost
-                                    : computeOrderTotalCost(dto),
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: actionCells(dto),
-                            ),
-                          ),
-                        ],
-                      );
-                    }).toList(),
               ),
-            ],
+          ],
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildManageEventsSplitShell({
+    required String title,
+    required String emptyMessage,
+    required List<Widget> filters,
+    required List<DataColumn> columns,
+    required List<DataRow> rows,
+  }) {
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height - 220,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 5,
+            child: Card(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          tooltip: 'Refresh',
+                          onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
+                          icon: _ordersLoading
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.refresh),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (rows.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        child: Text(
+                          emptyMessage,
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: PagedDataTable(
+                          title: title,
+                          fullWidth: true,
+                          filters: filters,
+                          headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                          columns: columns,
+                          rows: rows,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
           ),
-        ),
+          const SizedBox(width: 16),
+          Expanded(
+            flex: 6,
+            child: _buildManageEventsDetailPanel(),
+          ),
+        ],
       ),
     );
   }
@@ -1188,239 +1252,49 @@ extension _ManageEventsTableExt on _ManageEventsState {
           return true;
         }).toList();
 
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Text(
-                  'Online inquiries',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
-                  icon:
-                      _ordersLoading
-                          ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                          : const Icon(Icons.refresh),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (filtered.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 32),
-                child: Center(
-                  child: Text(
-                    'No online inquiries to show yet.',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-                ),
-              )
-            else
-              Expanded(
-                child: PagedDataTable(
-                  title: 'Online Inquiries',
-                  fullWidth: true,
-                  filters: [
-                    _buildOnlineInquiryTableFilters(serviceTypes, eventTypes),
-                  ],
-                  maxTableHeight: MediaQuery.sizeOf(context).height,
-                  headingRowColor: WidgetStateProperty.all(
-                    Colors.grey.shade100,
-                  ),
-                  columns: const [
-                    DataColumn(label: Text('Service type')),
-                    DataColumn(label: Text('Customer')),
-                    DataColumn(label: Text('Contact')),
-                    DataColumn(label: Text('Event type')),
-                    DataColumn(label: Text('Inquiry datetime')),
-                    DataColumn(label: Text('Actions')),
-                  ],
-                  rows:
-                      filtered.map((dto) {
-                        return DataRow(
-                          cells: [
-                            DataCell(Text(_orderTypeColumnLabel(dto))),
-                            DataCell(Text(dto.customerName)),
-                            DataCell(Text(dto.contactPerson)),
-                            DataCell(
-                              Text(dto.eventType.isEmpty ? '—' : dto.eventType),
-                            ),
-                            DataCell(Text(_formatInquiryDateTime(dto))),
-                            DataCell(
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _eventIconAction(
-                                    icon: Icons.visibility_outlined,
-                                    tooltip: 'View details',
-                                    permissionKey:
-                                        ActionPermissionKeys
-                                            .manageEventsViewDetails,
-                                    onPressed: () async {
-                                      try {
-                                        final full =
-                                            await _resolveOrderForSelection(
-                                              dto,
-                                            );
-                                        if (!mounted) return;
-                                        await _showEventOrderDetailModal(full);
-                                      } catch (e) {
-                                        if (!mounted) return;
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              'Could not load inquiry: $e',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                  _eventIconAction(
-                                    icon: Icons.check_circle_outline,
-                                    tooltip: 'Finalize inquiry',
-                                    permissionKey:
-                                        ActionPermissionKeys
-                                            .manageEventsFinalize,
-                                    onPressed: () async {
-                                      try {
-                                        final full =
-                                            await _resolveOrderForSelection(
-                                              dto,
-                                            );
-                                        if (!mounted) return;
-                                        await _openFinalizeOnlineInquiryDialog(
-                                          full,
-                                        );
-                                      } catch (e) {
-                                        if (!mounted) return;
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              'Could not open finalize: $e',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        );
-                      }).toList(),
-                ),
-              ),
+    return _buildManageEventsSplitShell(
+      title: 'Online inquiries',
+      emptyMessage: 'No online inquiries to show yet.',
+      filters: [_buildOnlineInquiryTableFilters(serviceTypes, eventTypes)],
+      columns: const [
+        DataColumn(label: Text('Service type')),
+        DataColumn(label: Text('Event / inquiry')),
+      ],
+      rows: filtered.map((dto) {
+        final selected = _selectedManageEventsOrder?.id == dto.id;
+        return DataRow(
+          selected: selected,
+          onSelectChanged: (_) => _selectManageEventsOrder(dto),
+          cells: [
+            DataCell(Text(_orderTypeColumnLabel(dto))),
+            DataCell(_mergedInquiryColumnCell(dto)),
           ],
-        ),
-      ),
+        );
+      }).toList(),
     );
   }
 
   Widget _buildForDownpaymentTableView(bool isNarrow) {
-    return SingleChildScrollView(
-      child: _buildOrdersTablePanel(
-        title: 'For downpayment',
-        orders: _downpaymentOrders,
-        emptyMessage: 'No confirmed orders awaiting downpayment.',
-        actionCells:
-            (dto) => [
-              _eventIconAction(
-                icon: Icons.visibility_outlined,
-                tooltip: 'View details',
-                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
-                onPressed: () => _showEventOrderDetailModal(dto),
-              ),
-              _eventIconAction(
-                icon: Icons.payments_outlined,
-                tooltip: 'Confirm downpayment',
-                permissionKey:
-                    ActionPermissionKeys.manageEventsConfirmDownpayment,
-                onPressed: () => _showConfirmDownpaymentDialog(dto),
-              ),
-            ],
-      ),
+    return _buildOrdersTablePanel(
+      title: 'For downpayment',
+      orders: _downpaymentOrders,
+      emptyMessage: 'No confirmed orders awaiting downpayment.',
     );
   }
 
   Widget _buildOngoingTableView(bool isNarrow) {
-    return SingleChildScrollView(
-      child: _buildOrdersTablePanel(
-        title: 'Ongoing',
-        orders: _ongoingOrders,
-        emptyMessage: 'No ongoing events.',
-        actionCells:
-            (dto) => [
-              _eventIconAction(
-                icon: Icons.visibility_outlined,
-                tooltip: 'View details',
-                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
-                onPressed: () => _showEventOrderDetailModal(dto),
-              ),
-              _eventIconAction(
-                icon: Icons.checklist_rtl_outlined,
-                tooltip: 'Checklist',
-                permissionKey: ActionPermissionKeys.manageEventsChecklist,
-                onPressed: () => _showChecklistDialog(dto),
-              ),
-              _eventIconAction(
-                icon: Icons.payments_outlined,
-                tooltip: 'Mark for final payment',
-                permissionKey: ActionPermissionKeys.manageEventsFinalize,
-                onPressed: () => _markOrderForFinalPayment(dto),
-                color: Colors.indigo.shade700,
-              ),
-            ],
-      ),
+    return _buildOrdersTablePanel(
+      title: 'Ongoing',
+      orders: _ongoingOrders,
+      emptyMessage: 'No ongoing events.',
     );
   }
 
   Widget _buildForFullPaymentTableView(bool isNarrow) {
-    return SingleChildScrollView(
-      child: _buildOrdersTablePanel(
-        title: 'For full payment',
-        orders: _postAnalysisOrdersDto,
-        emptyMessage: 'No orders awaiting full payment.',
-        actionCells:
-            (dto) => [
-              _eventIconAction(
-                icon: Icons.visibility_outlined,
-                tooltip: 'View details',
-                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
-                onPressed: () => _showEventOrderDetailModal(dto),
-              ),
-              _eventIconAction(
-                icon: Icons.receipt_long_outlined,
-                tooltip: 'Finalize payment',
-                permissionKey: ActionPermissionKeys.manageEventsFinalize,
-                onPressed: () => _showFinalizeFullPaymentDialog(dto),
-              ),
-              _eventIconAction(
-                icon: Icons.task_alt_outlined,
-                tooltip: 'Complete event',
-                permissionKey: ActionPermissionKeys.manageEventsComplete,
-                onPressed: () => _openFullPaymentCompleteModal(dto),
-                color: Colors.green.shade700,
-              ),
-            ],
-      ),
+    return _buildOrdersTablePanel(
+      title: 'For full payment',
+      orders: _postAnalysisOrdersDto,
+      emptyMessage: 'No orders awaiting full payment.',
     );
   }
 

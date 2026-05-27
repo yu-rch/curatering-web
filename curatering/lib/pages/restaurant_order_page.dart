@@ -1055,13 +1055,12 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                               Expanded(
                                 child: ElevatedButton(
                                   onPressed: () {
-                                    for (int j = 0; j < quantity; j++) {
-                                      CartStore.instance.addItem(
-                                        dish,
-                                        selectedSauce: selectedAddOn,
-                                        addOnQuantity: selectedAddOn != null ? addOnQty : 0,
-                                      );
-                                    }
+                                    CartStore.instance.addItem(
+                                      dish,
+                                      selectedSauce: selectedAddOn,
+                                      addOnQuantity: selectedAddOn != null ? addOnQty : 0,
+                                      quantity: quantity,
+                                    );
                                     Navigator.pop(dialogCtx);
                                     ScaffoldMessenger.of(this.context).showSnackBar(
                                       SnackBar(
