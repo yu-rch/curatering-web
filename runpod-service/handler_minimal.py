@@ -23,12 +23,17 @@ try:
 except Exception:
     ControlNetModel = None
     StableDiffusionControlNetImg2ImgPipeline = None
-from PIL import Image, ImageFilter, ImageOps
+try:
+    from controlnet_aux import MidasDetector
+except Exception:
+    MidasDetector = None
+from PIL import Image
 from supabase import create_client
 
 from prompt_engine import (
     compile_generation_payload,
     controlnet_scale_for_denoise,
+    run_scene_loop,
 )
 
 BUCKET_ID = "ai-images"
@@ -159,6 +164,7 @@ def format_exception_detail(exc: BaseException) -> dict:
 _sd_pipeline = None
 _sd_img2img_pipeline = None
 _sd_controlnet_img2img_pipeline = None
+_sd_depth_detector = None
 _sd_pipeline_lock = threading.RLock()
 
 MAX_INIT_IMAGE_BYTES = int(os.getenv("MAX_INIT_IMAGE_BYTES", "6000000"))
@@ -168,8 +174,9 @@ IMG2IMG_INFERENCE_STEPS = int(os.getenv("IMG2IMG_INFERENCE_STEPS", "30"))
 GUIDANCE_SCALE = float(os.getenv("SD_GUIDANCE_SCALE", "7"))
 MODEL_ID = os.getenv("SD_MODEL_ID", "runwayml/stable-diffusion-v1-5")
 CONTROLNET_MODEL_ID = os.getenv(
-    "SD_CONTROLNET_MODEL_ID", "lllyasviel/control_v11p_sd15_canny"
+    "SD_CONTROLNET_MODEL_ID", "lllyasviel/control_v11p_sd15_depth"
 )
+DEPTH_ANNOTATOR_MODEL_ID = os.getenv("SD_DEPTH_ANNOTATOR_MODEL_ID", "lllyasviel/Annotators")
 HF_CACHE = os.getenv("HF_HOME", "/app/huggingface")
 NEGATIVE_PROMPT = os.getenv(
     "SD_NEGATIVE_PROMPT",
@@ -237,7 +244,7 @@ def get_sd_img2img_pipeline():
 
 
 def get_sd_controlnet_img2img_pipeline():
-    """ControlNet img2img pipeline for venue edge preservation."""
+    """ControlNet img2img pipeline for venue depth preservation."""
     global _sd_controlnet_img2img_pipeline
     if _sd_controlnet_img2img_pipeline is not None:
         return _sd_controlnet_img2img_pipeline
@@ -264,6 +271,28 @@ def get_sd_controlnet_img2img_pipeline():
         _configure_pipeline(_sd_controlnet_img2img_pipeline)
         print(f"ControlNet img2img pipeline ready in {time.time() - t0:.1f}s")
         return _sd_controlnet_img2img_pipeline
+
+
+def get_depth_detector():
+    global _sd_depth_detector
+    if _sd_depth_detector is not None:
+        return _sd_depth_detector
+    if MidasDetector is None:
+        raise RuntimeError("Depth ControlNet annotator is unavailable in this image")
+    with _sd_pipeline_lock:
+        if _sd_depth_detector is not None:
+            return _sd_depth_detector
+        t0 = time.time()
+        print("Loading depth annotator:", DEPTH_ANNOTATOR_MODEL_ID)
+        _sd_depth_detector = MidasDetector.from_pretrained(
+            DEPTH_ANNOTATOR_MODEL_ID,
+            cache_dir=HF_CACHE,
+        )
+        if hasattr(_sd_depth_detector, "to"):
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            _sd_depth_detector.to(device)
+        print(f"Depth annotator ready in {time.time() - t0:.1f}s")
+        return _sd_depth_detector
 
 
 def _decode_init_image(data) -> Optional[Image.Image]:
@@ -315,10 +344,15 @@ def _controlnet_enabled(config) -> bool:
 
 
 def _controlnet_condition_image(img: Image.Image) -> Image.Image:
-    """Lightweight Canny-style edge map without adding OpenCV to the worker image."""
-    edges = img.convert("L").filter(ImageFilter.FIND_EDGES)
-    edges = ImageOps.autocontrast(edges)
-    return edges.convert("RGB")
+    """Build an SD 1.5 depth ControlNet conditioning image."""
+    depth_image = get_depth_detector()(
+        img,
+        detect_resolution=SD_IMAGE_SIZE,
+        image_resolution=SD_IMAGE_SIZE,
+    )
+    if isinstance(depth_image, Image.Image):
+        return depth_image.convert("RGB")
+    return Image.fromarray(depth_image).convert("RGB")
 
 
 def _controlnet_conditioning_scale(config) -> float:
@@ -547,15 +581,38 @@ def handler(event):
         )
 
         step = "generate_image"
-        img_bytes, generation_mode = generate(
-            prompt,
-            init_image=init_image,
-            strength=strength,
-            num_inference_steps=steps,
-            guidance_scale=guidance_scale,
-            negative_prompt=negative_prompt,
-            controlnet=controlnet,
+
+        def runpod_fn(current_prompt, _current_image):
+            image_bytes, image_mode = generate(
+                current_prompt,
+                init_image=init_image,
+                strength=strength,
+                num_inference_steps=steps,
+                guidance_scale=guidance_scale,
+                negative_prompt=negative_prompt,
+                controlnet=controlnet,
+            )
+            return {
+                "image_bytes": image_bytes,
+                "generation_mode": image_mode,
+                "prompt_used": current_prompt,
+                "output": {
+                    "prompt_used": current_prompt,
+                },
+            }
+
+        scene_result = run_scene_loop(
+            runpod_fn=runpod_fn,
+            prompt=prompt,
+            image=init_image,
+            max_iters=int(data.get("scene_correction_max_iters", 3) or 3),
         )
+        if scene_result is None:
+            raise RuntimeError("Scene correction loop returned no generation result")
+        img_bytes = scene_result["image_bytes"]
+        generation_mode = scene_result["generation_mode"]
+        prompt = scene_result.get("prompt_used", prompt)
+        data["prompt"] = prompt
 
         step = "upload_storage"
         file_prefix = _storage_file_prefix(user_id)
@@ -584,6 +641,10 @@ def handler(event):
                 "mode": compiled["mode"],
                 "controlnet": compiled["controlnet"],
                 "transformation_plan": compiled["transformation_plan"],
+                "scene_correction": {
+                    "max_iters": int(data.get("scene_correction_max_iters", 3) or 3),
+                    "final_prompt": prompt,
+                },
             },
         }
         if _is_valid_uuid(user_id):

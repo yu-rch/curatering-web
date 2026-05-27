@@ -21,7 +21,7 @@ RUN python3 -m pip install --no-cache-dir -r /app/requirements.txt \
 # SD 1.5 downloads on first worker boot (HF_HOME). Baking weights in the image adds long build time.
 ENV HF_HOME=/app/huggingface
 ENV SD_MODEL_ID=runwayml/stable-diffusion-v1-5
-ENV SD_CONTROLNET_MODEL_ID=lllyasviel/control_v11p_sd15_canny
+ENV SD_CONTROLNET_MODEL_ID=lllyasviel/control_v11p_sd15_depth
 ENV SD_IMAGE_SIZE=768
 
 # copy primary event-design handler

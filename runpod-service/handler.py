@@ -21,12 +21,13 @@ from diffusers import (
     StableDiffusionControlNetImg2ImgPipeline,
 )
 
-from controlnet_aux import CannyDetector
+from controlnet_aux import MidasDetector
 
 from prompt_engine import (
     clean,
     compile_generation_payload,
     controlnet_scale_for_denoise,
+    run_scene_loop,
 )
 
 
@@ -58,7 +59,11 @@ SD_MODEL_ID = os.getenv(
 
 CONTROLNET_MODEL_ID = os.getenv(
     "SD_CONTROLNET_MODEL_ID",
-    "lllyasviel/control_v11p_sd15_canny"
+    "lllyasviel/control_v11p_sd15_depth"
+)
+DEPTH_ANNOTATOR_MODEL_ID = os.getenv(
+    "SD_DEPTH_ANNOTATOR_MODEL_ID",
+    "lllyasviel/Annotators"
 )
 
 IMAGE_SIZE = int(os.getenv("SD_IMAGE_SIZE", "768"))
@@ -84,7 +89,7 @@ print("====================================")
 # =========================================================
 # CONTROLNETS
 # =========================================================
-print("Loading SD 1.5 Canny ControlNet...")
+print("Loading SD 1.5 depth ControlNet...")
 
 controlnet = ControlNetModel.from_pretrained(
     CONTROLNET_MODEL_ID,
@@ -137,7 +142,12 @@ except Exception as e:
 # =========================================================
 # DETECTORS
 # =========================================================
-canny_detector = CannyDetector()
+depth_detector = MidasDetector.from_pretrained(
+    DEPTH_ANNOTATOR_MODEL_ID,
+    cache_dir=HF_HOME,
+)
+if hasattr(depth_detector, "to"):
+    depth_detector.to(DEVICE)
 
 
 # =========================================================
@@ -221,8 +231,8 @@ def load_base_image(data):
 # =========================================================
 # CONTROL IMAGES
 # =========================================================
-def generate_canny(image):
-    return canny_detector(
+def generate_depth(image):
+    return depth_detector(
         image,
         detect_resolution=IMAGE_SIZE,
         image_resolution=IMAGE_SIZE,
@@ -235,9 +245,9 @@ def generate_canny(image):
 def generate_image(data, image, prompt, negative_prompt):
     image = resize_image(image)
 
-    canny_image = generate_canny(image)
+    depth_image = generate_depth(image)
 
-    control_image = canny_image
+    control_image = depth_image
 
     strength = max(0.75, min(float(data.get("strength", DEFAULT_STRENGTH)), 0.9))
     guidance = float(data.get("guidance_scale") or data.get("cfg_scale") or DEFAULT_GUIDANCE)
@@ -358,12 +368,34 @@ def handler(event):
         prompt = compiled["prompt"]
         negative_prompt = compiled["negative_prompt"]
 
-        generated_image, seed = generate_image(
-            data,
-            base_image,
-            prompt,
-            negative_prompt,
+        def runpod_fn(current_prompt, current_image):
+            image_result, image_seed = generate_image(
+                data,
+                current_image,
+                current_prompt,
+                negative_prompt,
+            )
+            return {
+                "image": image_result,
+                "seed": image_seed,
+                "prompt_used": current_prompt,
+                "output": {
+                    "prompt_used": current_prompt,
+                },
+            }
+
+        scene_result = run_scene_loop(
+            runpod_fn=runpod_fn,
+            prompt=prompt,
+            image=base_image,
+            max_iters=int(data.get("scene_correction_max_iters", 3) or 3),
         )
+        if scene_result is None:
+            raise RuntimeError("Scene correction loop returned no generation result")
+        generated_image = scene_result["image"]
+        seed = scene_result["seed"]
+        prompt = scene_result.get("prompt_used", prompt)
+        data["prompt"] = prompt
 
         user_id = str(data.get("user_id") or "guest")
 
@@ -378,11 +410,15 @@ def handler(event):
             "negative_prompt": negative_prompt,
             "image_url": image_url,
             "seed": seed,
-            "generation_mode": "sd15_controlnet_canny",
+            "generation_mode": "sd15_controlnet_depth",
             "design_meta": {
                 "mode": compiled["mode"],
                 "controlnet": compiled["controlnet"],
                 "transformation_plan": compiled["transformation_plan"],
+                "scene_correction": {
+                    "max_iters": int(data.get("scene_correction_max_iters", 3) or 3),
+                    "final_prompt": prompt,
+                },
             },
             "event_type": clean(data.get("event_type")),
             "style": clean(data.get("style")),

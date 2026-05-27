@@ -109,23 +109,6 @@ function resolveWebBuildPath() {
   return null;
 }
 
-/**
- * CORS: browsers send the *frontend* origin (e.g. Vercel / Firebase), not the API host.
- *
- * Defaults include macrinas-kitchen.curatering.com and staff.curatering.com .
- *
- * Set on the API host (e.g. Railway) to add more origins:
- *   CORS_ORIGINS=https://myapp.vercel.app,https://www.example.com
- *   FRONTEND_URL=https://myapp.vercel.app   (origin added automatically)
- *
- * Vercel preview URLs (https://*-git-*-team.vercel.app) change per branch. If any
- * configured URL is on *.vercel.app, we also allow HTTPS origins whose host ends with
- * ".vercel.app". If you have not set FRONTEND_URL yet, set either:
- *   CORS_ALLOW_VERCEL_ORIGINS=1
- * or
- *   CORS_ORIGIN_SUFFIXES=.vercel.app,.pages.dev
- * or set CORS_INFER_VERCEL_SUFFIX=0 to disable inference from configured URLs.
- */
 function normalizeCorsOrigin(origin) {
   if (origin == null || typeof origin !== "string") return origin;
   const t = origin.trim();
@@ -383,7 +366,7 @@ function getControlNet(intensity) {
 }
 
 function getPreprocessor(intensity) {
-  return "canny";
+  return "depth";
 }
 
 function getTransformationMode(intensity) {

@@ -24,7 +24,7 @@ function controlnetFor(intensity) {
 }
 
 function preprocessorFor(intensity) {
-  return 'canny';
+  return 'depth';
 }
 
 function modeFor(intensity) {

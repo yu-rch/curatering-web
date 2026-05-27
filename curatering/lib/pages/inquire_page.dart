@@ -2961,7 +2961,7 @@ class _InquirePageState extends State<InquirePage> {
       'guidance_scale': 7,
       'controlnet': {
         'enabled': expansion?.controlnet?['enabled'] ?? true,
-        'preprocessor': expansion?.controlnet?['preprocessor'] ?? 'canny',
+        'preprocessor': expansion?.controlnet?['preprocessor'] ?? 'depth',
         'preserve_venue': true,
         'conditioning_scale':
             expansion?.controlnet?['conditioning_scale'] ?? controlnet,

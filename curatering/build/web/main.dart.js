@@ -78439,7 +78439,7 @@ if(b1!=null)a9.p(0,"recommended_strength",b1)
 a9.p(0,"nlp_expansion",a5.bU())
 b0.A(0,a9)}b0.p(0,"negative_prompt",B.h.b2(A.b(["warped architecture","distorted room","melted surfaces","duplicate objects","blurry","low quality","cartoon","CGI","fisheye"],b),", "))
 b0.p(0,"guidance_scale",6.5)
-b0.p(0,"controlnet",A.c(["enabled",!0,"preprocessor","canny","preserve_venue",!0,"conditioning_scale",0.65],a8,t.K))
+b0.p(0,"controlnet",A.c(["enabled",!0,"preprocessor","depth","preserve_venue",!0,"conditioning_scale",0.65],a8,t.K))
 b0.p(0,"controlnet_conditioning_scale",0.65)
 s=9
 return A.h(A.afe(h,b0,6.5,j,30,0.58,g),$async$xN)

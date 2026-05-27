@@ -230,7 +230,7 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
               : 'warped architecture, distorted room, melted surfaces, duplicate objects, blurry, low quality, cartoon, CGI, fisheye',
       'controlnet': {
         'enabled': expansion.controlnet?['enabled'] ?? true,
-        'preprocessor': expansion.controlnet?['preprocessor'] ?? 'canny',
+        'preprocessor': expansion.controlnet?['preprocessor'] ?? 'depth',
         'preserve_venue': true,
         'conditioning_scale':
             expansion.controlnet?['conditioning_scale'] ?? controlnet,

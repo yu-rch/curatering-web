@@ -125,7 +125,7 @@ class ApiService {
               expansion.controlnet ??
               {
                 'enabled': true,
-                'preprocessor': 'canny',
+                'preprocessor': 'depth',
                 'preserve_venue': true,
                 'conditioning_scale': controlnet,
               },
