@@ -4,6 +4,15 @@ extension _ManageEventsDetailExt on _ManageEventsState {
   String get _activeManageEventsStage => _ManageEventsState._stageKeys[
       _tabController.index.clamp(0, _ManageEventsState._stageKeys.length - 1)];
 
+  /// Resolves catering_orders vs event_orders for manager API patches.
+  String _managerOrderKind(EventOrderDto order) {
+    final kind = order.orderKind.trim().toLowerCase();
+    if (kind == 'catering' || kind == 'event') return kind;
+    final t = order.orderType.trim().toLowerCase();
+    if (t == 'catering' || t == 'catering_only') return 'catering';
+    return 'event';
+  }
+
   List<Map<String, dynamic>> _checklistRowsFromOrder(EventOrderDto order) {
     if (order.checklist.isNotEmpty) {
       return order.checklist
@@ -11,7 +20,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
             (c) => {
               'item': c.title,
               'description': c.description,
-              'quantity': 1,
+              'quantity': c.quantity,
               'cost': c.price,
               'status': c.isCompleted ? 'done' : 'not done',
             },
@@ -827,9 +836,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                       );
                       await ManagerCateringApi.instance.patchStageData(
                         id: order.id,
-                        orderKind: order.orderKind.isNotEmpty
-                            ? order.orderKind
-                            : (order.orderType == 'catering' ? 'catering' : 'event'),
+                        orderKind: _managerOrderKind(order),
                         patch: {'task_assignment_rows': rows},
                       );
                       if (loaderCtx != null && Navigator.of(loaderCtx!).canPop()) {
@@ -1213,9 +1220,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                     try {
                       await ManagerCateringApi.instance.patchStageData(
                         id: order.id,
-                        orderKind: order.orderKind.isNotEmpty
-                            ? order.orderKind
-                            : (order.orderType == 'catering' ? 'catering' : 'event'),
+                        orderKind: _managerOrderKind(order),
                         patch: {'additional_costs': rows},
                       );
                       if (ctx.mounted) Navigator.pop(ctx);

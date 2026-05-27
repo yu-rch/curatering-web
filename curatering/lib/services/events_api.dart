@@ -555,9 +555,10 @@ class EventsApi {
       checklist.add(
         ChecklistItemDto(
           id: cc['id'] as String? ?? '',
-          title: cc['title'] as String? ?? '',
+          title: cc['title'] as String? ?? cc['item'] as String? ?? '',
           description: cc['description'] as String? ?? '',
-          price: _toDouble(cc['price']),
+          price: _toDouble(cc['price'] ?? cc['cost']),
+          quantity: _toInt(cc['quantity']).clamp(1, 999999),
           isCompleted: cc['isCompleted'] as bool? ?? false,
           assignedTo: cc['assignedTo'] as String? ?? '',
         ),

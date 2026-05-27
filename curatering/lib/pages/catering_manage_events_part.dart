@@ -1139,24 +1139,41 @@ extension _ManageEventsTableExt on _ManageEventsState {
                             d.available,
                       )
                       .toList();
-              return SingleChildScrollView(
+              return DefaultTabController(
+                length: 2,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: AllergenSelectorField(
-                        initialSerialized: inquiryAllergens,
-                        onChanged: (v) => _mutateTableState(() => inquiryAllergens = v),
-                      ),
+                    TabBar(
+                      labelColor: const Color(0xFF1E1E1E),
+                      unselectedLabelColor: Colors.grey.shade700,
+                      indicatorColor: const Color(0xFFFFC024),
+                      tabs: const [
+                        Tab(text: 'Allergens'),
+                        Tab(text: 'Menu'),
+                      ],
                     ),
-                    const SizedBox(height: 12),
-                    Container(
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          SingleChildScrollView(
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: AllergenSelectorField(
+                                initialSerialized: inquiryAllergens,
+                                onChanged: (v) =>
+                                    _mutateTableState(() => inquiryAllergens = v),
+                              ),
+                            ),
+                          ),
+                          SingleChildScrollView(
+                            child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: Colors.grey.shade50,
@@ -1166,72 +1183,38 @@ extension _ManageEventsTableExt on _ManageEventsState {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Row(
-                            children: [
-                              const Expanded(
-                                child: Text(
-                                  'Menu',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: () async {
-                                  final picked = await showInquiryMenuSelectionDialog(
-                                    context,
-                                    cateringDishes: cateringDishes,
-                                    setMenus: SetMenuStore.instance.activeSetMenus,
-                                    initialSelections: inquiryMenuBlocks,
-                                    mode: InquiryMenuPickerMode.staffNewEvent,
-                                  );
-                                  if (picked == null) return;
-                                  _mutateTableState(() {
-                                    inquiryMenuBlocks = picked;
-                                    inquiryChargeOverrides.removeWhere((dishId, _) {
-                                      return !picked.any((b) {
-                                        final ids =
-                                            (b['dishIds'] as List<dynamic>? ?? const [])
-                                                .map((e) => '$e')
-                                                .toSet();
-                                        return ids.contains(dishId);
-                                      });
-                                    });
-                                  });
-                                },
-                                icon: const Icon(Icons.restaurant_menu, size: 18),
-                                label: const Text('Edit menu'),
-                              ),
-                            ],
+                          const Text(
+                            'Menu',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
                           ),
                           const SizedBox(height: 8),
-                          if (inquiryMenuBlocks.isEmpty)
-                            const Text(
-                              'No menu selected.',
-                              style: TextStyle(fontSize: 12, color: Colors.grey),
-                            )
-                          else
-                            ...inquiryMenuBlocks.expand((block) {
-                              final ids =
-                                  (block['dishIds'] as List<dynamic>? ?? const [])
-                                      .map((e) => '$e')
-                                      .where((id) => id.isNotEmpty)
-                                      .toList();
-                              return ids.map((id) {
-                                final dish = _newEventDishById[id];
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: Text(
-                                    dish?.name ?? id,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                );
+                          InquiryMenuPicker(
+                            embedded: true,
+                            tabIndex: 1,
+                            cateringDishes: cateringDishes,
+                            setMenus: SetMenuStore.instance.activeSetMenus,
+                            initialSelections: inquiryMenuBlocks,
+                            mode: InquiryMenuPickerMode.staffNewEvent,
+                            minCustomDishes: 0,
+                            maxCustomDishes: 999,
+                            onSelectionChanged: (blocks) {
+                              _mutateTableState(() {
+                                inquiryMenuBlocks = blocks;
+                                inquiryChargeOverrides.removeWhere((dishId, _) {
+                                  return !blocks.any((b) {
+                                    final ids =
+                                        (b['dishIds'] as List<dynamic>? ?? const [])
+                                            .map((e) => '$e')
+                                            .toSet();
+                                    return ids.contains(dishId);
+                                  });
+                                });
                               });
-                            }),
+                            },
+                          ),
                           if (chargeRows.isNotEmpty) ...[
                             const SizedBox(height: 10),
                             const Text(
@@ -1286,6 +1269,10 @@ extension _ManageEventsTableExt on _ManageEventsState {
                               );
                             }),
                           ],
+                        ],
+                      ),
+                            ),
+                          ),
                         ],
                       ),
                     ),

@@ -416,6 +416,7 @@ class _ManageEventsState extends State<ManageEvents>
   late TabController _tabController;
   bool _showNewEventForm = false;
   _NewEventSideTab _activeNewEventSideTab = _NewEventSideTab.eventInfo;
+  int _newEventMenuPrefTabIndex = 0;
 
   static const _stageKeys = [
     'new_event',
@@ -780,15 +781,15 @@ class _ManageEventsState extends State<ManageEvents>
         .toSet();
     final originalCount =
         (block['originalDishCount'] as num?)?.toInt() ?? originalIds.length;
-    final overage = (selectedIds.length - originalCount).clamp(0, 9999);
     final addedIds =
         selectedIds.where((id) => !originalIds.contains(id)).toList();
     if (addedIds.isEmpty) return const [];
-    return addedIds.asMap().entries.map((entry) {
-      final idx = entry.key;
-      final id = entry.value;
+    return addedIds.map((id) {
       final dish = _newEventDishById[id];
-      final baseAmount = idx < overage ? (dish?.additionalChargeAmount ?? 0) : 0;
+      final posInSelected = selectedIds.indexOf(id);
+      final overSlot = posInSelected >= originalCount;
+      final baseAmount =
+          overSlot ? (dish?.additionalChargeAmount ?? 0) : 0;
       final amount = chargeOverrides[id] ?? baseAmount;
       return {'dishId': id, 'dishName': dish?.name ?? id, 'amount': amount};
     }).toList();
@@ -4458,7 +4459,7 @@ class _ManageEventsState extends State<ManageEvents>
                   (item) => ChecklistItem(
                     item: item.title,
                     description: item.description,
-                    quantity: 1,
+                    quantity: item.quantity,
                     cost: item.price,
                     isCompleted: item.isCompleted,
                   ),
@@ -5177,7 +5178,11 @@ class _ManageEventsState extends State<ManageEvents>
                         const SizedBox(width: 12),
                         // Save button (green outline)
                         OutlinedButton(
-                          onPressed: () => _saveChecklist(sourceOrder, editableItems),
+                          onPressed: () => _saveChecklist(
+                            sourceOrder,
+                            editableItems,
+                            dialogContext: context,
+                          ),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.green,
                             side: const BorderSide(color: Colors.green),
@@ -7133,14 +7138,7 @@ class _ManageEventsState extends State<ManageEvents>
         body = _buildEventForm();
         break;
       case _NewEventSideTab.menuAndAllergens:
-        body = Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: _buildEventMenuSection()),
-            const SizedBox(width: 16),
-            Expanded(child: _buildFoodBrowser()),
-          ],
-        );
+        body = _buildEventMenuSection();
         break;
       case _NewEventSideTab.submitAndCosts:
         body = _buildNewEventSubmissionBar();
@@ -7898,8 +7896,19 @@ class _ManageEventsState extends State<ManageEvents>
 
   // Menu View
   Widget _buildEventMenuSection() {
+    final cateringDishes =
+        _allDishes
+            .where(
+              (d) =>
+                  d.category.toLowerCase().trim() == 'catering' &&
+                  !d.archived &&
+                  d.available,
+            )
+            .toList();
+    final chargeRows = _newEventSetMenuAdditionalChargeRows();
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
           'Menu & Allergens',
@@ -7911,84 +7920,135 @@ class _ManageEventsState extends State<ManageEvents>
         ),
         const SizedBox(height: 12),
         Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: SingleChildScrollView(
-                    child: AllergenSelectorField(
-                      initialSerialized: _allergensSerialized,
-                      onChanged: (s) => _allergensSerialized = s,
-                    ),
-                  ),
+          child: DefaultTabController(
+            length: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TabBar(
+                  labelColor: const Color(0xFF1E1E1E),
+                  unselectedLabelColor: Colors.grey.shade700,
+                  indicatorColor: const Color(0xFFFFC024),
+                  onTap: (i) => setState(() => _newEventMenuPrefTabIndex = i),
+                  tabs: const [
+                    Tab(text: 'Allergens'),
+                    Tab(text: 'Menu'),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child:
-                      _menuItems.isEmpty
-                          ? const Text("You don't have anything on the menu right now...")
-                          : Scrollbar(
-                            thumbVisibility: true,
-                            child: SingleChildScrollView(
-                              child: Column(
-                                children:
-                                    _menuItems.map((item) {
-                                      final extra = item.dish.additionalChargeAmount;
-                                      return Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 8.0),
-                                        child: Row(
-                                          children: [
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    '${item.dish.name} · ${item.paxOption}',
-                                                    style: const TextStyle(
-                                                      fontWeight: FontWeight.w600,
-                                                    ),
-                                                  ),
-                                                  if (extra > 0)
-                                                    Text(
-                                                      'Extra fee: ${formatPesos(extra)}',
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        color: Colors.orange.shade800,
-                                                        fontWeight: FontWeight.w600,
-                                                      ),
-                                                    ),
-                                                ],
-                                              ),
-                                            ),
-                                            IconButton(
-                                              onPressed: () => _removeFromMenu(item),
-                                              icon: const Icon(Icons.close, size: 20),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }).toList(),
-                              ),
-                            ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      SingleChildScrollView(
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade300),
                           ),
+                          child: AllergenSelectorField(
+                            initialSerialized: _allergensSerialized,
+                            onChanged: (s) => setState(() => _allergensSerialized = s),
+                          ),
+                        ),
+                      ),
+                      SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Wrap(
+                              spacing: 8,
+                              children: [
+                                ChoiceChip(
+                                  label: const Text('Custom dishes'),
+                                  selected: _newEventMenuPrefTabIndex == 0,
+                                  onSelected: (_) => setState(
+                                    () => _newEventMenuPrefTabIndex = 0,
+                                  ),
+                                ),
+                                ChoiceChip(
+                                  label: const Text('Set menu'),
+                                  selected: _newEventMenuPrefTabIndex == 1,
+                                  onSelected: (_) => setState(
+                                    () => _newEventMenuPrefTabIndex = 1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            InquiryMenuPicker(
+                              key: ValueKey<int>(_newEventMenuPrefTabIndex),
+                              embedded: true,
+                              tabIndex: _newEventMenuPrefTabIndex,
+                              cateringDishes: cateringDishes,
+                              setMenus: SetMenuStore.instance.activeSetMenus,
+                              initialSelections: _newEventMenuBlocks,
+                              mode: InquiryMenuPickerMode.staffNewEvent,
+                              minCustomDishes: 0,
+                              maxCustomDishes: 999,
+                              onSelectionChanged: (blocks) {
+                                setState(() {
+                                  _newEventMenuBlocks = blocks;
+                                  _applyNewEventMenuBlocks(blocks);
+                                });
+                              },
+                            ),
+                            if (chargeRows.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Add\'l charges (editable)',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 6),
+                              ...chargeRows.map((row) {
+                                final dishId = '${row['dishId']}';
+                                final amount =
+                                    (row['amount'] as num?)?.toDouble() ?? 0;
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text('${row['dishName']}'),
+                                      ),
+                                      SizedBox(
+                                        width: 140,
+                                        child: TextFormField(
+                                          initialValue: amount.toStringAsFixed(2),
+                                          keyboardType:
+                                              const TextInputType.numberWithOptions(
+                                            decimal: true,
+                                          ),
+                                          decoration: const InputDecoration(
+                                            labelText: 'Add\'l charge',
+                                            prefixText: 'PHP ',
+                                            isDense: true,
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          onChanged: (v) {
+                                            final parsed =
+                                                double.tryParse(v.trim()) ?? 0;
+                                            setState(() {
+                                              _newEventSetMenuChargeOverrides[dishId] =
+                                                  parsed < 0 ? 0 : parsed;
+                                            });
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         if (_newEventSetMenuAdditionalChargeTotal() > 0) ...[
@@ -8738,8 +8798,9 @@ class _ManageEventsState extends State<ManageEvents>
 
   Future<void> _saveChecklist(
     EventOrderDto order,
-    List<ChecklistItem> editableItems,
-  ) async {
+    List<ChecklistItem> editableItems, {
+    BuildContext? dialogContext,
+  }) async {
     if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -8786,45 +8847,59 @@ class _ManageEventsState extends State<ManageEvents>
         },
       );
 
+      final checklistPayload =
+          editableItems
+              .map(
+                (item) => {
+                  'item': item.item,
+                  'title': item.item,
+                  'description': item.description,
+                  'quantity': item.quantity,
+                  'cost': item.cost,
+                  'price': item.cost,
+                  'isCompleted': item.isCompleted,
+                  if (item.inventoryId != null)
+                    'inventoryId': item.inventoryId,
+                },
+              )
+              .toList();
+
       await EventsApi.instance.replaceChecklist(
         orderId: order.id,
         deductInventory: _isCateringPlusEventOrder(order),
-        items:
-            editableItems
-                .map(
-                  (item) => {
-                    'item': item.item,
-                    'title': item.item,
-                    'description': item.description,
-                    'quantity': item.quantity,
-                    'cost': item.cost,
-                    'price': item.cost,
-                    'isCompleted': item.isCompleted,
-                    if (item.inventoryId != null)
-                      'inventoryId': item.inventoryId,
-                  },
-                )
-                .toList(),
+        items: checklistPayload,
+      );
+
+      final orderKind =
+          order.orderKind == 'catering'
+              ? 'catering'
+              : order.orderKind == 'event'
+                  ? 'event'
+                  : (order.orderType.toLowerCase() == 'catering'
+                      ? 'catering'
+                      : 'event');
+      await ManagerCateringApi.instance.patchStageData(
+        id: order.id,
+        orderKind: orderKind,
+        patch: {'checklist': checklistPayload},
       );
 
       if (loaderContext != null && Navigator.of(loaderContext!).canPop()) {
         Navigator.of(loaderContext!).pop();
       }
 
-      await showDialog<void>(
-        context: context,
-        builder:
-            (ctx) => AlertDialog(
-              title: const Text('Checklist saved'),
-              content: const Text('Checklist changes were saved successfully.'),
-              actions: [
-                FilledButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-      );
+      if (dialogContext != null && Navigator.of(dialogContext).canPop()) {
+        Navigator.of(dialogContext).pop();
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Checklist saved successfully.'),
+            backgroundColor: Color(0xFF1DB954),
+          ),
+        );
+      }
 
       await _refreshOrders();
       await _selectManageEventsOrder(order);

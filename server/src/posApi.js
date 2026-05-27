@@ -88,6 +88,12 @@ function posStatusLabel(row) {
   if (row.balance_proof_pending_review && row.payment_proof_balance) {
     return "BALANCE PAYMENT CONFIRMATION";
   }
+  if (os === "BALANCE_PAYMENT_PENDING_REVIEW") {
+    return "WAITING FOR BALANCE PAYMENT CONFIRMATION";
+  }
+  if (os === "PAYMENT_INSUFFICIENT") {
+    return "PAYMENT INSUFFICIENT";
+  }
   if (os === "PENDING_CASHIER") {
     if (row.payment_uploaded_initial || row.payment_proof_initial) {
       return "WAITING FOR PAYMENT CONFIRMATION";

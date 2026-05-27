@@ -651,6 +651,29 @@ export function normalizeRestaurantOrderRow(order, parsedItems, { channel = 'web
     o.fulfillment_stage = o.order_status;
   }
 
+  const displayStatus = (() => {
+    const fs = String(o.fulfillment_stage ?? o.order_status ?? '').toUpperCase();
+    if (fs === 'BALANCE_PAYMENT_PENDING_REVIEW') {
+      return 'WAITING FOR BALANCE PAYMENT CONFIRMATION';
+    }
+    if (fs === 'PAYMENT_INSUFFICIENT') return 'PAYMENT INSUFFICIENT';
+    if (fs === 'PENDING_CASHIER') {
+      if (o.payment_uploaded_initial || o.payment_proof_initial) {
+        return 'WAITING FOR PAYMENT CONFIRMATION';
+      }
+      return 'WAITING FOR ORDER CONFIRMATION';
+    }
+    if (o.balance_proof_pending_review === true && o.payment_proof_balance) {
+      return 'WAITING FOR BALANCE PAYMENT CONFIRMATION';
+    }
+    return String(o.order_status ?? o.status ?? '').replaceAll('_', ' ');
+  })();
+  o.display_status = displayStatus;
+  if (channel === 'web' && displayStatus.length > 0) {
+    o.status = displayStatus;
+    o.order_status = o.order_status ?? displayStatus;
+  }
+
   if (o.phone == null && o.contact_number != null) o.phone = o.contact_number;
   if (o.contact_number == null && o.phone != null) o.contact_number = o.phone;
   if (o.user_email != null && o.guest_contact_email == null) {

@@ -12,6 +12,7 @@ import '../services/cashier_pos_api.dart';
 import '../services/menu_store.dart';
 import '../models/menu_dish.dart';
 import '../utils/cashier_pos_filters.dart';
+import '../utils/payment_proof_image.dart';
 import '../widgets/antd_tokens.dart';
 import '../widgets/confirm_logout_dialog.dart';
 
@@ -813,7 +814,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
                               const SizedBox(height: 6),
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(6),
-                                child: Image.memory(base64Decode(proofB64), height: 100, fit: BoxFit.contain, gaplessPlayback: true),
+                                child: buildPaymentProofPreview(proofB64, height: 100, emptyLabel: ''),
                               ),
                             ],
                           ],
@@ -837,7 +838,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
                       const SizedBox(height: 8),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: Image.memory(base64Decode(balanceProofB64), height: 140, fit: BoxFit.contain, gaplessPlayback: true),
+                        child: buildPaymentProofPreview(balanceProofB64, height: 140, emptyLabel: ''),
                       ),
                     ] else if (!isBalanceReview && proofB64.isNotEmpty) ...[
                       const SizedBox(height: 8),
@@ -845,7 +846,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
                       const SizedBox(height: 6),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: Image.memory(base64Decode(proofB64), height: 140, fit: BoxFit.contain, gaplessPlayback: true),
+                        child: buildPaymentProofPreview(proofB64, height: 140, emptyLabel: ''),
                       ),
                     ],
 
@@ -1121,9 +1122,14 @@ class _CashierPosShellState extends State<CashierPosShell> {
   List<PosOrderView> get _pendingOnline => _online
       .map(PosOrderView.new)
       .where((o) => !isWalkIn(o))
-      .where((o) =>
-          o.fulfillmentStage.toUpperCase() == 'PENDING_CASHIER' ||
-          o.fulfillmentStage.isEmpty)
+      .where((o) {
+        final stage = o.fulfillmentStage.toUpperCase();
+        if (stage == 'PENDING_CASHIER' || stage.isEmpty) return true;
+        if (stage == 'BALANCE_PAYMENT_PENDING_REVIEW') return true;
+        if (stage == 'PAYMENT_INSUFFICIENT') return true;
+        if (o.balanceProofPending) return true;
+        return false;
+      })
       .where((o) => matchesPendingFilter(o, _onlinePendingFilter))
       .where(_matchesOnlineSearch)
       .toList();
@@ -2477,17 +2483,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
                     fontWeight: FontWeight.w800,
                     fontSize: 15)),
             const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: RepaintBoundary(
-                child: Image.memory(
-                  base64Decode(proofB64),
-                  height: 200,
-                  fit: BoxFit.contain,
-                  gaplessPlayback: true,
-                ),
-              ),
-            ),
+            buildPaymentProofPreview(proofB64, height: 200),
           ],
 
           // Balance payment proof
@@ -2498,20 +2494,11 @@ class _CashierPosShellState extends State<CashierPosShell> {
                     fontWeight: FontWeight.w800,
                     fontSize: 15)),
             const SizedBox(height: 8),
-            Builder(builder: (context) {
-              final balanceProof = (raw['payment_proof_balance'] ?? raw['supplemental_payment_proof']).toString();
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: RepaintBoundary(
-                  child: Image.memory(
-                    base64Decode(balanceProof),
-                    height: 200,
-                    fit: BoxFit.contain,
-                    gaplessPlayback: true,
-                  ),
-                ),
-              );
-            }),
+            buildPaymentProofPreview(
+              (raw['payment_proof_balance'] ?? raw['supplemental_payment_proof'])
+                  ?.toString(),
+              height: 200,
+            ),
           ],
 
           const Divider(height: 24),
@@ -2530,8 +2517,14 @@ class _CashierPosShellState extends State<CashierPosShell> {
     final stage = o.fulfillmentStage.toUpperCase();
     final status = o.status.toUpperCase();
 
-    if ((stage == 'PENDING_CASHIER' || stage.isEmpty) &&
+    if ((stage == 'PENDING_CASHIER' ||
+            stage.isEmpty ||
+            stage == 'BALANCE_PAYMENT_PENDING_REVIEW' ||
+            stage == 'PAYMENT_INSUFFICIENT' ||
+            o.balanceProofPending) &&
         !status.contains('CANCEL')) {
+      final isBalanceReview =
+          stage == 'BALANCE_PAYMENT_PENDING_REVIEW' || o.balanceProofPending;
       return FilledButton.icon(
         style: FilledButton.styleFrom(
           backgroundColor: AntdTokens.success,
@@ -2542,7 +2535,9 @@ class _CashierPosShellState extends State<CashierPosShell> {
         ),
         onPressed: () => _confirmPayment(o),
         icon: const Icon(Icons.check, size: 16),
-        label: const Text('Confirm Payment'),
+        label: Text(
+          isBalanceReview ? 'Confirm Balance Payment' : 'Confirm Payment',
+        ),
       );
     }
     if (stage == 'OUT_FOR_DELIVERY' || status.contains('OUT FOR DELIVERY')) {

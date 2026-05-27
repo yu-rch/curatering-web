@@ -548,10 +548,19 @@ class _MyOrdersPageState extends State<MyOrdersPage>
       if (response.statusCode != 200 && response.statusCode != 201) {
         throw Exception(data is Map ? data['error'] ?? 'Failed to submit payment' : 'Failed');
       }
-      _applyUpdatedOrder(data['order']);
+      final updated = data is Map ? data['order'] : null;
+      if (updated is Map<String, dynamic>) {
+        _applyUpdatedOrder(updated);
+      } else {
+        await _loadOrders(force: true);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Balance payment submitted successfully.')),
+          const SnackBar(
+            content: Text(
+              'Balance payment submitted. Waiting for balance payment confirmation.',
+            ),
+          ),
         );
       }
     } catch (e) {
@@ -648,9 +657,20 @@ class _MyOrdersPageState extends State<MyOrdersPage>
     if (_isInsufficientPayment(order)) {
       return 'insufficient_payment';
     }
-    return (order['order_status'] ?? order['status'] ?? 'pending')
-        .toString()
-        .toLowerCase();
+    final raw =
+        (order['display_status'] ??
+                order['order_status'] ??
+                order['status'] ??
+                'pending')
+            .toString();
+    final upper = raw.toUpperCase();
+    if (upper.contains('WAITING FOR BALANCE PAYMENT CONFIRMATION') ||
+        (order['balance_proof_pending_review'] == true &&
+            (order['payment_proof_balance']?.toString().trim().isNotEmpty ??
+                false))) {
+      return 'waiting_for_balance_payment_confirmation';
+    }
+    return raw.toLowerCase();
   }
 
   Color _getStatusColor(String status) {
@@ -660,6 +680,8 @@ class _MyOrdersPageState extends State<MyOrdersPage>
         return Colors.orange;
       case 'insufficient_payment':
         return Colors.red.shade700;
+      case 'waiting_for_balance_payment_confirmation':
+        return Colors.deepOrange;
       case 'confirmed':
         return Colors.blue;
       case 'preparing':
@@ -1008,6 +1030,7 @@ class _MyOrdersPageState extends State<MyOrdersPage>
     final trackingUrl = order['delivery_tracking_url']?.toString();
     final paymentProof = order['payment_proof']?.toString();
     final paymentProofInitial = order['payment_proof_initial']?.toString();
+    final paymentProofBalance = order['payment_proof_balance']?.toString();
     final balanceDue = _balanceDueFor(order);
     final isActive = _isActiveOrder(status);
     final isInsufficient = _isInsufficientPayment(order);
@@ -1220,17 +1243,20 @@ class _MyOrdersPageState extends State<MyOrdersPage>
 
                   // Payment proof images
                   if (paymentProofInitial != null && paymentProofInitial.isNotEmpty) ...[
-                    _sectionTitle('Payment Proof'),
+                    _sectionTitle('Initial Payment Proof'),
                     const SizedBox(height: 8),
                     _buildProofImage(paymentProofInitial),
                     const SizedBox(height: 12),
-                  ],
-                  if (paymentProof != null &&
-                      paymentProof.isNotEmpty &&
-                      paymentProof != paymentProofInitial) ...[
-                    _sectionTitle('Balance Payment Proof'),
+                  ] else if (paymentProof != null && paymentProof.isNotEmpty) ...[
+                    _sectionTitle('Initial Payment Proof'),
                     const SizedBox(height: 8),
                     _buildProofImage(paymentProof),
+                    const SizedBox(height: 12),
+                  ],
+                  if (paymentProofBalance != null && paymentProofBalance.isNotEmpty) ...[
+                    _sectionTitle('Balance Payment Proof'),
+                    const SizedBox(height: 8),
+                    _buildProofImage(paymentProofBalance),
                     const SizedBox(height: 12),
                   ],
 

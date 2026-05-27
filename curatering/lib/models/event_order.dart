@@ -185,6 +185,7 @@ class ChecklistItemDto {
   final String title;
   final String description;
   final double price;
+  final int quantity;
   final bool isCompleted;
   final String assignedTo;
 
@@ -193,6 +194,7 @@ class ChecklistItemDto {
     required this.title,
     required this.description,
     required this.price,
+    this.quantity = 1,
     this.isCompleted = false,
     this.assignedTo = '',
   });

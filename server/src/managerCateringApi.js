@@ -285,13 +285,50 @@ export function registerManagerCateringRoutes(app, { pool, authRequired, require
         if (!resolvedTable) return res.status(404).json({ error: "Order not found" });
         const cols = await getTableColumnNames(resolvedTable);
 
-        if (cols.has("post_analysis")) {
+        if (Array.isArray(patch?.checklist) && cols.has("checklist")) {
+          const normalizedChecklist = patch.checklist.map((raw) => {
+            const row = raw && typeof raw === "object" ? raw : {};
+            const title = String(row.title ?? row.item ?? "").trim() || "Item";
+            const description = String(row.description ?? "");
+            const qty = Math.max(1, Number(row.quantity) || 1);
+            const price =
+              row.price != null
+                ? Number(row.price)
+                : row.cost != null
+                  ? Number(row.cost)
+                  : 0;
+            return {
+              id:
+                row.id && String(row.id).trim()
+                  ? String(row.id).trim()
+                  : crypto.randomUUID(),
+              title,
+              description,
+              price: Number.isFinite(price) ? price : 0,
+              quantity: qty,
+              assignedTo: String(row.assignedTo ?? ""),
+              isCompleted: row.isCompleted === true,
+              inventoryId: row.inventoryId ? String(row.inventoryId) : null,
+            };
+          });
+          await pool.query(
+            `UPDATE ${resolvedTable}
+             SET checklist = $2::jsonb,
+                 updated_at = now()
+             WHERE id::text = $1`,
+            [id, JSON.stringify(normalizedChecklist)],
+          );
+        }
+
+        const postAnalysisPatch = { ...patch };
+        delete postAnalysisPatch.checklist;
+        if (cols.has("post_analysis") && Object.keys(postAnalysisPatch).length > 0) {
           await pool.query(
             `UPDATE ${resolvedTable}
              SET post_analysis = COALESCE(post_analysis, '{}'::jsonb) || $2::jsonb,
                  updated_at = now()
              WHERE id::text = $1`,
-            [id, JSON.stringify(patch)],
+            [id, JSON.stringify(postAnalysisPatch)],
           );
         }
 

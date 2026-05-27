@@ -549,6 +549,31 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
               secondary: _dishThumb(d),
               value: _selectedSetDishIds.contains(d.id),
               title: Text(d.name),
+              subtitle: () {
+                if (!_selectedSetDishIds.contains(d.id)) return null;
+                final originalIds = _visibleSetDishIds(selected).toSet();
+                if (originalIds.contains(d.id)) return null;
+                final slotLimit = originalIds.length;
+                final pos = _selectedSetDishIds.toList().indexOf(d.id);
+                final overSlot = pos >= slotLimit;
+                final charge =
+                    overSlot ? d.additionalChargeAmount : 0;
+                if (charge <= 0 && !overSlot) {
+                  return const Text(
+                    'Added dish — add\'l charge editable by staff',
+                    style: TextStyle(fontSize: 11),
+                  );
+                }
+                if (charge <= 0) return null;
+                return Text(
+                  'Add\'l charge: PHP ${charge.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: AntdTokens.warning,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                );
+              }(),
               onChanged: (v) {
                 setState(() {
                   if (v == true) {
