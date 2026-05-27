@@ -137,6 +137,15 @@ class EventPromptExpansion {
   }
 }
 
+class _RunPodTerminalException implements Exception {
+  const _RunPodTerminalException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Calls the Curatering API RunPod proxy ([`/api/public/runpod/run`], status).
 /// `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` live only on the server (e.g. Railway).
 class RunPodService {
@@ -245,11 +254,13 @@ class RunPodService {
         final status = _normalizeStatus(data['status']);
 
         if (_statusIsCompleted(status)) {
-          final out = data['output'];
-          if (out is Map<String, dynamic>) {
-            return out['image'] as String?;
-          }
-          return null;
+          final imageUrl =
+              _imageUrlFromAny(data['output']) ?? _imageUrlFromAny(data);
+          if (imageUrl != null) return imageUrl;
+          final outputError =
+              _runpodOutputError(data['output']) ?? _runpodOutputError(data);
+          if (outputError != null) throw _RunPodTerminalException(outputError);
+          throw _RunPodTerminalException(_formatNoImageResult(data));
         } else if (_statusIsQueued(status)) {
           return null;
         } else {
@@ -341,8 +352,38 @@ class RunPodService {
 
   /// When [initImageBase64] is set, RunPod uses img2img (venue-conditioned generation).
   /// Extract image URL from worker output (including legacy error+uploaded cases).
-  static String? _imageUrlFromOutput(Map<String, dynamic>? out) {
-    if (out == null) return null;
+  static bool _isHttpUrl(String value) =>
+      value.startsWith('http://') || value.startsWith('https://');
+
+  static bool _isDataImage(String value) => value.startsWith('data:image/');
+
+  static String? _imageString(dynamic value, {bool allowBareBase64 = false}) {
+    final raw = value?.toString().trim();
+    if (raw == null || raw.isEmpty) return null;
+    if (_isHttpUrl(raw) || _isDataImage(raw)) return raw;
+    if (!allowBareBase64) return null;
+
+    final normalized = _normalizeB64(raw);
+    if (normalized.length < 100) return null;
+    final base64Like = RegExp(r'^[A-Za-z0-9+/]+={0,2}$').hasMatch(normalized);
+    if (!base64Like) return null;
+    return 'data:image/png;base64,$normalized';
+  }
+
+  /// Extract image URL/data from RunPod responses across SD and Nano workers.
+  static String? _imageUrlFromAny(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return _imageString(value);
+    if (value is List) {
+      for (final item in value) {
+        final image = _imageUrlFromAny(item);
+        if (image != null) return image;
+      }
+      return null;
+    }
+    if (value is! Map) return null;
+
+    final out = Map<String, dynamic>.from(value);
     for (final key in const [
       'image_url',
       'imageUrl',
@@ -350,51 +391,104 @@ class RunPodService {
       'publicUrl',
       'url',
       'image',
+      'output_url',
+      'outputUrl',
+      'output_image_url',
+      'outputImageUrl',
+      'result_url',
+      'resultUrl',
+      'generated_image_url',
+      'generatedImageUrl',
     ]) {
-      final direct = out[key]?.toString().trim();
-      if (direct != null &&
-          direct.isNotEmpty &&
-          (direct.startsWith('http://') || direct.startsWith('https://'))) {
-        return direct;
-      }
+      final direct = _imageString(out[key], allowBareBase64: key == 'image');
+      if (direct != null) return direct;
     }
-    for (final key in const ['images', 'image_urls', 'imageUrls']) {
-      final list = out[key];
-      if (list is List && list.isNotEmpty) {
-        for (final item in list) {
-          final value =
-              item is Map
-                  ? (item['url'] ?? item['image_url'] ?? item['imageUrl'])
-                      ?.toString()
-                      .trim()
-                  : item?.toString().trim();
-          if (value != null &&
-              value.isNotEmpty &&
-              (value.startsWith('http://') || value.startsWith('https://'))) {
-            return value;
-          }
-        }
-      }
+    for (final key in const [
+      'image_base64',
+      'imageBase64',
+      'b64_json',
+      'base64',
+      'image_data',
+      'imageData',
+    ]) {
+      final direct = _imageString(out[key], allowBareBase64: true);
+      if (direct != null) return direct;
     }
-    final nested = out['output'];
-    if (nested is Map<String, dynamic>) {
-      final nestedUrl = _imageUrlFromOutput(nested);
-      if (nestedUrl != null) return nestedUrl;
+
+    for (final key in const [
+      'images',
+      'image_urls',
+      'imageUrls',
+      'artifacts',
+      'files',
+      'predictions',
+    ]) {
+      final image = _imageUrlFromAny(out[key]);
+      if (image != null) return image;
     }
-    final result = out['result'];
-    if (result is Map<String, dynamic>) {
-      final resultUrl = _imageUrlFromOutput(result);
-      if (resultUrl != null) return resultUrl;
+    for (final key in const ['output', 'result', 'data', 'prediction']) {
+      final image = _imageUrlFromAny(out[key]);
+      if (image != null) return image;
     }
     final diag = out['diagnostics'];
     if (diag is Map) {
-      final uploaded =
-          (diag['public_url'] ?? diag['publicUrl'] ?? diag['image_url'])
-              ?.toString()
-              .trim();
-      if (uploaded != null && uploaded.isNotEmpty) return uploaded;
+      final image = _imageUrlFromAny(diag);
+      if (image != null) return image;
     }
     return null;
+  }
+
+  static String? _runpodOutputError(dynamic value) {
+    if (value == null) return null;
+    if (value is List) {
+      for (final item in value) {
+        final message = _runpodOutputError(item);
+        if (message != null) return message;
+      }
+      return null;
+    }
+    if (value is! Map) return null;
+
+    final out = Map<String, dynamic>.from(value);
+    final status =
+        '${out['status'] ?? out['state'] ?? ''}'.trim().toLowerCase();
+    final message =
+        '${out['message'] ?? out['error'] ?? out['detail'] ?? ''}'.trim();
+    if (status == 'error' ||
+        status == 'failed' ||
+        status == 'cancelled' ||
+        status == 'canceled') {
+      return message.isEmpty ? 'Worker returned status $status.' : message;
+    }
+    if (message.isNotEmpty &&
+        RegExp(r'error|failed', caseSensitive: false).hasMatch(message)) {
+      return message;
+    }
+    for (final key in const [
+      'output',
+      'result',
+      'data',
+      'diagnostics',
+      'errors',
+    ]) {
+      final nested = _runpodOutputError(out[key]);
+      if (nested != null) return nested;
+    }
+    return null;
+  }
+
+  static String _formatNoImageResult(Map<String, dynamic> data) {
+    String keysOf(dynamic value) {
+      if (value is Map) return value.keys.take(12).join(', ');
+      if (value is List) return 'list(${value.length})';
+      if (value == null) return 'null';
+      return value.runtimeType.toString();
+    }
+
+    final status = _normalizeStatus(data['status']) ?? 'UNKNOWN';
+    final outputKeys = keysOf(data['output']);
+    return 'AI job completed but returned no image URL. '
+        'status=$status, output=$outputKeys';
   }
 
   static Future<String?> generateImageWithPolling(
@@ -440,21 +534,16 @@ class RunPodService {
         final jobId = _extractJobId(data);
 
         if (_statusIsCompleted(status)) {
-          final out =
-              data['output'] is Map<String, dynamic>
-                  ? data['output'] as Map<String, dynamic>
-                  : null;
-          final imageUrl = _imageUrlFromOutput(out);
+          final imageUrl =
+              _imageUrlFromAny(data['output']) ?? _imageUrlFromAny(data);
           if (imageUrl != null) return imageUrl;
-          if (out != null && out['status'] == 'error') {
-            throw Exception(
-              out['message']?.toString() ?? 'Worker returned status error',
-            );
-          }
+          final outputError =
+              _runpodOutputError(data['output']) ?? _runpodOutputError(data);
+          if (outputError != null) throw _RunPodTerminalException(outputError);
           if (jobId != null && jobId.isNotEmpty) {
             return await _pollForCompletion(jobId);
           }
-          return null;
+          throw _RunPodTerminalException(_formatNoImageResult(data));
         }
 
         if (jobId != null && jobId.isNotEmpty) {
@@ -511,23 +600,21 @@ class RunPodService {
           final status = _normalizeStatus(data['status']);
 
           if (_statusIsCompleted(status)) {
-            final out =
-                data['output'] is Map<String, dynamic>
-                    ? data['output'] as Map<String, dynamic>
-                    : null;
-            final imageUrl = _imageUrlFromOutput(out);
+            final imageUrl =
+                _imageUrlFromAny(data['output']) ?? _imageUrlFromAny(data);
             if (imageUrl != null) return imageUrl;
-            if (out != null && out['status'] == 'error') {
-              throw Exception(
-                out['message']?.toString() ?? 'Worker returned status error',
-              );
-            }
-            return null;
+            final outputError =
+                _runpodOutputError(data['output']) ?? _runpodOutputError(data);
+            if (outputError != null)
+              throw _RunPodTerminalException(outputError);
+            throw _RunPodTerminalException(_formatNoImageResult(data));
           }
           if (_statusIsFailed(status)) {
             throw Exception(_formatRunpodFailure(data));
           }
         }
+      } on _RunPodTerminalException {
+        rethrow;
       } on Exception catch (e) {
         final msg = e.toString();
         if (msg.contains('Job failed') ||
