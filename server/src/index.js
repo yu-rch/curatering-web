@@ -348,7 +348,8 @@ function normalizeRunpodInput(input) {
     out.init_image_base64 ??
     out.image_base64 ??
     out.venue_image_base64 ??
-    out.venuePhotoBase64;
+    out.venuePhotoBase64 ??
+    out.base_image;
   if (typeof raw === "string" && raw.trim()) {
     let s = raw.trim();
     if (s.startsWith("data:")) {
@@ -363,9 +364,12 @@ function normalizeRunpodInput(input) {
       err.code = "payload_too_large";
       throw err;
     }
+    // Keep aliases for current and legacy SDXL workers. The current worker
+    // reads `image_base64`/`venue_image_base64`, while older backend code used
+    // `init_image_base64`.
     out.init_image_base64 = s;
-    delete out.image_base64;
-    delete out.venue_image_base64;
+    out.image_base64 = s;
+    out.venue_image_base64 = s;
     delete out.venuePhotoBase64;
   }
   if (out.strength != null) {
