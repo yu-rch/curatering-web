@@ -50,20 +50,80 @@ export function normalizeTrayLineItem(raw) {
     m.selectedSauce ??
     (m.dip && String(m.dip).trim() ? m.dip : null);
   const sauceStr = sauceRaw != null ? String(sauceRaw).trim() : '';
-  const rawDipQty = Number(m.dip_qty ?? m.addOnQuantity ?? 1);
-  const dipQty = sauceStr
-    ? Math.max(1, Number.isFinite(rawDipQty) ? Math.floor(rawDipQty) : 1)
-    : 1;
+
+  const category = String(
+    m.category ?? m.dish_category ?? m.dishCategory ?? dish.category ?? 'restaurant',
+  );
+  const mealType = String(
+    m.meal_type ?? m.mealType ?? dish.meal_type ?? dish.mealType ?? '',
+  );
+  const dishType = String(m.dish_type ?? m.dishType ?? dish.type ?? mealType);
+
+  const addOnQty = Math.max(
+    1,
+    Number(m.addOnQuantity ?? m.add_on_quantity ?? m.dip_qty ?? 1) || 1,
+  );
+  const addOns = Array.isArray(m.addOns)
+    ? m.addOns.map((e) => String(e)).filter(Boolean)
+    : Array.isArray(m.add_ons)
+      ? m.add_ons.map((e) => String(e)).filter(Boolean)
+      : [];
   const notes = String(
-    m.notes ?? m.special_instructions ?? m.specialInstructions ?? '',
+    m.specialInstructions ?? m.special_instructions ?? m.notes ?? '',
   ).trim();
+  const dishName = String(
+    m.dish_name ?? m.dishName ?? m.item_name ?? m.name ?? dish.name ?? 'Item',
+  );
+  const priceStr = String(
+    m.dish_price ?? m.dishPrice ?? m.price ?? dish.price ?? '0',
+  );
+  const priceNum = Number(priceStr) || 0;
+  const imageBase64 =
+    m.image_base64 ?? m.imageBase64 ?? dish.image_base64 ?? dish.imageBase64 ?? null;
 
   return {
     id: dishId,
-    dip: sauceStr,
+    dishId,
+    dish_id: dishId,
+    dishName,
+    dish_name: dishName,
+    name: dishName,
+    item_name: dishName,
+    dishPrice: priceStr,
+    dish_price: priceStr,
+    price: priceNum,
     qty,
+    quantity: qty,
+    category,
+    image_base64: imageBase64,
+    imageBase64: imageBase64,
+    selectedSauce: sauceStr || null,
+    selected_sauce: sauceStr || null,
+    dip: sauceStr,
+    addOnQuantity: addOnQty,
+    dip_qty: addOnQty,
+    addOns,
+    add_ons: addOns,
     notes,
-    dip_qty: dipQty,
+    specialInstructions: notes,
+    special_instructions: notes,
+    dish_category: category,
+    dishCategory: category,
+    dish_type: dishType,
+    dishType,
+    meal_type: mealType,
+    mealType,
+    dish: {
+      id: dishId,
+      name: dishName,
+      price: priceStr,
+      category,
+      type: dishType,
+      mealType,
+      meal_type: mealType,
+      image_base64: imageBase64,
+      imageBase64: imageBase64,
+    },
   };
 }
 
@@ -98,6 +158,26 @@ function trayItemKey(item) {
   ].join('|');
 }
 
+function trayLineFromBody(body, keys) {
+  const b = body || {};
+  for (const key of keys) {
+    const line = normalizeTrayLineItem(b[key]);
+    if (line) return line;
+  }
+  const items = itemsFromRequestBody(b);
+  return Array.isArray(items) ? normalizeTrayLineItem(items[0]) : null;
+}
+
+function trayMatchesFromBody(body) {
+  const b = body || {};
+  const rawMatches = Array.isArray(b.matches)
+    ? b.matches
+    : b.match != null
+      ? [b.match]
+      : itemsFromRequestBody(b);
+  return normalizeTrayItems(Array.isArray(rawMatches) ? rawMatches : []);
+}
+
 export function mergeTrayItems(existingItems, incomingItems) {
   const merged = new Map();
   for (const item of normalizeTrayItems(existingItems)) {
@@ -108,6 +188,7 @@ export function mergeTrayItems(existingItems, incomingItems) {
     const current = merged.get(key);
     if (current) {
       current.qty = Math.max(1, Number(current.qty) || 1) + Math.max(1, Number(item.qty) || 1);
+      current.quantity = current.qty;
     } else {
       merged.set(key, { ...item });
     }
@@ -119,14 +200,11 @@ async function upsertTrayDraftItems(customerId, items, { replace = false } = {})
   let normalized = normalizeTrayItems(items);
   if (!replace) {
     const existing = await pool.query(
-      `SELECT tray_items, tray_lines FROM customer_tray_drafts WHERE customer_id = $1`,
+      `SELECT tray_items FROM customer_tray_drafts WHERE customer_id = $1`,
       [customerId],
     );
     const row = existing.rows[0];
-    const existingItems =
-      parseItemsArray(row?.tray_items).length > 0
-        ? parseItemsArray(row?.tray_items)
-        : parseItemsArray(row?.tray_lines);
+    const existingItems = parseItemsArray(row?.tray_items);
     normalized = mergeTrayItems(existingItems, normalized);
   }
   const json = JSON.stringify(normalized);
@@ -139,6 +217,45 @@ async function upsertTrayDraftItems(customerId, items, { replace = false } = {})
        updated_at = now()`,
     [customerId, json],
   );
+}
+
+async function mutateTrayDraftItems(customerId, mutate) {
+  await ensureCustomerTrayDraftsSchema();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const existing = await client.query(
+      `SELECT tray_items
+       FROM customer_tray_drafts
+       WHERE customer_id = $1
+       FOR UPDATE`,
+      [customerId],
+    );
+    const currentItems = normalizeTrayItems(
+      parseItemsArray(existing.rows[0]?.tray_items),
+    );
+    const nextItems = normalizeTrayItems(mutate(currentItems));
+    const saved = await client.query(
+      `INSERT INTO customer_tray_drafts (customer_id, tray_items, updated_at)
+       VALUES ($1, $2::jsonb, now())
+       ON CONFLICT (customer_id) DO UPDATE SET
+         tray_items = EXCLUDED.tray_items,
+         updated_at = now()
+       RETURNING tray_items, updated_at`,
+      [customerId, JSON.stringify(nextItems)],
+    );
+    await client.query('COMMIT');
+    const row = saved.rows[0];
+    return {
+      items: parseItemsArray(row?.tray_items),
+      updatedAt: row?.updated_at?.toISOString?.() ?? row?.updated_at ?? null,
+    };
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /** Load tray line items from customer_tray_drafts keyed by customer_id. */
@@ -230,6 +347,92 @@ export async function saveTrayDraft(req, res) {
   }
 }
 
+export async function updateTrayDraftLine(req, res) {
+  try {
+    const customerId = await customerIdFromReq(req);
+    if (!customerId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const nextLine = trayLineFromBody(req.body, ['item', 'line', 'next']);
+    if (!nextLine) {
+      return res.status(400).json({ error: 'item line is required' });
+    }
+    const matchLine =
+      trayLineFromBody(req.body, ['match', 'previous', 'old']) ?? nextLine;
+    const matchKey = trayItemKey(matchLine);
+    const nextKey = trayItemKey(nextLine);
+
+    const saved = await mutateTrayDraftItems(customerId, (items) => {
+      const next = [...items];
+      const matchIndex = next.findIndex((item) => trayItemKey(item) === matchKey);
+      if (matchIndex >= 0) {
+        const mergeIndex = next.findIndex(
+          (item, index) => index !== matchIndex && trayItemKey(item) === nextKey,
+        );
+        if (mergeIndex >= 0) {
+          next[mergeIndex].qty =
+            Math.max(1, Number(next[mergeIndex].qty) || 1) +
+            Math.max(1, Number(nextLine.qty) || 1);
+          next[mergeIndex].quantity = next[mergeIndex].qty;
+          next.splice(matchIndex, 1);
+        } else {
+          next[matchIndex] = nextLine;
+        }
+        return next;
+      }
+
+      const existingNextIndex = next.findIndex(
+        (item) => trayItemKey(item) === nextKey,
+      );
+      if (existingNextIndex >= 0) {
+        next[existingNextIndex] = nextLine;
+        return next;
+      }
+      return [...next, nextLine];
+    });
+
+    res.json({
+      success: true,
+      items: saved.items,
+      tray_items: saved.items,
+      updatedAt: saved.updatedAt,
+    });
+  } catch (error) {
+    console.error('updateTrayDraftLine:', error);
+    res.status(500).json({ error: 'Failed to update tray line' });
+  }
+}
+
+export async function removeTrayDraftLine(req, res) {
+  try {
+    const customerId = await customerIdFromReq(req);
+    if (!customerId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const matches = trayMatchesFromBody(req.body);
+    if (matches.length === 0) {
+      return res.status(400).json({ error: 'match line is required' });
+    }
+    const keysToRemove = new Set(matches.map((item) => trayItemKey(item)));
+    const saved = await mutateTrayDraftItems(
+      customerId,
+      (items) => items.filter((item) => !keysToRemove.has(trayItemKey(item))),
+    );
+
+    res.json({
+      success: true,
+      items: saved.items,
+      tray_items: saved.items,
+      updatedAt: saved.updatedAt,
+    });
+  } catch (error) {
+    console.error('removeTrayDraftLine:', error);
+    res.status(500).json({ error: 'Failed to remove tray line' });
+  }
+}
+
 export async function clearTrayDraftForCustomer(customerId) {
   if (!customerId) return;
   await ensureCustomerTrayDraftsSchema();
@@ -250,7 +453,7 @@ export async function clearTrayDraft(req, res) {
       `DELETE FROM customer_tray_drafts WHERE customer_id = $1`,
       [customerId],
     );
-    res.json({ success: true });
+    res.json({ success: true, updatedAt: new Date().toISOString() });
   } catch (error) {
     console.error('clearTrayDraft:', error);
     res.status(500).json({ error: 'Failed to clear tray draft' });

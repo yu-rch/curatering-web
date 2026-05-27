@@ -69,7 +69,7 @@ class CartAPI {
 
       await ensureCustomerTrayDraftsSchema();
       const result = await pool.query(
-        `SELECT tray_lines, tray_items, user_email, updated_at
+        `SELECT tray_items, user_email, updated_at
          FROM customer_tray_drafts
          WHERE customer_id = $1
          LIMIT 1`,
@@ -77,12 +77,10 @@ class CartAPI {
       );
 
       const row = result.rows[0];
-      const trayLines = normalizedTrayItems(row?.tray_lines);
       const trayItems = normalizedTrayItems(row?.tray_items);
-      const items = trayItems.length > 0 ? trayItems : trayLines;
+      const items = trayItems;
       const cart = {
         items,
-        tray_lines: items,
         tray_items: items,
         user_email: row?.user_email ?? null,
         last_sync: row?.updated_at ?? null,
@@ -112,24 +110,20 @@ class CartAPI {
       await client.query("BEGIN");
       await ensureCustomerTrayDraftsSchema();
       const existing = await client.query(
-        `SELECT tray_items, tray_lines
+        `SELECT tray_items
          FROM customer_tray_drafts
          WHERE customer_id = $1
          LIMIT 1`,
         [customerId],
       );
       const row = existing.rows[0];
-      const existingItems =
-        normalizedTrayItems(row?.tray_items).length > 0
-          ? normalizedTrayItems(row?.tray_items)
-          : normalizedTrayItems(row?.tray_lines);
+      const existingItems = normalizedTrayItems(row?.tray_items);
       const cart = replace ? incoming : mergeTrayItems(existingItems, incoming);
       await client.query(
-        `INSERT INTO customer_tray_drafts (customer_id, user_email, tray_lines, tray_items, updated_at)
-         VALUES ($1, $2, $3::jsonb, $3::jsonb, now())
+        `INSERT INTO customer_tray_drafts (customer_id, user_email, tray_items, updated_at)
+         VALUES ($1, $2, $3::jsonb, now())
          ON CONFLICT (customer_id) DO UPDATE SET
            user_email = EXCLUDED.user_email,
-           tray_lines = EXCLUDED.tray_lines,
            tray_items = EXCLUDED.tray_items,
            updated_at = now()`,
         [customerId, email, JSON.stringify(cart)],
@@ -142,7 +136,6 @@ class CartAPI {
         customer_id: customerId,
         user_email: email,
         items: cart,
-        tray_lines: cart,
         tray_items: cart,
         timestamp: timestamp ?? null,
       });
@@ -167,8 +160,7 @@ class CartAPI {
       await ensureCustomerTrayDraftsSchema();
       await pool.query(
         `UPDATE customer_tray_drafts
-         SET tray_lines = '[]'::jsonb,
-             tray_items = '[]'::jsonb,
+         SET tray_items = '[]'::jsonb,
              updated_at = now()
          WHERE customer_id = $1`,
         [customerId],

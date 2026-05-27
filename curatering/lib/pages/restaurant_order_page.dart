@@ -541,6 +541,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     );
   }
 
+  // ignore: unused_element
   void _showDishDetails(MenuDish dish) {
     showDialog<void>(
       context: context,
@@ -1046,6 +1047,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     noteController.dispose();
   }
 
+  // ignore: unused_element
   Future<void> _showCustomizeCartItem(CartItem item) async {
     String? selectedSauce = item.selectedSauce;
     var addOnQuantity = item.addOnQuantity;

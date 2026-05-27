@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/menu_dish.dart';
 import 'api_client.dart';
 import 'cart_sync_service.dart';
+import 'menu_store.dart';
 
 const double kRestaurantAddonExtraPhp = 15;
 
@@ -25,6 +26,15 @@ class CartItem {
     this.addOns = const [],
     this.specialInstructions,
   });
+
+  CartItem snapshot() => CartItem(
+    dish: dish,
+    quantity: quantity,
+    selectedSauce: selectedSauce,
+    addOnQuantity: addOnQuantity,
+    addOns: List<String>.from(addOns),
+    specialInstructions: specialInstructions,
+  );
 
   double get addonExtraPerUnit {
     final configured = dish.additionalChargeAmount;
@@ -85,19 +95,48 @@ class CartItem {
         json['dish'] is Map ? Map<String, dynamic>.from(json['dish']) : {};
     return CartItem(
       dish: MenuDish(
-        id: (dishJson['id'] ?? '').toString(),
-        name: (dishJson['name'] ?? '').toString(),
-        price: (dishJson['price'] ?? '0').toString(),
+        id: (dishJson['id'] ?? json['dishId'] ?? json['id'] ?? '').toString(),
+        name:
+            (dishJson['name'] ??
+                    json['dishName'] ??
+                    json['dish_name'] ??
+                    json['name'] ??
+                    '')
+                .toString(),
+        price:
+            (dishJson['price'] ??
+                    json['dishPrice'] ??
+                    json['dish_price'] ??
+                    json['price'] ??
+                    '0')
+                .toString(),
         additionalChargeAmount: parseDouble(
           dishJson['additionalChargeAmount'] ??
               dishJson['menu_dishes_additional_charge_amount'] ??
-              dishJson['additional_charge_amount'],
+              dishJson['additional_charge_amount'] ??
+              json['additionalChargeAmount'] ??
+              json['additional_charge_amount'],
         ),
-        category: (dishJson['category'] ?? 'restaurant').toString(),
+        category:
+            (dishJson['category'] ?? json['category'] ?? 'restaurant')
+                .toString(),
         paxOptions: [],
-        type: (dishJson['type'] ?? '').toString(),
+        imageBase64: nonEmptyString(
+          dishJson['imageBase64'] ??
+              dishJson['image_base64'] ??
+              json['imageBase64'] ??
+              json['image_base64'],
+        ),
+        type:
+            (dishJson['type'] ?? json['dish_type'] ?? json['type'] ?? '')
+                .toString(),
         mealType:
-            (dishJson['mealType'] ?? dishJson['meal_type'] ?? '').toString(),
+            (dishJson['mealType'] ??
+                    dishJson['meal_type'] ??
+                    json['mealType'] ??
+                    json['meal_type'] ??
+                    '')
+                .toString(),
       ),
       quantity: parseInt(json['quantity'], fallback: 1),
       selectedSauce: nonEmptyString(json['selectedSauce'] ?? json['dip']),
@@ -125,6 +164,9 @@ class CartStore extends ChangeNotifier {
   static const String _legacyCartKey = 'cart';
 
   CartStore._();
+
+  bool _initInProgress = false;
+  bool _initialized = false;
 
   List<CartItem> _items = [];
 
@@ -202,19 +244,24 @@ class CartStore extends ChangeNotifier {
   }
 
   void removeItem(String dishId) {
+    final removedItems =
+        _items
+            .where((item) => item.dish.id == dishId)
+            .map((item) => item.snapshot())
+            .toList();
     _items.removeWhere((item) => item.dish.id == dishId);
     _saveCart();
     notifyListeners();
 
-    // Sync to server after removing item
-    CartSyncService.instance.syncToServer();
+    unawaited(CartSyncService.instance.removeItemsFromServer(removedItems));
   }
 
   void removeCartItem(CartItem target) {
+    final removedItem = target.snapshot();
     _items.removeWhere((item) => identical(item, target));
     _saveCart();
     notifyListeners();
-    CartSyncService.instance.syncToServer();
+    unawaited(CartSyncService.instance.removeItemFromServer(removedItem));
   }
 
   void updateQuantity(String dishId, int quantity) {
@@ -225,12 +272,18 @@ class CartStore extends ChangeNotifier {
 
     final existingIndex = _items.indexWhere((item) => item.dish.id == dishId);
     if (existingIndex >= 0) {
+      final previousItem = _items[existingIndex].snapshot();
       _items[existingIndex].quantity = quantity;
+      final updatedItem = _items[existingIndex].snapshot();
       _saveCart();
       notifyListeners();
 
-      // Sync to server after updating quantity
-      CartSyncService.instance.syncToServer();
+      unawaited(
+        CartSyncService.instance.updateItemOnServer(
+          previousItem: previousItem,
+          updatedItem: updatedItem,
+        ),
+      );
     }
   }
 
@@ -241,10 +294,17 @@ class CartStore extends ChangeNotifier {
     }
     final existingIndex = _items.indexWhere((item) => identical(item, target));
     if (existingIndex >= 0) {
+      final previousItem = _items[existingIndex].snapshot();
       _items[existingIndex].quantity = quantity;
+      final updatedItem = _items[existingIndex].snapshot();
       _saveCart();
       notifyListeners();
-      CartSyncService.instance.syncToServer();
+      unawaited(
+        CartSyncService.instance.updateItemOnServer(
+          previousItem: previousItem,
+          updatedItem: updatedItem,
+        ),
+      );
     }
   }
 
@@ -257,14 +317,21 @@ class CartStore extends ChangeNotifier {
   }) {
     final existingIndex = _items.indexWhere((item) => identical(item, target));
     if (existingIndex < 0) return;
+    final previousItem = _items[existingIndex].snapshot();
     _items[existingIndex].selectedSauce = selectedSauce;
     _items[existingIndex].addOnQuantity =
         selectedSauce?.trim().isNotEmpty == true ? addOnQuantity : 1;
     _items[existingIndex].addOns = addOns;
     _items[existingIndex].specialInstructions = specialInstructions;
+    final updatedItem = _items[existingIndex].snapshot();
     _saveCart();
     notifyListeners();
-    CartSyncService.instance.syncToServer();
+    unawaited(
+      CartSyncService.instance.updateItemOnServer(
+        previousItem: previousItem,
+        updatedItem: updatedItem,
+      ),
+    );
   }
 
   void clearCart({bool skipServerSync = false}) {
@@ -281,23 +348,58 @@ class CartStore extends ChangeNotifier {
   void replaceItemsWithoutSync(List<dynamic> rawItems) {
     _items = [];
     for (final raw in rawItems) {
-      final parsed = CartSyncService.parseTrayLineItem(raw);
+      var parsed = CartSyncService.parseTrayLineItem(raw);
       if (parsed == null) continue;
+
+      // Enrich from local menu cache if name/price/image is missing
+      if (parsed.dish.name.isEmpty ||
+          parsed.dish.price == '0' ||
+          parsed.dish.imageBase64 == null) {
+        MenuDish? cached;
+        for (final dish in MenuStore.instance.allDishes) {
+          if (dish.id == parsed.dish.id) {
+            cached = dish;
+            break;
+          }
+        }
+        if (cached != null) {
+          parsed = CartItem(
+            dish: parsed.dish.copyWith(
+              name: parsed.dish.name.isEmpty ? cached.name : null,
+              price: parsed.dish.price == '0' ? cached.price : null,
+              imageBase64: parsed.dish.imageBase64 ?? cached.imageBase64,
+              category:
+                  parsed.dish.category == 'restaurant' ? cached.category : null,
+              additionalChargeAmount:
+                  parsed.dish.additionalChargeAmount == 0
+                      ? cached.additionalChargeAmount
+                      : null,
+            ),
+            quantity: parsed.quantity,
+            selectedSauce: parsed.selectedSauce,
+            addOnQuantity: parsed.addOnQuantity,
+            addOns: parsed.addOns,
+            specialInstructions: parsed.specialInstructions,
+          );
+        }
+      }
+
+      final parsedItem = parsed;
       final existingIndex = _items.indexWhere(
         (item) =>
-            item.dish.id == parsed.dish.id &&
+            item.dish.id == parsedItem.dish.id &&
             _sameCustomizations(
               item,
-              parsed.selectedSauce,
-              parsed.addOnQuantity,
-              parsed.addOns,
-              parsed.specialInstructions,
+              parsedItem.selectedSauce,
+              parsedItem.addOnQuantity,
+              parsedItem.addOns,
+              parsedItem.specialInstructions,
             ),
       );
       if (existingIndex >= 0) {
-        _items[existingIndex].quantity += parsed.quantity;
+        _items[existingIndex].quantity += parsedItem.quantity;
       } else {
-        _items.add(parsed);
+        _items.add(parsedItem);
       }
     }
     _saveCart();
@@ -343,13 +445,35 @@ class CartStore extends ChangeNotifier {
   }
 
   Future<void> init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('customer_token');
-    if (token != null && token.isNotEmpty) {
+    if (_initInProgress) return;
+    if (_initialized) return;
+    _initInProgress = true;
+    try {
+      await _loadCart();
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('customer_token');
+      if (token == null || token.isEmpty) {
+        CartSyncService.instance.stopRealtimeSync();
+        if (_items.isNotEmpty) {
+          _items = [];
+          await _saveCart();
+          notifyListeners();
+        }
+        return;
+      }
       ApiClient.instance.setCustomerBearer(token);
       await CartSyncService.instance.syncFromServer();
-    } else {
-      await _loadCart();
+      CartSyncService.instance.startRealtimeSync();
+    } finally {
+      _initInProgress = false;
+      _initialized = true;
     }
+  }
+
+  /// Call after logout so the next login re-syncs tray from the server.
+  void resetInitState() {
+    CartSyncService.instance.stopRealtimeSync();
+    _initialized = false;
+    _initInProgress = false;
   }
 }

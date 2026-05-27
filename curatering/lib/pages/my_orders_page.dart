@@ -531,8 +531,11 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
 
   bool _hasFeedbackSubmitted(Map<String, dynamic> order) {
     return order['feedback_submitted'] == true ||
+        order['feedbackSubmitted'] == true ||
         order['feedback_stars'] != null ||
-        order['feedbackSubmitted'] == true;
+        order['feedbackStars'] != null ||
+        order['feedback_submitted_at'] != null ||
+        order['feedbackSubmittedAt'] != null;
   }
 
   bool _canReviewRestaurantOrder(Map<String, dynamic> order) {

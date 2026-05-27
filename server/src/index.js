@@ -64,6 +64,8 @@ import CartAPI from "./cart_api.js";
 import {
   getTrayDraft,
   saveTrayDraft,
+  updateTrayDraftLine,
+  removeTrayDraftLine,
   clearTrayDraft,
   getTrayDraftItemsByCustomerId,
   clearTrayDraftForCustomer,
@@ -7863,13 +7865,22 @@ function parseRestaurantCoord(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+async function customerAccountIdentityWhereSql(paramRef) {
+  const cols = await getTableColumnNames('customer_accounts');
+  const clauses = [`id::text = ${paramRef}`];
+  if (cols.has('customer_id')) clauses.push(`customer_id::text = ${paramRef}`);
+  if (cols.has('customer_code')) clauses.push(`customer_code::text = ${paramRef}`);
+  return clauses.join(' OR ');
+}
+
 async function resolveRestaurantOrderEmail(order) {
   if (order.user_email) {
     return String(order.user_email).trim();
   }
   if (!order.customer_id) return null;
+  const customerWhereSql = await customerAccountIdentityWhereSql('$1');
   const r = await pool.query(
-    'SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1',
+    `SELECT email FROM customer_accounts WHERE ${customerWhereSql} LIMIT 1`,
     [order.customer_id],
   );
   return r.rowCount > 0 ? r.rows[0].email : null;
@@ -10489,14 +10500,16 @@ async function registerRoutesAfterDbInit() {
               );
             }
             
-            // Update customer's total loyalty points
-            await pool.query(
-              `UPDATE customer_accounts 
-               SET restaurant_loyalty_points = restaurant_loyalty_points + $1,
-                   updated_at = now()
-               WHERE id = $2`,
-              [points, customerId]
-            );
+            if (customerId) {
+              const customerWhereSql = await customerAccountIdentityWhereSql('$2');
+              await pool.query(
+                `UPDATE customer_accounts
+                 SET restaurant_loyalty_points = COALESCE(restaurant_loyalty_points, 0) + $1,
+                     updated_at = now()
+                 WHERE ${customerWhereSql}`,
+                [points, customerId],
+              );
+            }
           }
         }
 
@@ -12090,6 +12103,8 @@ async function registerRoutesAfterDbInit() {
     app.get('/api/tray-draft', customerAuthRequired, getTrayDraft);
     app.put('/api/tray-draft', customerAuthRequired, saveTrayDraft);
     app.post('/api/tray-draft', customerAuthRequired, saveTrayDraft);
+    app.patch('/api/tray-draft/line', customerAuthRequired, updateTrayDraftLine);
+    app.delete('/api/tray-draft/line', customerAuthRequired, removeTrayDraftLine);
     app.delete('/api/tray-draft', customerAuthRequired, clearTrayDraft);
 
     await ensureRestaurantOrderWorkflowColumns();

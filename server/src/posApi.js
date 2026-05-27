@@ -33,6 +33,14 @@ async function restaurantOrderSelectSql() {
   return cachedRestaurantOrderSelect;
 }
 
+async function customerAccountIdentityWhereSql(paramRef) {
+  const cols = await getTableColumnNames("customer_accounts");
+  const clauses = [`id::text = ${paramRef}`];
+  if (cols.has("customer_id")) clauses.push(`customer_id::text = ${paramRef}`);
+  if (cols.has("customer_code")) clauses.push(`customer_code::text = ${paramRef}`);
+  return clauses.join(" OR ");
+}
+
 export async function ensureRestaurantPosColumns(pool) {
   const cols = [
     `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS order_source TEXT NOT NULL DEFAULT 'WEB_APP'`,
@@ -679,11 +687,12 @@ export function registerPosRoutes(app, {
             [order.id, points],
           );
           if (order.customer_id) {
+            const customerWhereSql = await customerAccountIdentityWhereSql("$1");
             await pool.query(
               `UPDATE customer_accounts
                SET restaurant_loyalty_points = COALESCE(restaurant_loyalty_points, 0) + $2,
                    updated_at = now()
-               WHERE id = $1`,
+               WHERE ${customerWhereSql}`,
               [order.customer_id, points],
             );
           }
