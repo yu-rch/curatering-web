@@ -784,6 +784,20 @@ export async function initDb() {
     ADD COLUMN IF NOT EXISTS menu_dishes_additional_charge_amount NUMERIC NOT NULL DEFAULT 0;
   `);
 
+  // Back-compat column used by some clients.
+  await pool.query(`
+    ALTER TABLE menu_dishes
+    ADD COLUMN IF NOT EXISTS additional_charge NUMERIC NOT NULL DEFAULT 0;
+  `);
+
+  // Keep both additional-charge columns aligned.
+  await pool.query(`
+    UPDATE menu_dishes
+    SET
+      menu_dishes_additional_charge_amount = COALESCE(menu_dishes_additional_charge_amount, additional_charge, 0),
+      additional_charge = COALESCE(additional_charge, menu_dishes_additional_charge_amount, 0)
+  `);
+
   await pool.query(`
     ALTER TABLE menu_dishes
     ADD COLUMN IF NOT EXISTS available BOOLEAN NOT NULL DEFAULT TRUE;

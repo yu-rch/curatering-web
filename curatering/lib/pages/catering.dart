@@ -31,6 +31,8 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/paginated_data_table.dart';
 import '../widgets/map_picker.dart';
 import '../widgets/processing_seating_section.dart';
+import '../widgets/inquiry_menu_selection_dialog.dart';
+import '../utils/inquiry_pricing.dart';
 import '../utils/order_calculations.dart';
 import '../utils/order_type_utils.dart';
 import '../utils/web_html.dart' as html;
@@ -538,6 +540,9 @@ class _ManageEventsState extends State<ManageEvents>
     _emailController.dispose();
     _eventAddressController.dispose();
     _guestCountController.dispose();
+    _newEventPaxBufferController.dispose();
+    _newEventLaborCostController.dispose();
+    _newEventTravelCostController.dispose();
     _foodTabController?.dispose();
     super.dispose();
   }
@@ -624,6 +629,13 @@ class _ManageEventsState extends State<ManageEvents>
   bool _isDetecting = false;
 
   final List<MenuItem> _menuItems = [];
+  List<Map<String, dynamic>> _newEventMenuBlocks = [];
+  final TextEditingController _newEventPaxBufferController =
+      TextEditingController(text: '0');
+  final TextEditingController _newEventLaborCostController =
+      TextEditingController(text: '0.00');
+  final TextEditingController _newEventTravelCostController =
+      TextEditingController(text: '0.00');
   String _allergensSerialized = '';
   final Map<String, String> _selectedPaxPerDish = {};
   List<MenuDish> _allDishes = MenuStore.instance.activeDishes;
@@ -712,29 +724,165 @@ class _ManageEventsState extends State<ManageEvents>
     }
 
     setState(() {
+      _newEventMenuBlocks = [];
       _menuItems.add(MenuItem(dish: dish, paxOption: selectedPax));
     });
   }
 
   void _applySetMenuToNewEvent(SetMenu set) {
-    final dishById = {for (final d in _allDishes) d.id: d};
-    setState(() {
-      _menuItems.clear();
-      for (final id in set.dishIds) {
-        final dish = dishById[id];
-        if (dish == null) continue;
-        final pax =
-            _selectedPaxPerDish[dish.name] ??
-            (dish.paxOptions.isNotEmpty ? dish.paxOptions.first : '1');
-        _menuItems.add(MenuItem(dish: dish, paxOption: pax));
-      }
-    });
+    unawaited(_openNewEventMenuPicker(preselectSet: set));
   }
 
   void _removeFromMenu(MenuItem item) {
     setState(() {
       _menuItems.remove(item);
+      _newEventMenuBlocks = [];
     });
+  }
+
+  Map<String, MenuDish> get _newEventDishById => {
+    for (final dish in _allDishes) dish.id: dish,
+  };
+
+  List<Map<String, dynamic>> _newEventSetMenuAdditionalChargeRows() {
+    if (_newEventMenuBlocks.isEmpty) return const [];
+    final block = _newEventMenuBlocks.first;
+    if ((block['kind'] as String? ?? 'custom') != 'set') return const [];
+    final selectedIds = (block['dishIds'] as List<dynamic>? ?? const [])
+        .map((id) => id.toString())
+        .where((id) => id.isNotEmpty)
+        .toList();
+    final originalIds = (block['originalDishIds'] as List<dynamic>? ?? const [])
+        .map((id) => id.toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final originalCount =
+        (block['originalDishCount'] as num?)?.toInt() ?? originalIds.length;
+    final overage = selectedIds.length - originalCount;
+    if (overage <= 0) return const [];
+    final addedIds =
+        selectedIds.where((id) => !originalIds.contains(id)).take(overage);
+    return addedIds.map((id) {
+      final dish = _newEventDishById[id];
+      final amount = dish?.additionalChargeAmount ?? 0;
+      return {'dishId': id, 'dishName': dish?.name ?? id, 'amount': amount};
+    }).toList();
+  }
+
+  double _newEventSetMenuAdditionalChargeTotal() {
+    return _newEventSetMenuAdditionalChargeRows().fold<double>(
+      0,
+      (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
+    );
+  }
+
+  void _applyNewEventMenuBlocks(List<Map<String, dynamic>> blocks) {
+    final dishById = _newEventDishById;
+    setState(() {
+      _newEventMenuBlocks = blocks;
+      _menuItems.clear();
+      for (final block in blocks) {
+        final ids = (block['dishIds'] as List<dynamic>? ?? const [])
+            .map((e) => e.toString())
+            .where((e) => e.isNotEmpty);
+        for (final id in ids) {
+          final dish = dishById[id];
+          if (dish == null) continue;
+          final pax =
+              _selectedPaxPerDish[dish.name] ??
+              (dish.paxOptions.isNotEmpty ? dish.paxOptions.first : '1');
+          _menuItems.add(MenuItem(dish: dish, paxOption: pax));
+        }
+      }
+    });
+  }
+
+  Future<void> _openNewEventMenuPicker({SetMenu? preselectSet}) async {
+    final cateringDishes =
+        _allDishes
+            .where(
+              (d) =>
+                  d.category.toLowerCase().trim() == 'catering' &&
+                  !d.archived &&
+                  d.available,
+            )
+            .toList();
+    final dishById = _newEventDishById;
+    List<Map<String, dynamic>> initial = _newEventMenuBlocks;
+    if (preselectSet != null) {
+      final ids = preselectSet.dishIds;
+      initial = [
+        {
+          'kind': 'set',
+          'setMenuName': preselectSet.name,
+          'originalDishIds': ids,
+          'originalDishCount': ids.length,
+          'dishIds': ids,
+          'dishNames': ids.map((id) => dishById[id]?.name ?? id).toList(),
+        },
+      ];
+    }
+    final blocks = await showInquiryMenuSelectionDialog(
+      context,
+      cateringDishes: cateringDishes,
+      setMenus: SetMenuStore.instance.activeSetMenus,
+      initialSelections: initial,
+      mode: InquiryMenuPickerMode.staffNewEvent,
+      minCustomDishes: 4,
+      maxCustomDishes: 8,
+    );
+    if (blocks == null || !mounted) return;
+    _applyNewEventMenuBlocks(blocks);
+  }
+
+  List<Map<String, dynamic>> _buildNewEventMenuPayload() {
+    if (_newEventMenuBlocks.isEmpty) {
+      return _menuItems
+          .map(
+            (i) => {
+              'dishId': i.dish.id,
+              'dishName': i.dish.name,
+              'paxOption': i.paxOption,
+              'price': '0',
+              'additionalChargeAmount': i.dish.additionalChargeAmount,
+              'menu_dishes_additional_charge_amount':
+                  i.dish.additionalChargeAmount,
+            },
+          )
+          .toList();
+    }
+    final dishById = _newEventDishById;
+    final additionalRows = _newEventSetMenuAdditionalChargeRows();
+    final additionalTotal = _newEventSetMenuAdditionalChargeTotal();
+    return _newEventMenuBlocks.map((block) {
+      final out = Map<String, dynamic>.from(block);
+      final ids = (out['dishIds'] as List<dynamic>? ?? const [])
+          .map((id) => id.toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+      out['dishRows'] = ids.map((id) {
+        final dish = dishById[id];
+        final addCharge = dish?.additionalChargeAmount ?? 0;
+        return {
+          'dishId': id,
+          'dishName': dish?.name ?? id,
+          'additionalChargeAmount': addCharge,
+          'menu_dishes_additional_charge_amount': addCharge,
+        };
+      }).toList();
+      if ((out['kind'] as String? ?? '') == 'set') {
+        out['additionalChargeRows'] = additionalRows;
+        out['additionalChargeTotal'] = additionalTotal;
+      }
+      return out;
+    }).toList();
+  }
+
+  double _estimateNewEventTotalCost() {
+    final guests = int.tryParse(_guestCountController.text.trim()) ?? 0;
+    var total = estimateInquiryCateringTotal(guests);
+    total += _newEventSetMenuAdditionalChargeTotal();
+    return total;
   }
 
   Future<void> _pickDate() async {
@@ -1158,6 +1306,12 @@ class _ManageEventsState extends State<ManageEvents>
 
   Map<String, dynamic> _buildPayloadFromForm() {
     final guestCount = int.tryParse(_guestCountController.text.trim());
+    final paxBuffer = int.tryParse(_newEventPaxBufferController.text.trim()) ?? 0;
+    final laborCost =
+        double.tryParse(_newEventLaborCostController.text.trim()) ?? 0.0;
+    final travelCost =
+        double.tryParse(_newEventTravelCostController.text.trim()) ?? 0.0;
+    final totalCost = _estimateNewEventTotalCost() + laborCost + travelCost;
     return {
       'eventTitle': _eventTitleController.text.trim(),
       'orderType': _orderType,
@@ -1179,15 +1333,13 @@ class _ManageEventsState extends State<ManageEvents>
           }).toList(),
       'address': _eventAddressController.text.trim(),
       'guestCount': guestCount,
+      'paxBuffer': paxBuffer,
+      'laborCost': laborCost,
+      'travelCost': travelCost,
+      'totalCost': totalCost,
       'allergens': _allergensSerialized.trim(),
-      'menu':
-          _menuItems.map((i) {
-            return {
-              'dishName': i.dish.name,
-              'paxOption': i.paxOption,
-              'price': i.dish.price,
-            };
-          }).toList(),
+      'menu': _buildNewEventMenuPayload(),
+      'menu_additional_charge_total': _newEventSetMenuAdditionalChargeTotal(),
       'themeDesign': {
         'picksBase64': _themePicks.map((b) => base64Encode(b)).toList(),
         'tintEnabled': _themeTintEnabled,
@@ -1890,7 +2042,11 @@ class _ManageEventsState extends State<ManageEvents>
     double travelCost,
     double totalCost,
     String action,
-  ) {
+    {String? eventTitleOverride,
+    String? eventTypeOverride,
+    String? formalityLevelOverride,
+    int? guestCountOverride}) {
+    final effectiveGuestCount = guestCountOverride ?? order.guestCount;
     List<Map<String, dynamic>> menuItems = [];
     final schedulePayload = <Map<String, dynamic>>[];
 
@@ -1899,13 +2055,15 @@ class _ManageEventsState extends State<ManageEvents>
         final dish = MenuStore.instance.allDishes.firstWhere(
           (d) => d.id == dishId,
         );
-        final paxCount = order.guestCount > 0 ? order.guestCount : 1;
+        final paxCount = effectiveGuestCount > 0 ? effectiveGuestCount : 1;
         final computedPrice = 500 * paxCount;
         menuItems.add({
           'dishId': dishId,
           'dishName': dish.name,
           'paxOption': '${paxCount} pax',
           'price': computedPrice.toString(),
+          'additionalChargeAmount': dish.additionalChargeAmount,
+          'menu_dishes_additional_charge_amount': dish.additionalChargeAmount,
         });
       }
     } else if (selectedSetMenuId != null) {
@@ -1916,13 +2074,15 @@ class _ManageEventsState extends State<ManageEvents>
         final dish = MenuStore.instance.allDishes.firstWhere(
           (d) => d.id == dishId,
         );
-        final paxCount = order.guestCount > 0 ? order.guestCount : 1;
+        final paxCount = effectiveGuestCount > 0 ? effectiveGuestCount : 1;
         final computedPrice = 500 * paxCount;
         menuItems.add({
           'dishId': dishId,
           'dishName': dish.name,
           'paxOption': '$paxCount pax',
           'price': computedPrice.toString(),
+          'additionalChargeAmount': dish.additionalChargeAmount,
+          'menu_dishes_additional_charge_amount': dish.additionalChargeAmount,
         });
       }
     }
@@ -1962,16 +2122,16 @@ class _ManageEventsState extends State<ManageEvents>
     }
 
     return {
-      'eventTitle': order.eventTitle,
-      'eventType': order.eventType,
-      'formalityLevel': order.formalityLevel,
+      'eventTitle': eventTitleOverride ?? order.eventTitle,
+      'eventType': eventTypeOverride ?? order.eventType,
+      'formalityLevel': formalityLevelOverride ?? order.formalityLevel,
       'customerName': order.customerName,
       'contactPerson': order.contactPerson,
       'contactNumber': order.contactNumber,
       'emailAddress': order.emailAddress,
       'scheduleSlots': schedulePayload,
       'address': address,
-      'guestCount': order.guestCount,
+      'guestCount': effectiveGuestCount,
       'serviceType': serviceType,
       'menu': menuItems,
       'themeDesign': {
@@ -4039,12 +4199,30 @@ class _ManageEventsState extends State<ManageEvents>
                       Colors.grey.shade200,
                     ),
                     columns: const [
-                      DataColumn(label: Text('Set / Category')),
-                      DataColumn(label: Text('Item')),
-                      DataColumn(label: Text('Pax / Qty')),
-                      DataColumn(label: Text('Details')),
-                      DataColumn(label: Text('Unit Cost')),
-                      DataColumn(label: Text('Total')),
+                      DataColumn(
+                        label: Text('Set / Category'),
+                        columnWidth: FixedColumnWidth(168),
+                      ),
+                      DataColumn(
+                        label: Text('Item'),
+                        columnWidth: FlexColumnWidth(2.2),
+                      ),
+                      DataColumn(
+                        label: Text('Pax / Qty'),
+                        columnWidth: FixedColumnWidth(88),
+                      ),
+                      DataColumn(
+                        label: Text('Details'),
+                        columnWidth: FlexColumnWidth(1.6),
+                      ),
+                      DataColumn(
+                        label: Text('Unit Cost'),
+                        columnWidth: FixedColumnWidth(100),
+                      ),
+                      DataColumn(
+                        label: Text('Total'),
+                        columnWidth: FixedColumnWidth(100),
+                      ),
                     ],
                     rows:
                         order.menu.map((m) {
@@ -4172,79 +4350,232 @@ class _ManageEventsState extends State<ManageEvents>
       } catch (_) {}
     }
 
+    final newItemController = TextEditingController();
+    try {
     await showDialog<void>(
       context: context,
       builder: (context) {
+        final dialogSize = MediaQuery.sizeOf(context);
         return StatefulBuilder(
           builder: (context, dialogSetState) {
+            int? duplicateHighlightIndex;
+            var showNewItemRow = false;
+
+            void addChecklistByName(
+              String raw, {
+              Map<String, dynamic>? inventoryRow,
+            }) {
+              final name = raw.trim();
+              if (name.isEmpty) return;
+              final dupIdx = editableItems.indexWhere(
+                (e) => e.item.trim().toLowerCase() == name.toLowerCase(),
+              );
+              if (dupIdx >= 0) {
+                dialogSetState(() => duplicateHighlightIndex = dupIdx);
+                return;
+              }
+              dialogSetState(() {
+                duplicateHighlightIndex = null;
+                showNewItemRow = false;
+                if (inventoryRow != null) {
+                  final id = inventoryRow['id']?.toString() ?? '';
+                  final unitCost = inventoryRow['unitCost'] is num
+                      ? (inventoryRow['unitCost'] as num).toDouble()
+                      : double.tryParse('${inventoryRow['unitCost']}') ?? 0;
+                  editableItems.add(
+                    ChecklistItem(
+                      item: name,
+                      description:
+                          (inventoryRow['category'] ?? 'Inventory').toString(),
+                      quantity: 1,
+                      cost: unitCost,
+                      inventoryId: id,
+                    ),
+                  );
+                } else {
+                  editableItems.add(
+                    ChecklistItem(
+                      item: name,
+                      description: '',
+                      quantity: 1,
+                      cost: 0.0,
+                    ),
+                  );
+                }
+                newItemController.clear();
+              });
+            }
+
             return AlertDialog(
               title: Text('Checklist for ${order.eventTitle}'),
               content: SizedBox(
-                width: 1000,
-                height: 600,
+                width: dialogSize.width * 0.92 > 1040 ? 1040 : dialogSize.width * 0.92,
+                height: dialogSize.height * 0.82 > 680 ? 680 : dialogSize.height * 0.82,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if (canEditChecklist)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () => dialogSetState(() {
+                            showNewItemRow = true;
+                            duplicateHighlightIndex = null;
+                            newItemController.clear();
+                          }),
+                          icon: const Icon(Icons.add_circle_outline),
+                          label: const Text('Add item'),
+                        ),
+                      ),
                     Expanded(
-                      child: PagedDataTable(
+                      child: LayoutBuilder(
+                        builder: (context, tableConstraints) {
+                          return Align(
+                            alignment: Alignment.topLeft,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: tableConstraints.maxWidth,
+                              ),
+                              child: PagedDataTable(
                         title: 'Event Checklist',
                         key: ValueKey(editableItems.length),
+                        maxTableHeight: tableConstraints.maxHeight,
+                        columnSpacing: 12,
+                        horizontalMargin: 8,
+                        dataRowMinHeight: 52,
+                        dataRowMaxHeight: 96,
                         headingRowColor: WidgetStateProperty.all(
                           Colors.grey.shade200,
                         ),
                         columns: [
-                          DataColumn(label: Text('Item')),
-                          DataColumn(label: Text('Description')),
-                          DataColumn(label: Text('Quantity')),
+                          const DataColumn(
+                            label: Text('Item'),
+                            columnWidth: FixedColumnWidth(170),
+                          ),
+                          const DataColumn(
+                            label: Text('Description'),
+                            columnWidth: FixedColumnWidth(200),
+                          ),
+                          const DataColumn(
+                            label: Text('Quantity'),
+                            columnWidth: FixedColumnWidth(80),
+                          ),
                           if (_isManager) ...[
-                            DataColumn(label: Text('Price/1')),
-                            DataColumn(label: Text('Total Price')),
+                            const DataColumn(
+                              label: Text('Price/1'),
+                              columnWidth: FixedColumnWidth(100),
+                            ),
+                            const DataColumn(
+                              label: Text('Total Price'),
+                              columnWidth: FixedColumnWidth(100),
+                            ),
                           ] else ...[
-                            DataColumn(label: Text('Cost')),
+                            const DataColumn(
+                              label: Text('Cost'),
+                              columnWidth: FixedColumnWidth(100),
+                            ),
                           ],
-                          DataColumn(label: Text('Status')),
+                          const DataColumn(
+                            label: Text('Status'),
+                            columnWidth: FixedColumnWidth(120),
+                          ),
                           if (canEditChecklist) ...[
-                            DataColumn(label: Text('Actions')),
+                            const DataColumn(
+                              label: Text('Actions'),
+                              columnWidth: FixedColumnWidth(76),
+                            ),
                           ],
                         ],
-                        rows:
-                            editableItems.asMap().entries.map((entry) {
+                        rows: [
+                          ...editableItems.asMap().entries.map((entry) {
                               final index = entry.key;
                               final item = entry.value;
+                              final isDuplicateRow =
+                                  duplicateHighlightIndex == index;
                               return DataRow(
+                                color:
+                                    isDuplicateRow
+                                        ? WidgetStateProperty.all(
+                                          const Color(0x33FFC107),
+                                        )
+                                        : null,
                                 cells: [
                                   DataCell(
-                                    canEditChecklist
-                                        ? TextFormField(
-                                          initialValue: item.item,
-                                          decoration: const InputDecoration(
-                                            border: OutlineInputBorder(),
-                                            contentPadding: EdgeInsets.all(8),
-                                          ),
-                                          onChanged: (value) {
-                                            dialogSetState(() {
-                                              editableItems[index] =
-                                                  ChecklistItem(
-                                                    item: value,
-                                                    description:
-                                                        item.description,
-                                                    quantity: item.quantity,
-                                                    cost: item.cost,
-                                                    isCompleted:
-                                                        item.isCompleted,
-                                                  );
-                                            });
-                                          },
-                                        )
-                                        : Text(item.item),
+                                    SizedBox(
+                                      width: 162,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          canEditChecklist
+                                              ? TextFormField(
+                                                initialValue: item.item,
+                                                decoration: InputDecoration(
+                                                  border: OutlineInputBorder(
+                                                    borderSide: BorderSide(
+                                                      color:
+                                                          isDuplicateRow
+                                                              ? const Color(
+                                                                0xFFFFC107,
+                                                              )
+                                                              : Colors.grey,
+                                                    ),
+                                                  ),
+                                                  contentPadding:
+                                                      const EdgeInsets.all(8),
+                                                  isDense: true,
+                                                ),
+                                                onChanged: (value) {
+                                                  dialogSetState(() {
+                                                    if (duplicateHighlightIndex ==
+                                                        index) {
+                                                      duplicateHighlightIndex =
+                                                          null;
+                                                    }
+                                                    editableItems[index] =
+                                                        ChecklistItem(
+                                                          item: value,
+                                                          description:
+                                                              item.description,
+                                                          quantity:
+                                                              item.quantity,
+                                                          cost: item.cost,
+                                                          isCompleted:
+                                                              item.isCompleted,
+                                                          inventoryId:
+                                                              item.inventoryId,
+                                                        );
+                                                  });
+                                                },
+                                              )
+                                              : Text(item.item),
+                                          if (isDuplicateRow)
+                                            const Padding(
+                                              padding: EdgeInsets.only(top: 4),
+                                              child: Text(
+                                                'Item already exists',
+                                                style: TextStyle(
+                                                  color: Color(0xFFB8860B),
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                   DataCell(
-                                    canEditChecklist
-                                        ? TextFormField(
+                                    SizedBox(
+                                      width: 192,
+                                      child: canEditChecklist
+                                          ? TextFormField(
                                           initialValue: item.description,
                                           decoration: const InputDecoration(
                                             border: OutlineInputBorder(),
                                             contentPadding: EdgeInsets.all(8),
+                                            isDense: true,
                                           ),
                                           onChanged: (value) {
                                             dialogSetState(() {
@@ -4260,16 +4591,20 @@ class _ManageEventsState extends State<ManageEvents>
                                             });
                                           },
                                         )
-                                        : Text(item.description),
+                                          : Text(item.description),
+                                    ),
                                   ),
                                   DataCell(
-                                    canEditChecklist
-                                        ? TextFormField(
+                                    SizedBox(
+                                      width: 72,
+                                      child: canEditChecklist
+                                          ? TextFormField(
                                           initialValue:
                                               item.quantity.toString(),
                                           decoration: const InputDecoration(
                                             border: OutlineInputBorder(),
                                             contentPadding: EdgeInsets.all(8),
+                                            isDense: true,
                                           ),
                                           keyboardType: TextInputType.number,
                                           onChanged: (value) {
@@ -4290,17 +4625,21 @@ class _ManageEventsState extends State<ManageEvents>
                                             });
                                           },
                                         )
-                                        : Text('${item.quantity}'),
+                                          : Text('${item.quantity}'),
+                                    ),
                                   ),
                                   if (_isManager) ...[
                                     DataCell(
-                                      TextFormField(
+                                      SizedBox(
+                                        width: 92,
+                                        child: TextFormField(
                                         initialValue: item.cost.toStringAsFixed(
                                           2,
                                         ),
                                         decoration: const InputDecoration(
                                           border: OutlineInputBorder(),
                                           contentPadding: EdgeInsets.all(8),
+                                          isDense: true,
                                           prefixText: 'PHP ',
                                         ),
                                         keyboardType: TextInputType.number,
@@ -4320,18 +4659,28 @@ class _ManageEventsState extends State<ManageEvents>
                                           });
                                         },
                                       ),
+                                      ),
                                     ),
                                     DataCell(
-                                      Text(
-                                        'PHP ${(item.cost * item.quantity).toStringAsFixed(2)}',
+                                      SizedBox(
+                                        width: 92,
+                                        child: Text(
+                                          'PHP ${(item.cost * item.quantity).toStringAsFixed(2)}',
+                                        ),
                                       ),
-                                      // style: const TextStyle(fontWeight: FontWeight.w600),
                                     ),
                                   ] else ...[
-                                    DataCell(Text(formatPesos(item.cost))),
+                                    DataCell(
+                                      SizedBox(
+                                        width: 92,
+                                        child: Text(formatPesos(item.cost)),
+                                      ),
+                                    ),
                                   ],
                                   DataCell(
-                                    Container(
+                                    SizedBox(
+                                      width: 112,
+                                      child: Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 8,
                                         vertical: 4,
@@ -4406,160 +4755,144 @@ class _ManageEventsState extends State<ManageEvents>
                                         ),
                                       ),
                                     ),
+                                    ),
                                   ),
                                   if (canEditChecklist) ...[
                                     DataCell(
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          // Edit button
-                                          Container(
-                                            width: 28,
-                                            height: 28,
-                                            margin: const EdgeInsets.only(
-                                              right: 4,
-                                            ),
-                                            decoration: const BoxDecoration(
-                                              color: Colors.red,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: IconButton(
-                                              padding: EdgeInsets.zero,
-                                              icon: const Icon(
-                                                Icons.edit,
-                                                color: Colors.white,
-                                                size: 16,
-                                              ),
-                                              onPressed: () {
-                                                // Edit is handled inline via TextFormField
-                                              },
-                                            ),
+                                      SizedBox(
+                                        width: 68,
+                                        child: IconButton(
+                                          tooltip: 'Remove item',
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                          onPressed: () {
+                                            dialogSetState(() {
+                                              if (duplicateHighlightIndex ==
+                                                  index) {
+                                                duplicateHighlightIndex = null;
+                                              }
+                                              editableItems.removeAt(index);
+                                            });
+                                          },
+                                          icon: const Icon(
+                                            Icons.remove_circle_outline,
+                                            color: Colors.red,
                                           ),
-                                          // Delete button
-                                          Container(
-                                            width: 28,
-                                            height: 28,
-                                            decoration: const BoxDecoration(
-                                              color: Colors.red,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: IconButton(
-                                              padding: EdgeInsets.zero,
-                                              icon: const Icon(
-                                                Icons.remove,
-                                                color: Colors.white,
-                                                size: 16,
-                                              ),
-                                              onPressed: () {
-                                                dialogSetState(() {
-                                                  editableItems.removeAt(index);
-                                                });
-                                              },
-                                            ),
-                                          ),
-                                        ],
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ],
                               );
-                            }).toList(),
+                            }),
+                          if (canEditChecklist && showNewItemRow)
+                            DataRow(
+                              color: WidgetStateProperty.all(
+                                Colors.blue.shade50,
+                              ),
+                              cells: [
+                                DataCell(
+                                  SizedBox(
+                                    width: 162,
+                                    child: showInventoryPicker &&
+                                            inventoryOptions.isNotEmpty
+                                        ? Autocomplete<Map<String, dynamic>>(
+                                          optionsBuilder: (text) {
+                                            final q =
+                                                text.text.trim().toLowerCase();
+                                            if (q.isEmpty) {
+                                              return inventoryOptions.take(20);
+                                            }
+                                            return inventoryOptions
+                                                .where((row) {
+                                                  final name =
+                                                      '${row['name'] ?? ''}'
+                                                          .toLowerCase();
+                                                  final cat =
+                                                      '${row['category'] ?? ''}'
+                                                          .toLowerCase();
+                                                  return name.contains(q) ||
+                                                      cat.contains(q);
+                                                })
+                                                .take(20);
+                                          },
+                                          displayStringForOption: (row) =>
+                                              '${row['name']} (${row['quantity']} ${row['unit']})',
+                                          fieldViewBuilder: (
+                                            context,
+                                            controller,
+                                            focusNode,
+                                            onFieldSubmitted,
+                                          ) {
+                                            if (controller.text !=
+                                                newItemController.text) {
+                                              controller.text =
+                                                  newItemController.text;
+                                            }
+                                            return TextField(
+                                              controller: controller,
+                                              focusNode: focusNode,
+                                              autofocus: true,
+                                              decoration:
+                                                  const InputDecoration(
+                                                labelText: 'New item',
+                                                hintText:
+                                                    'Search inventory or type name',
+                                                border: OutlineInputBorder(),
+                                                isDense: true,
+                                              ),
+                                              onChanged: (v) =>
+                                                  newItemController.text = v,
+                                              onSubmitted: addChecklistByName,
+                                            );
+                                          },
+                                          onSelected: (row) {
+                                            addChecklistByName(
+                                              '${row['name']}',
+                                              inventoryRow: row,
+                                            );
+                                          },
+                                        )
+                                        : TextField(
+                                          controller: newItemController,
+                                          autofocus: true,
+                                          decoration: const InputDecoration(
+                                            labelText: 'New item',
+                                            border: OutlineInputBorder(),
+                                            isDense: true,
+                                          ),
+                                          onSubmitted: addChecklistByName,
+                                        ),
+                                  ),
+                                ),
+                                const DataCell(Text('')),
+                                const DataCell(Text('')),
+                                if (_isManager) ...[
+                                  const DataCell(Text('')),
+                                  const DataCell(Text('')),
+                                ] else
+                                  const DataCell(Text('')),
+                                const DataCell(Text('')),
+                                if (canEditChecklist)
+                                  DataCell(
+                                    IconButton(
+                                      tooltip: 'Cancel new row',
+                                      onPressed: () => dialogSetState(() {
+                                        showNewItemRow = false;
+                                        newItemController.clear();
+                                      }),
+                                      icon: const Icon(Icons.close),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                        ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    if (canEditChecklist) ...[
-                      Row(
-                        children: [
-                          Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: Colors.grey.shade400),
-                            ),
-                            child: IconButton(
-                              padding: EdgeInsets.zero,
-                              icon: const Icon(
-                                Icons.add,
-                                color: Colors.black54,
-                                size: 18,
-                              ),
-                              onPressed:
-                                  () => _addNewChecklistItem(
-                                    dialogSetState,
-                                    editableItems,
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (showInventoryPicker &&
-                          inventoryOptions.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Autocomplete<Map<String, dynamic>>(
-                          optionsBuilder: (text) {
-                            final q = text.text.trim().toLowerCase();
-                            if (q.isEmpty) {
-                              return inventoryOptions.take(20);
-                            }
-                            return inventoryOptions.where((row) {
-                              final name =
-                                  '${row['name'] ?? ''}'.toLowerCase();
-                              final cat =
-                                  '${row['category'] ?? ''}'.toLowerCase();
-                              return name.contains(q) || cat.contains(q);
-                            }).take(20);
-                          },
-                          displayStringForOption: (row) =>
-                              '${row['name']} (${row['quantity']} ${row['unit']})',
-                          fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
-                            return TextField(
-                              controller: controller,
-                              focusNode: focusNode,
-                              decoration: const InputDecoration(
-                                labelText: 'Add from inventory (type to search)',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            );
-                          },
-                          onSelected: (row) {
-                            final name = '${row['name']}'.trim();
-                            final duplicate = editableItems.any(
-                              (e) => e.item.trim().toLowerCase() == name.toLowerCase(),
-                            );
-                            if (duplicate) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    '"$name" is already on the checklist.',
-                                  ),
-                                ),
-                              );
-                              return;
-                            }
-                            final id = row['id']?.toString() ?? '';
-                            final unitCost = row['unitCost'] is num
-                                ? (row['unitCost'] as num).toDouble()
-                                : double.tryParse('${row['unitCost']}') ?? 0;
-                            dialogSetState(() {
-                              editableItems.add(
-                                ChecklistItem(
-                                  item: name,
-                                  description:
-                                      (row['category'] ?? 'Inventory').toString(),
-                                  quantity: 1,
-                                  cost: unitCost,
-                                  inventoryId: id,
-                                ),
-                              );
-                            });
-                          },
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                    ],
                     const Spacer(),
                     // Bottom action buttons
                     Row(
@@ -4627,6 +4960,9 @@ class _ManageEventsState extends State<ManageEvents>
         );
       },
     );
+    } finally {
+      newItemController.dispose();
+    }
   }
 
   Future<void> _cancelProcessingOrder(EventOrderDto order) async {
@@ -5434,23 +5770,8 @@ class _ManageEventsState extends State<ManageEvents>
                           : () async {
                             setState(() => _postAnalysisSaving = true);
                             try {
-                              await EventsApi.instance.completePostAnalysis(
+                              await EventsApi.instance.completeOrder(
                                 orderId: selPost.id,
-                                businessCardsGivenAway:
-                                    int.tryParse(
-                                      _postCardsController.text.trim(),
-                                    ) ??
-                                    0,
-                                onTheSpotInquiries:
-                                    int.tryParse(
-                                      _postInquiriesController.text.trim(),
-                                    ) ??
-                                    0,
-                                complaints:
-                                    int.tryParse(
-                                      _postComplaintsController.text.trim(),
-                                    ) ??
-                                    0,
                               );
                               if (!mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -5933,23 +6254,8 @@ class _ManageEventsState extends State<ManageEvents>
                             : () async {
                               setState(() => _postAnalysisSaving = true);
                               try {
-                                await EventsApi.instance.completePostAnalysis(
+                                await EventsApi.instance.completeOrder(
                                   orderId: selPost.id,
-                                  businessCardsGivenAway:
-                                      int.tryParse(
-                                        _postCardsController.text.trim(),
-                                      ) ??
-                                      0,
-                                  onTheSpotInquiries:
-                                      int.tryParse(
-                                        _postInquiriesController.text.trim(),
-                                      ) ??
-                                      0,
-                                  complaints:
-                                      int.tryParse(
-                                        _postComplaintsController.text.trim(),
-                                      ) ??
-                                      0,
                                 );
                                 if (!mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -6131,43 +6437,39 @@ class _ManageEventsState extends State<ManageEvents>
       case EventStatus.completed:
         return _buildCompletedEventsView(isNarrow);
       case EventStatus.newEvent:
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 3,
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildEventForm(),
-                    const SizedBox(height: 20),
-                    _buildEventMenuSection(),
-                  ],
-                ),
+        // Mobile-like layout: single column flow + smaller centered window.
+        return Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 940),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildEventForm(),
+                  const SizedBox(height: 20),
+                  _buildEventMenuSection(),
+                  const SizedBox(height: 20),
+                  _buildFoodBrowser(),
+                  const SizedBox(height: 20),
+                  _buildNewEventSubmissionBar(),
+                  const SizedBox(height: 24),
+                ],
               ),
             ),
-            const SizedBox(width: 20),
-            Expanded(
-              flex: 4,
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildFoodBrowser(),
-                    const SizedBox(height: 20),
-                    _buildNewEventSubmissionBar(),
-                  ],
-                ),
-              ),
-            ),
-          ],
+          ),
         );
     }
   }
 
   Widget _buildNewEventSubmissionBar() {
     final themePicksCount = _themePicks.length;
+    final laborCost =
+        double.tryParse(_newEventLaborCostController.text.trim()) ?? 0.0;
+    final travelCost =
+        double.tryParse(_newEventTravelCostController.text.trim()) ?? 0.0;
+    final total = _estimateNewEventTotalCost() + laborCost + travelCost;
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -6176,12 +6478,76 @@ class _ManageEventsState extends State<ManageEvents>
         child: Row(
           children: [
             Expanded(
-              child: Text(
-                'Theme picks: $themePicksCount',
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontWeight: FontWeight.w600,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Theme picks: $themePicksCount',
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _newEventPaxBufferController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: false,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Pax buffer',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: _newEventLaborCostController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Labor cost',
+                            prefixText: 'PHP ',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: _newEventTravelCostController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Travel cost',
+                            prefixText: 'PHP ',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Total cost: ${formatPesos(total)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFFF4511E),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: 12),
@@ -6863,25 +7229,33 @@ class _ManageEventsState extends State<ManageEvents>
                   : Column(
                     children:
                         _menuItems.map((item) {
+                          final extra = item.dish.additionalChargeAmount;
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8.0),
                             child: Row(
                               children: [
                                 Expanded(
-                                  child: Text(
-                                    '${item.dish.name} · ${item.paxOption}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${item.dish.name} · ${item.paxOption}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      if (extra > 0)
+                                        Text(
+                                          'Extra fee: ${formatPesos(extra)}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.orange.shade800,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
-                                Text(
-                                  item.dish.price,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
                                 IconButton(
                                   onPressed: () => _removeFromMenu(item),
                                   icon: const Icon(Icons.close, size: 20),
@@ -6891,6 +7265,23 @@ class _ManageEventsState extends State<ManageEvents>
                           );
                         }).toList(),
                   ),
+        ),
+        if (_newEventSetMenuAdditionalChargeTotal() > 0) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Set-menu extra dish fees: ${formatPesos(_newEventSetMenuAdditionalChargeTotal())}',
+            style: TextStyle(
+              color: Colors.orange.shade800,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _openNewEventMenuPicker,
+          icon: const Icon(Icons.restaurant_menu, size: 18),
+          label: const Text('Open menu picker (dishes or set menu)'),
         ),
         const SizedBox(height: 16),
         SizedBox(
@@ -7318,37 +7709,44 @@ class _ManageEventsState extends State<ManageEvents>
                           ),
                         ],
                       ),
-                      ListView.builder(
-                        itemCount: sets.length,
-                        itemBuilder: (context, i) {
-                          final s = sets[i];
-                          final names = s.dishIds
-                              .map((id) {
-                                for (final d in cateringDishes) {
-                                  if (d.id == id) return d.name;
-                                }
-                                return id;
-                              })
-                              .join(', ');
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              title: Text(s.name),
-                              subtitle: Text(
-                                s.dishIds.isEmpty ? 'No dishes' : names,
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: _openNewEventMenuPicker,
+                            icon: const Icon(Icons.tune, size: 18),
+                            label: const Text('Choose / customize set menu'),
+                          ),
+                          const SizedBox(height: 12),
+                          ...sets.map((s) {
+                            final names = s.dishIds
+                                .map((id) {
+                                  for (final d in cateringDishes) {
+                                    if (d.id == id) return d.name;
+                                  }
+                                  return id;
+                                })
+                                .join(', ');
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                title: Text(s.name),
+                                subtitle: Text(
+                                  s.dishIds.isEmpty ? 'No dishes' : names,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                trailing: AntdPrimaryButton(
+                                  label: 'Customize',
+                                  onPressed:
+                                      s.dishIds.isEmpty
+                                          ? null
+                                          : () => _applySetMenuToNewEvent(s),
+                                ),
                               ),
-                              trailing: AntdPrimaryButton(
-                                label: 'Use set',
-                                onPressed:
-                                    s.dishIds.isEmpty
-                                        ? null
-                                        : () => _applySetMenuToNewEvent(s),
-                              ),
-                            ),
-                          );
-                        },
+                            );
+                          }),
+                        ],
                       ),
                     ],
                   ),

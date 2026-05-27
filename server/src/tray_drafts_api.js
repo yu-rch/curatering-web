@@ -22,8 +22,8 @@ function asTrayObject(value) {
 }
 
 /**
- * Canonical tray line shape for web + mobile (stored in `tray_lines` + `tray_items`).
- * Includes nested `dish` (web) and flat/snake fields (mobile).
+ * Canonical tray line shape for storage in `customer_tray_drafts.tray_items`.
+ * Keep this minimal; read paths remain backward-compatible with legacy aliases.
  */
 export function normalizeTrayLineItem(raw) {
   const m = asTrayObject(raw);
@@ -69,28 +69,28 @@ export function normalizeTrayLineItem(raw) {
     m.meal_type ?? m.mealType ?? dish.meal_type ?? dish.mealType ?? '',
   );
 
+  const addOnQty = Math.max(
+    0,
+    Number(m.addOnQuantity ?? m.add_on_quantity ?? m.dip_qty ?? (sauceStr ? qty : 0)) || 0,
+  );
+  const addOns = Array.isArray(m.addOns)
+    ? m.addOns.map((e) => String(e)).filter(Boolean)
+    : Array.isArray(m.add_ons)
+      ? m.add_ons.map((e) => String(e)).filter(Boolean)
+      : [];
+  const notes = String(
+    m.specialInstructions ?? m.special_instructions ?? m.notes ?? '',
+  ).trim();
+
   return {
     dishId,
-    dish_id: dishId,
     dishName,
-    dish_name: dishName,
-    name: dishName,
-    item_name: dishName,
-    dishPrice: priceStr,
-    dish_price: priceStr,
     price: priceNum,
     quantity: qty,
-    qty,
     selectedSauce: sauceStr || null,
-    selected_sauce: sauceStr || null,
-    dip: sauceStr,
-    dip_qty: sauceStr ? qty : 0,
-    dish_category: category,
-    dishCategory: category,
-    dish_type: dishType,
-    dishType,
-    meal_type: mealType,
-    mealType,
+    addOnQuantity: addOnQty,
+    addOns,
+    specialInstructions: notes,
     dish: {
       id: dishId,
       name: dishName,
@@ -98,7 +98,6 @@ export function normalizeTrayLineItem(raw) {
       category,
       type: dishType,
       mealType,
-      meal_type: mealType,
     },
   };
 }

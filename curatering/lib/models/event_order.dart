@@ -18,6 +18,7 @@ class EventMenuItemDto {
   final String price;
   final String setMenuName;
   final String dishAllergens;
+  final double additionalChargeAmount;
 
   const EventMenuItemDto({
     required this.dishName,
@@ -25,6 +26,7 @@ class EventMenuItemDto {
     required this.price,
     this.setMenuName = '',
     this.dishAllergens = '',
+    this.additionalChargeAmount = 0,
   });
 }
 
@@ -103,7 +105,7 @@ class EventOrderDto {
   final SeatingPlanData seatingPlan;
   final PostAnalysisDto? postAnalysis;
 
-  /// Full `post_analysis` JSON from the server (task rows, additional costs, proofs, etc.).
+  /// Internal stage metadata JSON (additional costs, proofs, etc.).
   final Map<String, dynamic> postAnalysisRaw;
 
   /// `catering` | `event` — which table this order lives in.

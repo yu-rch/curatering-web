@@ -174,7 +174,19 @@ class _MyOrdersPageState extends State<MyOrdersPage>
 
   bool _isInsufficientPayment(Map<String, dynamic> order) {
     final u = _statusUpper(order);
-    return u.contains('INSUFFICIENT') || u.contains('PAYMENT INSUFFICIENT');
+    final paymentStatus =
+        (order['payment_status'] ?? order['paymentStatus'] ?? '')
+            .toString()
+            .toUpperCase();
+    final paymentReview =
+        (order['balance_proof_pending_review'] ?? false) == true;
+    final balanceDue = _parseDouble(order['balance_due'] ?? order['balance_amount']);
+    return u.contains('INSUFFICIENT') ||
+        u.contains('PAYMENT INSUFFICIENT') ||
+        paymentStatus.contains('INSUFFICIENT') ||
+        paymentStatus.contains('BALANCE') ||
+        paymentReview ||
+        balanceDue > 0;
   }
 
   bool _isOverpayment(Map<String, dynamic> order) {
@@ -576,11 +588,22 @@ class _MyOrdersPageState extends State<MyOrdersPage>
     return status.replaceAll('_', ' ').toUpperCase();
   }
 
+  String _displayStatusFor(Map<String, dynamic> order) {
+    if (_isInsufficientPayment(order)) {
+      return 'insufficient_payment';
+    }
+    return (order['order_status'] ?? order['status'] ?? 'pending')
+        .toString()
+        .toLowerCase();
+  }
+
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'pending':
       case 'pending_cashier':
         return Colors.orange;
+      case 'insufficient_payment':
+        return Colors.red.shade700;
       case 'confirmed':
         return Colors.blue;
       case 'preparing':
@@ -615,19 +638,7 @@ class _MyOrdersPageState extends State<MyOrdersPage>
   }
 
   Widget _buildProofImage(String proof) {
-    Uint8List? bytes;
-    if (proof.startsWith('data:')) {
-      final idx = proof.indexOf(',');
-      if (idx != -1) {
-        try {
-          bytes = base64Decode(proof.substring(idx + 1));
-        } catch (_) {}
-      }
-    } else if (RegExp(r'^[A-Za-z0-9+/=\s]+$').hasMatch(proof) && proof.length > 100) {
-      try {
-        bytes = base64Decode(proof);
-      } catch (_) {}
-    }
+    final bytes = _decodeMaybeBase64Image(proof);
 
     if (bytes != null) {
       return ClipRRect(
@@ -645,6 +656,24 @@ class _MyOrdersPageState extends State<MyOrdersPage>
       );
     }
     return const SizedBox.shrink();
+  }
+
+  Uint8List? _decodeMaybeBase64Image(String raw) {
+    final proof = raw.trim();
+    if (proof.isEmpty) return null;
+    String payload = proof;
+    if (proof.startsWith('data:')) {
+      final idx = proof.indexOf(',');
+      if (idx == -1) return null;
+      payload = proof.substring(idx + 1);
+    }
+    payload = payload.replaceAll(RegExp(r'\s+'), '');
+    if (payload.isEmpty || payload.length < 40) return null;
+    try {
+      return base64Decode(payload);
+    } catch (_) {
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -776,7 +805,7 @@ class _MyOrdersPageState extends State<MyOrdersPage>
         final order = orders[i];
         final key = _orderKey(order);
         final isSelected = _selectedOrder != null && _orderKey(_selectedOrder!) == key;
-        final status = (order['order_status'] ?? order['status'] ?? 'pending').toString().toLowerCase();
+        final status = _displayStatusFor(order);
         final customerName = order['full_name'] ??
             order['customer_name'] ??
             order['customerName'] ??
@@ -906,7 +935,7 @@ class _MyOrdersPageState extends State<MyOrdersPage>
 
   Widget _buildOrderDetail(Map<String, dynamic> order) {
     final items = _normalizeItems(order['tray_items'] ?? order['items']);
-    final status = (order['order_status'] ?? order['status'] ?? 'pending').toString().toLowerCase();
+    final status = _displayStatusFor(order);
     final customerName = order['full_name'] ??
         order['customer_name'] ??
         order['customerName'] ??
@@ -1067,17 +1096,29 @@ class _MyOrdersPageState extends State<MyOrdersPage>
                     final imgB64 = (item['image_base64'] ?? item['imageBase64'])?.toString();
                     Widget thumb;
                     if (imgB64 != null && imgB64.isNotEmpty) {
-                      try {
+                      final decoded = _decodeMaybeBase64Image(imgB64);
+                      if (decoded != null) {
                         thumb = ClipRRect(
                           borderRadius: BorderRadius.circular(8),
                           child: Image.memory(
-                            base64Decode(imgB64),
+                            decoded,
                             width: 36,
                             height: 36,
                             fit: BoxFit.cover,
                           ),
                         );
-                      } catch (_) {
+                      } else if (Uri.tryParse(imgB64)?.hasScheme == true) {
+                        thumb = ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            imgB64,
+                            width: 36,
+                            height: 36,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _itemPlaceholderThumb(),
+                          ),
+                        );
+                      } else {
                         thumb = _itemPlaceholderThumb();
                       }
                     } else {

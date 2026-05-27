@@ -263,6 +263,8 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
 
   String _formatStatus(String? status) {
     if (status == null) return 'UNKNOWN';
+    if (status == 'for_processing') return 'ON GOING';
+    if (status == 'for_post_analysis') return 'FOR FULL PAYMENT';
     return status.replaceAll('_', ' ').toUpperCase();
   }
 
@@ -274,8 +276,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       status == 'new_event' ||
       status == 'for_down_payment' ||
       status == 'on_going' ||
-      status == 'for_processing' ||
-      status == 'for_post_analysis';
+      status == 'for_full_payment';
 
   Color _getStatusColor(String? status) {
     switch (status) {
@@ -285,10 +286,8 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       case 'for_down_payment':
         return Colors.amber;
       case 'on_going':
-      case 'for_processing':
         return Colors.orange;
       case 'for_full_payment':
-      case 'for_post_analysis':
         return Colors.purple;
       case 'completed':
         return Colors.green;
@@ -1362,9 +1361,10 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     );
     final showSeatingBlock =
         isEventOrder &&
-        (status == 'for_processing' ||
-            status == 'for_post_analysis' ||
-            status == 'ongoing');
+        (status == 'for_down_payment' ||
+            status == 'on_going' ||
+            status == 'for_full_payment' ||
+            status == 'completed');
 
     final title =
         (catering['event_title'] ?? catering['eventTitle'] ?? 'Catering')

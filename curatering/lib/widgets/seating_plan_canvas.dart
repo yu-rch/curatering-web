@@ -680,8 +680,7 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Drag green seats to position. Resize table with corner handles. '
-                            'Move table with arrow buttons.',
+                            'Drag tables and green seats to position. Resize tables with corner handles.',
                             style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                           ),
                         ),
@@ -757,6 +756,20 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                                 _selectedSeatId = null;
                               });
                             },
+                            onPanUpdate: _layoutEditable
+                                ? (d) {
+                                    final dx = d.delta.dx / w;
+                                    final dy = d.delta.dy / h;
+                                    final tables = widget.plan.tables.map((tb) {
+                                      if (tb.id != t.id) return tb;
+                                      return tb.copyWith(
+                                        xNorm: (tb.xNorm + dx).clamp(0.0, 1.0 - tb.wNorm),
+                                        yNorm: (tb.yNorm + dy).clamp(0.0, 1.0 - tb.hNorm),
+                                      );
+                                    }).toList();
+                                    _emit(widget.plan.copyWith(tables: tables));
+                                  }
+                                : null,
                             child: Container(
                               alignment: Alignment.center,
                               decoration: BoxDecoration(

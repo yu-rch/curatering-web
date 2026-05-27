@@ -6578,6 +6578,7 @@ app.post(
       addChanged('guestCount', existing.guestCount, Number(guestCount));
       addChanged('menu', existing.menu, menu || []);
       addChanged('themeDesign', existing.themeDesign, themeDesign || {});
+      // total cost is recomputed server-side below (mobile parity).
       addChanged('totalCost', Number(existing.totalCost || 0), Number(totalCost || 0));
 
       const costBreakdown =
@@ -6590,10 +6591,37 @@ app.post(
       const travelCost = Number(
         req.body.travelCost ?? costBreakdown.travelCost ?? costBreakdown.travel_cost ?? 0,
       );
-      const dishCost = Number(
-        costBreakdown.dishCost ?? costBreakdown.dish_cost ?? 0,
-      );
-      const totalNum = totalCost != null ? Number(totalCost) : 0;
+      // Authoritative total cost (mobile parity).
+      // Formula: (guest_count + pax_buffer) * 500 + menu add-ons + theme + labor + travel + additional costs
+      const paxBuffer = Number(req.body?.paxBuffer ?? req.body?.pax_buffer ?? 0) || 0;
+      const guestCountNum = Number(guestCount) || 0;
+      let menuAddOns = 0;
+      if (Array.isArray(menu)) {
+        for (const m of menu) {
+          if (m && typeof m === "object") {
+            menuAddOns += Number(
+              m.additionalChargeAmount ??
+              m.additional_charge_amount ??
+              m.menu_dishes_additional_charge_amount ??
+              0,
+            ) || 0;
+          }
+        }
+      }
+      const themeDesignCost = Number(
+        req.body?.themeDesignCost ?? req.body?.theme_design_cost ?? 0,
+      ) || 0;
+      let additionalCosts = 0;
+      const addList = req.body?.additional_costs;
+      if (Array.isArray(addList)) {
+        for (const item of addList) {
+          if (item && typeof item === "object") {
+            additionalCosts += Number(item.amount ?? item.cost ?? 0) || 0;
+          }
+        }
+      }
+      const dishCost = (guestCountNum + paxBuffer) * 500 + menuAddOns;
+      const totalNum = dishCost + themeDesignCost + laborCost + travelCost + additionalCosts;
       const estimateMessage =
         `Macrina posted an updated cost estimate: PHP ${totalNum.toFixed(2)} ` +
         `(labor PHP ${laborCost.toFixed(2)}, travel PHP ${travelCost.toFixed(2)}).`;
@@ -6669,7 +6697,7 @@ app.post(
               JSON.stringify(menu || []),
               JSON.stringify(mergedThemeDesign),
               nextStatus,
-              totalCost != null ? Number(totalCost) : 0,
+              totalNum,
               req.user.id,
               orderId,
               ...(tableCols.has("labor_cost") ? [laborCost] : []),
@@ -6853,41 +6881,31 @@ app.post(
   async (req, res) => {
     try {
       const { orderId } = req.params;
-      const { businessCardsGivenAway, onTheSpotInquiries, complaints } =
-        req.body || {};
-
-      const postAnalysis = {
-        businessCardsGivenAway: Number(businessCardsGivenAway) || 0,
-        onTheSpotInquiries: Number(onTheSpotInquiries) || 0,
-        complaints: Number(complaints) || 0,
-      };
-
       const result = await pool.query(
         `UPDATE event_orders
          SET
            status = 'completed',
-           post_analysis = $1::jsonb,
-           updated_by = $2,
+           updated_by = $1,
            updated_at = now()
-         WHERE id = $3
+         WHERE id = $2
            AND status IN ('for_full_payment', 'for_post_analysis')
          RETURNING id;`,
-        [JSON.stringify(postAnalysis), req.user.id, orderId],
+        [req.user.id, orderId],
       );
 
       if (result.rowCount === 0) {
         return res
           .status(404)
           .json({
-            message: "Post-analysis order not found or already completed",
+            message: "Order not found or already completed",
           });
       }
 
       await logAction({
         userId: req.user.id,
         feature: "Events",
-        action: "completed post-event analysis",
-        other: { orderId, postAnalysis },
+        action: "completed event order",
+        other: { orderId },
       });
 
       return res.json({ ok: true, id: result.rows[0].id });
@@ -6895,7 +6913,47 @@ app.post(
       console.error(e);
       return res
         .status(500)
-        .json({ message: "Failed to complete post-analysis" });
+        .json({ message: "Failed to complete order" });
+    }
+  },
+);
+
+// Alias: Stage 5 completion (no "post-analysis" terminology).
+app.post(
+  "/api/events/orders/:orderId/complete",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin"])),
+  async (req, res) => {
+    try {
+      const { orderId } = req.params;
+      const result = await pool.query(
+        `UPDATE event_orders
+         SET
+           status = 'completed',
+           updated_by = $1,
+           updated_at = now()
+         WHERE id = $2
+           AND status IN ('for_full_payment', 'for_post_analysis')
+         RETURNING id;`,
+        [req.user.id, orderId],
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({ message: "Order not found or already completed" });
+      }
+
+      await logAction({
+        userId: req.user.id,
+        feature: "Events",
+        action: "completed event order",
+        other: { orderId },
+      });
+
+      return res.json({ ok: true, id: result.rows[0].id });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ message: "Failed to complete order" });
     }
   },
 );
@@ -8559,8 +8617,8 @@ async function registerRoutesAfterDbInit() {
           : '';
 
         const result = await pool.query(
-          `INSERT INTO menu_dishes (name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, supports_addons, ingredients, image_base64, type, set_menus, available, public_description, allergens, meal_type)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          `INSERT INTO menu_dishes (name, price, menu_dishes_additional_charge_amount, additional_charge, category, pax_options, sauces, supports_addons, ingredients, image_base64, type, set_menus, available, public_description, allergens, meal_type)
+           VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
            RETURNING *`,
           [
             name,
@@ -8627,7 +8685,7 @@ async function registerRoutesAfterDbInit() {
            SET name = $1, price = $2, category = $3, pax_options = $4, 
                sauces = $5, supports_addons = $6, ingredients = $7, image_base64 = $8, type = $9, set_menus = $10,
                available = $11, public_description = $12, allergens = $13, meal_type = $14,
-               menu_dishes_additional_charge_amount = $15, updated_at = now()
+               menu_dishes_additional_charge_amount = $15, additional_charge = $15, updated_at = now()
            WHERE id = $16
            RETURNING *`,
           [

@@ -121,19 +121,12 @@ class EventsApi {
     );
   }
 
-  Future<void> completePostAnalysis({
+  Future<void> completeOrder({
     required String orderId,
-    required int businessCardsGivenAway,
-    required int onTheSpotInquiries,
-    required int complaints,
   }) async {
     await ApiClient.instance.postJson(
-      '/api/events/orders/$orderId/complete-post-analysis',
-      body: {
-        'businessCardsGivenAway': businessCardsGivenAway,
-        'onTheSpotInquiries': onTheSpotInquiries,
-        'complaints': complaints,
-      },
+      '/api/events/orders/$orderId/complete',
+      body: {},
     );
   }
 
@@ -419,6 +412,12 @@ class EventsApi {
 
       final dishNameRaw = mm['dishName'] ?? mm['dish_name'];
       if (dishNameRaw != null && dishNameRaw.toString().trim().isNotEmpty) {
+        final addCharge = _toDouble(
+          mm['additionalChargeAmount'] ??
+              mm['additional_charge_amount'] ??
+              mm['menu_dishes_additional_charge_amount'] ??
+              0,
+        );
         menu.add(
           EventMenuItemDto(
             dishName: dishNameRaw.toString().trim(),
@@ -426,6 +425,7 @@ class EventsApi {
             price: mm['price']?.toString() ?? '0',
             setMenuName: setMenuName,
             dishAllergens: dishAllergens,
+            additionalChargeAmount: addCharge,
           ),
         );
         continue;

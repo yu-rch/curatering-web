@@ -1027,8 +1027,23 @@ class _InquirePageState extends State<InquirePage> {
     }
     final additionalRows = _setMenuAdditionalChargeRows();
     final additionalTotal = _menuAdditionalChargeTotal();
+    final dishById = _activeDishById;
     return _menuSelections.map((block) {
       final out = Map<String, dynamic>.from(block);
+      final ids = (out['dishIds'] as List<dynamic>? ?? const [])
+          .map((id) => id.toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+      out['dishRows'] = ids.map((id) {
+        final dish = dishById[id];
+        final addCharge = dish?.additionalChargeAmount ?? 0;
+        return <String, dynamic>{
+          'dishId': id,
+          'dishName': dish?.name ?? id,
+          'additionalChargeAmount': addCharge,
+          'menu_dishes_additional_charge_amount': addCharge,
+        };
+      }).toList();
       if ((out['kind'] as String? ?? '') == 'set') {
         out['additionalChargeRows'] = additionalRows;
         out['additionalChargeTotal'] = additionalTotal;

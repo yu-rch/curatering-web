@@ -62,14 +62,26 @@ class ManagerCateringApi {
     );
   }
 
-  Future<void> patchPostAnalysis({
+  /// Patch stage-related metadata (additional costs, pax buffer, etc.).
+  ///
+  /// Note: This replaces the older "post-analysis" wording in the web UI/API.
+  Future<void> patchStageData({
     required String id,
     required String orderKind,
     required Map<String, dynamic> patch,
   }) async {
     await ApiClient.instance.patchJson(
-      '/api/manager/catering/$id/post-analysis-patch',
+      '/api/manager/catering/$id/stage-data-patch',
       body: {'order_kind': orderKind, 'patch': patch},
     );
+  }
+
+  /// Backwards-compatible alias. Prefer [patchStageData].
+  Future<void> patchPostAnalysis({
+    required String id,
+    required String orderKind,
+    required Map<String, dynamic> patch,
+  }) async {
+    return patchStageData(id: id, orderKind: orderKind, patch: patch);
   }
 }

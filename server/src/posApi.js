@@ -454,7 +454,8 @@ async function createStaffCateringOrder(pool, body) {
   };
 
   add("source", "new_event");
-  add("status", "for_processing");
+  // Stage 1: New Event
+  add("status", "new_event");
   add("catering_id", txNo);
   add("event_id", txNo);
   add("event_title", body?.event_title ?? body?.eventTitle ?? "");
@@ -466,14 +467,18 @@ async function createStaffCateringOrder(pool, body) {
   add("contact_number", body?.contact_number ?? body?.contactNumber ?? "");
   add("email_address", body?.email_address ?? body?.emailAddress ?? "");
   add("address", body?.address ?? "");
-  add("guest_count", Number(body?.guest_count ?? body?.guestCount ?? 0) || 0);
-  add("pax_buffer", Number(body?.pax_buffer ?? body?.paxBuffer ?? 0) || 0);
+  const guestCount = Number(body?.guest_count ?? body?.guestCount ?? 0) || 0;
+  const paxBuffer = Number(body?.pax_buffer ?? body?.paxBuffer ?? 0) || 0;
+  add("guest_count", guestCount);
+  add("pax_buffer", paxBuffer);
   add("payment_method", body?.payment_method ?? body?.paymentMethod ?? "cash");
-  add("total_cost", Number(body?.total_cost ?? body?.totalCost ?? 0) || 0);
-  add("labor_cost", Number(body?.labor_cost ?? body?.laborCost ?? 0) || 0);
-  add("travel_cost", Number(body?.travel_cost ?? body?.travelCost ?? 0) || 0);
+  const laborCost = Number(body?.labor_cost ?? body?.laborCost ?? 0) || 0;
+  const travelCost = Number(body?.travel_cost ?? body?.travelCost ?? 0) || 0;
+  add("labor_cost", laborCost);
+  add("travel_cost", travelCost);
   add("allergens", body?.allergens ?? "");
-  add("menu", JSON.stringify(Array.isArray(body?.menu) ? body.menu : []), "::jsonb");
+  const menu = Array.isArray(body?.menu) ? body.menu : [];
+  add("menu", JSON.stringify(menu), "::jsonb");
   add(
     "schedule_slots",
     JSON.stringify(Array.isArray(body?.schedule_slots) ? body.schedule_slots : []),
@@ -497,6 +502,28 @@ async function createStaffCateringOrder(pool, body) {
     ),
     "::jsonb",
   );
+
+  // Authoritative total cost (mobile parity)
+  let menuAddOns = 0;
+  for (const m of menu) {
+    if (m && typeof m === "object") {
+      menuAddOns += Number(
+        m.additionalChargeAmount ??
+        m.additional_charge_amount ??
+        m.menu_dishes_additional_charge_amount ??
+        0,
+      ) || 0;
+    }
+  }
+  const additionalTotal = Number(
+    body?.additionalChargeTotal ??
+    body?.additional_charge_total ??
+    body?.menu_additional_charge_total ??
+    0,
+  ) || 0;
+  const base = (guestCount + paxBuffer) * 500;
+  const totalCostNum = base + menuAddOns + additionalTotal + laborCost + travelCost;
+  add("total_cost", totalCostNum);
 
   const result = await pool.query(
     `INSERT INTO ${table} (${columns.join(", ")})

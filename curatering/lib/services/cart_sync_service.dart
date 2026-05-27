@@ -58,7 +58,7 @@ class CartSyncService {
     return [];
   }
 
-  /// JSON for `customer_tray_drafts.tray_lines` / `tray_items`.
+  /// Canonical JSON persisted in `customer_tray_drafts.tray_items`.
   static Map<String, dynamic> trayLineToJson(CartItem item) {
     final sauce = item.selectedSauce?.trim();
     final sauceVal = (sauce != null && sauce.isNotEmpty) ? sauce : '';
@@ -66,41 +66,17 @@ class CartSyncService {
 
     return {
       'dishId': item.dish.id,
-      'dish_id': item.dish.id,
       'dishName': item.dish.name,
-      'dish_name': item.dish.name,
-      'name': item.dish.name,
-      'item_name': item.dish.name,
-      'dishPrice': item.dish.price,
-      'dish_price': item.dish.price,
       'price': priceNum,
-      'additionalChargeAmount': item.dish.additionalChargeAmount,
-      'menu_dishes_additional_charge_amount': item.dish.additionalChargeAmount,
       'quantity': item.quantity,
-      'qty': item.quantity,
       'selectedSauce': sauceVal.isEmpty ? null : sauceVal,
-      'selected_sauce': sauceVal.isEmpty ? null : sauceVal,
       'addOnQuantity': sauceVal.isNotEmpty ? item.addOnQuantity : 1,
       'addOns': item.addOns,
-      'add_ons': item.addOns,
       'specialInstructions': item.specialInstructions,
-      'special_instructions': item.specialInstructions,
-      'dip': sauceVal,
-      'dip_qty': sauceVal.isNotEmpty ? item.addOnQuantity : 1,
-      'notes': item.specialInstructions,
-      'line_subtotal': item.lineSubtotal,
-      'addon_extra_subtotal': item.addonExtraSubtotal,
-      'dish_category': item.dish.category,
-      'dishCategory': item.dish.category,
-      'dish_type': item.dish.type,
-      'dishType': item.dish.type,
-      'meal_type': item.dish.mealType,
-      'mealType': item.dish.mealType,
       'dish': {
         'id': item.dish.id,
         'name': item.dish.name,
         'price': item.dish.price,
-        'additionalChargeAmount': item.dish.additionalChargeAmount,
         'category': item.dish.category,
         'type': item.dish.type,
         'mealType': item.dish.mealType,

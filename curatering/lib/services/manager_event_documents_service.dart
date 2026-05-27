@@ -22,6 +22,11 @@ Future<Uint8List> buildManagerOrderSummaryPdf({
   final df = DateFormat('yyyy-MM-dd HH:mm');
   final processedAt = order.updatedAt ?? DateTime.now();
 
+  const labelColumnWidths = <int, pw.TableColumnWidth>{
+    0: pw.FlexColumnWidth(1.85),
+    1: pw.FlexColumnWidth(2.35),
+  };
+
   pw.TableRow labelRow(String label, String value) {
     return pw.TableRow(
       children: [
@@ -68,7 +73,7 @@ Future<Uint8List> buildManagerOrderSummaryPdf({
   final downPaid = order.downPaymentAmount > 0 ? order.downPaymentAmount : downDue;
   final balanceDue = (total - downPaid).clamp(0.0, double.infinity);
   final balancePaid = order.fullPaymentAmount > 0 ? order.fullPaymentAmount : balanceDue;
-  final tx = order.cateringId.isNotEmpty ? order.cateringId : order.id;
+  final tx = order.transactionNo;
   final cateringType =
       order.orderType.contains('event') ? 'Catering with Event Styling' : 'Catering';
 
@@ -106,7 +111,11 @@ Future<Uint8List> buildManagerOrderSummaryPdf({
           pw.Text(titleForVariant(), style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
           pw.Text("Macrina's Kitchen and Catering", style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
           pw.SizedBox(height: 12),
-          pw.Table(border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5), children: rows),
+          pw.Table(
+            columnWidths: labelColumnWidths,
+            border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+            children: rows,
+          ),
         ],
       ),
     );
@@ -167,7 +176,11 @@ Future<Uint8List> buildManagerOrderSummaryPdf({
         pw.Text(titleForVariant(), style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
         pw.Text("Macrina's Kitchen and Catering", style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
         pw.SizedBox(height: 12),
-        pw.Table(border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5), children: bodyRows),
+        pw.Table(
+          columnWidths: labelColumnWidths,
+          border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+          children: bodyRows,
+        ),
         if (variant == OrderSummaryPdfVariant.fullyPaid) ...[
           pw.SizedBox(height: 16),
           pw.Text(
