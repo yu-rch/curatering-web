@@ -2,9 +2,13 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:async';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:printing/printing.dart';
+import '../features/event_design/event_theme_design_screen.dart';
+import '../features/seating/seating_layout_editor_screen.dart';
 import '../auth/action_permissions.dart';
 import '../auth/auth_session.dart';
 import '../config/api_config.dart';
@@ -13,6 +17,8 @@ import '../models/event_order.dart';
 import '../models/menu_dish.dart';
 import '../services/api_client.dart';
 import '../services/events_api.dart';
+import '../services/manager_catering_api.dart';
+import '../services/manager_event_documents_service.dart';
 import '../services/menu_store.dart';
 import '../services/order_summary_pdf_service.dart';
 import '../services/set_menu_store.dart';
@@ -25,12 +31,15 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/paginated_data_table.dart';
 import '../widgets/map_picker.dart';
 import '../widgets/processing_seating_section.dart';
+import '../widgets/inquiry_menu_selection_dialog.dart';
+import '../utils/inquiry_pricing.dart';
 import '../utils/order_calculations.dart';
 import '../utils/order_type_utils.dart';
 import '../utils/web_html.dart' as html;
 import 'customer_website.dart';
 
 part 'catering_manage_events_part.dart';
+part 'catering_manage_events_detail_part.dart';
 // import 'package:segment_anything/segment_anything.dart';
 
 /// Reuse Manage Events order lists briefly so leaving and returning the page
@@ -229,6 +238,8 @@ enum EventStatus {
   completed,
 }
 
+enum _NewEventSideTab { eventInfo, menuAndAllergens, submitAndCosts }
+
 enum PaymentConfirmationMode { downpayment, fullPayment }
 
 enum DownpaymentAmountOption { percent50, custom, fullPayment }
@@ -401,7 +412,31 @@ class _ThemeTemplate {
 }
 
 class _ManageEventsState extends State<ManageEvents>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
+  late TabController _tabController;
+  bool _showNewEventForm = false;
+  _NewEventSideTab _activeNewEventSideTab = _NewEventSideTab.eventInfo;
+  int _newEventMenuPrefTabIndex = 0;
+
+  static const _stageKeys = [
+    'new_event',
+    'online_inquiries',
+    'for_down_payment',
+    'on_going',
+    'for_full_payment',
+    'completed',
+    'cancelled',
+  ];
+  static const _stageLabels = [
+    'New Event',
+    'Online Inquiries',
+    'For Down Payment',
+    'On Going',
+    'For Full Payment',
+    'Completed',
+    'Cancelled',
+  ];
+
   final TextEditingController _eventSearchController = TextEditingController();
   final TextEditingController _inquirySearchController =
       TextEditingController();
@@ -435,19 +470,40 @@ class _ManageEventsState extends State<ManageEvents>
   List<EventOrderDto> _processingOrdersDto = const <EventOrderDto>[];
   List<EventOrderDto> _postAnalysisOrdersDto = const <EventOrderDto>[];
   List<EventOrderDto> _completedOrdersDto = const <EventOrderDto>[];
+  List<EventOrderDto> _cancelledOrdersDto = const <EventOrderDto>[];
   EventOrderDto? _selectedOnlineInquiryOrder;
+  EventOrderDto? _selectedManageEventsOrder;
+  bool _manageEventsDetailLoading = false;
+  String? _manageEventsDetailError;
   Role? _lastLoadedRole;
 
   @override
   void initState() {
     super.initState();
+    final role = AuthSession.instance.currentRole;
+    final initialTab = role == Role.supervisor ? 3 : 0;
+    _tabController = TabController(
+      length: 7,
+      vsync: this,
+      initialIndex: initialTab,
+    );
+    _tabController.addListener(() {
+      if (_tabController.indexIsChanging) return;
+      final idx = _tabController.index;
+      setState(() {
+        if (idx < EventStatus.values.length) {
+          _selectedStatus = EventStatus.values[idx];
+        }
+        _selectedManageEventsOrder = null;
+        _manageEventsDetailError = null;
+      });
+    });
     _allDishes = MenuStore.instance.activeDishes;
     MenuStore.instance.addListener(_onMenuStoreChanged);
     SetMenuStore.instance.loadSetMenus();
     _foodTabController = TabController(length: 2, vsync: this);
     _loadThemeTemplates();
     AuthSession.instance.currentUser.addListener(_handleAuthSessionChange);
-    final role = AuthSession.instance.currentRole;
     if (role == Role.supervisor) {
       _selectedStatus = EventStatus.ongoing;
     }
@@ -476,6 +532,7 @@ class _ManageEventsState extends State<ManageEvents>
 
   @override
   void dispose() {
+    _tabController.dispose();
     AuthSession.instance.currentUser.removeListener(_handleAuthSessionChange);
     MenuStore.instance.removeListener(_onMenuStoreChanged);
     _eventSearchController.dispose();
@@ -487,11 +544,27 @@ class _ManageEventsState extends State<ManageEvents>
     _emailController.dispose();
     _eventAddressController.dispose();
     _guestCountController.dispose();
+    _newEventPaxBufferController.dispose();
+    _newEventLaborCostController.dispose();
+    _newEventTravelCostController.dispose();
+    _newEventAdditionalCostLabelController.dispose();
+    _newEventAdditionalCostAmountController.dispose();
     _foodTabController?.dispose();
     super.dispose();
   }
 
-  void _mutateTableState(VoidCallback fn) => setState(fn);
+  void _mutateTableState(VoidCallback fn) {
+    final oldStatus = _selectedStatus;
+    setState(fn);
+    if (_selectedStatus != oldStatus) {
+      final targetIndex = _selectedStatus.index;
+      if (targetIndex >= 0 &&
+          targetIndex < _tabController.length &&
+          targetIndex != _tabController.index) {
+        _tabController.animateTo(targetIndex);
+      }
+    }
+  }
 
   void _handleAuthSessionChange() {
     if (!mounted || _ordersLoading) return;
@@ -562,6 +635,19 @@ class _ManageEventsState extends State<ManageEvents>
   bool _isDetecting = false;
 
   final List<MenuItem> _menuItems = [];
+  List<Map<String, dynamic>> _newEventMenuBlocks = [];
+  final Map<String, double> _newEventSetMenuChargeOverrides = {};
+  final TextEditingController _newEventPaxBufferController =
+      TextEditingController(text: '0');
+  final TextEditingController _newEventLaborCostController =
+      TextEditingController(text: '0.00');
+  final TextEditingController _newEventTravelCostController =
+      TextEditingController(text: '0.00');
+  final TextEditingController _newEventAdditionalCostLabelController =
+      TextEditingController();
+  final TextEditingController _newEventAdditionalCostAmountController =
+      TextEditingController();
+  final List<Map<String, dynamic>> _newEventAdditionalCosts = [];
   String _allergensSerialized = '';
   final Map<String, String> _selectedPaxPerDish = {};
   List<MenuDish> _allDishes = MenuStore.instance.activeDishes;
@@ -610,6 +696,14 @@ class _ManageEventsState extends State<ManageEvents>
       _collageOrder = const [];
       _themeTintEnabled = false;
       _themeTintColor = const Color(0xFFF4511E);
+      _newEventPaxBufferController.text = '0';
+      _newEventLaborCostController.text = '0.00';
+      _newEventTravelCostController.text = '0.00';
+      _newEventAdditionalCostLabelController.clear();
+      _newEventAdditionalCostAmountController.clear();
+      _newEventAdditionalCosts.clear();
+      _newEventSetMenuChargeOverrides.clear();
+      _activeNewEventSideTab = _NewEventSideTab.eventInfo;
       _selectedStatus = EventStatus.newEvent;
       _eventSearchController.clear();
       _inquirySearchController.clear();
@@ -650,29 +744,261 @@ class _ManageEventsState extends State<ManageEvents>
     }
 
     setState(() {
+      _newEventMenuBlocks = [];
       _menuItems.add(MenuItem(dish: dish, paxOption: selectedPax));
     });
   }
 
   void _applySetMenuToNewEvent(SetMenu set) {
-    final dishById = {for (final d in _allDishes) d.id: d};
-    setState(() {
-      _menuItems.clear();
-      for (final id in set.dishIds) {
-        final dish = dishById[id];
-        if (dish == null) continue;
-        final pax =
-            _selectedPaxPerDish[dish.name] ??
-            (dish.paxOptions.isNotEmpty ? dish.paxOptions.first : '1');
-        _menuItems.add(MenuItem(dish: dish, paxOption: pax));
-      }
-    });
+    unawaited(_openNewEventMenuPicker(preselectSet: set));
   }
 
   void _removeFromMenu(MenuItem item) {
     setState(() {
       _menuItems.remove(item);
+      _newEventMenuBlocks = [];
     });
+  }
+
+  Map<String, MenuDish> get _newEventDishById => {
+    for (final dish in _allDishes) dish.id: dish,
+  };
+
+  List<Map<String, dynamic>> _setMenuChargeRowsForBlocks(
+    List<Map<String, dynamic>> blocks,
+    Map<String, double> chargeOverrides,
+  ) {
+    if (blocks.isEmpty) return const [];
+    final block = blocks.first;
+    if ((block['kind'] as String? ?? 'custom') != 'set') return const [];
+    final selectedIds = (block['dishIds'] as List<dynamic>? ?? const [])
+        .map((id) => id.toString())
+        .where((id) => id.isNotEmpty)
+        .toList();
+    final originalIds = (block['originalDishIds'] as List<dynamic>? ?? const [])
+        .map((id) => id.toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final originalCount =
+        (block['originalDishCount'] as num?)?.toInt() ?? originalIds.length;
+    final addedIds =
+        selectedIds.where((id) => !originalIds.contains(id)).toList();
+    if (addedIds.isEmpty) return const [];
+    return addedIds.map((id) {
+      final dish = _newEventDishById[id];
+      final posInSelected = selectedIds.indexOf(id);
+      final overSlot = posInSelected >= originalCount;
+      final baseAmount =
+          overSlot ? (dish?.additionalChargeAmount ?? 0) : 0;
+      final amount = chargeOverrides[id] ?? baseAmount;
+      return {'dishId': id, 'dishName': dish?.name ?? id, 'amount': amount};
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _newEventSetMenuAdditionalChargeRows() {
+    return _setMenuChargeRowsForBlocks(
+      _newEventMenuBlocks,
+      _newEventSetMenuChargeOverrides,
+    );
+  }
+
+  List<Map<String, dynamic>> _inquiryMenuBlocksFromOrder(EventOrderDto order) {
+    if (order.menu.isEmpty) return [];
+    final byName = <String, MenuDish>{};
+    for (final d in MenuStore.instance.allDishes) {
+      byName[d.name.trim().toLowerCase()] = d;
+    }
+    final ids = <String>[];
+    for (final m in order.menu) {
+      final dish = byName[m.dishName.trim().toLowerCase()];
+      if (dish != null) ids.add(dish.id);
+    }
+    if (ids.isEmpty) return [];
+    final setMenuName = order.menu
+        .map((m) => m.setMenuName.trim())
+        .firstWhere((n) => n.isNotEmpty, orElse: () => '');
+    if (setMenuName.isNotEmpty) {
+      for (final s in SetMenuStore.instance.activeSetMenus) {
+        if (s.name.trim().toLowerCase() == setMenuName.toLowerCase()) {
+          return [
+            {
+              'kind': 'set',
+              'setMenuId': s.id,
+              'setMenuName': s.name,
+              'dishIds': ids,
+              'originalDishIds': List<String>.from(s.dishIds),
+              'originalDishCount': s.dishIds.length,
+            },
+          ];
+        }
+      }
+    }
+    return [
+      {
+        'kind': 'custom',
+        'dishIds': ids,
+        'originalDishIds': List<String>.from(ids),
+        'originalDishCount': ids.length,
+      },
+    ];
+  }
+
+  List<Map<String, dynamic>> _menuPayloadFromInquiryBlocks(
+    List<Map<String, dynamic>> blocks,
+    Map<String, double> chargeOverrides,
+    int guestCount,
+  ) {
+    final out = <Map<String, dynamic>>[];
+    for (final block in blocks) {
+      final ids = (block['dishIds'] as List<dynamic>? ?? const [])
+          .map((e) => '$e')
+          .where((id) => id.isNotEmpty);
+      for (final id in ids) {
+        final dish = _newEventDishById[id];
+        final pax = guestCount > 0 ? guestCount : 1;
+        final addCharge =
+            chargeOverrides[id] ?? (dish?.additionalChargeAmount ?? 0);
+        out.add({
+          'dishId': id,
+          'dishName': dish?.name ?? id,
+          'paxOption': '$pax pax',
+          'price': '${500 * pax}',
+          'additionalChargeAmount': addCharge,
+          'menu_dishes_additional_charge_amount': addCharge,
+        });
+      }
+    }
+    return out;
+  }
+
+  double _newEventSetMenuAdditionalChargeTotal() {
+    return _newEventSetMenuAdditionalChargeRows().fold<double>(
+      0,
+      (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
+    );
+  }
+
+  void _applyNewEventMenuBlocks(List<Map<String, dynamic>> blocks) {
+    final dishById = _newEventDishById;
+    setState(() {
+      _newEventMenuBlocks = blocks;
+      _newEventSetMenuChargeOverrides.removeWhere((dishId, _) {
+        final exists = blocks.any((b) {
+          final ids = (b['dishIds'] as List<dynamic>? ?? const [])
+              .map((e) => '$e')
+              .toSet();
+          return ids.contains(dishId);
+        });
+        return !exists;
+      });
+      _menuItems.clear();
+      for (final block in blocks) {
+        final ids = (block['dishIds'] as List<dynamic>? ?? const [])
+            .map((e) => e.toString())
+            .where((e) => e.isNotEmpty);
+        for (final id in ids) {
+          final dish = dishById[id];
+          if (dish == null) continue;
+          final pax =
+              _selectedPaxPerDish[dish.name] ??
+              (dish.paxOptions.isNotEmpty ? dish.paxOptions.first : '1');
+          _menuItems.add(MenuItem(dish: dish, paxOption: pax));
+        }
+      }
+    });
+  }
+
+  Future<void> _openNewEventMenuPicker({SetMenu? preselectSet}) async {
+    final cateringDishes =
+        _allDishes
+            .where(
+              (d) =>
+                  d.category.toLowerCase().trim() == 'catering' &&
+                  !d.archived &&
+                  d.available,
+            )
+            .toList();
+    final dishById = _newEventDishById;
+    List<Map<String, dynamic>> initial = _newEventMenuBlocks;
+    if (preselectSet != null) {
+      final ids = preselectSet.dishIds;
+      initial = [
+        {
+          'kind': 'set',
+          'setMenuName': preselectSet.name,
+          'originalDishIds': ids,
+          'originalDishCount': ids.length,
+          'dishIds': ids,
+          'dishNames': ids.map((id) => dishById[id]?.name ?? id).toList(),
+        },
+      ];
+    }
+    final blocks = await showInquiryMenuSelectionDialog(
+      context,
+      cateringDishes: cateringDishes,
+      setMenus: SetMenuStore.instance.activeSetMenus,
+      initialSelections: initial,
+      mode: InquiryMenuPickerMode.staffNewEvent,
+      minCustomDishes: 4,
+      maxCustomDishes: 8,
+    );
+    if (blocks == null || !mounted) return;
+    _applyNewEventMenuBlocks(blocks);
+  }
+
+  List<Map<String, dynamic>> _buildNewEventMenuPayload() {
+    if (_newEventMenuBlocks.isEmpty) {
+      return _menuItems
+          .map(
+            (i) => {
+              'dishId': i.dish.id,
+              'dishName': i.dish.name,
+              'paxOption': i.paxOption,
+              'price': '0',
+              'additionalChargeAmount': i.dish.additionalChargeAmount,
+              'menu_dishes_additional_charge_amount':
+                  i.dish.additionalChargeAmount,
+            },
+          )
+          .toList();
+    }
+    final dishById = _newEventDishById;
+    final additionalRows = _newEventSetMenuAdditionalChargeRows();
+    final additionalTotal = _newEventSetMenuAdditionalChargeTotal();
+    return _newEventMenuBlocks.map((block) {
+      final out = Map<String, dynamic>.from(block);
+      final ids = (out['dishIds'] as List<dynamic>? ?? const [])
+          .map((id) => id.toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+      out['dishRows'] = ids.map((id) {
+        final dish = dishById[id];
+        final addCharge =
+            _newEventSetMenuChargeOverrides[id] ?? (dish?.additionalChargeAmount ?? 0);
+        return {
+          'dishId': id,
+          'dishName': dish?.name ?? id,
+          'additionalChargeAmount': addCharge,
+          'menu_dishes_additional_charge_amount': addCharge,
+        };
+      }).toList();
+      if ((out['kind'] as String? ?? '') == 'set') {
+        out['additionalChargeRows'] = additionalRows;
+        out['additionalChargeTotal'] = additionalTotal;
+      }
+      return out;
+    }).toList();
+  }
+
+  double _estimateNewEventTotalCost() {
+    final guests = int.tryParse(_guestCountController.text.trim()) ?? 0;
+    var total = estimateInquiryCateringTotal(guests);
+    total += _newEventSetMenuAdditionalChargeTotal();
+    total += _newEventAdditionalCosts.fold<double>(
+      0,
+      (sum, e) => sum + (double.tryParse('${e['amount'] ?? 0}') ?? 0),
+    );
+    return total;
   }
 
   Future<void> _pickDate() async {
@@ -728,11 +1054,11 @@ class _ManageEventsState extends State<ManageEvents>
       // print('DEBUG: Current role = $role'); // Debug line
 
       if (role == null) {
-        // print('DEBUG: Role is null, returning empty lists');
         _onlineInquiryOrders = const <EventOrderDto>[];
         _processingOrdersDto = const <EventOrderDto>[];
         _postAnalysisOrdersDto = const <EventOrderDto>[];
         _completedOrdersDto = const <EventOrderDto>[];
+        _cancelledOrdersDto = const <EventOrderDto>[];
         _selectedOnlineInquiryOrder = null;
         return;
       }
@@ -742,32 +1068,37 @@ class _ManageEventsState extends State<ManageEvents>
           EventsApi.instance.listOrders(
             status: 'for_processing',
             roleType: 'supervisor',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'new_event',
             roleType: 'supervisor',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'for_down_payment',
             roleType: 'supervisor',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'on_going',
             roleType: 'supervisor',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'for_full_payment',
             roleType: 'supervisor',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'completed',
             roleType: 'supervisor',
-            compact: true,
+            compact: false,
+          ),
+          EventsApi.instance.listOrders(
+            status: 'cancelled',
+            roleType: 'supervisor',
+            compact: false,
           ),
         ]);
         _processingOrdersDto = [
@@ -779,42 +1110,48 @@ class _ManageEventsState extends State<ManageEvents>
         _onlineInquiryOrders = const <EventOrderDto>[];
         _postAnalysisOrdersDto = lists[4];
         _completedOrdersDto = lists[5];
+        _cancelledOrdersDto = lists[6];
       } else if (role == Role.manager || role == Role.superAdmin) {
         final lists = await Future.wait<List<EventOrderDto>>([
           EventsApi.instance.listOrders(
             status: 'online_inquiries',
             roleType: 'manager',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'for_processing',
             roleType: 'manager',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'new_event',
             roleType: 'manager',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'for_down_payment',
             roleType: 'manager',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'on_going',
             roleType: 'manager',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'for_full_payment',
             roleType: 'manager',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'completed',
             roleType: 'manager',
-            compact: true,
+            compact: false,
+          ),
+          EventsApi.instance.listOrders(
+            status: 'cancelled',
+            roleType: 'manager',
+            compact: false,
           ),
         ]);
         _onlineInquiryOrders = lists[0];
@@ -826,12 +1163,13 @@ class _ManageEventsState extends State<ManageEvents>
         ];
         _postAnalysisOrdersDto = lists[5];
         _completedOrdersDto = lists[6];
+        _cancelledOrdersDto = lists[7];
       } else {
-        // print('DEBUG: Unknown role, returning empty lists');
         _onlineInquiryOrders = const <EventOrderDto>[];
         _processingOrdersDto = const <EventOrderDto>[];
         _postAnalysisOrdersDto = const <EventOrderDto>[];
         _completedOrdersDto = const <EventOrderDto>[];
+        _cancelledOrdersDto = const <EventOrderDto>[];
       }
       _selectedOnlineInquiryOrder = null;
       ManageEventsOrdersCache.instance.save(
@@ -843,12 +1181,11 @@ class _ManageEventsState extends State<ManageEvents>
       );
     } catch (e) {
       ManageEventsOrdersCache.instance.clear();
-      // print('DEBUG: Error in _refreshOrders: $e'); // Debug line
-      // print('DEBUG: Error type: ${e.runtimeType}'); // Debug line
       _onlineInquiryOrders = const <EventOrderDto>[];
       _processingOrdersDto = const <EventOrderDto>[];
       _postAnalysisOrdersDto = const <EventOrderDto>[];
       _completedOrdersDto = const <EventOrderDto>[];
+      _cancelledOrdersDto = const <EventOrderDto>[];
       _selectedOnlineInquiryOrder = null;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1085,6 +1422,12 @@ class _ManageEventsState extends State<ManageEvents>
 
   Map<String, dynamic> _buildPayloadFromForm() {
     final guestCount = int.tryParse(_guestCountController.text.trim());
+    final paxBuffer = int.tryParse(_newEventPaxBufferController.text.trim()) ?? 0;
+    final laborCost =
+        double.tryParse(_newEventLaborCostController.text.trim()) ?? 0.0;
+    final travelCost =
+        double.tryParse(_newEventTravelCostController.text.trim()) ?? 0.0;
+    final totalCost = _estimateNewEventTotalCost() + laborCost + travelCost;
     return {
       'eventTitle': _eventTitleController.text.trim(),
       'orderType': _orderType,
@@ -1106,15 +1449,14 @@ class _ManageEventsState extends State<ManageEvents>
           }).toList(),
       'address': _eventAddressController.text.trim(),
       'guestCount': guestCount,
+      'paxBuffer': paxBuffer,
+      'laborCost': laborCost,
+      'travelCost': travelCost,
+      'totalCost': totalCost,
       'allergens': _allergensSerialized.trim(),
-      'menu':
-          _menuItems.map((i) {
-            return {
-              'dishName': i.dish.name,
-              'paxOption': i.paxOption,
-              'price': i.dish.price,
-            };
-          }).toList(),
+      'menu': _buildNewEventMenuPayload(),
+      'menu_additional_charge_total': _newEventSetMenuAdditionalChargeTotal(),
+      'additional_costs': _newEventAdditionalCosts,
       'themeDesign': {
         'picksBase64': _themePicks.map((b) => base64Encode(b)).toList(),
         'tintEnabled': _themeTintEnabled,
@@ -1817,7 +2159,14 @@ class _ManageEventsState extends State<ManageEvents>
     double travelCost,
     double totalCost,
     String action,
-  ) {
+    {List<Map<String, dynamic>> additionalCosts = const [],
+    String? eventTitleOverride,
+    String? eventTypeOverride,
+    String? formalityLevelOverride,
+    int? guestCountOverride,
+    List<Map<String, dynamic>>? menuOverride,
+    String? allergensOverride}) {
+    final effectiveGuestCount = guestCountOverride ?? order.guestCount;
     List<Map<String, dynamic>> menuItems = [];
     final schedulePayload = <Map<String, dynamic>>[];
 
@@ -1826,13 +2175,15 @@ class _ManageEventsState extends State<ManageEvents>
         final dish = MenuStore.instance.allDishes.firstWhere(
           (d) => d.id == dishId,
         );
-        final paxCount = order.guestCount > 0 ? order.guestCount : 1;
+        final paxCount = effectiveGuestCount > 0 ? effectiveGuestCount : 1;
         final computedPrice = 500 * paxCount;
         menuItems.add({
           'dishId': dishId,
           'dishName': dish.name,
           'paxOption': '${paxCount} pax',
           'price': computedPrice.toString(),
+          'additionalChargeAmount': dish.additionalChargeAmount,
+          'menu_dishes_additional_charge_amount': dish.additionalChargeAmount,
         });
       }
     } else if (selectedSetMenuId != null) {
@@ -1843,13 +2194,15 @@ class _ManageEventsState extends State<ManageEvents>
         final dish = MenuStore.instance.allDishes.firstWhere(
           (d) => d.id == dishId,
         );
-        final paxCount = order.guestCount > 0 ? order.guestCount : 1;
+        final paxCount = effectiveGuestCount > 0 ? effectiveGuestCount : 1;
         final computedPrice = 500 * paxCount;
         menuItems.add({
           'dishId': dishId,
           'dishName': dish.name,
           'paxOption': '$paxCount pax',
           'price': computedPrice.toString(),
+          'additionalChargeAmount': dish.additionalChargeAmount,
+          'menu_dishes_additional_charge_amount': dish.additionalChargeAmount,
         });
       }
     }
@@ -1889,18 +2242,19 @@ class _ManageEventsState extends State<ManageEvents>
     }
 
     return {
-      'eventTitle': order.eventTitle,
-      'eventType': order.eventType,
-      'formalityLevel': order.formalityLevel,
+      'eventTitle': eventTitleOverride ?? order.eventTitle,
+      'eventType': eventTypeOverride ?? order.eventType,
+      'formalityLevel': formalityLevelOverride ?? order.formalityLevel,
       'customerName': order.customerName,
       'contactPerson': order.contactPerson,
       'contactNumber': order.contactNumber,
       'emailAddress': order.emailAddress,
       'scheduleSlots': schedulePayload,
       'address': address,
-      'guestCount': order.guestCount,
+      'guestCount': effectiveGuestCount,
       'serviceType': serviceType,
       'menu': menuItems,
+      if (allergensOverride != null) 'allergens': allergensOverride,
       'themeDesign': {
         'picksBase64': order.themeDesign.picksBase64,
         'tintEnabled': order.themeDesign.tintEnabled,
@@ -1916,6 +2270,7 @@ class _ManageEventsState extends State<ManageEvents>
           'travelCost': travelCost,
         },
       },
+      'additional_costs': additionalCosts,
       'totalCost': totalCost,
       'action': action,
     };
@@ -3406,15 +3761,8 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   String _transactionNumberForOrder(EventOrderDto order) {
-    try {
-      final txn =
-          (order as dynamic).orderNumber ??
-          (order as dynamic).orderNo ??
-          (order as dynamic).orderId;
-      if (txn is String && txn.trim().isNotEmpty) return txn;
-      if (txn is int) return txn.toString();
-    } catch (_) {}
-    return 'N/A';
+    final txn = order.transactionNo.trim();
+    return txn.isNotEmpty ? txn : 'N/A';
   }
 
   Future<bool> _confirmOrderPayment(
@@ -3423,6 +3771,7 @@ class _ManageEventsState extends State<ManageEvents>
     PaymentService paymentService,
     String referenceNumber, {
     double? amount,
+    String? paymentProofBase64,
   }) async {
     try {
       setState(() => _paymentDialogLoading = true);
@@ -3438,6 +3787,7 @@ class _ManageEventsState extends State<ManageEvents>
         referenceNumber: referenceNumber,
         paymentMethod: paymentService.apiValue,
         amount: amount,
+        paymentProofBase64: paymentProofBase64,
       );
 
       try {
@@ -3536,6 +3886,8 @@ class _ManageEventsState extends State<ManageEvents>
     var selectedPaymentService = PaymentService.cash;
     var downpaymentOption = DownpaymentAmountOption.percent50;
     var fullPaymentOption = FullPaymentAmountOption.remainingBalance;
+    String? paymentProofBase64;
+    String? paymentProofFileName;
     final referenceController = TextEditingController();
     final customAmountController = TextEditingController();
     final orderTotal = _orderTotalAmount(order);
@@ -3594,6 +3946,52 @@ class _ManageEventsState extends State<ManageEvents>
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Total cost',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                formatPesos(orderTotal),
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (isDownpayment)
+                                Text(
+                                  'Down payment due (50%): ${formatPesos(orderTotal / 2)}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                )
+                              else
+                                Text(
+                                  'Balance due: ${formatPesos(remainingBalance)}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         if (isDownpayment) ...[
                           const Text(
                             'Downpayment amount',
@@ -3772,6 +4170,33 @@ class _ManageEventsState extends State<ManageEvents>
                           onChanged: (_) => dialogSetState(() {}),
                         ),
                         const SizedBox(height: 16),
+                        const Text(
+                          'Payment proof (optional)',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final result = await FilePicker.platform.pickFiles(
+                              type: FileType.image,
+                              withData: true,
+                            );
+                            if (result == null || result.files.isEmpty) return;
+                            final file = result.files.first;
+                            if (file.bytes == null) return;
+                            dialogSetState(() {
+                              paymentProofFileName = file.name;
+                              paymentProofBase64 = base64Encode(file.bytes!);
+                            });
+                          },
+                          icon: const Icon(Icons.upload_file, size: 18),
+                          label: Text(
+                            paymentProofBase64 == null
+                                ? 'Upload proof image'
+                                : 'Proof: ${paymentProofFileName ?? 'image'}',
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         Center(
                           child: TextButton(
                             onPressed: () => _showOrderSummaryDialog(order),
@@ -3827,6 +4252,7 @@ class _ManageEventsState extends State<ManageEvents>
                                 selectedPaymentService,
                                 reference,
                                 amount: payAmount,
+                                paymentProofBase64: paymentProofBase64,
                               );
                               if (confirmed && mounted) {
                                 Navigator.of(context).pop();
@@ -3895,12 +4321,30 @@ class _ManageEventsState extends State<ManageEvents>
                       Colors.grey.shade200,
                     ),
                     columns: const [
-                      DataColumn(label: Text('Set / Category')),
-                      DataColumn(label: Text('Item')),
-                      DataColumn(label: Text('Pax / Qty')),
-                      DataColumn(label: Text('Details')),
-                      DataColumn(label: Text('Unit Cost')),
-                      DataColumn(label: Text('Total')),
+                      DataColumn(
+                        label: Text('Set / Category'),
+                        columnWidth: FixedColumnWidth(168),
+                      ),
+                      DataColumn(
+                        label: Text('Item'),
+                        columnWidth: FlexColumnWidth(2.2),
+                      ),
+                      DataColumn(
+                        label: Text('Pax / Qty'),
+                        columnWidth: FixedColumnWidth(88),
+                      ),
+                      DataColumn(
+                        label: Text('Details'),
+                        columnWidth: FlexColumnWidth(1.6),
+                      ),
+                      DataColumn(
+                        label: Text('Unit Cost'),
+                        columnWidth: FixedColumnWidth(100),
+                      ),
+                      DataColumn(
+                        label: Text('Total'),
+                        columnWidth: FixedColumnWidth(100),
+                      ),
                     ],
                     rows:
                         order.menu.map((m) {
@@ -3995,15 +4439,27 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Future<void> _showChecklistDialog(EventOrderDto order) async {
+    EventOrderDto sourceOrder = order;
+    try {
+      final roleType =
+          AuthSession.instance.currentRole == Role.supervisor
+              ? 'supervisor'
+              : 'manager';
+      sourceOrder = await EventsApi.instance.getEventOrder(
+        orderId: order.id,
+        roleType: roleType,
+      );
+    } catch (_) {}
+
     final List<ChecklistItem> editableItems =
-        order.checklist.isEmpty
-            ? _buildChecklistFromMenuWithIngredients(order.menu)
-            : order.checklist
+        sourceOrder.checklist.isEmpty
+            ? _buildChecklistFromMenuWithIngredients(sourceOrder.menu)
+            : sourceOrder.checklist
                 .map(
                   (item) => ChecklistItem(
                     item: item.title,
                     description: item.description,
-                    quantity: 1,
+                    quantity: item.quantity,
                     cost: item.price,
                     isCompleted: item.isCompleted,
                   ),
@@ -4012,7 +4468,7 @@ class _ManageEventsState extends State<ManageEvents>
 
     final canEditChecklist =
         _isManager || AuthSession.instance.currentRole == Role.supervisor;
-    final showInventoryPicker = _isManager && _isCateringPlusEventOrder(order);
+    final showInventoryPicker = _isManager && _isCateringPlusEventOrder(sourceOrder);
     final inventoryOptions = <Map<String, dynamic>>[];
     if (showInventoryPicker) {
       try {
@@ -4028,79 +4484,346 @@ class _ManageEventsState extends State<ManageEvents>
       } catch (_) {}
     }
 
+    final newItemController = TextEditingController();
+    int? duplicateHighlightIndex;
+    var showNewItemRow = false;
+    try {
     await showDialog<void>(
       context: context,
       builder: (context) {
+        final dialogSize = MediaQuery.sizeOf(context);
         return StatefulBuilder(
           builder: (context, dialogSetState) {
+            void addChecklistByName(
+              String raw, {
+              Map<String, dynamic>? inventoryRow,
+            }) {
+              final name = raw.trim();
+              if (name.isEmpty) return;
+              final dupIdx = editableItems.indexWhere(
+                (e) => e.item.trim().toLowerCase() == name.toLowerCase(),
+              );
+              if (dupIdx >= 0) {
+                dialogSetState(() => duplicateHighlightIndex = dupIdx);
+                return;
+              }
+              dialogSetState(() {
+                duplicateHighlightIndex = null;
+                showNewItemRow = false;
+                if (inventoryRow != null) {
+                  final id = inventoryRow['id']?.toString() ?? '';
+                  final unitCost = inventoryRow['unitCost'] is num
+                      ? (inventoryRow['unitCost'] as num).toDouble()
+                      : double.tryParse('${inventoryRow['unitCost']}') ?? 0;
+                  editableItems.add(
+                    ChecklistItem(
+                      item: name,
+                      description:
+                          (inventoryRow['category'] ?? 'Inventory').toString(),
+                      quantity: 1,
+                      cost: unitCost,
+                      inventoryId: id,
+                    ),
+                  );
+                } else {
+                  editableItems.add(
+                    ChecklistItem(
+                      item: name,
+                      description: '',
+                      quantity: 1,
+                      cost: 0.0,
+                    ),
+                  );
+                }
+                newItemController.clear();
+              });
+            }
+
+            Future<void> editChecklistRowDialog(int index) async {
+              final item = editableItems[index];
+              final itemCtrl = TextEditingController(text: item.item);
+              final descCtrl = TextEditingController(text: item.description);
+              final qtyCtrl = TextEditingController(text: '${item.quantity}');
+              final costCtrl = TextEditingController(
+                text: item.cost.toStringAsFixed(2),
+              );
+              var completed = item.isCompleted;
+              await showDialog<void>(
+                context: context,
+                builder:
+                    (dctx) => StatefulBuilder(
+                      builder: (dctx, setEditState) => AlertDialog(
+                      title: const Text('Edit checklist row'),
+                      content: SizedBox(
+                        width: 440,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TextField(
+                              controller: itemCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'Item',
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: descCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'Description',
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: qtyCtrl,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Quantity',
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextField(
+                                    controller: costCtrl,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Cost',
+                                      prefixText: 'PHP ',
+                                    ),
+                                    keyboardType: const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            CheckboxListTile(
+                              contentPadding: EdgeInsets.zero,
+                              value: completed,
+                              onChanged: (v) {
+                                if (v == null) return;
+                                setEditState(() => completed = v);
+                              },
+                              title: const Text('Completed'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dctx),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          onPressed: () {
+                            dialogSetState(() {
+                              editableItems[index] = ChecklistItem(
+                                item: itemCtrl.text.trim(),
+                                description: descCtrl.text.trim(),
+                                quantity: int.tryParse(qtyCtrl.text.trim()) ?? 1,
+                                cost: double.tryParse(costCtrl.text.trim()) ?? 0,
+                                isCompleted: completed,
+                                inventoryId: item.inventoryId,
+                              );
+                            });
+                            Navigator.pop(dctx);
+                          },
+                          child: const Text('Apply'),
+                        ),
+                      ],
+                    ),
+                    ),
+              );
+              itemCtrl.dispose();
+              descCtrl.dispose();
+              qtyCtrl.dispose();
+              costCtrl.dispose();
+            }
+
             return AlertDialog(
-              title: Text('Checklist for ${order.eventTitle}'),
+              title: Text('Checklist for ${sourceOrder.eventTitle}'),
               content: SizedBox(
-                width: 1000,
-                height: 600,
+                width: dialogSize.width * 0.92 > 1040 ? 1040 : dialogSize.width * 0.92,
+                height: dialogSize.height * 0.82 > 680 ? 680 : dialogSize.height * 0.82,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if (canEditChecklist)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: IconButton(
+                          tooltip: 'Close',
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ),
                     Expanded(
-                      child: PagedDataTable(
+                      child: LayoutBuilder(
+                        builder: (context, tableConstraints) {
+                          return Align(
+                            alignment: Alignment.topLeft,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: tableConstraints.maxWidth,
+                              ),
+                              child: PagedDataTable(
                         title: 'Event Checklist',
                         key: ValueKey(editableItems.length),
+                        maxTableHeight: tableConstraints.maxHeight,
+                        forceVerticalScroll: true,
+                        toolbarActions:
+                            canEditChecklist
+                                ? [
+                                  AntdSecondaryButton(
+                                    onPressed: () => dialogSetState(() {
+                                      showNewItemRow = true;
+                                      duplicateHighlightIndex = null;
+                                      newItemController.clear();
+                                    }),
+                                    icon: Icons.add_circle_outline,
+                                    label: 'Add item',
+                                  ),
+                                ]
+                                : const [],
+                        columnSpacing: 12,
+                        horizontalMargin: 8,
+                        dataRowMinHeight: 52,
+                        dataRowMaxHeight: 96,
                         headingRowColor: WidgetStateProperty.all(
                           Colors.grey.shade200,
                         ),
                         columns: [
-                          DataColumn(label: Text('Item')),
-                          DataColumn(label: Text('Description')),
-                          DataColumn(label: Text('Quantity')),
+                          const DataColumn(
+                            label: Text('Item'),
+                            columnWidth: FixedColumnWidth(170),
+                          ),
+                          const DataColumn(
+                            label: Text('Description'),
+                            columnWidth: FixedColumnWidth(200),
+                          ),
+                          const DataColumn(
+                            label: Text('Quantity'),
+                            columnWidth: FixedColumnWidth(80),
+                          ),
                           if (_isManager) ...[
-                            DataColumn(label: Text('Price/1')),
-                            DataColumn(label: Text('Total Price')),
+                            const DataColumn(
+                              label: Text('Price/1'),
+                              columnWidth: FixedColumnWidth(100),
+                            ),
+                            const DataColumn(
+                              label: Text('Total Price'),
+                              columnWidth: FixedColumnWidth(100),
+                            ),
                           ] else ...[
-                            DataColumn(label: Text('Cost')),
+                            const DataColumn(
+                              label: Text('Cost'),
+                              columnWidth: FixedColumnWidth(100),
+                            ),
                           ],
-                          DataColumn(label: Text('Status')),
+                          const DataColumn(
+                            label: Text('Status'),
+                            columnWidth: FixedColumnWidth(120),
+                          ),
                           if (canEditChecklist) ...[
-                            DataColumn(label: Text('Actions')),
+                            const DataColumn(
+                              label: Text('Actions'),
+                              columnWidth: FixedColumnWidth(110),
+                            ),
                           ],
                         ],
-                        rows:
-                            editableItems.asMap().entries.map((entry) {
+                        rows: [
+                          ...editableItems.asMap().entries.map((entry) {
                               final index = entry.key;
                               final item = entry.value;
+                              final isDuplicateRow =
+                                  duplicateHighlightIndex == index;
                               return DataRow(
+                                color:
+                                    isDuplicateRow
+                                        ? WidgetStateProperty.all(
+                                          const Color(0x33FFC107),
+                                        )
+                                        : null,
                                 cells: [
                                   DataCell(
-                                    canEditChecklist
-                                        ? TextFormField(
-                                          initialValue: item.item,
-                                          decoration: const InputDecoration(
-                                            border: OutlineInputBorder(),
-                                            contentPadding: EdgeInsets.all(8),
-                                          ),
-                                          onChanged: (value) {
-                                            dialogSetState(() {
-                                              editableItems[index] =
-                                                  ChecklistItem(
-                                                    item: value,
-                                                    description:
-                                                        item.description,
-                                                    quantity: item.quantity,
-                                                    cost: item.cost,
-                                                    isCompleted:
-                                                        item.isCompleted,
-                                                  );
-                                            });
-                                          },
-                                        )
-                                        : Text(item.item),
+                                    SizedBox(
+                                      width: 162,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          canEditChecklist
+                                              ? TextFormField(
+                                                initialValue: item.item,
+                                                decoration: InputDecoration(
+                                                  border: OutlineInputBorder(
+                                                    borderSide: BorderSide(
+                                                      color:
+                                                          isDuplicateRow
+                                                              ? const Color(
+                                                                0xFFFFC107,
+                                                              )
+                                                              : Colors.grey,
+                                                    ),
+                                                  ),
+                                                  contentPadding:
+                                                      const EdgeInsets.all(8),
+                                                  isDense: true,
+                                                ),
+                                                onChanged: (value) {
+                                                  dialogSetState(() {
+                                                    if (duplicateHighlightIndex ==
+                                                        index) {
+                                                      duplicateHighlightIndex =
+                                                          null;
+                                                    }
+                                                    editableItems[index] =
+                                                        ChecklistItem(
+                                                          item: value,
+                                                          description:
+                                                              item.description,
+                                                          quantity:
+                                                              item.quantity,
+                                                          cost: item.cost,
+                                                          isCompleted:
+                                                              item.isCompleted,
+                                                          inventoryId:
+                                                              item.inventoryId,
+                                                        );
+                                                  });
+                                                },
+                                              )
+                                              : Text(item.item),
+                                          if (isDuplicateRow)
+                                            const Padding(
+                                              padding: EdgeInsets.only(top: 4),
+                                              child: Text(
+                                                'Item already exists',
+                                                style: TextStyle(
+                                                  color: Color(0xFFB8860B),
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                   DataCell(
-                                    canEditChecklist
-                                        ? TextFormField(
+                                    SizedBox(
+                                      width: 192,
+                                      child: canEditChecklist
+                                          ? TextFormField(
                                           initialValue: item.description,
                                           decoration: const InputDecoration(
                                             border: OutlineInputBorder(),
                                             contentPadding: EdgeInsets.all(8),
+                                            isDense: true,
                                           ),
                                           onChanged: (value) {
                                             dialogSetState(() {
@@ -4116,16 +4839,20 @@ class _ManageEventsState extends State<ManageEvents>
                                             });
                                           },
                                         )
-                                        : Text(item.description),
+                                          : Text(item.description),
+                                    ),
                                   ),
                                   DataCell(
-                                    canEditChecklist
-                                        ? TextFormField(
+                                    SizedBox(
+                                      width: 72,
+                                      child: canEditChecklist
+                                          ? TextFormField(
                                           initialValue:
                                               item.quantity.toString(),
                                           decoration: const InputDecoration(
                                             border: OutlineInputBorder(),
                                             contentPadding: EdgeInsets.all(8),
+                                            isDense: true,
                                           ),
                                           keyboardType: TextInputType.number,
                                           onChanged: (value) {
@@ -4146,17 +4873,21 @@ class _ManageEventsState extends State<ManageEvents>
                                             });
                                           },
                                         )
-                                        : Text('${item.quantity}'),
+                                          : Text('${item.quantity}'),
+                                    ),
                                   ),
                                   if (_isManager) ...[
                                     DataCell(
-                                      TextFormField(
+                                      SizedBox(
+                                        width: 92,
+                                        child: TextFormField(
                                         initialValue: item.cost.toStringAsFixed(
                                           2,
                                         ),
                                         decoration: const InputDecoration(
                                           border: OutlineInputBorder(),
                                           contentPadding: EdgeInsets.all(8),
+                                          isDense: true,
                                           prefixText: 'PHP ',
                                         ),
                                         keyboardType: TextInputType.number,
@@ -4176,18 +4907,28 @@ class _ManageEventsState extends State<ManageEvents>
                                           });
                                         },
                                       ),
+                                      ),
                                     ),
                                     DataCell(
-                                      Text(
-                                        'PHP ${(item.cost * item.quantity).toStringAsFixed(2)}',
+                                      SizedBox(
+                                        width: 92,
+                                        child: Text(
+                                          'PHP ${(item.cost * item.quantity).toStringAsFixed(2)}',
+                                        ),
                                       ),
-                                      // style: const TextStyle(fontWeight: FontWeight.w600),
                                     ),
                                   ] else ...[
-                                    DataCell(Text(formatPesos(item.cost))),
+                                    DataCell(
+                                      SizedBox(
+                                        width: 92,
+                                        child: Text(formatPesos(item.cost)),
+                                      ),
+                                    ),
                                   ],
                                   DataCell(
-                                    Container(
+                                    SizedBox(
+                                      width: 112,
+                                      child: Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 8,
                                         vertical: 4,
@@ -4262,146 +5003,157 @@ class _ManageEventsState extends State<ManageEvents>
                                         ),
                                       ),
                                     ),
+                                    ),
                                   ),
                                   if (canEditChecklist) ...[
                                     DataCell(
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          // Edit button
-                                          Container(
-                                            width: 28,
-                                            height: 28,
-                                            margin: const EdgeInsets.only(
-                                              right: 4,
-                                            ),
-                                            decoration: const BoxDecoration(
-                                              color: Colors.red,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: IconButton(
+                                      SizedBox(
+                                        width: 104,
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              tooltip: 'Edit item',
                                               padding: EdgeInsets.zero,
-                                              icon: const Icon(
-                                                Icons.edit,
-                                                color: Colors.white,
-                                                size: 16,
-                                              ),
-                                              onPressed: () {
-                                                // Edit is handled inline via TextFormField
-                                              },
+                                              constraints: const BoxConstraints(),
+                                              onPressed: () => editChecklistRowDialog(index),
+                                              icon: const Icon(Icons.edit_outlined),
                                             ),
-                                          ),
-                                          // Delete button
-                                          Container(
-                                            width: 28,
-                                            height: 28,
-                                            decoration: const BoxDecoration(
-                                              color: Colors.red,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: IconButton(
+                                            IconButton(
+                                              tooltip: 'Remove item',
                                               padding: EdgeInsets.zero,
-                                              icon: const Icon(
-                                                Icons.remove,
-                                                color: Colors.white,
-                                                size: 16,
-                                              ),
+                                              constraints: const BoxConstraints(),
                                               onPressed: () {
                                                 dialogSetState(() {
+                                                  if (duplicateHighlightIndex ==
+                                                      index) {
+                                                    duplicateHighlightIndex = null;
+                                                  }
                                                   editableItems.removeAt(index);
                                                 });
                                               },
+                                              icon: const Icon(
+                                                Icons.remove_circle_outline,
+                                                color: Colors.red,
+                                              ),
                                             ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ],
                               );
-                            }).toList(),
+                            }),
+                          if (canEditChecklist && showNewItemRow)
+                            DataRow(
+                              color: WidgetStateProperty.all(
+                                Colors.blue.shade50,
+                              ),
+                              cells: [
+                                DataCell(
+                                  SizedBox(
+                                    width: 162,
+                                    child: showInventoryPicker &&
+                                            inventoryOptions.isNotEmpty
+                                        ? Autocomplete<Map<String, dynamic>>(
+                                          optionsBuilder: (text) {
+                                            final q =
+                                                text.text.trim().toLowerCase();
+                                            if (q.isEmpty) {
+                                              return inventoryOptions.take(20);
+                                            }
+                                            return inventoryOptions
+                                                .where((row) {
+                                                  final name =
+                                                      '${row['name'] ?? ''}'
+                                                          .toLowerCase();
+                                                  final cat =
+                                                      '${row['category'] ?? ''}'
+                                                          .toLowerCase();
+                                                  return name.contains(q) ||
+                                                      cat.contains(q);
+                                                })
+                                                .take(20);
+                                          },
+                                          displayStringForOption: (row) =>
+                                              '${row['name']} (${row['quantity']} ${row['unit']})',
+                                          fieldViewBuilder: (
+                                            context,
+                                            controller,
+                                            focusNode,
+                                            onFieldSubmitted,
+                                          ) {
+                                            if (controller.text !=
+                                                newItemController.text) {
+                                              controller.text =
+                                                  newItemController.text;
+                                            }
+                                            return TextField(
+                                              controller: controller,
+                                              focusNode: focusNode,
+                                              autofocus: true,
+                                              decoration:
+                                                  const InputDecoration(
+                                                labelText: 'New item',
+                                                hintText:
+                                                    'Search inventory or type name',
+                                                border: OutlineInputBorder(),
+                                                isDense: true,
+                                              ),
+                                              onChanged: (v) =>
+                                                  newItemController.text = v,
+                                              onSubmitted: addChecklistByName,
+                                            );
+                                          },
+                                          onSelected: (row) {
+                                            addChecklistByName(
+                                              '${row['name']}',
+                                              inventoryRow: row,
+                                            );
+                                          },
+                                        )
+                                        : TextField(
+                                          controller: newItemController,
+                                          autofocus: true,
+                                          decoration: const InputDecoration(
+                                            labelText: 'New item',
+                                            border: OutlineInputBorder(),
+                                            isDense: true,
+                                          ),
+                                          onSubmitted: addChecklistByName,
+                                        ),
+                                  ),
+                                ),
+                                const DataCell(Text('')),
+                                const DataCell(Text('')),
+                                if (_isManager) ...[
+                                  const DataCell(Text('')),
+                                  const DataCell(Text('')),
+                                ] else
+                                  const DataCell(Text('')),
+                                const DataCell(Text('')),
+                                if (canEditChecklist)
+                                  DataCell(
+                                    IconButton(
+                                      tooltip: 'Cancel new row',
+                                      onPressed: () => dialogSetState(() {
+                                        showNewItemRow = false;
+                                        newItemController.clear();
+                                      }),
+                                      icon: const Icon(Icons.close),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                        ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
                     const SizedBox(height: 8),
-                    if (canEditChecklist) ...[
-                      Row(
-                        children: [
-                          Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: Colors.grey.shade400),
-                            ),
-                            child: IconButton(
-                              padding: EdgeInsets.zero,
-                              icon: const Icon(
-                                Icons.add,
-                                color: Colors.black54,
-                                size: 18,
-                              ),
-                              onPressed:
-                                  () => _addNewChecklistItem(
-                                    dialogSetState,
-                                    editableItems,
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (showInventoryPicker &&
-                          inventoryOptions.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Add from inventory',
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                          hint: const Text('Select inventory item'),
-                          items:
-                              inventoryOptions
-                                  .map(
-                                    (row) => DropdownMenuItem<String>(
-                                      value: row['id']?.toString(),
-                                      child: Text(
-                                        '${row['name']} (${row['quantity']} ${row['unit']})',
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                          onChanged: (id) {
-                            if (id == null) return;
-                            final row = inventoryOptions.firstWhere(
-                              (r) => r['id']?.toString() == id,
-                            );
-                            final unitCost =
-                                row['unitCost'] is num
-                                    ? (row['unitCost'] as num).toDouble()
-                                    : double.tryParse('${row['unitCost']}') ??
-                                        0;
-                            dialogSetState(() {
-                              editableItems.add(
-                                ChecklistItem(
-                                  item: '${row['name']}',
-                                  description:
-                                      (row['category'] ?? 'Inventory')
-                                          .toString(),
-                                  quantity: 1,
-                                  cost: unitCost,
-                                  inventoryId: id,
-                                ),
-                              );
-                            });
-                          },
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                    ],
-                    const Spacer(),
                     // Bottom action buttons
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -4409,7 +5161,7 @@ class _ManageEventsState extends State<ManageEvents>
                         // Generate PDF button (outline style)
                         OutlinedButton(
                           onPressed:
-                              () => _exportChecklistToPDF(order, editableItems),
+                              () => _exportChecklistToPDF(sourceOrder, editableItems),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.black87,
                             side: BorderSide(color: Colors.grey.shade400),
@@ -4426,7 +5178,11 @@ class _ManageEventsState extends State<ManageEvents>
                         const SizedBox(width: 12),
                         // Save button (green outline)
                         OutlinedButton(
-                          onPressed: () => _saveChecklist(order, editableItems),
+                          onPressed: () => _saveChecklist(
+                            sourceOrder,
+                            editableItems,
+                            dialogContext: context,
+                          ),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.green,
                             side: const BorderSide(color: Colors.green),
@@ -4441,7 +5197,7 @@ class _ManageEventsState extends State<ManageEvents>
                           child: const Text('save'),
                         ),
                         const SizedBox(width: 12),
-                        // Cancel button (red outline)
+                        // Close button (red outline)
                         OutlinedButton(
                           onPressed: () => Navigator.of(context).pop(),
                           style: OutlinedButton.styleFrom(
@@ -4455,7 +5211,7 @@ class _ManageEventsState extends State<ManageEvents>
                               vertical: 8,
                             ),
                           ),
-                          child: const Text('cancel'),
+                          child: const Text('close'),
                         ),
                       ],
                     ),
@@ -4468,6 +5224,9 @@ class _ManageEventsState extends State<ManageEvents>
         );
       },
     );
+    } finally {
+      newItemController.dispose();
+    }
   }
 
   Future<void> _cancelProcessingOrder(EventOrderDto order) async {
@@ -4579,6 +5338,7 @@ class _ManageEventsState extends State<ManageEvents>
 
       // Refresh orders
       await _refreshOrders();
+      await _selectManageEventsOrder(order);
       setState(() {
         _selectedProcessingOrderDto = null;
       });
@@ -5275,23 +6035,8 @@ class _ManageEventsState extends State<ManageEvents>
                           : () async {
                             setState(() => _postAnalysisSaving = true);
                             try {
-                              await EventsApi.instance.completePostAnalysis(
+                              await EventsApi.instance.completeOrder(
                                 orderId: selPost.id,
-                                businessCardsGivenAway:
-                                    int.tryParse(
-                                      _postCardsController.text.trim(),
-                                    ) ??
-                                    0,
-                                onTheSpotInquiries:
-                                    int.tryParse(
-                                      _postInquiriesController.text.trim(),
-                                    ) ??
-                                    0,
-                                complaints:
-                                    int.tryParse(
-                                      _postComplaintsController.text.trim(),
-                                    ) ??
-                                    0,
                               );
                               if (!mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -5774,23 +6519,8 @@ class _ManageEventsState extends State<ManageEvents>
                             : () async {
                               setState(() => _postAnalysisSaving = true);
                               try {
-                                await EventsApi.instance.completePostAnalysis(
+                                await EventsApi.instance.completeOrder(
                                   orderId: selPost.id,
-                                  businessCardsGivenAway:
-                                      int.tryParse(
-                                        _postCardsController.text.trim(),
-                                      ) ??
-                                      0,
-                                  onTheSpotInquiries:
-                                      int.tryParse(
-                                        _postInquiriesController.text.trim(),
-                                      ) ??
-                                      0,
-                                  complaints:
-                                      int.tryParse(
-                                        _postComplaintsController.text.trim(),
-                                      ) ??
-                                      0,
                                 );
                                 if (!mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -5872,27 +6602,10 @@ class _ManageEventsState extends State<ManageEvents>
               eventDate.isAtSameMomentAs(oneMonthAgo);
         }).toList();
 
-    return SingleChildScrollView(
-      child: _buildOrdersTablePanel(
-        title: 'Completed & cancelled events',
-        orders: orderDtos,
-        emptyMessage: 'No completed or cancelled events in the last 30 days.',
-        actionCells:
-            (dto) => [
-              _eventIconAction(
-                icon: Icons.visibility_outlined,
-                tooltip: 'View details',
-                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
-                onPressed: () => _showEventOrderDetailModal(dto),
-              ),
-              _eventIconAction(
-                icon: Icons.receipt_long_outlined,
-                tooltip: 'Order summary',
-                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
-                onPressed: () => _showOrderSummaryDialog(dto),
-              ),
-            ],
-      ),
+    return _buildOrdersTablePanel(
+      title: 'Completed events',
+      orders: orderDtos,
+      emptyMessage: 'No completed events in the last 30 days.',
     );
   }
 
@@ -5976,6 +6689,573 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
+  String _newEventSideTabLabel(_NewEventSideTab tab) {
+    switch (tab) {
+      case _NewEventSideTab.eventInfo:
+        return 'Event Information';
+      case _NewEventSideTab.menuAndAllergens:
+        return 'Menu & Allergens';
+      case _NewEventSideTab.submitAndCosts:
+        return 'Submit & Costs';
+    }
+  }
+
+  IconData _newEventSideTabIcon(_NewEventSideTab tab) {
+    switch (tab) {
+      case _NewEventSideTab.eventInfo:
+        return Icons.event_note;
+      case _NewEventSideTab.menuAndAllergens:
+        return Icons.restaurant_menu;
+      case _NewEventSideTab.submitAndCosts:
+        return Icons.payments;
+    }
+  }
+
+  Widget _buildNewEventSideTabNav() {
+    final tabs = _NewEventSideTab.values;
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Text(
+              'New Event',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                color: Color(0xFF1E1E1E),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          ...tabs.map((tab) {
+            final active = _activeNewEventSideTab == tab;
+            return Material(
+              color:
+                  active
+                      ? const Color(0xFFFFC024).withValues(alpha: 0.16)
+                      : Colors.transparent,
+              child: InkWell(
+                onTap: () => setState(() => _activeNewEventSideTab = tab),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      left: BorderSide(
+                        color:
+                            active ? const Color(0xFFFFC024) : Colors.transparent,
+                        width: 4,
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _newEventSideTabIcon(tab),
+                        size: 20,
+                        color: active ? Colors.black87 : Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _newEventSideTabLabel(tab),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight:
+                                active ? FontWeight.w700 : FontWeight.w500,
+                            color: active ? Colors.black87 : Colors.grey.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewEventMobileTabs() {
+    final tabs = _NewEventSideTab.values;
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        children:
+            tabs.map((tab) {
+              final active = _activeNewEventSideTab == tab;
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _activeNewEventSideTab = tab),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color:
+                              active
+                                  ? const Color(0xFFFFC024)
+                                  : Colors.transparent,
+                          width: 3,
+                        ),
+                      ),
+                    ),
+                    child: Text(
+                      _newEventSideTabLabel(tab),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                        color: active ? Colors.black87 : Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+      ),
+    );
+  }
+
+  bool _isLastNewEventSideTab() {
+    final tabs = _NewEventSideTab.values;
+    return _activeNewEventSideTab == tabs.last;
+  }
+
+  bool _isFirstNewEventSideTab() {
+    final tabs = _NewEventSideTab.values;
+    return _activeNewEventSideTab == tabs.first;
+  }
+
+  void _nextNewEventSideTab() {
+    final tabs = _NewEventSideTab.values;
+    final idx = tabs.indexOf(_activeNewEventSideTab);
+    if (idx >= 0 && idx < tabs.length - 1) {
+      setState(() => _activeNewEventSideTab = tabs[idx + 1]);
+    }
+  }
+
+  void _prevNewEventSideTab() {
+    final tabs = _NewEventSideTab.values;
+    final idx = tabs.indexOf(_activeNewEventSideTab);
+    if (idx > 0) {
+      setState(() => _activeNewEventSideTab = tabs[idx - 1]);
+    }
+  }
+
+  Widget _buildNewEventThemeDesignBlock() {
+    final isCateringOnly = _orderType == 'catering';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          height: 46,
+          child: OutlinedButton.icon(
+            onPressed: isCateringOnly ? null : _showThemeDesignDialog,
+            icon: const Icon(Icons.palette_outlined, size: 20),
+            label: Text(
+              isCateringOnly
+                  ? 'Event theme design (not for catering-only)'
+                  : 'Edit Event Theme Design',
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF1E1E1E),
+              side: BorderSide(color: Colors.grey.shade400),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (!isCateringOnly && _themePicks.isNotEmpty)
+          SizedBox(
+            height: 92,
+            child: Scrollbar(
+              thumbVisibility: true,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _themePicks.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, i) => Container(
+                  width: 92,
+                  height: 92,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.memory(
+                    _themePicks[i],
+                    width: 92,
+                    height: 92,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            ),
+          )
+        else if (!isCateringOnly)
+          Text(
+            'No theme design preview yet. Open the editor to add picks.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildNewEventSubmitActions() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ElevatedButton(
+          onPressed: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Saved draft.')),
+            );
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFFFA726),
+            foregroundColor: Colors.black,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+          child: const Text('SAVE DRAFT'),
+        ),
+        const SizedBox(height: 10),
+        ElevatedButton(
+          onPressed: _isSubmittingOrder ? null : _submitNewEventFromForm,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF1DB954),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+          child:
+              _isSubmittingOrder
+                  ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                  : const Text('SUBMIT'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _submitNewEventFromForm() async {
+    setState(() {
+      _contactNumberError = null;
+      _emailError = null;
+      _guestCountError = null;
+    });
+
+    final missing = <String>[];
+    final isCateringOnly = _orderType == 'catering';
+
+    if (_orderType == null) missing.add('Service type');
+
+    if (!isCateringOnly) {
+      if (_eventTitleController.text.trim().isEmpty) {
+        missing.add('Event title');
+      }
+      if (_eventType == null) missing.add('Event type');
+      if (_formalityLevel == null) missing.add('Formality level');
+    }
+
+    if (_customerController.text.trim().isEmpty) {
+      missing.add('Customer name');
+    }
+    if (_contactPersonController.text.trim().isEmpty) {
+      missing.add('Contact person');
+    }
+
+    final contactNumber = _contactNumberController.text.trim();
+    if (contactNumber.isEmpty) {
+      missing.add('Contact number');
+    } else if (contactNumber.length < 10) {
+      setState(() {
+        _contactNumberError = 'Contact number must be at least 10 digits';
+      });
+      return;
+    }
+
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      missing.add('Email address');
+    } else if (!_isValidEmail(email)) {
+      setState(() {
+        _emailError = 'Please enter a valid email address';
+      });
+      return;
+    }
+
+    if (_eventScheduleSlots.isEmpty) {
+      missing.add('Date & time');
+    }
+    if (_eventAddressController.text.trim().isEmpty) {
+      missing.add('Event address');
+    }
+
+    final guestCount = int.tryParse(_guestCountController.text.trim());
+
+    if (_guestCountController.text.trim().isEmpty) {
+      missing.add('No. of guests');
+    } else if (guestCount == null || guestCount <= 0) {
+      setState(() {
+        _guestCountError = 'Please enter a valid number of guests';
+      });
+      return;
+    }
+
+    if (_menuItems.isEmpty) {
+      missing.add('Menu');
+    } else if (_menuItems.length < 4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select at least 4 dishes for the menu.'),
+        ),
+      );
+      return;
+    }
+
+    if (missing.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please complete: ${missing.join(', ')}'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSubmittingOrder = true);
+
+    try {
+      final payload = _buildPayloadFromForm();
+      await EventsApi.instance.managerSubmitNewEventToProcessing(
+        payload: payload,
+      );
+      await _refreshOrders();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Order submitted successfully.')),
+      );
+      _resetForm();
+      setState(() => _selectedStatus = EventStatus.forDownpayment);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to submit order.')),
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmittingOrder = false);
+    }
+  }
+
+  Widget _buildNewEventEstimatedCostPanel({bool showSubmitActions = false}) {
+    final guestCount = int.tryParse(_guestCountController.text.trim()) ?? 0;
+    final dishCost = estimateInquiryCateringTotal(guestCount);
+    final menuAddOns = _newEventSetMenuAdditionalChargeTotal();
+    final labor = double.tryParse(_newEventLaborCostController.text.trim()) ?? 0.0;
+    final travel =
+        double.tryParse(_newEventTravelCostController.text.trim()) ?? 0.0;
+    final additional = _newEventAdditionalCosts.fold<double>(
+      0,
+      (sum, e) => sum + (double.tryParse('${e['amount'] ?? 0}') ?? 0),
+    );
+    final total = dishCost + menuAddOns + labor + travel + additional;
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.receipt_long, size: 20, color: Color(0xFF1E1E1E)),
+                SizedBox(width: 8),
+                Text(
+                  'Estimated Cost',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    color: Color(0xFF1E1E1E),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _buildInfoRow('Dish Cost', formatPesos(dishCost)),
+            _buildInfoRow('Menu Add-ons', formatPesos(menuAddOns)),
+            _buildInfoRow('Labor', formatPesos(labor)),
+            _buildInfoRow('Travel', formatPesos(travel)),
+            _buildInfoRow('Additional Costs', formatPesos(additional)),
+            const SizedBox(height: 8),
+            _buildCostBlock(
+              'Total',
+              formatPesos(total),
+              const Color(0xFFFFC024),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Formula: (pax × 500) + menu add-ons + labor + travel + additional costs',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            ),
+            if (showSubmitActions) ...[
+              const SizedBox(height: 16),
+              _buildNewEventSubmitActions(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNewEventCenterContent({required bool isNarrow}) {
+    final isMenuTab = _activeNewEventSideTab == _NewEventSideTab.menuAndAllergens;
+    Widget body;
+    switch (_activeNewEventSideTab) {
+      case _NewEventSideTab.eventInfo:
+        body = _buildEventForm();
+        break;
+      case _NewEventSideTab.menuAndAllergens:
+        body = _buildEventMenuSection();
+        break;
+      case _NewEventSideTab.submitAndCosts:
+        body = _buildNewEventSubmissionBar();
+        break;
+    }
+    final nav = Row(
+      children: [
+        if (!_isFirstNewEventSideTab())
+          OutlinedButton.icon(
+            onPressed: _prevNewEventSideTab,
+            icon: const Icon(Icons.arrow_back, size: 16),
+            label: const Text('Previous'),
+          ),
+        const Spacer(),
+        if (_isLastNewEventSideTab())
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFC024).withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check, size: 16),
+                SizedBox(width: 6),
+                Text(
+                  'Review submit actions below',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          )
+        else
+          ElevatedButton.icon(
+            onPressed: _nextNewEventSideTab,
+            icon: const Text('Next'),
+            label: const Icon(Icons.arrow_forward, size: 16),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFC024),
+              foregroundColor: const Color(0xFF1E1E1E),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+      ],
+    );
+
+    if (isMenuTab) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              _newEventSideTabLabel(_activeNewEventSideTab),
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF1E1E1E),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(child: body),
+            const SizedBox(height: 20),
+            nav,
+          ],
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            _newEventSideTabLabel(_activeNewEventSideTab),
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1E1E1E),
+            ),
+          ),
+          const SizedBox(height: 12),
+          body,
+          const SizedBox(height: 20),
+          nav,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewEventFormLayout(bool isNarrow) {
+    if (isNarrow) {
+      return Column(
+        children: [
+          _buildNewEventMobileTabs(),
+          Expanded(child: _buildNewEventCenterContent(isNarrow: true)),
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(width: 300, child: _buildNewEventSideTabNav()),
+        Expanded(flex: 3, child: _buildNewEventCenterContent(isNarrow: false)),
+        SizedBox(
+          width: 400,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(0, 16, 16, 16),
+            child: _buildNewEventEstimatedCostPanel(showSubmitActions: true),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildBodyContent(EventStatus status, bool isNarrow) {
     switch (status) {
       case EventStatus.onlineInquiries:
@@ -5989,244 +7269,197 @@ class _ManageEventsState extends State<ManageEvents>
       case EventStatus.completed:
         return _buildCompletedEventsView(isNarrow);
       case EventStatus.newEvent:
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 3,
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildEventForm(),
-                    const SizedBox(height: 20),
-                    _buildEventMenuSection(),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(width: 20),
-            Expanded(
-              flex: 4,
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildFoodBrowser(),
-                    const SizedBox(height: 20),
-                    _buildNewEventSubmissionBar(),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        );
+        return _buildNewEventFormLayout(isNarrow);
     }
   }
 
-  Widget _buildNewEventSubmissionBar() {
-    final themePicksCount = _themePicks.length;
+  Widget _buildNewEventSubmissionBar({bool showSubmitActions = false}) {
+    final setMenuChargeRows = _newEventSetMenuAdditionalChargeRows();
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: Text(
-                'Theme picks: $themePicksCount',
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+            _buildNewEventThemeDesignBlock(),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _newEventPaxBufferController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: false,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Pax buffer',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+              onChanged: (_) => setState(() {}),
             ),
-            const SizedBox(width: 12),
-
-            /// SAVE DRAFT
-            ElevatedButton(
-              onPressed: () {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('Saved draft.')));
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFFA726),
-                foregroundColor: Colors.black,
-              ),
-              child: const Text('SAVE DRAFT'),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _newEventLaborCostController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Labor cost',
+                      prefixText: 'PHP ',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+              onChanged: (_) => setState(() {}),
             ),
-
-            const SizedBox(width: 12),
-
-            /// SUBMIT
-            ElevatedButton(
-              onPressed:
-                  _isSubmittingOrder
-                      ? null
-                      : () async {
-                        // Clear previous errors
-                        setState(() {
-                          _contactNumberError = null;
-                          _emailError = null;
-                          _guestCountError = null;
-                        });
-
-                        final missing = <String>[];
-                        final isCateringOnly = _orderType == 'catering';
-
-                        if (_orderType == null) missing.add('Service type');
-
-                        // Only validate event-specific fields for catering + event orders
-                        if (!isCateringOnly) {
-                          if (_eventTitleController.text.trim().isEmpty) {
-                            missing.add('Event title');
-                          }
-                          if (_eventType == null) missing.add('Event type');
-                          if (_formalityLevel == null)
-                            missing.add('Formality level');
-                        }
-
-                        if (_customerController.text.trim().isEmpty) {
-                          missing.add('Customer name');
-                        }
-                        if (_contactPersonController.text.trim().isEmpty) {
-                          missing.add('Contact person');
-                        }
-
-                        // Contact number validation
-                        final contactNumber =
-                            _contactNumberController.text.trim();
-                        if (contactNumber.isEmpty) {
-                          missing.add('Contact number');
-                        } else if (contactNumber.length < 10) {
-                          setState(() {
-                            _contactNumberError =
-                                'Contact number must be at least 10 digits';
-                          });
-                          return;
-                        }
-
-                        // Email validation
-                        final email = _emailController.text.trim();
-                        if (email.isEmpty) {
-                          missing.add('Email address');
-                        } else if (!_isValidEmail(email)) {
-                          setState(() {
-                            _emailError = 'Please enter a valid email address';
-                          });
-                          return;
-                        }
-
-                        if (_eventScheduleSlots.isEmpty) {
-                          missing.add('Date & time');
-                        }
-                        if (_eventAddressController.text.trim().isEmpty) {
-                          missing.add('Event address');
-                        }
-
-                        final guestCount = int.tryParse(
-                          _guestCountController.text.trim(),
-                        );
-
-                        if (_guestCountController.text.trim().isEmpty) {
-                          missing.add('No. of guests');
-                        } else if (guestCount == null || guestCount <= 0) {
-                          setState(() {
-                            _guestCountError =
-                                'Please enter a valid number of guests';
-                          });
-                          return;
-                        }
-
-                        if (_menuItems.isEmpty) {
-                          missing.add('Menu');
-                        } else if (_menuItems.length < 4) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Select at least 4 dishes for the menu.',
-                              ),
-                            ),
-                          );
-                          return;
-                        }
-
-                        // Only validate theme picks for catering + event orders
-                        if (!isCateringOnly && _themePicks.isEmpty)
-                          missing.add('Theme picks');
-
-                        if (missing.isNotEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Please complete: ${missing.join(', ')}',
-                              ),
-                            ),
-                          );
-                          return;
-                        }
-
-                        setState(() {
-                          _isSubmittingOrder = true;
-                        });
-
-                        try {
-                          final payload = _buildPayloadFromForm();
-
-                          // backend commit
-                          await EventsApi.instance
-                              .managerSubmitNewEventToProcessing(
-                                payload: payload,
-                              );
-
-                          // refresh orders
-                          await _refreshOrders();
-
-                          // success indicator
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Order submitted successfully.'),
-                            ),
-                          );
-
-                          // reset form if success
-                          _resetForm();
-
-                          // switch tab
-                          setState(
-                            () => _selectedStatus = EventStatus.forDownpayment,
-                          );
-                        } catch (e) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Failed to submit order.'),
-                            ),
-                          );
-                        } finally {
-                          setState(() {
-                            _isSubmittingOrder = false;
-                          });
-                        }
-                      },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1DB954),
-              ),
-              child:
-                  _isSubmittingOrder
-                      ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
+            const SizedBox(height: 10),
+            TextField(
+              controller: _newEventTravelCostController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Travel cost',
+                      prefixText: 'PHP ',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Additional costs',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _newEventAdditionalCostLabelController,
+                          decoration: const InputDecoration(
+                            labelText: 'Label',
+                            border: OutlineInputBorder(),
+                            isDense: true,
                           ),
                         ),
-                      )
-                      : const Text('SUBMIT'),
-            ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 140,
+                        child: TextField(
+                          controller: _newEventAdditionalCostAmountController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Amount',
+                            prefixText: 'PHP ',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Add additional cost',
+                        onPressed: () {
+                          final label =
+                              _newEventAdditionalCostLabelController.text.trim();
+                          final amount = double.tryParse(
+                            _newEventAdditionalCostAmountController.text.trim(),
+                          );
+                          if (label.isEmpty || amount == null) return;
+                          setState(() {
+                            _newEventAdditionalCosts.add({
+                              'label': label,
+                              'amount': amount,
+                            });
+                            _newEventAdditionalCostLabelController.clear();
+                            _newEventAdditionalCostAmountController.clear();
+                          });
+                        },
+                        icon: const Icon(Icons.add_circle_outline),
+                      ),
+                    ],
+                  ),
+            if (_newEventAdditionalCosts.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              ..._newEventAdditionalCosts.asMap().entries.map((entry) {
+                final index = entry.key;
+                final row = entry.value;
+                final amount = double.tryParse('${row['amount'] ?? 0}') ?? 0;
+                return Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${row['label']} — ${formatPesos(amount)}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Remove additional cost',
+                      onPressed:
+                          () => setState(
+                            () => _newEventAdditionalCosts.removeAt(index),
+                          ),
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                    ),
+                  ],
+                );
+              }),
+            ],
+            if (setMenuChargeRows.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Text(
+                'Menu modifications add\'l charges',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+              ),
+              const SizedBox(height: 6),
+              ...setMenuChargeRows.map((row) {
+                final dishId = '${row['dishId']}';
+                final dishName = '${row['dishName']}';
+                final amount = (row['amount'] as num?)?.toDouble() ?? 0;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          dishName,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 140,
+                        child: TextFormField(
+                          initialValue: amount.toStringAsFixed(2),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Add\'l charge',
+                            prefixText: 'PHP ',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (v) {
+                            final parsed = double.tryParse(v.trim()) ?? 0;
+                            setState(() {
+                              _newEventSetMenuChargeOverrides[dishId] =
+                                  parsed < 0 ? 0 : parsed;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+            if (showSubmitActions) ...[
+              const SizedBox(height: 16),
+              _buildNewEventSubmitActions(),
+            ],
           ],
         ),
       ),
@@ -6254,25 +7487,6 @@ class _ManageEventsState extends State<ManageEvents>
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: TextField(
-                controller: _eventSearchController,
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  hintText: 'Search',
-                  prefixIcon: const Icon(Icons.search),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-                onChanged: (_) {
-                  setState(() {});
-                },
               ),
             ),
           ],
@@ -6673,11 +7887,6 @@ class _ManageEventsState extends State<ManageEvents>
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              AllergenSelectorField(
-                initialSerialized: _allergensSerialized,
-                onChanged: (s) => _allergensSerialized = s,
-              ),
             ],
           ),
         ),
@@ -6687,13 +7896,22 @@ class _ManageEventsState extends State<ManageEvents>
 
   // Menu View
   Widget _buildEventMenuSection() {
-    final isCateringOnly = _orderType == 'catering';
+    final cateringDishes =
+        _allDishes
+            .where(
+              (d) =>
+                  d.category.toLowerCase().trim() == 'catering' &&
+                  !d.archived &&
+                  d.available,
+            )
+            .toList();
+    final chargeRows = _newEventSetMenuAdditionalChargeRows();
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Menu',
+          'Menu & Allergens',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -6701,79 +7919,154 @@ class _ManageEventsState extends State<ManageEvents>
           ),
         ),
         const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade300),
-          ),
-          child:
-              _menuItems.isEmpty
-                  ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: const [
-                      Text("You don't have anything on the menu right now..."),
-                      SizedBox(height: 20),
-                      SizedBox(height: 30),
-                    ],
-                  )
-                  : Column(
-                    children:
-                        _menuItems.map((item) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8.0),
-                            child: Row(
+        Expanded(
+          child: DefaultTabController(
+            length: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TabBar(
+                  labelColor: const Color(0xFF1E1E1E),
+                  unselectedLabelColor: Colors.grey.shade700,
+                  indicatorColor: const Color(0xFFFFC024),
+                  onTap: (i) => setState(() => _newEventMenuPrefTabIndex = i),
+                  tabs: const [
+                    Tab(text: 'Allergens'),
+                    Tab(text: 'Menu'),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      SingleChildScrollView(
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: AllergenSelectorField(
+                            initialSerialized: _allergensSerialized,
+                            onChanged: (s) => setState(() => _allergensSerialized = s),
+                          ),
+                        ),
+                      ),
+                      SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Wrap(
+                              spacing: 8,
                               children: [
-                                Expanded(
-                                  child: Text(
-                                    '${item.dish.name} · ${item.paxOption}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                ChoiceChip(
+                                  label: const Text('Custom dishes'),
+                                  selected: _newEventMenuPrefTabIndex == 0,
+                                  onSelected: (_) => setState(
+                                    () => _newEventMenuPrefTabIndex = 0,
                                   ),
                                 ),
-                                Text(
-                                  item.dish.price,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
+                                ChoiceChip(
+                                  label: const Text('Set menu'),
+                                  selected: _newEventMenuPrefTabIndex == 1,
+                                  onSelected: (_) => setState(
+                                    () => _newEventMenuPrefTabIndex = 1,
                                   ),
-                                ),
-                                const SizedBox(width: 12),
-                                IconButton(
-                                  onPressed: () => _removeFromMenu(item),
-                                  icon: const Icon(Icons.close, size: 20),
                                 ),
                               ],
                             ),
-                          );
-                        }).toList(),
+                            const SizedBox(height: 8),
+                            InquiryMenuPicker(
+                              key: ValueKey<int>(_newEventMenuPrefTabIndex),
+                              embedded: true,
+                              tabIndex: _newEventMenuPrefTabIndex,
+                              cateringDishes: cateringDishes,
+                              setMenus: SetMenuStore.instance.activeSetMenus,
+                              initialSelections: _newEventMenuBlocks,
+                              mode: InquiryMenuPickerMode.staffNewEvent,
+                              minCustomDishes: 0,
+                              maxCustomDishes: 999,
+                              onSelectionChanged: (blocks) {
+                                setState(() {
+                                  _newEventMenuBlocks = blocks;
+                                  _applyNewEventMenuBlocks(blocks);
+                                });
+                              },
+                            ),
+                            if (chargeRows.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Add\'l charges (editable)',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 6),
+                              ...chargeRows.map((row) {
+                                final dishId = '${row['dishId']}';
+                                final amount =
+                                    (row['amount'] as num?)?.toDouble() ?? 0;
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text('${row['dishName']}'),
+                                      ),
+                                      SizedBox(
+                                        width: 140,
+                                        child: TextFormField(
+                                          initialValue: amount.toStringAsFixed(2),
+                                          keyboardType:
+                                              const TextInputType.numberWithOptions(
+                                            decimal: true,
+                                          ),
+                                          decoration: const InputDecoration(
+                                            labelText: 'Add\'l charge',
+                                            prefixText: 'PHP ',
+                                            isDense: true,
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          onChanged: (v) {
+                                            final parsed =
+                                                double.tryParse(v.trim()) ?? 0;
+                                            setState(() {
+                                              _newEventSetMenuChargeOverrides[dishId] =
+                                                  parsed < 0 ? 0 : parsed;
+                                            });
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton(
-            onPressed: isCateringOnly ? null : _showThemeDesignDialog,
-            style: ElevatedButton.styleFrom(
-              backgroundColor:
-                  isCateringOnly
-                      ? Colors.grey.shade400
-                      : const Color(0xFF1DB954),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            child: Text(
-              isCateringOnly
-                  ? 'EVENTS THEME DESIGN (Not Available for Catering Only)'
-                  : 'EVENTS THEME DESIGN',
-              style: TextStyle(
-                color: isCateringOnly ? Colors.grey.shade600 : Colors.white,
-              ),
+                ),
+              ],
             ),
           ),
+        ),
+        if (_newEventSetMenuAdditionalChargeTotal() > 0) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Set-menu extra dish fees: ${formatPesos(_newEventSetMenuAdditionalChargeTotal())}',
+            style: TextStyle(
+              color: Colors.orange.shade800,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _openNewEventMenuPicker,
+          icon: const Icon(Icons.restaurant_menu, size: 18),
+          label: const Text('Open menu picker (dishes or set menu)'),
         ),
       ],
     );
@@ -6817,11 +8110,6 @@ class _ManageEventsState extends State<ManageEvents>
                         dish.name,
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        dish.price,
-                        style: TextStyle(color: Colors.grey.shade600),
-                      ),
                     ],
                   ),
                 ),
@@ -6860,103 +8148,209 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
+  List<EventOrderDto> get _newEventOrders => _processingOrdersDto.where((o) {
+        final s = o.status.trim().toLowerCase();
+        return s == 'new_event' || s == 'for_processing';
+      }).toList();
+
+  int _orderCountForTab(int tabIndex) {
+    switch (tabIndex) {
+      case 0:
+        return _newEventOrders.length;
+      case 1:
+        return _onlineInquiryOrders.length;
+      case 2:
+        return _downpaymentOrders.length;
+      case 3:
+        return _ongoingOrders.length;
+      case 4:
+        return _postAnalysisOrdersDto.length;
+      default:
+        return 0;
+    }
+  }
+
+  Widget _tabCountBadge(int count) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFC024),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        '$count',
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF242424),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNewEventTab(bool isNarrow) {
+    if (_showNewEventForm) {
+      return Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            color: Colors.grey.shade50,
+            child: Row(
+              children: [
+                TextButton.icon(
+                  onPressed: () => setState(() {
+                    _showNewEventForm = false;
+                    _activeNewEventSideTab = _NewEventSideTab.eventInfo;
+                  }),
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('Back to list'),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _buildBodyContent(EventStatus.newEvent, isNarrow),
+          ),
+        ],
+      );
+    }
+    final orders = _newEventOrders;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_isManager)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: () => setState(() {
+                  _showNewEventForm = true;
+                  _activeNewEventSideTab = _NewEventSideTab.eventInfo;
+                }),
+                icon: const Icon(Icons.add_circle_outline),
+                label: const Text('CREATE NEW EVENT'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFFFC024),
+                  foregroundColor: Colors.black,
+                ),
+              ),
+            ),
+          ),
+        Expanded(
+          child: _buildOrdersTablePanel(
+            title: 'New Events',
+            orders: orders,
+            emptyMessage: 'No new events.',
+            showGuestsAndTotal: false,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCancelledTab(bool isNarrow) {
+    return _buildOrdersTablePanel(
+      title: 'Cancelled',
+      orders: _cancelledOrdersDto,
+      emptyMessage: 'No cancelled events.',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      showSearch: false,
-      child: Container(
-        color: const Color(0xFFF7F8FA),
-        padding: const EdgeInsets.all(20),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final isNarrow = constraints.maxWidth < 1100;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Manage Events',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF1F1F1F),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Track inquiries, process events, and finalize outcomes.',
-                  style: TextStyle(color: Colors.grey.shade700),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: Colors.black.withValues(alpha: 0.08),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 1100;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                color: const Color(0xFF242424),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                child: Row(
+                children: [
+                  Text(
+                    _stageLabels[_tabController.index].toUpperCase(),
+                    style: const TextStyle(
+                      color: Color(0xFFFFC024),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                      letterSpacing: 1.2,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
                   ),
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Refresh',
+                    onPressed:
+                        _ordersLoading ? null : _refreshOrdersFromButton,
+                    icon: _ordersLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFFFFC024),
+                            ),
+                          )
+                        : const Icon(
+                            Icons.refresh,
+                            color: Color(0xFFFFC024),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            Material(
+              color: Colors.white,
+              elevation: 2,
+              shadowColor: Colors.black26,
+              child: TabBar(
+                controller: _tabController,
+                isScrollable: true,
+                indicatorColor: const Color(0xFFFFC024),
+                labelColor: const Color(0xFFFFC024),
+                unselectedLabelColor: Colors.grey.shade700,
+                tabAlignment: TabAlignment.start,
+                tabs: List.generate(_stageLabels.length, (i) {
+                  final count = _orderCountForTab(i);
+                  return Tab(
                     child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (!_isSupervisor) ...[
-                          _buildEventTabButton('New Event', 0),
-                          const SizedBox(width: 2),
-                          _buildEventTabButton('Online Inquiries', 1),
-                          const SizedBox(width: 2),
-                          _buildEventTabButton('For Downpayment', 2),
-                          const SizedBox(width: 2),
-                        ],
-                        _buildEventTabButton('Ongoing', 3),
-                        if (!_isSupervisor) ...[
-                          const SizedBox(width: 2),
-                          _buildEventTabButton('For Full Payment', 4),
-                          const SizedBox(width: 2),
-                          _buildEventTabButton('Completed', 5),
+                        Text(_stageLabels[i]),
+                        if (i <= 4 && count > 0) ...[
+                          const SizedBox(width: 6),
+                          _tabCountBadge(count),
                         ],
                       ],
                     ),
-                  ),
+                  );
+                }),
+              ),
+            ),
+            Expanded(
+              child: Container(
+                color: const Color(0xFFF7F8FA),
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildNewEventTab(isNarrow),
+                    _buildOnlineInquiriesView(isNarrow),
+                    _buildForDownpaymentTableView(isNarrow),
+                    _buildOngoingTableView(isNarrow),
+                    _buildForFullPaymentTableView(isNarrow),
+                    _buildCompletedEventsView(isNarrow),
+                    _buildCancelledTab(isNarrow),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child:
-                      _selectedStatus.index == 0
-                          ? _buildBodyContent(EventStatus.newEvent, isNarrow)
-                          : _selectedStatus.index == 1
-                          ? _buildBodyContent(
-                            EventStatus.onlineInquiries,
-                            isNarrow,
-                          )
-                          : _selectedStatus.index == 2
-                          ? _buildBodyContent(
-                            EventStatus.forDownpayment,
-                            isNarrow,
-                          )
-                          : _selectedStatus.index == 3
-                          ? _buildBodyContent(EventStatus.ongoing, isNarrow)
-                          : _selectedStatus.index == 4
-                          ? _buildBodyContent(
-                            EventStatus.forFullPayment,
-                            isNarrow,
-                          )
-                          : _buildBodyContent(EventStatus.completed, isNarrow),
-                ),
-              ],
-            );
-          },
-        ),
+              ),
+            ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -7076,37 +8470,51 @@ class _ManageEventsState extends State<ManageEvents>
                           ),
                         ],
                       ),
-                      ListView.builder(
-                        itemCount: sets.length,
-                        itemBuilder: (context, i) {
-                          final s = sets[i];
-                          final names = s.dishIds
-                              .map((id) {
-                                for (final d in cateringDishes) {
-                                  if (d.id == id) return d.name;
-                                }
-                                return id;
-                              })
-                              .join(', ');
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              title: Text(s.name),
-                              subtitle: Text(
-                                s.dishIds.isEmpty ? 'No dishes' : names,
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              trailing: AntdPrimaryButton(
-                                label: 'Use set',
-                                onPressed:
-                                    s.dishIds.isEmpty
-                                        ? null
-                                        : () => _applySetMenuToNewEvent(s),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: _openNewEventMenuPicker,
+                            icon: const Icon(Icons.tune, size: 18),
+                            label: const Text('Choose / customize set menu'),
+                          ),
+                          const SizedBox(height: 12),
+                          Expanded(
+                            child: Scrollbar(
+                              thumbVisibility: true,
+                              child: ListView(
+                                children: sets.map((s) {
+                                  final names = s.dishIds
+                                      .map((id) {
+                                        for (final d in cateringDishes) {
+                                          if (d.id == id) return d.name;
+                                        }
+                                        return id;
+                                      })
+                                      .join(', ');
+                                  return Card(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    child: ListTile(
+                                      title: Text(s.name),
+                                      subtitle: Text(
+                                        s.dishIds.isEmpty ? 'No dishes' : names,
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      trailing: AntdPrimaryButton(
+                                        label: 'Customize',
+                                        onPressed:
+                                            s.dishIds.isEmpty
+                                                ? null
+                                                : () => _applySetMenuToNewEvent(s),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
                               ),
                             ),
-                          );
-                        },
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -7390,42 +8798,115 @@ class _ManageEventsState extends State<ManageEvents>
 
   Future<void> _saveChecklist(
     EventOrderDto order,
-    List<ChecklistItem> editableItems,
-  ) async {
+    List<ChecklistItem> editableItems, {
+    BuildContext? dialogContext,
+  }) async {
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Save checklist'),
+            content: const Text(
+              'Save checklist changes and update generated checklist output?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true) return;
+
+    BuildContext? loaderContext;
     try {
-      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          loaderContext = ctx;
+          return const AlertDialog(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 12),
+                Text('Saving checklist...'),
+              ],
+            ),
+          );
+        },
+      );
+
+      final checklistPayload =
+          editableItems
+              .map(
+                (item) => {
+                  'item': item.item,
+                  'title': item.item,
+                  'description': item.description,
+                  'quantity': item.quantity,
+                  'cost': item.cost,
+                  'price': item.cost,
+                  'isCompleted': item.isCompleted,
+                  if (item.inventoryId != null)
+                    'inventoryId': item.inventoryId,
+                },
+              )
+              .toList();
 
       await EventsApi.instance.replaceChecklist(
         orderId: order.id,
         deductInventory: _isCateringPlusEventOrder(order),
-        items:
-            editableItems
-                .map(
-                  (item) => {
-                    'item': item.item,
-                    'title': item.item,
-                    'description': item.description,
-                    'quantity': item.quantity,
-                    'cost': item.cost,
-                    'price': item.cost,
-                    'isCompleted': item.isCompleted,
-                    if (item.inventoryId != null)
-                      'inventoryId': item.inventoryId,
-                  },
-                )
-                .toList(),
+        items: checklistPayload,
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Checklist saved successfully!'),
-          backgroundColor: Colors.green,
-        ),
+      final orderKind =
+          order.orderKind == 'catering'
+              ? 'catering'
+              : order.orderKind == 'event'
+                  ? 'event'
+                  : (order.orderType.toLowerCase() == 'catering'
+                      ? 'catering'
+                      : 'event');
+      await ManagerCateringApi.instance.patchStageData(
+        id: order.id,
+        orderKind: orderKind,
+        patch: {'checklist': checklistPayload},
       );
 
-      // Refresh orders
+      if (loaderContext != null && Navigator.of(loaderContext!).canPop()) {
+        Navigator.of(loaderContext!).pop();
+      }
+
+      if (dialogContext != null && Navigator.of(dialogContext).canPop()) {
+        Navigator.of(dialogContext).pop();
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Checklist saved successfully.'),
+            backgroundColor: Color(0xFF1DB954),
+          ),
+        );
+      }
+
       await _refreshOrders();
+      await _selectManageEventsOrder(order);
     } catch (e) {
+      if (loaderContext != null && Navigator.of(loaderContext!).canPop()) {
+        Navigator.of(loaderContext!).pop();
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

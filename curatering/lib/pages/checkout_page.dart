@@ -10,9 +10,11 @@ import '../services/customer_orders_cache.dart';
 import '../services/loyalty_rewards_store.dart';
 import '../config.dart';
 import '../utils/order_display_utils.dart';
+import '../utils/geo_utils.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../services/nominatim_service.dart';
 import '../widgets/map_picker.dart';
 import '../widgets/antd_message.dart';
 import 'payment_page.dart';
@@ -39,6 +41,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
   bool _showValidation = false;
   Map<String, dynamic>? _customerData;
   int _currentPoints = 0; // User's current points - in production from API
+  List<Map<String, dynamic>> _savedDeliveryOptions = [];
+  String? _selectedSavedAddressKey;
 
   // Delivery time selection
   // - ASAP (internal 'NOW'): send no delivery_time
@@ -108,18 +112,81 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['deliveryAddress'] != null &&
-            data['deliveryAddress'].isNotEmpty) {
-          setState(() {
-            _addressController.text = data['deliveryAddress'];
-            _deliveryLat =
-                _parseCoord(data['deliveryLat']) ??
-                _parseCoord(data['delivery_lat']);
-            _deliveryLng =
-                _parseCoord(data['deliveryLng']) ??
-                _parseCoord(data['delivery_lng']);
+        final options = <Map<String, dynamic>>[];
+        final primary = (data['deliveryAddress'] ?? '').toString().trim();
+        final primaryLat = _parseCoord(data['deliveryLat'] ?? data['delivery_lat']);
+        final primaryLng = _parseCoord(data['deliveryLng'] ?? data['delivery_lng']);
+        if (primary.isNotEmpty) {
+          options.add({
+            'key': 'primary',
+            'label': 'Primary',
+            'address': primary,
+            'lat': primaryLat,
+            'lng': primaryLng,
           });
         }
+        final others = data['otherDeliveryAddresses'];
+        if (others is List) {
+          for (var i = 0; i < others.length; i++) {
+            final entry = others[i];
+            if (entry is Map) {
+              final addr = (entry['address'] ?? '').toString().trim();
+              if (addr.isEmpty) continue;
+              options.add({
+                'key': 'other_$i',
+                'label': (entry['label'] ?? 'Address ${i + 1}').toString(),
+                'address': addr,
+                'lat': _parseCoord(entry['lat'] ?? entry['delivery_lat']),
+                'lng': _parseCoord(entry['lng'] ?? entry['delivery_lng']),
+              });
+            } else {
+              final addr = entry.toString().trim();
+              if (addr.isEmpty) continue;
+              options.add({
+                'key': 'other_$i',
+                'label': 'Address ${i + 1}',
+                'address': addr,
+              });
+            }
+          }
+        }
+
+        // Ensure other addresses have coordinates so we can enforce the 5km radius.
+        for (final opt in options) {
+          final lat = _parseCoord(opt['lat']);
+          final lng = _parseCoord(opt['lng']);
+          if (lat != null && lng != null) continue;
+          final addr = (opt['address'] ?? '').toString().trim();
+          if (addr.isEmpty) continue;
+
+          try {
+            final pin = await NominatimService.instance.geocodeAddress(addr);
+            if (pin != null) {
+              opt['lat'] = pin.lat;
+              opt['lng'] = pin.lng;
+            }
+          } catch (_) {
+            // Non-fatal: address will be treated as out-of-range until it can be pinned/geocoded.
+          }
+        }
+
+        final firstInRange = options.where((opt) {
+          final lat = _parseCoord(opt['lat']);
+          final lng = _parseCoord(opt['lng']);
+          if (lat == null || lng == null) return false;
+          return isWithinDeliveryRadius(GeoPin(lat: lat, lng: lng));
+        }).toList();
+
+        setState(() {
+          _savedDeliveryOptions = options;
+          if (options.isNotEmpty) {
+            final first = firstInRange.isNotEmpty ? firstInRange.first : options.first;
+            _selectedSavedAddressKey = first['key'] as String?;
+            _addressController.text = first['address'] as String;
+            _deliveryLat = first['lat'] as double?;
+            _deliveryLng = first['lng'] as double?;
+          }
+        });
       }
     } catch (e) {
       debugPrint('Error loading saved address: $e');
@@ -159,10 +226,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
       initialLongitude: _deliveryLng,
       initialAddress:
           _addressController.text.isNotEmpty ? _addressController.text : null,
+      enforceDeliveryRadius: true,
     );
 
     if (result != null) {
       setState(() {
+        _selectedSavedAddressKey = 'custom';
         _addressController.text = result.address;
         _deliveryLat = result.latitude;
         _deliveryLng = result.longitude;
@@ -177,6 +246,24 @@ class _CheckoutPageState extends State<CheckoutPage> {
       message,
       type: error ? AntdMessageType.error : AntdMessageType.success,
     );
+  }
+
+  List<Map<String, dynamic>> get _inRangeSavedAddresses {
+    return _savedDeliveryOptions.where((opt) {
+      final lat = _parseCoord(opt['lat']);
+      final lng = _parseCoord(opt['lng']);
+      if (lat == null || lng == null) return false;
+      return isWithinDeliveryRadius(GeoPin(lat: lat, lng: lng));
+    }).toList();
+  }
+
+  void _applySavedAddress(Map<String, dynamic> opt) {
+    setState(() {
+      _selectedSavedAddressKey = opt['key'] as String?;
+      _addressController.text = (opt['address'] ?? '').toString();
+      _deliveryLat = _parseCoord(opt['lat']);
+      _deliveryLng = _parseCoord(opt['lng']);
+    });
   }
 
   Future<void> _handlePlaceOrder() async {
@@ -197,6 +284,18 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
     if (_deliveryLat == null || _deliveryLng == null) {
       _notify('Please pin your delivery location on the map.', error: true);
+      return;
+    }
+    if (!isWithinDeliveryRadius(
+      GeoPin(lat: _deliveryLat!, lng: _deliveryLng!),
+    )) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Delivery address must be within ${deliveryMaxDistanceKm.toStringAsFixed(0)} km of the restaurant.',
+          ),
+        ),
+      );
       return;
     }
 
@@ -609,9 +708,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     }).toList(),
                               ),
                             ),
-                            // Redeem/Loyalty Banner
-                            _buildRedeemBanner(),
-                            const SizedBox(height: 16),
                             Divider(color: Colors.grey.shade200, height: 1),
                             Container(
                               padding: const EdgeInsets.all(16),
@@ -673,6 +769,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     'NAME',
                                     '',
                                     controller: _nameController,
+                                    readOnly: _customerData != null,
                                     errorText:
                                         _showValidation ? _nameError : null,
                                   ),
@@ -686,6 +783,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     maxLength: 11,
                                     digitsOnly: true,
                                     hintText: '09123456789',
+                                    readOnly: _customerData != null,
                                     errorText:
                                         _showValidation ? _phoneError : null,
                                   ),
@@ -790,83 +888,92 @@ class _CheckoutPageState extends State<CheckoutPage> {
                         ),
                       ),
                     ),
-                    // NOTES
+                    // NOTES + Loyalty Rewards
                     Expanded(
-                      child: Container(
-                        margin: const EdgeInsets.only(left: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Column(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              child: const Text(
-                                'NOTES',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                  letterSpacing: 1,
+                      child: Column(
+                        children: [
+                          Container(
+                            margin: const EdgeInsets.only(left: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            child: Column(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  child: const Text(
+                                    'NOTES',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                      letterSpacing: 1,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                Divider(color: Colors.grey.shade200, height: 1),
+                                Container(
+                                  padding: const EdgeInsets.all(20),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'PLEASE PREPARE YOUR GCASH APP TO SCAN OUR QR CODE FOR PAYMENT.',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade700,
+                                          height: 1.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'PLEASE SEND THE EXACT AMOUNT OF YOUR TOTAL COST ONLY.',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade700,
+                                          height: 1.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'ORDERS WITH INSUFFICIENT PAYMENT WILL NOT BE CONFIRMED.',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade700,
+                                          height: 1.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'ONCE ORDER IS PAID, PLEASE WAIT FOR YOUR ORDER TO BE PROCESSED AND DELIVERED.',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade700,
+                                          height: 1.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'THANK YOU!',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade700,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
-                            Divider(color: Colors.grey.shade200, height: 1),
-                            Container(
-                              padding: const EdgeInsets.all(20),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'PLEASE PREPARE YOUR GCASH APP TO SCAN OUR QR CODE FOR PAYMENT.',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700,
-                                      height: 1.5,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'PLEASE SEND THE EXACT AMOUNT OF YOUR TOTAL COST ONLY.',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700,
-                                      height: 1.5,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'ORDERS WITH INSUFFICIENT PAYMENT WILL NOT BE CONFIRMED.',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700,
-                                      height: 1.5,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'ONCE ORDER IS PAID, PLEASE WAIT FOR YOUR ORDER TO BE PROCESSED AND DELIVERED.',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700,
-                                      height: 1.5,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'THANK YOU!',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(height: 16),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 12),
+                            child: _buildRedeemBanner(),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -880,9 +987,51 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Widget _buildAddressFieldWithMap() {
+    final inRange = _inRangeSavedAddresses;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (_customerData != null && inRange.isNotEmpty) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(width: 100),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: inRange.any((o) => o['key'] == _selectedSavedAddressKey)
+                      ? _selectedSavedAddressKey
+                      : null,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: 'Saved addresses (within ${deliveryMaxDistanceKm.toStringAsFixed(0)} km)',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    isDense: true,
+                  ),
+                  hint: const Text('Choose a saved address'),
+                  items: inRange
+                      .map(
+                        (opt) => DropdownMenuItem<String>(
+                          value: opt['key'] as String,
+                          child: Text(
+                            '${opt['label']}: ${opt['address']}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (key) {
+                    if (key == null) return;
+                    final opt = inRange.firstWhere((o) => o['key'] == key);
+                    _applySavedAddress(opt);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ],
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1049,6 +1198,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     bool digitsOnly = false,
     String? hintText,
     String? errorText,
+    bool readOnly = false,
   }) {
     return Row(
       crossAxisAlignment:
@@ -1071,6 +1221,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   ? TextField(
                     controller: controller,
                     maxLines: maxLines,
+                    readOnly: readOnly,
                     keyboardType: keyboardType,
                     maxLength: maxLength,
                     inputFormatters:

@@ -43,6 +43,7 @@ bool get isCustomerSiteHost {
   if (!kIsWeb) return false;
   final h = _normalizedHost;
   if (h == kCustomerWebHost.toLowerCase()) return true;
+  if (h == 'localhost' || h == '127.0.0.1') return true;
   final parts = h.split('.');
   if (parts.isEmpty) return false;
   return parts.first == 'macrinas-kitchen';

@@ -117,6 +117,7 @@ class PagedDataTable extends StatefulWidget {
     this.headingRowColor,
     this.columnSpacing,
     this.showVerticalScrollbar = true,
+    this.forceVerticalScroll = false,
     this.title = 'Table export',
     this.enableSearch = true,
     this.enablePrint = true,
@@ -128,6 +129,7 @@ class PagedDataTable extends StatefulWidget {
     this.dataRowMaxHeight,
     this.headingRowHeight,
     this.horizontalMargin,
+    this.toolbarActions = const [],
   });
 
   final List<DataColumn> columns;
@@ -136,6 +138,7 @@ class PagedDataTable extends StatefulWidget {
   final WidgetStateProperty<Color?>? headingRowColor;
   final double? columnSpacing;
   final bool showVerticalScrollbar;
+  final bool forceVerticalScroll;
   final String title;
   final bool enableSearch;
   final bool enablePrint;
@@ -147,6 +150,7 @@ class PagedDataTable extends StatefulWidget {
   final double? dataRowMaxHeight;
   final double? headingRowHeight;
   final double? horizontalMargin;
+  final List<Widget> toolbarActions;
 
   @override
   State<PagedDataTable> createState() => _PagedDataTableState();
@@ -248,7 +252,8 @@ class _PagedDataTableState extends State<PagedDataTable> {
       },
     );
 
-    if (widget.showVerticalScrollbar && pageRows.length > 12) {
+    if (widget.showVerticalScrollbar &&
+        (widget.forceVerticalScroll || pageRows.length > 12)) {
       tableScroll = Scrollbar(
         thumbVisibility: true,
         child: ConstrainedBox(
@@ -290,6 +295,7 @@ class _PagedDataTableState extends State<PagedDataTable> {
               onSearchChanged: (_) => setState(() => _page = 0),
               onPrint: () => _printFilteredRows(filteredRows),
               onCsv: () => _exportCsv(filteredRows),
+              extraActions: widget.toolbarActions,
             ),
           ClipRRect(
             borderRadius: BorderRadius.circular(AntdTokens.radiusMd),
@@ -459,6 +465,7 @@ class _TableToolbar extends StatelessWidget {
     required this.onSearchChanged,
     required this.onPrint,
     required this.onCsv,
+    required this.extraActions,
   });
 
   final String tableTitle;
@@ -471,6 +478,7 @@ class _TableToolbar extends StatelessWidget {
   final ValueChanged<String> onSearchChanged;
   final VoidCallback onPrint;
   final VoidCallback onCsv;
+  final List<Widget> extraActions;
 
   @override
   Widget build(BuildContext context) {
@@ -522,6 +530,7 @@ class _TableToolbar extends StatelessWidget {
             label: '$filteredRows of $totalRows rows',
             color: AntdTokens.textSecondary,
           ),
+          ...extraActions,
         ],
       ),
     );

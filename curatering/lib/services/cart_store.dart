@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/menu_dish.dart';
 import 'api_client.dart';
 import 'cart_sync_service.dart';
+import 'menu_store.dart';
 
 const double kRestaurantAddonExtraPhp = 15;
 
@@ -126,6 +127,9 @@ class CartStore extends ChangeNotifier {
 
   CartStore._();
 
+  bool _initInProgress = false;
+  bool _initialized = false;
+
   List<CartItem> _items = [];
 
   List<CartItem> get items => List.unmodifiable(_items);
@@ -159,6 +163,7 @@ class CartStore extends ChangeNotifier {
     int addOnQuantity = 1,
     List<String> addOns = const [],
     String? specialInstructions,
+    int quantity = 1,
   }) {
     final normalizedAddOnQuantity =
         selectedSauce?.trim().isNotEmpty == true ? addOnQuantity : 1;
@@ -176,17 +181,19 @@ class CartStore extends ChangeNotifier {
 
     late final CartItem addedLine;
     if (existingIndex >= 0) {
-      _items[existingIndex].quantity++;
       addedLine = CartItem(
         dish: dish,
+        quantity: quantity,
         selectedSauce: selectedSauce,
         addOnQuantity: normalizedAddOnQuantity,
         addOns: addOns,
         specialInstructions: specialInstructions,
       );
+      _items[existingIndex].quantity += quantity;
     } else {
       addedLine = CartItem(
         dish: dish,
+        quantity: quantity,
         selectedSauce: selectedSauce,
         addOnQuantity: normalizedAddOnQuantity,
         addOns: addOns,
@@ -281,11 +288,40 @@ class CartStore extends ChangeNotifier {
   void replaceItemsWithoutSync(List<dynamic> rawItems) {
     _items = [];
     for (final raw in rawItems) {
-      final parsed = CartSyncService.parseTrayLineItem(raw);
+      var parsed = CartSyncService.parseTrayLineItem(raw);
       if (parsed == null) continue;
+
+      // Enrich from local menu cache if name/price/image is missing
+      if (parsed.dish.name.isEmpty ||
+          parsed.dish.price == '0' ||
+          parsed.dish.imageBase64 == null) {
+        final cached = MenuStore.instance.findDishById(parsed.dish.id);
+        if (cached != null) {
+          parsed = CartItem(
+            dish: parsed.dish.copyWith(
+              name: parsed.dish.name.isEmpty ? cached.name : null,
+              price: parsed.dish.price == '0' ? cached.price : null,
+              imageBase64: parsed.dish.imageBase64 ?? cached.imageBase64,
+              category: parsed.dish.category == 'restaurant'
+                  ? cached.category
+                  : null,
+              additionalChargeAmount:
+                  parsed.dish.additionalChargeAmount == 0
+                      ? cached.additionalChargeAmount
+                      : null,
+            ),
+            quantity: parsed.quantity,
+            selectedSauce: parsed.selectedSauce,
+            addOnQuantity: parsed.addOnQuantity,
+            addOns: parsed.addOns,
+            specialInstructions: parsed.specialInstructions,
+          );
+        }
+      }
+
       final existingIndex = _items.indexWhere(
         (item) =>
-            item.dish.id == parsed.dish.id &&
+            item.dish.id == parsed!.dish.id &&
             _sameCustomizations(
               item,
               parsed.selectedSauce,
@@ -343,13 +379,32 @@ class CartStore extends ChangeNotifier {
   }
 
   Future<void> init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('customer_token');
-    if (token != null && token.isNotEmpty) {
+    if (_initInProgress) return;
+    if (_initialized) return;
+    _initInProgress = true;
+    try {
+      await _loadCart();
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('customer_token');
+      if (token == null || token.isEmpty) {
+        if (_items.isNotEmpty) {
+          _items = [];
+          await _saveCart();
+          notifyListeners();
+        }
+        return;
+      }
       ApiClient.instance.setCustomerBearer(token);
       await CartSyncService.instance.syncFromServer();
-    } else {
-      await _loadCart();
+    } finally {
+      _initInProgress = false;
+      _initialized = true;
     }
+  }
+
+  /// Call after logout so the next login re-syncs tray from the server.
+  void resetInitState() {
+    _initialized = false;
+    _initInProgress = false;
   }
 }

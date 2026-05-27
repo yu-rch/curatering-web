@@ -7,11 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import '../utils/order_display_utils.dart';
 import '../services/customer_orders_cache.dart';
-import '../widgets/customer_pages_top_bar.dart';
-import 'customer_website.dart';
-import 'my_caterings_page.dart';
-import 'my_orders_page.dart';
-import 'my_profile_page.dart';
+import '../widgets/restaurant_order_feedback_dialog.dart';
 
 class MyOrderTrackingPage extends StatefulWidget {
   const MyOrderTrackingPage({super.key});
@@ -53,11 +49,38 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
       if (!force) {
         final cached = CustomerOrdersCache.instance.peekRestaurantOrders();
         if (cached != null) {
-          final activeOrders =
-              cached.where((order) {
-                final status = order['status'] ?? 'pending';
-                return status != 'delivered' && status != 'cancelled';
-              }).toList();
+          final activeOrders = cached.where((order) {
+            final status =
+                (order['order_status'] ?? order['status'] ?? '')
+                    .toString()
+                    .toUpperCase();
+            final stage =
+                (order['fulfillment_stage'] ?? '').toString().toUpperCase();
+            if (status.contains('CANCEL')) return false;
+            final isDelivered =
+                status.contains('DELIVERED') || stage == 'DELIVERED';
+            if (isDelivered) {
+              final deliveredAt = DateTime.tryParse(
+                '${order['delivered_at'] ?? order['updated_at'] ?? order['created_at'] ?? ''}',
+              );
+              if (deliveredAt != null &&
+                  DateTime.now().difference(deliveredAt) >
+                      const Duration(hours: 24)) {
+                return false;
+              }
+            }
+            return status.contains('PENDING') ||
+                status.contains('WAITING') ||
+                status.contains('INSUFFICIENT') ||
+                status.contains('BALANCE') ||
+                status.contains('ORDER CONFIRMED') ||
+                status.contains('CONFIRMED') ||
+                status.contains('PREPARING') ||
+                stage == 'IN_PREPARATION' ||
+                status.contains('OUT FOR DELIVERY') ||
+                stage == 'OUT_FOR_DELIVERY' ||
+                isDelivered;
+          }).toList();
           if (mounted) {
             setState(() {
               _activeOrders = activeOrders;
@@ -111,12 +134,39 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
               .toList();
       CustomerOrdersCache.instance.setRestaurantOrders(allOrders);
 
-      // Filter only active orders (not delivered or cancelled)
-      final activeOrders =
-          allOrders.where((order) {
-            final status = order['status'] ?? 'pending';
-            return status != 'delivered' && status != 'cancelled';
-          }).toList();
+      final activeOrders = allOrders.where((order) {
+        final status =
+            (order['order_status'] ?? order['status'] ?? '')
+                .toString()
+                .toUpperCase();
+        final stage =
+            (order['fulfillment_stage'] ?? '').toString().toUpperCase();
+        if (status.contains('CANCEL')) return false;
+
+        final isDelivered =
+            status.contains('DELIVERED') || stage == 'DELIVERED';
+        if (isDelivered) {
+          final deliveredAt = DateTime.tryParse(
+            '${order['delivered_at'] ?? order['updated_at'] ?? order['created_at'] ?? ''}',
+          );
+          if (deliveredAt != null &&
+              DateTime.now().difference(deliveredAt) > const Duration(hours: 24)) {
+            return false;
+          }
+        }
+
+        return status.contains('PENDING') ||
+            status.contains('WAITING') ||
+            status.contains('INSUFFICIENT') ||
+            status.contains('BALANCE') ||
+            status.contains('ORDER CONFIRMED') ||
+            status.contains('CONFIRMED') ||
+            status.contains('PREPARING') ||
+            stage == 'IN_PREPARATION' ||
+            status.contains('OUT FOR DELIVERY') ||
+            stage == 'OUT_FOR_DELIVERY' ||
+            isDelivered;
+      }).toList();
 
       if (mounted) {
         setState(() {
@@ -140,6 +190,11 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
         });
       }
     }
+  }
+
+  Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('customer_token');
   }
 
   List<Map<String, dynamic>> _normalizeOrderItems(dynamic rawItems) {
@@ -245,19 +300,6 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
     return formatRestaurantOrderNo({'order_no': orderNo, 'id': rawId});
   }
 
-  void _navigateFromTopBar(CustomerPageTab tab) {
-    if (tab == CustomerPageTab.tracking) return;
-    final route = switch (tab) {
-      CustomerPageTab.home => const CustomerWebsiteScreen(),
-      CustomerPageTab.profile => const MyProfilePage(),
-      CustomerPageTab.orders => const MyOrdersPage(),
-      CustomerPageTab.caterings => const MyCateringsPage(),
-      CustomerPageTab.tracking => const MyOrderTrackingPage(),
-    };
-    Navigator.of(
-      context,
-    ).pushReplacement(MaterialPageRoute(builder: (_) => route));
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -280,15 +322,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          CustomerPagesTopBar(
-            currentTab: CustomerPageTab.tracking,
-            onTabSelected: _navigateFromTopBar,
-          ),
-          Expanded(
-            child:
-                _isLoading
+      body: _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : _error != null
                     ? Center(
@@ -358,7 +392,11 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                         itemCount: _activeOrders.length,
                         itemBuilder: (context, index) {
                           final order = _activeOrders[index];
-                          final status = order['status'] ?? 'pending';
+                          final status =
+                              (order['order_status'] ?? order['status'] ?? 'pending')
+                                  .toString();
+                          final statusUpper = status.toUpperCase();
+                          final isDelivered = statusUpper.contains('DELIVERED');
                           final paymentStatus =
                               order['payment_status'] ?? 'pending';
                           final currentStep = _getStatusStep(status);
@@ -396,25 +434,55 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                                           fontSize: 18,
                                         ),
                                       ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: _getStatusColor(status),
-                                          borderRadius: BorderRadius.circular(
-                                            20,
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (isDelivered &&
+                                              order['feedback_stars'] == null)
+                                            IconButton(
+                                              tooltip: 'Rate this order',
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(),
+                                              onPressed: () async {
+                                                final submitted =
+                                                    await showRestaurantOrderFeedbackDialog(
+                                                  context,
+                                                  orderId: orderKey,
+                                                  orderLabel: _shortOrderId(
+                                                    order['id'],
+                                                    order['order_no'],
+                                                  ),
+                                                  getToken: _getToken,
+                                                );
+                                                if (submitted) {
+                                                  _loadActiveOrders(force: true);
+                                                }
+                                              },
+                                              icon: Icon(
+                                                Icons.rate_review_outlined,
+                                                color: Colors.amber.shade700,
+                                              ),
+                                            ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: _getStatusColor(status),
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                            ),
+                                            child: Text(
+                                              statusUpper,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                        child: Text(
-                                          status.toUpperCase(),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -602,9 +670,6 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                         },
                       ),
                     ),
-          ),
-        ],
-      ),
     );
   }
 

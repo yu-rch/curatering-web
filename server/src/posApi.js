@@ -88,6 +88,12 @@ function posStatusLabel(row) {
   if (row.balance_proof_pending_review && row.payment_proof_balance) {
     return "BALANCE PAYMENT CONFIRMATION";
   }
+  if (os === "BALANCE_PAYMENT_PENDING_REVIEW") {
+    return "WAITING FOR BALANCE PAYMENT CONFIRMATION";
+  }
+  if (os === "PAYMENT_INSUFFICIENT") {
+    return "PAYMENT INSUFFICIENT";
+  }
   if (os === "PENDING_CASHIER") {
     if (row.payment_uploaded_initial || row.payment_proof_initial) {
       return "WAITING FOR PAYMENT CONFIRMATION";
@@ -153,6 +159,22 @@ export function mapRestaurantOrderRowForPosApi(row, customerName = null) {
     payment_reference_initial: refInitial,
     payment_references_initial: refInitial,
     payment_reference_balance: row.payment_reference_balance ?? "",
+    amount_paid:
+      row.amount_paid != null
+        ? Number(row.amount_paid)
+        : row.cashier_amount_received_initial != null
+          ? Number(row.cashier_amount_received_initial)
+          : null,
+    amount_received:
+      row.cashier_amount_received != null
+        ? Number(row.cashier_amount_received)
+        : row.cashier_amount_received_initial != null
+          ? Number(row.cashier_amount_received_initial)
+          : row.amount_paid != null
+            ? Number(row.amount_paid)
+            : null,
+    change: row.change_given != null ? Number(row.change_given) : null,
+    change_given: row.change_given != null ? Number(row.change_given) : null,
     cashier_amount_received:
       row.cashier_amount_received_initial != null
         ? Number(row.cashier_amount_received_initial)
@@ -375,6 +397,33 @@ async function patchCateringOrder(pool, id, orderKind, body, { requireStatus = f
   if (Array.isArray(body?.actual_event_images)) {
     addSet("actual_event_images", JSON.stringify(body.actual_event_images), "::jsonb");
   }
+  if (Array.isArray(body?.checklist)) {
+    addSet("checklist", JSON.stringify(body.checklist), "::jsonb");
+  }
+  if (body?.post_analysis && typeof body.post_analysis === "object") {
+    if (cols.has("post_analysis")) {
+      values.push(JSON.stringify(body.post_analysis));
+      sets.push(
+        `post_analysis = COALESCE(post_analysis, '{}'::jsonb) || $${values.length}::jsonb`,
+      );
+    }
+  }
+  if (Array.isArray(body?.additional_costs)) {
+    if (cols.has("post_analysis")) {
+      values.push(JSON.stringify({ additional_costs: body.additional_costs }));
+      sets.push(
+        `post_analysis = COALESCE(post_analysis, '{}'::jsonb) || $${values.length}::jsonb`,
+      );
+    }
+  }
+  if (body?.cost_breakdown != null) {
+    if (cols.has("post_analysis")) {
+      values.push(JSON.stringify({ cost_breakdown: body.cost_breakdown }));
+      sets.push(
+        `post_analysis = COALESCE(post_analysis, '{}'::jsonb) || $${values.length}::jsonb`,
+      );
+    }
+  }
   if (cols.has("stage_entered_at") && status) {
     sets.push("stage_entered_at = now()");
   }
@@ -411,7 +460,8 @@ async function createStaffCateringOrder(pool, body) {
   };
 
   add("source", "new_event");
-  add("status", "for_processing");
+  // Stage 1: New Event
+  add("status", "new_event");
   add("catering_id", txNo);
   add("event_id", txNo);
   add("event_title", body?.event_title ?? body?.eventTitle ?? "");
@@ -423,14 +473,18 @@ async function createStaffCateringOrder(pool, body) {
   add("contact_number", body?.contact_number ?? body?.contactNumber ?? "");
   add("email_address", body?.email_address ?? body?.emailAddress ?? "");
   add("address", body?.address ?? "");
-  add("guest_count", Number(body?.guest_count ?? body?.guestCount ?? 0) || 0);
-  add("pax_buffer", Number(body?.pax_buffer ?? body?.paxBuffer ?? 0) || 0);
+  const guestCount = Number(body?.guest_count ?? body?.guestCount ?? 0) || 0;
+  const paxBuffer = Number(body?.pax_buffer ?? body?.paxBuffer ?? 0) || 0;
+  add("guest_count", guestCount);
+  add("pax_buffer", paxBuffer);
   add("payment_method", body?.payment_method ?? body?.paymentMethod ?? "cash");
-  add("total_cost", Number(body?.total_cost ?? body?.totalCost ?? 0) || 0);
-  add("labor_cost", Number(body?.labor_cost ?? body?.laborCost ?? 0) || 0);
-  add("travel_cost", Number(body?.travel_cost ?? body?.travelCost ?? 0) || 0);
+  const laborCost = Number(body?.labor_cost ?? body?.laborCost ?? 0) || 0;
+  const travelCost = Number(body?.travel_cost ?? body?.travelCost ?? 0) || 0;
+  add("labor_cost", laborCost);
+  add("travel_cost", travelCost);
   add("allergens", body?.allergens ?? "");
-  add("menu", JSON.stringify(Array.isArray(body?.menu) ? body.menu : []), "::jsonb");
+  const menu = Array.isArray(body?.menu) ? body.menu : [];
+  add("menu", JSON.stringify(menu), "::jsonb");
   add(
     "schedule_slots",
     JSON.stringify(Array.isArray(body?.schedule_slots) ? body.schedule_slots : []),
@@ -455,6 +509,28 @@ async function createStaffCateringOrder(pool, body) {
     "::jsonb",
   );
 
+  // Authoritative total cost (mobile parity)
+  let menuAddOns = 0;
+  for (const m of menu) {
+    if (m && typeof m === "object") {
+      menuAddOns += Number(
+        m.additionalChargeAmount ??
+        m.additional_charge_amount ??
+        m.menu_dishes_additional_charge_amount ??
+        0,
+      ) || 0;
+    }
+  }
+  const additionalTotal = Number(
+    body?.additionalChargeTotal ??
+    body?.additional_charge_total ??
+    body?.menu_additional_charge_total ??
+    0,
+  ) || 0;
+  const base = (guestCount + paxBuffer) * 500;
+  const totalCostNum = base + menuAddOns + additionalTotal + laborCost + travelCost;
+  add("total_cost", totalCostNum);
+
   const result = await pool.query(
     `INSERT INTO ${table} (${columns.join(", ")})
      VALUES (${placeholders.join(", ")})
@@ -465,7 +541,7 @@ async function createStaffCateringOrder(pool, body) {
 }
 
 const CASHIER_ONLINE_ORDER_WHERE = `
-  (COALESCE(order_source, 'WEB_APP') IN ('WEB_APP', 'MOBILE_APP'))
+  COALESCE(order_source, 'WEB_APP') NOT IN ('POS_MOBILE', 'POS_WEB')
   AND (
     user_email IS NOT NULL AND trim(user_email) <> ''
     OR customer_id IS NOT NULL
@@ -496,6 +572,14 @@ async function getOrderById(pool, orderId) {
   );
   return r.rows[0] || null;
 }
+
+export {
+  listStaffCateringOrders,
+  getStaffCateringOrder,
+  patchCateringOrder,
+  createStaffCateringOrder,
+  normalizeMobileCateringStage,
+};
 
 export function registerPosRoutes(app, {
   pool,
@@ -548,6 +632,9 @@ export function registerPosRoutes(app, {
       const supplemental = Number(req.body?.supplemental_amount_received);
       const total = Number(order.total_cost || order.total_amount || 0);
 
+      const pkVal = order.order_id || order.id;
+      const pkWhere = `(order_id = $1 OR id::text = $1)`;
+
       if (action === "confirm") {
         const primary = Number.isFinite(amountReceived) ? amountReceived : total;
         const secondary = Number.isFinite(supplemental) ? supplemental : 0;
@@ -556,10 +643,13 @@ export function registerPosRoutes(app, {
           await pool.query(
             `UPDATE restaurant_orders
              SET cashier_amount_received_initial = $2,
+                 amount_paid = $2,
+                 order_status = 'PAYMENT_INSUFFICIENT',
                  balance_proof_pending_review = FALSE,
+                 last_updated_order_status_dt_stamp = now(),
                  updated_at = now()
-             WHERE id = $1`,
-            [order.id, primary],
+             WHERE ${pkWhere}`,
+            [pkVal, primary],
           );
           return res.json({ ok: true, status: "PAYMENT INSUFFICIENT" });
         }
@@ -574,9 +664,10 @@ export function registerPosRoutes(app, {
                amount_paid = $2,
                change_given = $4,
                balance_proof_pending_review = FALSE,
+               last_updated_order_status_dt_stamp = now(),
                updated_at = now()
-           WHERE id = $1`,
-          [order.id, primary, secondary, change > 0 ? change : 0],
+           WHERE ${pkWhere}`,
+          [pkVal, primary, secondary, change > 0 ? change : 0],
         );
         const email = await resolveRestaurantOrderEmail(order);
         if (email) {
@@ -590,12 +681,17 @@ export function registerPosRoutes(app, {
       }
 
       if (action === "insufficient") {
+        const received = Number.isFinite(amountReceived) ? amountReceived : 0;
         await pool.query(
           `UPDATE restaurant_orders
            SET cashier_amount_received_initial = $2,
+               amount_paid = $2,
+               order_status = 'PAYMENT_INSUFFICIENT',
+               balance_proof_pending_review = FALSE,
+               last_updated_order_status_dt_stamp = now(),
                updated_at = now()
-           WHERE id = $1`,
-          [order.id, Number.isFinite(amountReceived) ? amountReceived : 0],
+           WHERE ${pkWhere}`,
+          [pkVal, received],
         );
         return res.json({ ok: true, status: "PAYMENT INSUFFICIENT" });
       }
@@ -610,9 +706,10 @@ export function registerPosRoutes(app, {
                cashier_amount_received_initial = $2,
                amount_paid = $2,
                change_given = $3,
+               last_updated_order_status_dt_stamp = now(),
                updated_at = now()
-           WHERE id = $1`,
-          [order.id, paid, change > 0 ? change : 0],
+           WHERE ${pkWhere}`,
+          [pkVal, paid, change > 0 ? change : 0],
         );
         return res.json({ ok: true, status: "ORDER CONFIRMED WITH OVERPAYMENT" });
       }
@@ -656,15 +753,16 @@ export function registerPosRoutes(app, {
       const tracking = String(req.body?.delivery_tracking_url || "").trim();
       const orderStatus = orderStatusFromFulfillmentStage(stage);
 
-      const fields = ["order_status = $2", "updated_at = now()"];
-      const vals = [order.id, orderStatus];
+      const pkVal = order.order_id || order.id;
+      const fields = ["order_status = $2", "updated_at = now()", "last_updated_order_status_dt_stamp = now()"];
+      const vals = [pkVal, orderStatus];
       if (tracking) {
-        fields.push(`delivery_tracking_url = $${fields.length + 1}`);
+        fields.push(`delivery_tracking_url = $${vals.length + 1}`);
         vals.push(tracking);
       }
 
       await pool.query(
-        `UPDATE restaurant_orders SET ${fields.join(", ")} WHERE id = $1`,
+        `UPDATE restaurant_orders SET ${fields.join(", ")} WHERE order_id = $1 OR id::text = $1`,
         vals,
       );
 
@@ -675,17 +773,17 @@ export function registerPosRoutes(app, {
           await pool.query(
             `UPDATE restaurant_orders
              SET loyalty_points_restaurant_obtained = $2
-             WHERE id = $1`,
-            [order.id, points],
+             WHERE order_id = $1 OR id::text = $1`,
+            [pkVal, points],
           );
           if (order.customer_id) {
             await pool.query(
               `UPDATE customer_accounts
                SET restaurant_loyalty_points = COALESCE(restaurant_loyalty_points, 0) + $2,
                    updated_at = now()
-               WHERE id = $1`,
-              [order.customer_id, points],
-            );
+               WHERE id::text = $1 OR customer_id::text = $1`,
+              [String(order.customer_id), points],
+            ).catch(() => {});
           }
         }
         const email = await resolveRestaurantOrderEmail(order);
@@ -737,13 +835,15 @@ export function registerPosRoutes(app, {
            order_status, payment_method,
            order_source, pos_customer_label, payment_proof,
            payment_uploaded, cashier_amount_received_initial, amount_paid,
-           change_given, pos_claimed_at, note
+           change_given, pos_claimed_at, note,
+           submitted_order_dt_stamp, last_updated_order_status_dt_stamp
          ) VALUES (
            $1, $2, '', ${itemsSql}, $4,
            'Walk-in', NULL, NULL,
            'IN_PREPARATION', $5,
            'POS_WEB', $6, $7,
-           $10, $8, $8, $9, now(), $11
+           $10, $8, $8, $9, now(), $11,
+           now(), now()
          )
          RETURNING *`,
         [
@@ -805,14 +905,16 @@ export function registerPosRoutes(app, {
     try {
       const order = await getOrderById(pool, req.params.orderId);
       if (!order) return res.status(404).json({ error: "Order not found" });
+      const pk = order.order_id || order.id;
       await pool.query(
         `UPDATE restaurant_orders
          SET pos_claimed_at = COALESCE(pos_claimed_at, now()),
              pos_claimed = TRUE,
              order_status = 'DELIVERED',
+             last_updated_order_status_dt_stamp = now(),
              updated_at = now()
-         WHERE id = $1`,
-        [order.id],
+         WHERE order_id = $1 OR id::text = $1`,
+        [pk],
       );
       res.json({ ok: true });
     } catch (e) {
@@ -825,11 +927,14 @@ export function registerPosRoutes(app, {
     try {
       const order = await getOrderById(pool, req.params.orderId);
       if (!order) return res.status(404).json({ error: "Order not found" });
+      const pk = order.order_id || order.id;
       await pool.query(
         `UPDATE restaurant_orders
-         SET order_status = 'CANCELLED', updated_at = now()
-         WHERE id = $1`,
-        [order.id],
+         SET order_status = 'CANCELLED',
+             last_updated_order_status_dt_stamp = now(),
+             updated_at = now()
+         WHERE order_id = $1 OR id::text = $1`,
+        [pk],
       );
       res.json({ ok: true });
     } catch (e) {
