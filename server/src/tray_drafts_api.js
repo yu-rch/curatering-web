@@ -209,10 +209,9 @@ async function upsertTrayDraftItems(customerId, items, { replace = false } = {})
   }
   const json = JSON.stringify(normalized);
   await pool.query(
-    `INSERT INTO customer_tray_drafts (customer_id, tray_lines, tray_items, updated_at)
-     VALUES ($1, $2::jsonb, $2::jsonb, now())
+    `INSERT INTO customer_tray_drafts (customer_id, tray_items, updated_at)
+     VALUES ($1, $2::jsonb, now())
      ON CONFLICT (customer_id) DO UPDATE SET
-       tray_lines = EXCLUDED.tray_lines,
        tray_items = EXCLUDED.tray_items,
        updated_at = now()`,
     [customerId, json],
@@ -264,45 +263,43 @@ export async function getTrayDraftItemsByCustomerId(customerId) {
   await ensureCustomerTrayDraftsSchema();
   const id = await resolveCustomerAccountCustomerId(customerId);
   const result = await pool.query(
-    `SELECT tray_lines, tray_items FROM customer_tray_drafts WHERE customer_id = $1`,
+    `SELECT tray_items FROM customer_tray_drafts WHERE customer_id = $1`,
     [id],
   );
   if (result.rowCount === 0) return [];
   const row = result.rows[0];
-  const lines = parseItemsArray(row.tray_lines);
   const items = parseItemsArray(row.tray_items);
-  return items.length > 0 ? items : lines;
+  return items;
 }
 
 export async function getTrayDraft(req, res) {
   try {
     await ensureCustomerTrayDraftsSchema();
+    console.debug && console.debug('getTrayDraft: resolving customer id from request');
     const customerId = await customerIdFromReq(req);
     if (!customerId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
+    console.debug && console.debug('getTrayDraft: customerId resolved', customerId);
     const result = await pool.query(
-      `SELECT tray_lines, tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
+      `SELECT tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
       [customerId],
     );
+    console.debug && console.debug('getTrayDraft: db result rowCount', result.rowCount, 'row', result.rows[0]);
     if (result.rowCount === 0) {
       return res.json({
         success: true,
         items: [],
-        tray_lines: [],
         tray_items: [],
         updatedAt: null,
       });
     }
     const row = result.rows[0];
-    const trayLines = parseItemsArray(row.tray_lines);
     const trayItems = parseItemsArray(row.tray_items);
-    const items = trayItems.length > 0 ? trayItems : trayLines;
     return res.json({
       success: true,
-      items,
-      tray_lines: items,
-      tray_items: items,
+      items: trayItems,
+      tray_items: trayItems,
       updatedAt: row.updated_at?.toISOString?.() ?? row.updated_at,
     });
   } catch (error) {
@@ -327,18 +324,15 @@ export async function saveTrayDraft(req, res) {
     const replace = req.body?.replace === true || req.body?.mode === 'replace';
     await upsertTrayDraftItems(customerId, items, { replace });
     const saved = await pool.query(
-      `SELECT tray_lines, tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
+      `SELECT tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
       [customerId],
     );
     const row = saved.rows[0];
-    const trayLines = row ? parseItemsArray(row.tray_lines) : [];
     const trayItems = row ? parseItemsArray(row.tray_items) : [];
-    const itemsSaved = trayItems.length > 0 ? trayItems : trayLines;
     res.json({
       success: true,
-      items: itemsSaved,
-      tray_lines: trayLines.length > 0 ? trayLines : itemsSaved,
-      tray_items: itemsSaved,
+      items: trayItems,
+      tray_items: trayItems,
       updatedAt: row?.updated_at?.toISOString?.() ?? row?.updated_at ?? null,
     });
   } catch (error) {

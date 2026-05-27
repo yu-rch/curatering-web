@@ -18,11 +18,28 @@ export function customerIdFromRequest(req) {
   const raw = bearer || legacy;
   if (!raw) return null;
   try {
+    console.debug && console.debug('customerIdFromRequest: token provided (source)', bearer ? 'authorization' : 'legacy');
     const decoded = jwt.verify(raw, JWT_SECRET);
-    if (decoded.role !== "customer") return null;
+    // Log minimal decoded claims for diagnostics (avoid dumping full token)
+    try {
+      console.debug && console.debug('customerIdFromRequest: decoded claims', {
+        role: decoded.role,
+        customerId: decoded.customerId ?? decoded.id ?? decoded.sub,
+      });
+    } catch (_) {}
+    if (decoded.role !== "customer") {
+      console.debug && console.debug('customerIdFromRequest: rejected role', decoded.role);
+      return null;
+    }
     const id = decoded.customerId ?? decoded.id ?? decoded.sub;
     return id != null && String(id).trim() !== "" ? String(id).trim() : null;
   } catch {
+    try {
+      // log verification error message when available (local diagnostics)
+      // eslint-disable-next-line no-unused-vars
+      const err = arguments[0];
+    } catch (_) {}
+    console.debug && console.debug('customerIdFromRequest: jwt verify failed');
     return null;
   }
 }
