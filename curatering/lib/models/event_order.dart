@@ -18,7 +18,6 @@ class EventMenuItemDto {
   final String price;
   final String setMenuName;
   final String dishAllergens;
-  final double additionalChargeAmount;
 
   const EventMenuItemDto({
     required this.dishName,
@@ -26,7 +25,6 @@ class EventMenuItemDto {
     required this.price,
     this.setMenuName = '',
     this.dishAllergens = '',
-    this.additionalChargeAmount = 0,
   });
 }
 
@@ -79,7 +77,6 @@ class PostAnalysisDto {
 class EventOrderDto {
   final String id;
   final String cateringId;
-  final String eventId;
   final String customerId;
   final String source;
   final String status;
@@ -88,7 +85,6 @@ class EventOrderDto {
   final String orderType; // catering | catering_event
   final String eventType;
   final String formalityLevel;
-  final bool includeMinimalEventStyling;
 
   final String customerName;
   final String contactPerson;
@@ -104,12 +100,6 @@ class EventOrderDto {
   final EventThemeDesignDto themeDesign;
   final SeatingPlanData seatingPlan;
   final PostAnalysisDto? postAnalysis;
-
-  /// Internal stage metadata JSON (additional costs, proofs, etc.).
-  final Map<String, dynamic> postAnalysisRaw;
-
-  /// `catering` | `event` — which table this order lives in.
-  final String orderKind;
 
   // Payment information
   final double downPaymentAmount;
@@ -130,21 +120,9 @@ class EventOrderDto {
 
   final DateTime? updatedAt;
 
-  /// Public transaction number: `event_id` for events, `catering_id` for catering.
-  String get transactionNo {
-    final isEvent =
-        orderKind == 'event' ||
-        orderType == 'catering_event' ||
-        orderType.contains('event');
-    if (isEvent && eventId.isNotEmpty) return eventId;
-    if (cateringId.isNotEmpty) return cateringId;
-    return id;
-  }
-
   const EventOrderDto({
     required this.id,
     this.cateringId = '',
-    this.eventId = '',
     this.customerId = '',
     required this.source,
     required this.status,
@@ -152,7 +130,6 @@ class EventOrderDto {
     required this.orderType,
     required this.eventType,
     required this.formalityLevel,
-    this.includeMinimalEventStyling = false,
     required this.customerName,
     required this.contactPerson,
     required this.contactNumber,
@@ -165,8 +142,6 @@ class EventOrderDto {
     required this.themeDesign,
     this.seatingPlan = const SeatingPlanData(),
     this.postAnalysis,
-    this.postAnalysisRaw = const {},
-    this.orderKind = 'event',
     this.downPaymentAmount = 0.0,
     this.downPaymentStatus = 'pending',
     this.fullPaymentAmount = 0.0,
@@ -185,7 +160,6 @@ class ChecklistItemDto {
   final String title;
   final String description;
   final double price;
-  final int quantity;
   final bool isCompleted;
   final String assignedTo;
 
@@ -194,7 +168,6 @@ class ChecklistItemDto {
     required this.title,
     required this.description,
     required this.price,
-    this.quantity = 1,
     this.isCompleted = false,
     this.assignedTo = '',
   });

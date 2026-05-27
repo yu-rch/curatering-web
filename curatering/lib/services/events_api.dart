@@ -10,9 +10,6 @@ class EventsApi {
 
   static final EventsApi instance = EventsApi._();
 
-  /// Parse a catering/event order map from any staff API response.
-  EventOrderDto parseOrder(Map<String, dynamic> map) => _orderFromJson(map);
-
   Future<List<EventOrderDto>> listOrders({
     required String status,
     required String roleType, // manager | supervisor
@@ -121,12 +118,19 @@ class EventsApi {
     );
   }
 
-  Future<void> completeOrder({
+  Future<void> completePostAnalysis({
     required String orderId,
+    required int businessCardsGivenAway,
+    required int onTheSpotInquiries,
+    required int complaints,
   }) async {
     await ApiClient.instance.postJson(
-      '/api/events/orders/$orderId/complete',
-      body: {},
+      '/api/events/orders/$orderId/complete-post-analysis',
+      body: {
+        'businessCardsGivenAway': businessCardsGivenAway,
+        'onTheSpotInquiries': onTheSpotInquiries,
+        'complaints': complaints,
+      },
     );
   }
 
@@ -210,7 +214,6 @@ class EventsApi {
     String? referenceNumber,
     String? paymentMethod,
     double? amount,
-    String? paymentProofBase64,
   }) async {
     final body = <String, dynamic>{
       'paymentType': paymentType,
@@ -224,9 +227,6 @@ class EventsApi {
     }
     if (amount != null && amount > 0) {
       body['amount'] = amount;
-    }
-    if (paymentProofBase64 != null && paymentProofBase64.trim().isNotEmpty) {
-      body['paymentProof'] = paymentProofBase64.trim();
     }
     await ApiClient.instance.putJson(
       '/api/events/orders/$orderId/payment-status',
@@ -412,12 +412,6 @@ class EventsApi {
 
       final dishNameRaw = mm['dishName'] ?? mm['dish_name'];
       if (dishNameRaw != null && dishNameRaw.toString().trim().isNotEmpty) {
-        final addCharge = _toDouble(
-          mm['additionalChargeAmount'] ??
-              mm['additional_charge_amount'] ??
-              mm['menu_dishes_additional_charge_amount'] ??
-              0,
-        );
         menu.add(
           EventMenuItemDto(
             dishName: dishNameRaw.toString().trim(),
@@ -425,7 +419,6 @@ class EventsApi {
             price: mm['price']?.toString() ?? '0',
             setMenuName: setMenuName,
             dishAllergens: dishAllergens,
-            additionalChargeAmount: addCharge,
           ),
         );
         continue;
@@ -537,16 +530,6 @@ class EventsApi {
       );
     }
 
-    final orderKindRaw =
-        (map['orderKind'] ?? map['order_kind'] ?? map['order_type'] ?? '')
-            .toString()
-            .trim()
-            .toLowerCase();
-    final orderKind =
-        orderKindRaw == 'catering' || orderKindRaw == 'catering_only'
-            ? 'catering'
-            : 'event';
-
     final checklistRaw = map['checklist'];
     final checklist = <ChecklistItemDto>[];
     for (final c in _toList(checklistRaw)) {
@@ -555,10 +538,9 @@ class EventsApi {
       checklist.add(
         ChecklistItemDto(
           id: cc['id'] as String? ?? '',
-          title: cc['title'] as String? ?? cc['item'] as String? ?? '',
+          title: cc['title'] as String? ?? '',
           description: cc['description'] as String? ?? '',
-          price: _toDouble(cc['price'] ?? cc['cost']),
-          quantity: _toInt(cc['quantity']).clamp(1, 999999),
+          price: _toDouble(cc['price']),
           isCompleted: cc['isCompleted'] as bool? ?? false,
           assignedTo: cc['assignedTo'] as String? ?? '',
         ),
@@ -580,25 +562,15 @@ class EventsApi {
             ? rawOrderType
             : (eventTitleStr.isNotEmpty ? 'catering_event' : 'catering');
 
-    final orderTypeForId =
-        rawOrderType.isNotEmpty
-            ? rawOrderType
-            : (eventTitleStr.isNotEmpty ? 'catering_event' : 'catering');
-    final eventIdStr =
-        (map['eventId'] ?? map['event_id'] ?? '').toString().trim();
-    final cateringIdStr =
-        (map['cateringId'] ??
-                map['catering_id'] ??
-                map['inquiryId'] ??
-                map['inquiry_id'] ??
-                '')
-            .toString()
-            .trim();
-
     return EventOrderDto(
       id: (map['id'] ?? '').toString(),
-      eventId: eventIdStr,
-      cateringId: cateringIdStr,
+      cateringId:
+          (map['cateringId'] ??
+                  map['catering_id'] ??
+                  map['inquiryId'] ??
+                  map['inquiry_id'] ??
+                  '')
+              .toString(),
       customerId: (map['customerId'] ?? map['customer_id'] ?? '').toString(),
       source: (map['source'] ?? '').toString(),
       status: (map['status'] ?? '').toString(),
@@ -607,9 +579,6 @@ class EventsApi {
       orderType: orderType,
       eventType: map['eventType'] as String? ?? '',
       formalityLevel: map['formalityLevel'] as String? ?? '',
-      includeMinimalEventStyling: _toBool(
-        map['includeMinimalEventStyling'] ?? map['include_minimal_event_styling'],
-      ),
       customerName:
           (map['customerName'] ?? map['customer_name'] ?? '').toString(),
       contactPerson:
@@ -626,8 +595,6 @@ class EventsApi {
       themeDesign: themeDesign,
       seatingPlan: seatingPlan,
       postAnalysis: postAnalysis,
-      postAnalysisRaw: pm,
-      orderKind: orderKind,
       downPaymentAmount: _toDouble(
         map['downPaymentAmount'] ?? map['down_payment_amount'],
       ),

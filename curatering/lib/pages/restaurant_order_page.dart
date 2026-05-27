@@ -263,29 +263,25 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                               ],
                             ),
                           )
-                          : AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            child: GridView.builder(
-                              key: ValueKey(_selectedRestaurantType),
-                              padding: const EdgeInsets.only(bottom: 24),
-                              gridDelegate:
-                                  SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount:
-                                        isMobile(context)
-                                            ? 2
-                                            : isTablet(context)
-                                            ? 3
-                                            : 5,
-                                    crossAxisSpacing: 10,
-                                    mainAxisSpacing: 10,
-                                    childAspectRatio: 0.70,
-                                  ),
-                              itemCount: dishes.length,
-                              itemBuilder: (context, index) {
-                                final dish = dishes[index];
-                                return _buildDishCard(dish);
-                              },
-                            ),
+                          : GridView.builder(
+                            padding: const EdgeInsets.only(bottom: 24),
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount:
+                                      isMobile(context)
+                                          ? 1
+                                          : isTablet(context)
+                                          ? 2
+                                          : 3,
+                                  crossAxisSpacing: 16,
+                                  mainAxisSpacing: 16,
+                                  childAspectRatio: 0.8,
+                                ),
+                            itemCount: dishes.length,
+                            itemBuilder: (context, index) {
+                              final dish = dishes[index];
+                              return _buildDishCard(dish);
+                            },
                           ),
                 ),
               ],
@@ -361,34 +357,6 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
       );
       return;
     }
-
-    final totalAmount = CartStore.instance.totalAmount;
-    final itemCount = CartStore.instance.items.length;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text('Proceed to Checkout?'),
-        content: Text(
-          'Total ₱${totalAmount.toStringAsFixed(2)} — $itemCount item${itemCount > 1 ? 's' : ''} in your tray.\nProceed to checkout?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFC024),
-              foregroundColor: Colors.black,
-            ),
-            child: const Text('Proceed'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
 
     closeOverlay?.call();
     await WidgetsBinding.instance.endOfFrame;
@@ -485,82 +453,90 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
 
   Widget _buildDishCard(MenuDish dish) {
     return Card(
-      elevation: 2,
+      elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            flex: 3,
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-              child:
-                  dish.imageBase64?.isNotEmpty == true
-                      ? Image.memory(
-                        base64Decode(dish.imageBase64!),
-                        fit: BoxFit.cover,
-                      )
-                      : Container(
-                        color: Colors.grey.shade200,
-                        child: const Icon(Icons.fastfood, size: 48),
-                      ),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    dish.name.toUpperCase(),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 11,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+      child: InkWell(
+        onTap: () => _showDishDetails(dish),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image
+            Expanded(
+              flex: 3,
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(12),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '₱${dish.price}',
-                    style: TextStyle(
-                      color: Colors.amber.shade800,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  SizedBox(
-                    height: 28,
-                    child: ElevatedButton(
-                      onPressed:
-                          dish.available ? () => _addToCart(dish) : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            dish.available
-                                ? const Color(0xFF1E1E1E)
-                                : Colors.grey.shade500,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
+                  color: Colors.grey.shade200,
+                ),
+                clipBehavior: Clip.antiAlias,
+                child:
+                    dish.imageBase64?.isNotEmpty == true
+                        ? Image.memory(
+                          base64Decode(dish.imageBase64!),
+                          fit: BoxFit.cover,
+                        )
+                        : Icon(
+                          Icons.restaurant,
+                          size: 48,
+                          color: Colors.grey.shade400,
                         ),
-                      ),
-                      child: Text(
-                        dish.available ? 'Add to tray' : 'Not Available',
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                    ),
-                  ),
-                ],
               ),
             ),
-          ),
-        ],
+            // Content
+            Expanded(
+              flex: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      dish.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const Spacer(),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '₱${double.tryParse(dish.price)?.toStringAsFixed(2) ?? dish.price}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1E1E1E),
+                          ),
+                        ),
+                        ElevatedButton(
+                          onPressed:
+                              dish.available ? () => _addToCart(dish) : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1E1E1E),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            minimumSize: Size.zero,
+                          ),
+                          child: const Text('ADD'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -770,8 +746,8 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                                 _proceedToCheckout(closeOverlay: closeOverlay),
                               ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFFC024),
-                        foregroundColor: Colors.black,
+                        backgroundColor: const Color(0xFF1E1E1E),
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -796,88 +772,94 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   }
 
   Widget _buildCartItem(CartItem item) {
-    return Container(
-      key: ValueKey('${item.dish.id}_${item.selectedSauce ?? ""}'),
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          RepaintBoundary(
-            child: item.dish.imageBase64 != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: Image.memory(
-                      base64Decode(item.dish.imageBase64!),
-                      width: 44,
-                      height: 44,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
+    return InkWell(
+      onTap: () => _showCustomizeCartItem(item),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            // Item info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.dish.name,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
                     ),
-                  )
-                : Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Icon(Icons.fastfood, size: 20, color: Colors.grey),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 4),
+                  Text(
+                    '₱${item.lineSubtotal.toStringAsFixed(2)}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                  if (item.selectedSauce?.trim().isNotEmpty == true ||
+                      item.addOns.isNotEmpty ||
+                      item.specialInstructions?.trim().isNotEmpty == true) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      [
+                        if (item.selectedSauce?.trim().isNotEmpty == true)
+                          'Sauce: ${item.selectedSauce} × ${item.addOnQuantity}',
+                        if (item.addonExtraSubtotal > 0)
+                          'Extra add-on fee: ₱${item.addonExtraSubtotal.toStringAsFixed(2)}',
+                        if (item.addOns.isNotEmpty)
+                          'Add-ons: ${item.addOns.join(', ')}',
+                        if (item.specialInstructions?.trim().isNotEmpty == true)
+                          'Note: ${item.specialInstructions}',
+                      ].join('\n'),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            // Quantity controls
+            Row(
               children: [
+                IconButton(
+                  icon: const Icon(Icons.remove, size: 16),
+                  onPressed: () => _updateQuantity(item, item.quantity - 1),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                ),
                 Text(
-                  item.dish.name,
+                  '${item.quantity}',
                   style: const TextStyle(
-                    fontSize: 12,
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '₱${item.lineSubtotal.toStringAsFixed(2)}',
-                  style: TextStyle(fontSize: 11, color: Colors.amber.shade800, fontWeight: FontWeight.w600),
-                ),
-                if (item.selectedSauce?.trim().isNotEmpty == true)
-                  Text(
-                    item.selectedSauce!,
-                    style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                IconButton(
+                  icon: const Icon(Icons.add, size: 16),
+                  onPressed: () => _updateQuantity(item, item.quantity + 1),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
                   ),
+                ),
               ],
             ),
-          ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.remove, size: 14),
-                onPressed: () => _updateQuantity(item, item.quantity - 1),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              ),
-              Text(
-                '${item.quantity}',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-              ),
-              IconButton(
-                icon: const Icon(Icons.add, size: 14),
-                onPressed: () => _updateQuantity(item, item.quantity + 1),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

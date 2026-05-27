@@ -76,9 +76,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
       }
       final parts = <String>[m.dishName];
       if (m.paxOption.trim().isNotEmpty) parts.add(m.paxOption);
-      if (m.additionalChargeAmount > 0) {
-        parts.add('+${formatPesos(m.additionalChargeAmount)} add-on');
-      }
+      if (m.price.trim().isNotEmpty && m.price != '0') parts.add(m.price);
       if (m.dishAllergens.trim().isNotEmpty) {
         parts.add('allergens: ${m.dishAllergens}');
       }
@@ -129,7 +127,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         td.wantsCustomDesign;
   }
 
-  Widget _buildEventDesignDetailSection(EventOrderDto dto, {bool readOnly = true}) {
+  Widget _buildEventDesignDetailSection(EventOrderDto dto) {
     final td = dto.themeDesign;
     final imageUrl = td.generatedImageUrl?.trim() ?? '';
     final picks =
@@ -154,36 +152,10 @@ extension _ManageEventsTableExt on _ManageEventsState {
       }
     }
 
-    Widget stepBlock(String title, Widget child) {
-      return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade50,
-          border: Border.all(color: Colors.grey.shade300),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
-                color: Colors.grey.shade800,
-              ),
-            ),
-            const SizedBox(height: 8),
-            child,
-          ],
-        ),
-      );
-    }
-
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         border: Border.all(color: Colors.grey.shade300),
         borderRadius: BorderRadius.circular(8),
@@ -192,88 +164,55 @@ extension _ManageEventsTableExt on _ManageEventsState {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'EVENT THEME DESIGN (CUSTOMER)',
+            'EVENT DESIGN (CUSTOMER)',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
           ),
           const SizedBox(height: 10),
-          stepBlock(
-            'Step 1 - Reference & preview',
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (imageUrl.isNotEmpty) ...[
-                  const Text(
-                    'AI-generated design',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-                  ),
-                  const SizedBox(height: 8),
-                  ClipRRect(
+          Text(
+            _themeExtrasLine(dto),
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+          ),
+          if (imageUrl.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'AI-generated design',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                height: 220,
+                width: double.infinity,
+                child: imageFromSource(imageUrl, fit: BoxFit.contain),
+              ),
+            ),
+          ],
+          if (picks.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Reference photos (${picks.length})',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 100,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: picks.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  return ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: SizedBox(
-                      height: 170,
-                      width: double.infinity,
-                      child: imageFromSource(imageUrl, fit: BoxFit.contain),
+                      width: 100,
+                      child: imageFromSource(picks[index]),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                if (picks.isNotEmpty) ...[
-                  Text(
-                    'Reference photos (${picks.length})',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 90,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: picks.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemBuilder: (context, index) {
-                        return ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: SizedBox(
-                            width: 90,
-                            child: imageFromSource(picks[index]),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-                if (imageUrl.isEmpty && picks.isEmpty)
-                  const Text(
-                    'No design image / reference photos submitted.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-              ],
+                  );
+                },
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          stepBlock(
-            'Step 2 - Style notes',
-            Text(
-              _themeExtrasLine(dto),
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
-            ),
-          ),
-          const SizedBox(height: 10),
-          stepBlock(
-            'Step 3 - Action',
-            !readOnly
-                ? OutlinedButton.icon(
-                    onPressed: () => _openThemeDesignEditor(dto),
-                    icon: const Icon(Icons.palette_outlined, size: 18),
-                    label: const Text('Edit event theme design'),
-                  )
-                : const Text(
-                    'Theme design is read-only in this stage.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-          ),
+          ],
         ],
       ),
     );
@@ -545,32 +484,31 @@ extension _ManageEventsTableExt on _ManageEventsState {
   }
 
   double _dishCostForFinalize(EventOrderDto order) {
-    final guests = order.guestCount > 0 ? order.guestCount : 0;
-    return estimateInquiryCateringTotal(guests);
+    final fromTheme = order.themeDesign.dishCost;
+    if (fromTheme != null && fromTheme > 0) return fromTheme;
+    final fromMenu = computeOrderTotalCost(order);
+    if (fromMenu > 0) return fromMenu;
+    return 0;
   }
 
   Map<String, dynamic> _finalizeInquiryPayload(
-    EventOrderDto order, {
-    required double laborCost,
-    required double travelCost,
-    required List<Map<String, dynamic>> additionalCosts,
-    required double totalCost,
-    required String action,
-    required String address,
-    required String date,
-    required String time,
-    String? eventTitleOverride,
-    String? eventTypeOverride,
-    String? formalityLevelOverride,
-    int? guestCountOverride,
-    List<Map<String, dynamic>>? menuOverride,
-    String? allergensOverride,
-  }) {
+    EventOrderDto order,
+    double laborCost,
+    double travelCost,
+    double totalCost,
+    String action,
+  ) {
     final serviceType =
         order.orderType == 'catering' ? 'catering' : 'catering+event';
+    final date =
+        order.scheduleSlots.isNotEmpty ? order.scheduleSlots.first.date : '';
+    final time =
+        order.scheduleSlots.isNotEmpty
+            ? order.scheduleSlots.first.startTime
+            : '';
     return _buildOnlineInquiryPayload(
       order,
-      address,
+      order.address,
       date,
       time,
       serviceType,
@@ -581,13 +519,6 @@ extension _ManageEventsTableExt on _ManageEventsState {
       travelCost,
       totalCost,
       action,
-      eventTitleOverride: eventTitleOverride,
-      eventTypeOverride: eventTypeOverride,
-      formalityLevelOverride: formalityLevelOverride,
-      guestCountOverride: guestCountOverride,
-      additionalCosts: additionalCosts,
-      menuOverride: menuOverride,
-      allergensOverride: allergensOverride,
     );
   }
 
@@ -596,6 +527,10 @@ extension _ManageEventsTableExt on _ManageEventsState {
     required TextEditingController laborController,
     required TextEditingController travelController,
   }) {
+    double parseCost(TextEditingController c) =>
+        double.tryParse(c.text.trim()) ?? 0.0;
+    final dishCost = _dishCostForFinalize(order);
+
     return Container(
       margin: const EdgeInsets.only(top: 16),
       padding: const EdgeInsets.all(16),
@@ -611,9 +546,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
           ),
           const SizedBox(height: 10),
-          // Dish cost is already shown in the Pax & venue section.
-          // This section is focused on labor + travel inputs.
-          const SizedBox(height: 4),
+          _buildLabeledReadonlyCost('Dish cost (from menu)', dishCost),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
@@ -648,7 +582,23 @@ extension _ManageEventsTableExt on _ManageEventsState {
             ],
           ),
           const SizedBox(height: 8),
-          // Total cost is shown as a sticky footer (real-time updated).
+          AnimatedBuilder(
+            animation: Listenable.merge([laborController, travelController]),
+            builder: (context, _) {
+              final laborCost = parseCost(laborController);
+              final travelCost = parseCost(travelController);
+              final totalCost = dishCost + laborCost + travelCost;
+              return _buildLabeledReadonlyCost(
+                'Total estimated cost',
+                totalCost,
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Post changes sends the updated estimate to the customer without moving the inquiry.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
         ],
       ),
     );
@@ -659,43 +609,19 @@ extension _ManageEventsTableExt on _ManageEventsState {
     required EventOrderDto order,
     required TextEditingController laborController,
     required TextEditingController travelController,
-    required String address,
-    required String date,
-    required String time,
-    String? eventTitle,
-    String? eventType,
-    String? formalityLevel,
-    int? guestCount,
-    required List<Map<String, dynamic>> additionalCosts,
     required String action,
     required String successMessage,
-    List<Map<String, dynamic>>? menuOverride,
-    String? allergensOverride,
   }) async {
     final laborCost = double.tryParse(laborController.text.trim()) ?? 0.0;
     final travelCost = double.tryParse(travelController.text.trim()) ?? 0.0;
     final dishCost = _dishCostForFinalize(order);
-    final additionalCostsTotal = additionalCosts.fold<double>(
-      0,
-      (sum, e) => sum + (double.tryParse('${e['amount'] ?? e['cost'] ?? 0}') ?? 0),
-    );
-    final totalCost = dishCost + laborCost + travelCost + additionalCostsTotal;
+    final totalCost = dishCost + laborCost + travelCost;
     final payload = _finalizeInquiryPayload(
       order,
-      laborCost: laborCost,
-      travelCost: travelCost,
-      additionalCosts: additionalCosts,
-      totalCost: totalCost,
-      action: action,
-      address: address,
-      date: date,
-      time: time,
-      eventTitleOverride: eventTitle,
-      eventTypeOverride: eventType,
-      formalityLevelOverride: formalityLevel,
-      guestCountOverride: guestCount,
-      menuOverride: menuOverride,
-      allergensOverride: allergensOverride,
+      laborCost,
+      travelCost,
+      totalCost,
+      action,
     );
     await EventsApi.instance.managerFinalizeOnlineInquiry(
       orderId: order.id,
@@ -710,261 +636,25 @@ extension _ManageEventsTableExt on _ManageEventsState {
     ).showSnackBar(SnackBar(content: Text(successMessage)));
   }
 
-  Future<void> _openFinalizeOnlineInquiryDialog(
-    EventOrderDto order, {
-    int initialTabIndex = 0,
-  }) async {
+  Future<void> _openFinalizeOnlineInquiryDialog(EventOrderDto order) async {
     final laborCostController = TextEditingController(
       text: (order.themeDesign.laborCost ?? 0).toStringAsFixed(2),
     );
     final travelCostController = TextEditingController(
       text: (order.themeDesign.travelCost ?? 0).toStringAsFixed(2),
     );
-    final slot = order.scheduleSlots.isNotEmpty ? order.scheduleSlots.first : null;
-    final eventTitleController = TextEditingController(text: order.eventTitle);
-    final eventTypeController = TextEditingController(text: order.eventType);
-    final formalityController = TextEditingController(text: order.formalityLevel);
-    final guestCountController = TextEditingController(text: order.guestCount.toString());
-    final addressController = TextEditingController(text: order.address);
-    final dateController = TextEditingController(text: slot?.date ?? '');
-    final timeController = TextEditingController(text: slot?.startTime ?? '');
-    final additionalCostLabelController = TextEditingController();
-    final additionalCostAmountController = TextEditingController();
-    final additionalCosts = List<Map<String, dynamic>>.from(
-      _additionalCostGroupsFromOrder(order).expand((g) {
-        final items = g['items'];
-        if (items is! List) return const <Map<String, dynamic>>[];
-        return items.whereType<Map>().map((e) {
-          final label = '${e['label'] ?? e['name'] ?? 'Item'}'.trim();
-          final amount = double.tryParse('${e['amount'] ?? e['cost'] ?? 0}') ?? 0;
-          return {'label': label, 'amount': amount};
-        });
-      }),
-    );
     final detailFuture = _loadOrderForDetail(order);
-    var inquiryMenuBlocks = <Map<String, dynamic>>[];
-    var inquiryChargeOverrides = <String, double>{};
-    var inquiryAllergens = order.allergens;
-
-    List<Map<String, dynamic>>? inquiryMenuPayloadForSave() {
-      if (inquiryMenuBlocks.isEmpty) return null;
-      final guests =
-          int.tryParse(guestCountController.text.trim()) ?? order.guestCount;
-      return _menuPayloadFromInquiryBlocks(
-        inquiryMenuBlocks,
-        inquiryChargeOverrides,
-        guests,
-      );
-    }
 
     try {
       await showAntdModal<void>(
         context: context,
         title: order.eventTitle.isEmpty ? order.customerName : order.eventTitle,
-        maxWidth: 1080,
+        maxWidth: 800,
         barrierDismissible: false,
-        actions: [
-          Builder(
-            builder: (footerContext) {
-              final dishCost = _dishCostForFinalize(order);
-              return SizedBox(
-                width: 680,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    AnimatedBuilder(
-                      animation: Listenable.merge(
-                        [laborCostController, travelCostController, additionalCostAmountController],
-                      ),
-                      builder: (context, _) {
-                        final laborCost =
-                            double.tryParse(laborCostController.text.trim()) ?? 0.0;
-                        final travelCost =
-                            double.tryParse(travelCostController.text.trim()) ?? 0.0;
-                        final additionalCostsTotal = additionalCosts.fold<double>(
-                          0,
-                          (sum, e) => sum + (double.tryParse('${e['amount'] ?? 0}') ?? 0),
-                        );
-                        final totalCost =
-                            dishCost + laborCost + travelCost + additionalCostsTotal;
-                        return Align(
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            'Total Cost: PHP ${totalCost.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14,
-                              color: Color(0xFF1E1E1E),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.end,
-                      children: [
-                        AntdCancelButton(
-                          label: 'Close',
-                          onPressed: () => Navigator.of(footerContext).pop(),
-                        ),
-                        ElevatedButton(
-                          onPressed: () async {
-                            try {
-                              await _submitFinalizeInquiryAction(
-                                dialogContext: footerContext,
-                                order: order,
-                                laborController: laborCostController,
-                                travelController: travelCostController,
-                                address: addressController.text.trim(),
-                                date: dateController.text.trim(),
-                                time: timeController.text.trim(),
-                                eventTitle: eventTitleController.text.trim(),
-                                eventType: eventTypeController.text.trim(),
-                                formalityLevel: formalityController.text.trim(),
-                                guestCount: int.tryParse(
-                                  guestCountController.text.trim(),
-                                ),
-                                additionalCosts: additionalCosts,
-                                action: 'post_changes',
-                                successMessage:
-                                    'Changes saved. Customer can review updates in My Caterings.',
-                                menuOverride: inquiryMenuPayloadForSave(),
-                                allergensOverride: inquiryAllergens,
-                              );
-                            } catch (e) {
-                              if (!footerContext.mounted) return;
-                              ScaffoldMessenger.of(footerContext).showSnackBar(
-                                SnackBar(
-                                  content: Text('Failed to save: $e'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFF4511E),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                          ),
-                          child: const Text(
-                            'Save',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        ElevatedButton(
-                          onPressed: () async {
-                            try {
-                              await _submitFinalizeInquiryAction(
-                                dialogContext: footerContext,
-                                order: order,
-                                laborController: laborCostController,
-                                travelController: travelCostController,
-                                address: addressController.text.trim(),
-                                date: dateController.text.trim(),
-                                time: timeController.text.trim(),
-                                eventTitle: eventTitleController.text.trim(),
-                                eventType: eventTypeController.text.trim(),
-                                formalityLevel: formalityController.text.trim(),
-                                guestCount: int.tryParse(
-                                  guestCountController.text.trim(),
-                                ),
-                                additionalCosts: additionalCosts,
-                                action: 'confirm_inquiry',
-                                successMessage:
-                                    'Order accepted and moved to For down payment.',
-                                menuOverride: inquiryMenuPayloadForSave(),
-                                allergensOverride: inquiryAllergens,
-                              );
-                            } catch (e) {
-                              if (!footerContext.mounted) return;
-                              ScaffoldMessenger.of(footerContext).showSnackBar(
-                                SnackBar(
-                                  content: Text('Failed to accept order: $e'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1DB954),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                          ),
-                          child: const Text(
-                            'Accept order',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        OutlinedButton(
-                          onPressed: () async {
-                            try {
-                              await _submitFinalizeInquiryAction(
-                                dialogContext: footerContext,
-                                order: order,
-                                laborController: laborCostController,
-                                travelController: travelCostController,
-                                address: addressController.text.trim(),
-                                date: dateController.text.trim(),
-                                time: timeController.text.trim(),
-                                eventTitle: eventTitleController.text.trim(),
-                                eventType: eventTypeController.text.trim(),
-                                formalityLevel: formalityController.text.trim(),
-                                guestCount: int.tryParse(
-                                  guestCountController.text.trim(),
-                                ),
-                                additionalCosts: additionalCosts,
-                                action: 'cancel_event',
-                                successMessage: 'Inquiry cancelled.',
-                              );
-                            } catch (e) {
-                              if (!footerContext.mounted) return;
-                              ScaffoldMessenger.of(footerContext).showSnackBar(
-                                SnackBar(
-                                  content: Text('Failed to cancel: $e'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.black87,
-                            side: const BorderSide(color: Color(0xFFFFC107)),
-                            backgroundColor: const Color(0xFFFFC107),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                          ),
-                          child: const Text('Cancel order'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
         body: FutureBuilder<EventOrderDto>(
           future: detailFuture,
           builder: (dialogContext, snap) {
             final full = snap.data ?? order;
-            if (inquiryMenuBlocks.isEmpty && full.menu.isNotEmpty) {
-              inquiryMenuBlocks = _inquiryMenuBlocksFromOrder(full);
-            }
-            if (inquiryAllergens.isEmpty && full.allergens.isNotEmpty) {
-              inquiryAllergens = full.allergens;
-            }
             if (snap.connectionState == ConnectionState.waiting) {
               return const Padding(
                 padding: EdgeInsets.all(24),
@@ -972,452 +662,139 @@ extension _ManageEventsTableExt on _ManageEventsState {
               );
             }
 
-            final dishCostForUi = _dishCostForFinalize(full);
-            final withinTaguig = full.address.toLowerCase().contains('taguig');
+            final w = MediaQuery.sizeOf(dialogContext).width;
 
-            Widget eventInfoTab() {
-              return SingleChildScrollView(
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Event information',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: eventTitleController,
-                        decoration: const InputDecoration(
-                          labelText: 'Event title',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: eventTypeController,
-                        decoration: const InputDecoration(
-                          labelText: 'Event type',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: formalityController,
-                        decoration: const InputDecoration(
-                          labelText: 'Formality level',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: guestCountController,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: false),
-                        decoration: const InputDecoration(
-                          labelText: 'Guest count (pax)',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: addressController,
-                              decoration: const InputDecoration(
-                                labelText: 'Venue address',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: withinTaguig
-                                      ? Colors.green.shade50
-                                      : Colors.grey.shade200,
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: withinTaguig
-                                        ? Colors.green.shade300
-                                        : Colors.grey.shade300,
-                                  ),
-                                ),
-                                child: Text(
-                                  withinTaguig
-                                      ? 'Within Taguig'
-                                      : 'Outside Taguig',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    color: withinTaguig
-                                        ? Colors.green.shade900
-                                        : Colors.grey.shade800,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Catering base: ${formatPesos(dishCostForUi)} (₱${kCateringInquiryPricePerGuest.toStringAsFixed(0)} × pax)',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.grey.shade800,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: dateController,
-                              decoration: const InputDecoration(
-                                labelText: 'Date (YYYY-MM-DD)',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextField(
-                              controller: timeController,
-                              decoration: const InputDecoration(
-                                labelText: 'Start time (HH:mm)',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AntdDescriptions(
+                  column: w < 700 ? 1 : 3,
+                  labelColor: Colors.grey.shade600,
+                  valueColor: Colors.black87,
+                  items: _orderDetailDescriptionItems(full, screenWidth: w),
                 ),
-              );
-            }
-
-            Widget menuAllergensTab() {
-              final chargeRows = _setMenuChargeRowsForBlocks(
-                inquiryMenuBlocks,
-                inquiryChargeOverrides,
-              );
-              final cateringDishes =
-                  MenuStore.instance.allDishes
-                      .where(
-                        (d) =>
-                            d.category.toLowerCase().trim() == 'catering' &&
-                            !d.archived &&
-                            d.available,
-                      )
-                      .toList();
-              return DefaultTabController(
-                length: 2,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    TabBar(
-                      labelColor: const Color(0xFF1E1E1E),
-                      unselectedLabelColor: Colors.grey.shade700,
-                      indicatorColor: const Color(0xFFFFC024),
-                      tabs: const [
-                        Tab(text: 'Allergens'),
-                        Tab(text: 'Menu'),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: TabBarView(
-                        children: [
-                          SingleChildScrollView(
-                            child: Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: Colors.grey.shade300),
-                              ),
-                              child: AllergenSelectorField(
-                                initialSerialized: inquiryAllergens,
-                                onChanged: (v) =>
-                                    _mutateTableState(() => inquiryAllergens = v),
-                              ),
-                            ),
-                          ),
-                          SingleChildScrollView(
-                            child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const Text(
-                            'Menu',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          InquiryMenuPicker(
-                            embedded: true,
-                            tabIndex: 1,
-                            cateringDishes: cateringDishes,
-                            setMenus: SetMenuStore.instance.activeSetMenus,
-                            initialSelections: inquiryMenuBlocks,
-                            mode: InquiryMenuPickerMode.staffNewEvent,
-                            minCustomDishes: 0,
-                            maxCustomDishes: 999,
-                            onSelectionChanged: (blocks) {
-                              _mutateTableState(() {
-                                inquiryMenuBlocks = blocks;
-                                inquiryChargeOverrides.removeWhere((dishId, _) {
-                                  return !blocks.any((b) {
-                                    final ids =
-                                        (b['dishIds'] as List<dynamic>? ?? const [])
-                                            .map((e) => '$e')
-                                            .toSet();
-                                    return ids.contains(dishId);
-                                  });
-                                });
-                              });
-                            },
-                          ),
-                          if (chargeRows.isNotEmpty) ...[
-                            const SizedBox(height: 10),
-                            const Text(
-                              'Menu modifications add\'l charges',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            ...chargeRows.map((row) {
-                              final dishId = '${row['dishId']}';
-                              final dishName = '${row['dishName']}';
-                              final amount = (row['amount'] as num?)?.toDouble() ?? 0;
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        dishName,
-                                        style: const TextStyle(fontSize: 12),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    SizedBox(
-                                      width: 140,
-                                      child: TextFormField(
-                                        initialValue: amount.toStringAsFixed(2),
-                                        keyboardType:
-                                            const TextInputType.numberWithOptions(
-                                          decimal: true,
-                                        ),
-                                        decoration: const InputDecoration(
-                                          labelText: 'Add\'l charge',
-                                          prefixText: 'PHP ',
-                                          isDense: true,
-                                          border: OutlineInputBorder(),
-                                        ),
-                                        onChanged: (v) {
-                                          final parsed =
-                                              double.tryParse(v.trim()) ?? 0;
-                                          _mutateTableState(() {
-                                            inquiryChargeOverrides[dishId] =
-                                                parsed < 0 ? 0 : parsed;
-                                          });
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }),
-                          ],
-                        ],
-                      ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                if (_orderHasEventDesign(full))
+                  _buildEventDesignDetailSection(full),
+                _buildFinalizeCostSection(
+                  order: full,
+                  laborController: laborCostController,
+                  travelController: travelCostController,
                 ),
-              );
-            }
-
-            Widget submitCostsTab() {
-              return SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                const SizedBox(height: 20),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.end,
                   children: [
-                    Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade300),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Additional costs',
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: additionalCostLabelController,
-                              decoration: const InputDecoration(
-                                labelText: 'Label',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            width: 130,
-                            child: TextField(
-                              controller: additionalCostAmountController,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              decoration: const InputDecoration(
-                                labelText: 'Amount',
-                                prefixText: 'PHP ',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: 'Add additional cost',
-                            onPressed: () {
-                              final label = additionalCostLabelController.text.trim();
-                              final amount =
-                                  double.tryParse(additionalCostAmountController.text.trim());
-                              if (label.isEmpty || amount == null) return;
-                              _mutateTableState(() {
-                                additionalCosts.add({'label': label, 'amount': amount});
-                              });
-                              additionalCostLabelController.clear();
-                              additionalCostAmountController.clear();
-                            },
-                            icon: const Icon(Icons.add_circle_outline),
-                          ),
-                        ],
-                      ),
-                      if (additionalCosts.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        ...additionalCosts.asMap().entries.map((entry) {
-                          final index = entry.key;
-                          final row = entry.value;
-                          final amount = double.tryParse('${row['amount'] ?? 0}') ?? 0;
-                          return Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  '${row['label']} — ${formatPesos(amount)}',
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              ),
-                              IconButton(
-                                tooltip: 'Remove',
-                                onPressed: () => _mutateTableState(
-                                  () => additionalCosts.removeAt(index),
-                                ),
-                                icon: const Icon(Icons.delete_outline, size: 18),
-                              ),
-                            ],
+                    AntdCancelButton(
+                      label: 'Close',
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                    ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        try {
+                          await _submitFinalizeInquiryAction(
+                            dialogContext: dialogContext,
+                            order: full,
+                            laborController: laborCostController,
+                            travelController: travelCostController,
+                            action: 'post_changes',
+                            successMessage:
+                                'Changes posted. Customer can review updates in My Caterings.',
                           );
-                        }),
-                      ],
-                    ],
-                  ),
-                ),
-                    if (_orderHasEventDesign(full))
-                      _buildEventDesignDetailSection(full),
-                    _buildFinalizeCostSection(
-                      order: full,
-                      laborController: laborCostController,
-                      travelController: travelCostController,
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                ),
-              );
-            }
-
-            return SizedBox(
-              height: MediaQuery.sizeOf(dialogContext).height * 0.62,
-              child: DefaultTabController(
-                length: 3,
-                initialIndex: initialTabIndex.clamp(0, 2),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Material(
-                      color: Colors.white,
-                      child: TabBar(
-                        labelColor: const Color(0xFF1E1E1E),
-                        unselectedLabelColor: Colors.grey.shade700,
-                        indicatorColor: const Color(0xFFFFC024),
-                        tabs: const [
-                          Tab(text: 'Event Information'),
-                          Tab(text: 'Menu & Allergens'),
-                          Tab(text: 'Submit & Costs'),
-                        ],
+                        } catch (e) {
+                          if (!dialogContext.mounted) return;
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to post changes: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFF4511E),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                      ),
+                      child: const Text(
+                        'Post changes',
+                        style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: TabBarView(
-                        children: [
-                          eventInfoTab(),
-                          menuAllergensTab(),
-                          submitCostsTab(),
-                        ],
+                    ElevatedButton(
+                      onPressed: () async {
+                        try {
+                          await _submitFinalizeInquiryAction(
+                            dialogContext: dialogContext,
+                            order: full,
+                            laborController: laborCostController,
+                            travelController: travelCostController,
+                            action: 'confirm_inquiry',
+                            successMessage:
+                                'Order accepted and moved to For down payment.',
+                          );
+                        } catch (e) {
+                          if (!dialogContext.mounted) return;
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to accept order: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1DB954),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                       ),
+                      child: const Text(
+                        'Accept order',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    OutlinedButton(
+                      onPressed: () async {
+                        try {
+                          await _submitFinalizeInquiryAction(
+                            dialogContext: dialogContext,
+                            order: full,
+                            laborController: laborCostController,
+                            travelController: travelCostController,
+                            action: 'cancel_event',
+                            successMessage: 'Inquiry cancelled.',
+                          );
+                        } catch (e) {
+                          if (!dialogContext.mounted) return;
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to cancel: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.black87,
+                        side: const BorderSide(color: Color(0xFFFFC107)),
+                        backgroundColor: const Color(0xFFFFC107),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                      ),
+                      child: const Text('Cancel order'),
                     ),
                   ],
                 ),
-              ),
+              ],
             );
           },
         ),
@@ -1425,15 +802,6 @@ extension _ManageEventsTableExt on _ManageEventsState {
     } finally {
       laborCostController.dispose();
       travelCostController.dispose();
-      eventTitleController.dispose();
-      eventTypeController.dispose();
-      formalityController.dispose();
-      guestCountController.dispose();
-      addressController.dispose();
-      dateController.dispose();
-      timeController.dispose();
-      additionalCostLabelController.dispose();
-      additionalCostAmountController.dispose();
     }
   }
 
@@ -1441,233 +809,113 @@ extension _ManageEventsTableExt on _ManageEventsState {
     await _showDownpaymentConfirmationDialog(order);
   }
 
-  Future<void> _selectManageEventsOrder(EventOrderDto dto) async {
-    // ignore: invalid_use_of_protected_member
-    setState(() {
-      _manageEventsDetailLoading = true;
-      _manageEventsDetailError = null;
-      _selectedManageEventsOrder = dto;
-    });
-    try {
-      final roleType =
-          AuthSession.instance.currentRole == Role.supervisor
-              ? 'supervisor'
-              : 'manager';
-      final raw = await EventsApi.instance.getEventOrder(
-        orderId: dto.id,
-        roleType: roleType,
-      );
-      if (!mounted) return;
-      // ignore: invalid_use_of_protected_member
-      setState(() {
-        _selectedManageEventsOrder = raw;
-        _manageEventsDetailLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      // ignore: invalid_use_of_protected_member
-      setState(() {
-        _manageEventsDetailLoading = false;
-        _manageEventsDetailError = '$e';
-      });
-    }
-  }
-
-  Widget _mergedInquiryColumnCell(EventOrderDto dto) {
-    final eventType =
-        dto.eventType.trim().isEmpty ? '—' : dto.eventType.trim();
-    final menuLine =
-        dto.menu.isEmpty
-            ? 'Menu: —'
-            : 'Menu: ${dto.menu.take(2).map((m) => m.dishName).join(', ')}${dto.menu.length > 2 ? ' +${dto.menu.length - 2} more' : ''}';
-    final allergensLine =
-        dto.allergens.trim().isEmpty ? 'Allergens: —' : 'Allergens: ${dto.allergens.trim()}';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          eventType,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'TXN: ${dto.transactionNo}',
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
-        ),
-        const SizedBox(height: 2),
-        Text(dto.customerName, style: const TextStyle(fontSize: 12)),
-        if (dto.contactPerson.trim().isNotEmpty &&
-            dto.contactPerson.trim() != dto.customerName.trim())
-          Text(dto.contactPerson, style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
-        const SizedBox(height: 2),
-        Text(menuLine, style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
-        Text(allergensLine, style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
-      ],
-    );
-  }
-
-  Widget _basicInquiryColumnCell(EventOrderDto dto) {
-    final eventType =
-        dto.eventType.trim().isEmpty ? '—' : dto.eventType.trim();
-    final title = dto.eventTitle.trim().isEmpty
-        ? dto.customerName
-        : dto.eventTitle.trim();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-        ),
-        const SizedBox(height: 2),
-        Text('Type: $eventType', style: const TextStyle(fontSize: 11)),
-      ],
-    );
-  }
-
   Widget _buildOrdersTablePanel({
     required String title,
     required List<EventOrderDto> orders,
     required String emptyMessage,
-    List<Widget> Function(EventOrderDto dto)? actionCells,
-    bool showGuestsAndTotal = true,
+    required List<Widget> Function(EventOrderDto dto) actionCells,
   }) {
     final filtered = _filterEventOrdersByTableFilters(orders);
-    return _buildManageEventsSplitShell(
-      title: title,
-      emptyMessage: emptyMessage,
-      filters: [_buildEventTableFilters(orders)],
-      columns: [
-        const DataColumn(label: Text('Service type')),
-        const DataColumn(label: Text('Event / inquiry')),
-        if (showGuestsAndTotal) const DataColumn(label: Text('Guests')),
-        if (showGuestsAndTotal) const DataColumn(label: Text('Total')),
-      ],
-      rows: filtered.map((dto) {
-        final selected = _selectedManageEventsOrder?.id == dto.id;
-        return DataRow(
-          selected: selected,
-          onSelectChanged: (_) => _selectManageEventsOrder(dto),
-          cells: [
-            DataCell(Text(_orderTypeColumnLabel(dto))),
-            DataCell(_mergedInquiryColumnCell(dto)),
-            if (showGuestsAndTotal) DataCell(Text('${dto.guestCount}')),
-            if (showGuestsAndTotal)
-              DataCell(
-                Text(
-                  formatPesos(
-                    dto.totalCost > 0
-                        ? dto.totalCost
-                        : computeOrderTotalCost(dto),
+    return SizedBox(
+      width: double.infinity,
+      child: Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Refresh',
+                    onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
+                    icon:
+                        _ordersLoading
+                            ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.refresh),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (filtered.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    emptyMessage,
+                    style: TextStyle(color: Colors.grey.shade600),
                   ),
                 ),
-              ),
-          ],
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildManageEventsSplitShell({
-    required String title,
-    required String emptyMessage,
-    required List<Widget> filters,
-    required List<DataColumn> columns,
-    required List<DataRow> rows,
-  }) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final panelHeight = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : MediaQuery.sizeOf(context).height - 220;
-        return SizedBox(
-      height: panelHeight,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            flex: 5,
-            child: Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: 'Refresh',
-                          onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
-                          icon: _ordersLoading
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.refresh),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    if (rows.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 24),
-                        child: Text(
-                          emptyMessage,
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
-                      )
-                    else
-                      Expanded(
-                        child: LayoutBuilder(
-                          builder: (context, tableConstraints) {
-                            return Align(
-                              alignment: Alignment.topLeft,
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: tableConstraints.maxWidth,
-                                ),
-                                child: PagedDataTable(
-                                  title: title,
-                                  fullWidth: false,
-                                  maxTableHeight: tableConstraints.maxHeight,
-                                  filters: filters,
-                                  headingRowColor: WidgetStateProperty.all(
-                                    Colors.grey.shade100,
-                                  ),
-                                  columns: columns,
-                                  rows: rows,
-                                ),
+              PagedDataTable(
+                title: title,
+                fullWidth: true,
+                maxTableHeight: MediaQuery.sizeOf(context).height,
+                filters: [_buildEventTableFilters(orders)],
+                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                columns: const [
+                  DataColumn(label: Text('Service type')),
+                  DataColumn(label: Text('Event / customer')),
+                  DataColumn(label: Text('Customer')),
+                  DataColumn(label: Text('Date')),
+                  DataColumn(label: Text('Guests')),
+                  DataColumn(label: Text('Total')),
+                  DataColumn(label: Text('Actions')),
+                ],
+                rows:
+                    filtered.map((dto) {
+                      final title =
+                          dto.eventTitle.isEmpty
+                              ? dto.customerName
+                              : dto.eventTitle;
+                      return DataRow(
+                        cells: [
+                          DataCell(Text(_orderTypeColumnLabel(dto))),
+                          DataCell(
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
                               ),
-                            );
-                          },
-                        ),
-                      ),
-                  ],
-                ),
+                            ),
+                          ),
+                          DataCell(Text(dto.customerName)),
+                          DataCell(Text(_formatOrderSchedule(dto))),
+                          DataCell(Text('${dto.guestCount}')),
+                          DataCell(
+                            Text(
+                              formatPesos(
+                                dto.totalCost > 0
+                                    ? dto.totalCost
+                                    : computeOrderTotalCost(dto),
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: actionCells(dto),
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
               ),
-            ),
+            ],
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            flex: 6,
-            child: _buildManageEventsDetailPanel(),
-          ),
-        ],
+        ),
       ),
-    );
-      },
     );
   }
 
@@ -1940,51 +1188,239 @@ extension _ManageEventsTableExt on _ManageEventsState {
           return true;
         }).toList();
 
-    return _buildManageEventsSplitShell(
-      title: 'Online inquiries',
-      emptyMessage: 'No online inquiries to show yet.',
-      filters: [_buildOnlineInquiryTableFilters(serviceTypes, eventTypes)],
-      columns: const [
-        DataColumn(label: Text('Service type')),
-        DataColumn(label: Text('Event / inquiry')),
-        DataColumn(label: Text('Date and time')),
-      ],
-      rows: filtered.map((dto) {
-        final selected = _selectedManageEventsOrder?.id == dto.id;
-        return DataRow(
-          selected: selected,
-          onSelectChanged: (_) => _selectManageEventsOrder(dto),
-          cells: [
-            DataCell(Text(_orderTypeColumnLabel(dto))),
-            DataCell(_basicInquiryColumnCell(dto)),
-            DataCell(Text(_formatInquiryDateTime(dto))),
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Online inquiries',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
+                  icon:
+                      _ordersLoading
+                          ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                          : const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (filtered.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 32),
+                child: Center(
+                  child: Text(
+                    'No online inquiries to show yet.',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: PagedDataTable(
+                  title: 'Online Inquiries',
+                  fullWidth: true,
+                  filters: [
+                    _buildOnlineInquiryTableFilters(serviceTypes, eventTypes),
+                  ],
+                  maxTableHeight: MediaQuery.sizeOf(context).height,
+                  headingRowColor: WidgetStateProperty.all(
+                    Colors.grey.shade100,
+                  ),
+                  columns: const [
+                    DataColumn(label: Text('Service type')),
+                    DataColumn(label: Text('Customer')),
+                    DataColumn(label: Text('Contact')),
+                    DataColumn(label: Text('Event type')),
+                    DataColumn(label: Text('Inquiry datetime')),
+                    DataColumn(label: Text('Actions')),
+                  ],
+                  rows:
+                      filtered.map((dto) {
+                        return DataRow(
+                          cells: [
+                            DataCell(Text(_orderTypeColumnLabel(dto))),
+                            DataCell(Text(dto.customerName)),
+                            DataCell(Text(dto.contactPerson)),
+                            DataCell(
+                              Text(dto.eventType.isEmpty ? '—' : dto.eventType),
+                            ),
+                            DataCell(Text(_formatInquiryDateTime(dto))),
+                            DataCell(
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _eventIconAction(
+                                    icon: Icons.visibility_outlined,
+                                    tooltip: 'View details',
+                                    permissionKey:
+                                        ActionPermissionKeys
+                                            .manageEventsViewDetails,
+                                    onPressed: () async {
+                                      try {
+                                        final full =
+                                            await _resolveOrderForSelection(
+                                              dto,
+                                            );
+                                        if (!mounted) return;
+                                        await _showEventOrderDetailModal(full);
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Could not load inquiry: $e',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  _eventIconAction(
+                                    icon: Icons.check_circle_outline,
+                                    tooltip: 'Finalize inquiry',
+                                    permissionKey:
+                                        ActionPermissionKeys
+                                            .manageEventsFinalize,
+                                    onPressed: () async {
+                                      try {
+                                        final full =
+                                            await _resolveOrderForSelection(
+                                              dto,
+                                            );
+                                        if (!mounted) return;
+                                        await _openFinalizeOnlineInquiryDialog(
+                                          full,
+                                        );
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Could not open finalize: $e',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      }).toList(),
+                ),
+              ),
           ],
-        );
-      }).toList(),
+        ),
+      ),
     );
   }
 
   Widget _buildForDownpaymentTableView(bool isNarrow) {
-    return _buildOrdersTablePanel(
-      title: 'For downpayment',
-      orders: _downpaymentOrders,
-      emptyMessage: 'No confirmed orders awaiting downpayment.',
+    return SingleChildScrollView(
+      child: _buildOrdersTablePanel(
+        title: 'For downpayment',
+        orders: _downpaymentOrders,
+        emptyMessage: 'No confirmed orders awaiting downpayment.',
+        actionCells:
+            (dto) => [
+              _eventIconAction(
+                icon: Icons.visibility_outlined,
+                tooltip: 'View details',
+                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
+                onPressed: () => _showEventOrderDetailModal(dto),
+              ),
+              _eventIconAction(
+                icon: Icons.payments_outlined,
+                tooltip: 'Confirm downpayment',
+                permissionKey:
+                    ActionPermissionKeys.manageEventsConfirmDownpayment,
+                onPressed: () => _showConfirmDownpaymentDialog(dto),
+              ),
+            ],
+      ),
     );
   }
 
   Widget _buildOngoingTableView(bool isNarrow) {
-    return _buildOrdersTablePanel(
-      title: 'Ongoing',
-      orders: _ongoingOrders,
-      emptyMessage: 'No ongoing events.',
+    return SingleChildScrollView(
+      child: _buildOrdersTablePanel(
+        title: 'Ongoing',
+        orders: _ongoingOrders,
+        emptyMessage: 'No ongoing events.',
+        actionCells:
+            (dto) => [
+              _eventIconAction(
+                icon: Icons.visibility_outlined,
+                tooltip: 'View details',
+                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
+                onPressed: () => _showEventOrderDetailModal(dto),
+              ),
+              _eventIconAction(
+                icon: Icons.checklist_rtl_outlined,
+                tooltip: 'Checklist',
+                permissionKey: ActionPermissionKeys.manageEventsChecklist,
+                onPressed: () => _showChecklistDialog(dto),
+              ),
+              _eventIconAction(
+                icon: Icons.payments_outlined,
+                tooltip: 'Mark for final payment',
+                permissionKey: ActionPermissionKeys.manageEventsFinalize,
+                onPressed: () => _markOrderForFinalPayment(dto),
+                color: Colors.indigo.shade700,
+              ),
+            ],
+      ),
     );
   }
 
   Widget _buildForFullPaymentTableView(bool isNarrow) {
-    return _buildOrdersTablePanel(
-      title: 'For full payment',
-      orders: _postAnalysisOrdersDto,
-      emptyMessage: 'No orders awaiting full payment.',
+    return SingleChildScrollView(
+      child: _buildOrdersTablePanel(
+        title: 'For full payment',
+        orders: _postAnalysisOrdersDto,
+        emptyMessage: 'No orders awaiting full payment.',
+        actionCells:
+            (dto) => [
+              _eventIconAction(
+                icon: Icons.visibility_outlined,
+                tooltip: 'View details',
+                permissionKey: ActionPermissionKeys.manageEventsViewDetails,
+                onPressed: () => _showEventOrderDetailModal(dto),
+              ),
+              _eventIconAction(
+                icon: Icons.receipt_long_outlined,
+                tooltip: 'Finalize payment',
+                permissionKey: ActionPermissionKeys.manageEventsFinalize,
+                onPressed: () => _showFinalizeFullPaymentDialog(dto),
+              ),
+              _eventIconAction(
+                icon: Icons.task_alt_outlined,
+                tooltip: 'Complete event',
+                permissionKey: ActionPermissionKeys.manageEventsComplete,
+                onPressed: () => _openFullPaymentCompleteModal(dto),
+                color: Colors.green.shade700,
+              ),
+            ],
+      ),
     );
   }
 
@@ -2026,8 +1462,13 @@ extension _ManageEventsTableExt on _ManageEventsState {
           onPressed: () async {
             _mutateTableState(() => _postAnalysisSaving = true);
             try {
-              await EventsApi.instance.completeOrder(
+              await EventsApi.instance.completePostAnalysis(
                 orderId: dto.id,
+                businessCardsGivenAway:
+                    int.tryParse(_postCardsController.text.trim()) ?? 0,
+                onTheSpotInquiries:
+                    int.tryParse(_postInquiriesController.text.trim()) ?? 0,
+                complaints: 0,
               );
               if (!mounted) return;
               Navigator.of(context).pop();

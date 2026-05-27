@@ -38,9 +38,9 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
             constraints: BoxConstraints(maxWidth: appContentMaxWidth(context)),
             child: Column(
               children: [
-                // Page Title
+                // Payment Title
                 Text(
-                  'Order Submitted',
+                  'Payment',
                   style: websiteHeaderStyle(
                     fontSize: 36,
                     color: Colors.red.shade400,
@@ -366,7 +366,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
 
           // PAYMENT STATUS
           Text(
-            isPaymentConfirmed ? 'PAYMENT CONFIRMED!' : 'Waiting for Payment Confirmation',
+            isPaymentConfirmed ? 'PAYMENT CONFIRMED!' : 'PAYMENT PENDING',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,

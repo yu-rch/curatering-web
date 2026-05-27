@@ -8,16 +8,12 @@ import '../config/site_open_tab_stub.dart'
     if (dart.library.html) '../config/site_open_tab_web.dart';
 import '../config/site_routes.dart';
 import '../pages/checkout_page.dart';
-import '../pages/customer_account_shell.dart';
 import '../pages/customer_login.dart';
 import '../pages/my_caterings_page.dart';
-import '../pages/my_inquiries_page.dart';
 import '../pages/my_order_tracking_page.dart';
 import '../pages/my_orders_page.dart';
 import '../pages/my_profile_page.dart';
 import '../services/cart_store.dart';
-import '../services/cart_sync_service.dart';
-import 'confirm_logout_dialog.dart';
 import 'antd_message.dart';
 import 'antd_profile_menu.dart';
 
@@ -82,13 +78,6 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
   }
 
   Future<void> _handleLogout() async {
-    final confirmed = await confirmLogout(context);
-    if (confirmed != true) return;
-
-    // Keep server tray draft; only clear local session UI until next login.
-    CartStore.instance.clearCart(skipServerSync: true);
-    CartStore.instance.resetInitState();
-
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('customer_token');
     await prefs.remove('customer_data');
@@ -498,9 +487,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         onSelected: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) => const CustomerAccountShell(
-                                initialTab: CustomerAccountTab.profile,
-                              ),
+                              builder: (_) => const MyProfilePage(),
                             ),
                           );
                         },
@@ -512,9 +499,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         onSelected: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) => const CustomerAccountShell(
-                                initialTab: CustomerAccountTab.orders,
-                              ),
+                              builder: (_) => const MyOrdersPage(),
                             ),
                           );
                         },
@@ -526,23 +511,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         onSelected: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) => const CustomerAccountShell(
-                                initialTab: CustomerAccountTab.inquiries,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      AntdProfileMenuItem.action(
-                        id: 'my_inquiries',
-                        icon: Icons.mail_outline,
-                        label: 'My Inquiries',
-                        onSelected: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const CustomerAccountShell(
-                                initialTab: CustomerAccountTab.inquiries,
-                              ),
+                              builder: (_) => const MyCateringsPage(),
                             ),
                           );
                         },
@@ -554,9 +523,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         onSelected: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) => const CustomerAccountShell(
-                                initialTab: CustomerAccountTab.tracking,
-                              ),
+                              builder: (_) => const MyOrderTrackingPage(),
                             ),
                           );
                         },

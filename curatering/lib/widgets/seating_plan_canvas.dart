@@ -461,7 +461,7 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
     final found = widget.plan.seats.where((e) => e.id == seatId).toList();
     if (found.isEmpty) return;
     final s = found.first;
-    const dragScale = 1.45;
+    const dragScale = 0.4;
     final atTable = widget.plan.seats.where((e) => e.tableId == table.id).length;
     final step = 1 / math.max(atTable, 1);
     final tangent = (d.delta.dx - d.delta.dy) * 0.0015 * dragScale;
@@ -595,17 +595,6 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                   onPressed: () => _bumpSeatCount(-1),
                   icon: const Icon(Icons.remove_circle_outline),
                 ),
-                if (_selectedTableId != null)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    child: Text(
-                      '${p.tables.firstWhere((t) => t.id == _selectedTableId).seatCount}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
                 IconButton(
                   tooltip: 'More seats',
                   onPressed: () => _bumpSeatCount(1),
@@ -691,7 +680,8 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Drag tables and green seats to position. Resize tables with corner handles.',
+                            'Drag green seats to position. Resize table with corner handles. '
+                            'Move table with arrow buttons.',
                             style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                           ),
                         ),
@@ -767,20 +757,6 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                                 _selectedSeatId = null;
                               });
                             },
-                            onPanUpdate: _layoutEditable
-                                ? (d) {
-                                    final dx = d.delta.dx / w;
-                                    final dy = d.delta.dy / h;
-                                    final tables = widget.plan.tables.map((tb) {
-                                      if (tb.id != t.id) return tb;
-                                      return tb.copyWith(
-                                        xNorm: (tb.xNorm + dx).clamp(0.0, 1.0 - tb.wNorm),
-                                        yNorm: (tb.yNorm + dy).clamp(0.0, 1.0 - tb.hNorm),
-                                      );
-                                    }).toList();
-                                    _emit(widget.plan.copyWith(tables: tables));
-                                  }
-                                : null,
                             child: Container(
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
@@ -920,30 +896,28 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                if (pos.dy <= (tbl.yNorm + tbl.hNorm / 2)) ...[
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 1,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.92),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: Colors.black26),
-                                    ),
-                                    child: Text(
-                                      chip,
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w700,
-                                        color: selSeat
-                                            ? const Color(0xFFF4511E)
-                                            : Colors.black87,
-                                      ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.92),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: Colors.black26),
+                                  ),
+                                  child: Text(
+                                    chip,
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      color: selSeat
+                                          ? const Color(0xFFF4511E)
+                                          : Colors.black87,
                                     ),
                                   ),
-                                  const SizedBox(height: 2),
-                                ],
+                                ),
+                                const SizedBox(height: 2),
                                 DecoratedBox(
                                   decoration: BoxDecoration(
                                     color: selSeat
@@ -959,30 +933,6 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                                   ),
                                   child: const SizedBox(width: 22, height: 22),
                                 ),
-                                if (pos.dy > (tbl.yNorm + tbl.hNorm / 2)) ...[
-                                  const SizedBox(height: 2),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 1,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.92),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: Colors.black26),
-                                    ),
-                                    child: Text(
-                                      chip,
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w700,
-                                        color: selSeat
-                                            ? const Color(0xFFF4511E)
-                                            : Colors.black87,
-                                      ),
-                                    ),
-                                  ),
-                                ],
                               ],
                             ),
                           ),

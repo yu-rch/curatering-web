@@ -663,7 +663,7 @@ class _MenuState extends State<Menu> {
                       TextField(
                         controller: _additionalChargeController,
                         decoration: const InputDecoration(
-                          labelText: 'Additional Charge',
+                          labelText: 'Additional charge fee',
                           helperText:
                               'Used when customers add extra dishes beyond a set menu.',
                           prefixText: '₱ ',

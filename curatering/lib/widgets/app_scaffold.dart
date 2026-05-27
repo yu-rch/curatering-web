@@ -10,29 +10,9 @@ import 'antd_profile_menu.dart';
 import 'antd_staff.dart';
 import 'antd_tokens.dart';
 
-Future<void> _staffSignOut(BuildContext context) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Log out?'),
-      content: const Text('Are you sure you want to log out?'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Log out'),
-        ),
-      ],
-    ),
-  );
-  if (confirmed != true) return;
+void _staffSignOut(BuildContext context) {
   AuthSession.instance.clear();
-  if (context.mounted) {
-    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-  }
+  Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
 }
 
 class AppScaffold extends StatelessWidget {

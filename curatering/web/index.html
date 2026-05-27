@@ -50,7 +50,11 @@
     window.flutterWebRenderer = "html";
   </script>
 
-  <!-- Vercel Web Analytics — only loaded in production (Vercel injects automatically). -->
+  <!-- Vercel Web Analytics for static/Flutter web deployments. -->
+  <script>
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>

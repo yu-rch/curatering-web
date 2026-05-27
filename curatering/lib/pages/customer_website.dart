@@ -43,7 +43,6 @@ import 'my_orders_page.dart';
 import 'my_caterings_page.dart';
 import 'my_order_tracking_page.dart';
 import 'my_profile_page.dart';
-import 'customer_account_shell.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 part 'customer_website_theme_editor.dart';
@@ -572,115 +571,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     }
   }
 
-  void _showTrackOrderDialog() {
-    final orderNoCtrl = TextEditingController();
-    final phoneCtrl = TextEditingController();
-    bool loading = false;
-    Map<String, dynamic>? result;
-    String? error;
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.local_shipping, color: Colors.amber.shade700),
-              const SizedBox(width: 8),
-              Text('Track Your Order', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-            ],
-          ),
-          content: SizedBox(
-            width: 380,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Enter your order number and phone number to track your order.', style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: orderNoCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Order Number',
-                    hintText: 'e.g. ORD-001',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    prefixIcon: const Icon(Icons.receipt_long),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: phoneCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Phone Number',
-                    hintText: 'e.g. 09123456789',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    prefixIcon: const Icon(Icons.phone),
-                  ),
-                ),
-                if (error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(error!, style: TextStyle(color: Colors.red.shade700, fontSize: 12)),
-                ],
-                if (result != null) ...[
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.green.shade200),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Order #${result!['order_no'] ?? orderNoCtrl.text}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 4),
-                        Text('Status: ${result!['status'] ?? 'Unknown'}', style: TextStyle(color: Colors.grey.shade700)),
-                        if (result!['fulfillment_stage'] != null)
-                          Text('Stage: ${result!['fulfillment_stage']}', style: TextStyle(color: Colors.grey.shade700)),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
-            if (result == null)
-              ElevatedButton(
-                onPressed: loading ? null : () async {
-                  if (orderNoCtrl.text.trim().isEmpty || phoneCtrl.text.trim().isEmpty) {
-                    setDialogState(() => error = 'Please fill in both fields');
-                    return;
-                  }
-                  setDialogState(() { loading = true; error = null; });
-                  try {
-                    final res = await http.get(
-                      Uri.parse('$apiBaseUrl/api/restaurant/orders/track?order_no=${Uri.encodeComponent(orderNoCtrl.text.trim())}&phone=${Uri.encodeComponent(phoneCtrl.text.trim())}'),
-                    ).timeout(const Duration(seconds: 15));
-                    if (res.statusCode == 200) {
-                      final data = jsonDecode(res.body);
-                      setDialogState(() { result = data is Map<String, dynamic> ? data : {'status': 'Found'}; loading = false; });
-                    } else {
-                      setDialogState(() { error = 'Order not found. Please check your details.'; loading = false; });
-                    }
-                  } catch (e) {
-                    setDialogState(() { error = 'Unable to track order. Please try again.'; loading = false; });
-                  }
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade700, foregroundColor: Colors.white),
-                child: loading ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('Track'),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _onMenuChanged() {
     if (mounted) setState(() {});
     if (_isCustomerLoggedIn) {
@@ -703,34 +593,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       return;
     }
 
-    if (dish.category == 'restaurant' || dish.supportsAddOns) {
-      _showSauceSelectionDialog(dish);
-    } else {
-      final ok = await _confirmAction(
-        title: 'Add to tray?',
-        message: 'Add ${dish.name} to your tray?',
-        confirmLabel: 'Add to tray',
-      );
-      if (!ok) return;
-      final selectedSauce = dish.sauces.isNotEmpty ? dish.sauces.first : null;
-      await _withLoadingDialog('Adding to tray...', () async {
-        CartStore.instance.addItem(dish, selectedSauce: selectedSauce);
-      });
-      showAppSnackBar(
-        context,
-        '${dish.name} added to tray',
-        icon: Icons.shopping_bag_outlined,
-        duration: const Duration(seconds: 2),
-      );
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _scaffoldKey.currentState?.openEndDrawer();
-      });
-    }
+    await _showSauceSelectionDialog(dish);
   }
 
-  void _showSauceSelectionDialog(MenuDish dish) {
-    int quantity = 1;
-    final notesCtrl = TextEditingController();
+  Future<void> _showSauceSelectionDialog(MenuDish dish) async {
+    String? selectedSauce;
+    var addOnQuantity = 1;
+    final notesController = TextEditingController();
 
     await showDialog<void>(
       context: context,
@@ -975,35 +844,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       return;
     }
     if (!mounted) return;
-
-    final totalAmount = CartStore.instance.totalAmount;
-    final itemCount = CartStore.instance.items.length;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text('Proceed to Checkout?'),
-        content: Text(
-          'Total ₱${totalAmount.toStringAsFixed(2)} — $itemCount item${itemCount > 1 ? 's' : ''} in your tray.\nProceed to checkout?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFC024),
-              foregroundColor: Colors.black,
-            ),
-            child: const Text('Proceed'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
     final nav = navigator ?? Navigator.of(context, rootNavigator: true);
     if (!nav.mounted) {
       debugPrint('_navigateToCheckout: navigator not mounted');
@@ -1025,26 +865,18 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Future<void> _navigateToMyOrders() async {
-    final result = await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const CustomerAccountShell(
-          initialTab: CustomerAccountTab.orders,
-        ),
-      ),
-    );
+    final result = await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const MyOrdersPage()));
     if (result == 'login_required' && mounted) {
       await _handleLogin();
     }
   }
 
   Future<void> _navigateToMyCaterings() async {
-    final result = await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const CustomerAccountShell(
-          initialTab: CustomerAccountTab.inquiries,
-        ),
-      ),
-    );
+    final result = await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const MyCateringsPage()));
     if (result == 'login_required' && mounted) {
       await _handleLogin();
     }
@@ -1052,11 +884,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   Future<void> _navigateToOrderTracking() async {
     final result = await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const CustomerAccountShell(
-          initialTab: CustomerAccountTab.tracking,
-        ),
-      ),
+      MaterialPageRoute(builder: (context) => const MyOrderTrackingPage()),
     );
     if (result == 'login_required' && mounted) {
       await _handleLogin();
@@ -1064,16 +892,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Future<void> _navigateToMyProfile() async {
-    final result = await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const CustomerAccountShell(
-          initialTab: CustomerAccountTab.profile,
-        ),
-      ),
-    );
+    final result = await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const MyProfilePage()));
     if (result == 'login_required' && mounted) {
       await _handleLogin();
     }
+    // Refresh customer data after profile update
     if (result == 'profile_updated' && mounted) {
       await _checkCustomerAuth();
     }
@@ -3236,7 +3061,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     final restaurantDishes =
         allDishes.where((d) {
           final category = d.category.trim().toLowerCase();
-          return category == 'restaurant';
+          final isRestaurantCategory =
+              category == 'restaurant' ||
+              category == 'main_course' ||
+              category == 'noodles' ||
+              category == 'appetizer' ||
+              category == 'rice' ||
+              category == 'dessert' ||
+              category == 'drinks' ||
+              category == 'drink';
+          return isRestaurantCategory || d.effectiveMealType.isNotEmpty;
         }).toList();
     final cartItems = CartStore.instance.items;
     final totalAmount = CartStore.instance.totalAmount;
@@ -3303,19 +3137,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           ),
                         ),
                       ),
-                      if (!_isCustomerLoggedIn) ...[
-                        OutlinedButton.icon(
-                          onPressed: _showTrackOrderDialog,
-                          icon: const Icon(Icons.local_shipping_outlined, size: 16),
-                          label: const Text('TRACK ORDER', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.amber.shade800,
-                            side: BorderSide(color: Colors.amber.shade700),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
+                      if (!_isCustomerLoggedIn)
                         ElevatedButton(
                           onPressed: _handleLogin,
                           style: ElevatedButton.styleFrom(
@@ -3337,7 +3159,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             ),
                           ),
                         ),
-                      ],
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -3404,33 +3225,30 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  // Dishes grid with smooth transition
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    child: dishes.isEmpty
-                      ? const Center(
-                          key: ValueKey('empty'),
-                          child: Padding(
-                            padding: EdgeInsets.all(32),
-                            child: Text(
-                              'No dishes available',
-                              style: TextStyle(color: Colors.grey, fontSize: 16),
-                            ),
+                  // Dishes grid
+                  if (dishes.isEmpty)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Text(
+                          'No dishes available',
+                          style: TextStyle(color: Colors.grey, fontSize: 16),
+                        ),
+                      ),
+                    )
+                  else
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 5,
+                            crossAxisSpacing: 10,
+                            mainAxisSpacing: 10,
+                            childAspectRatio: 0.70,
                           ),
-                        )
-                      : GridView.builder(
-                          key: ValueKey(_selectedRestaurantType),
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 5,
-                                crossAxisSpacing: 10,
-                                mainAxisSpacing: 10,
-                                childAspectRatio: 0.70,
-                              ),
-                          itemCount: dishes.length,
-                          itemBuilder: (ctx, i) {
+                      itemCount: dishes.length,
+                      itemBuilder: (ctx, i) {
                         final d = dishes[i];
                         return Card(
                           elevation: 2,
@@ -3480,6 +3298,18 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       const SizedBox(height: 4),
+                                      Text(
+                                        d.sauces.isNotEmpty
+                                            ? d.sauces.join(', ').toUpperCase()
+                                            : '',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                       const SizedBox(height: 4),
                                       Text(
                                         '₱${d.price}',
@@ -3490,36 +3320,37 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                         ),
                                       ),
                                       const SizedBox(height: 4),
-                                      SizedBox(
-                                        height: 28,
-                                        child: ElevatedButton(
-                                          onPressed:
-                                              d.available
-                                                  ? () => _addToCart(d)
-                                                  : null,
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor:
+                                      if (_isCustomerLoggedIn)
+                                        SizedBox(
+                                          height: 28,
+                                          child: ElevatedButton(
+                                            onPressed:
                                                 d.available
-                                                    ? const Color(0xFF1E1E1E)
-                                                    : Colors.grey.shade500,
-                                            foregroundColor: Colors.white,
-                                            padding:
-                                                const EdgeInsets.symmetric(
-                                                  horizontal: 16,
-                                                ),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
+                                                    ? () => _addToCart(d)
+                                                    : null,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  d.available
+                                                      ? const Color(0xFF1E1E1E)
+                                                      : Colors.grey.shade500,
+                                              foregroundColor: Colors.white,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 16,
+                                                  ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              d.available
+                                                  ? 'Add to tray'
+                                                  : 'Not Available',
+                                              style: TextStyle(fontSize: 11),
                                             ),
                                           ),
-                                          child: Text(
-                                            d.available
-                                                ? 'Add to tray'
-                                                : 'Not Available',
-                                            style: TextStyle(fontSize: 11),
-                                          ),
                                         ),
-                                      ),
                                     ],
                                   ),
                                 ),
@@ -3529,7 +3360,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         );
                       },
                     ),
-                  ),
                 ],
               ),
             ),
@@ -3736,9 +3566,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                               ),
-                              child: const Text(
-                                'CHECKOUT',
-                                style: TextStyle(
+                              child: Text(
+                                _isCustomerLoggedIn
+                                    ? 'CHECKOUT'
+                                    : 'LOG IN TO ORDER',
+                                style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                 ),

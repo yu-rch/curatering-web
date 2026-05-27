@@ -179,26 +179,12 @@ class _MapPickerState extends State<MapPicker> {
 
   bool get _canConfirm {
     if (_selectedLocation == null || _isLoading) return false;
-    if (_address.trim().isEmpty) return false;
-    if (widget.enforceDeliveryRadius) {
-      return isWithinDeliveryRadius(
-        GeoPin(lat: _selectedLocation!.latitude, lng: _selectedLocation!.longitude),
-      );
-    }
-    return true;
+    return _address.trim().isNotEmpty;
   }
 
   void _confirm() {
     final loc = _selectedLocation;
     if (loc == null) return;
-    if (widget.enforceDeliveryRadius &&
-        !isWithinDeliveryRadius(GeoPin(lat: loc.latitude, lng: loc.longitude))) {
-      setState(() {
-        _error =
-            'Delivery address must be within ${deliveryMaxDistanceKm.toStringAsFixed(0)} km of the restaurant.';
-      });
-      return;
-    }
     Navigator.of(context).pop(
       MapPickerResult(
         latitude: loc.latitude,

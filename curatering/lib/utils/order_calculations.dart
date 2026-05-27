@@ -1,12 +1,17 @@
 import '../models/event_order.dart';
-import 'inquiry_pricing.dart';
 
 double _parseDoubleLoose(String raw) {
+  // Removes any non-numeric separators except '.' and '-' so we can parse
+  // strings like "₱100.00" or "100.00".
   final cleaned = raw.replaceAll('₱', '').replaceAll(',', '').trim();
   return double.tryParse(cleaned) ?? 0.0;
 }
 
 double _parsePaxQuantity(String paxOption) {
+  // Examples:
+  // - "1 pax" -> 1
+  // - "10 pax" -> 10
+  // - "10-15 pax" -> (10+15)/2
   final raw = paxOption.toLowerCase().replaceAll('pax', '').trim();
   if (raw.contains('-')) {
     final parts = raw.split('-').map((e) => e.trim()).toList();
@@ -21,84 +26,18 @@ double _parsePaxQuantity(String paxOption) {
   return double.tryParse(raw.split(' ').first.trim()) ?? 0.0;
 }
 
-int _paxBufferFromOrder(EventOrderDto order) {
-  final raw = order.postAnalysisRaw['pax_buffer'] ?? order.postAnalysisRaw['paxBuffer'];
-  if (raw is num) return raw.round();
-  return int.tryParse('$raw') ?? 0;
-}
-
-double _themeDesignCostFromOrder(EventOrderDto order) {
-  final raw = order.postAnalysisRaw['theme_design_cost'] ??
-      order.postAnalysisRaw['themeDesignCost'];
-  if (raw is num) return raw.toDouble();
-  final parsed = double.tryParse('$raw');
-  if (parsed != null && parsed > 0) return parsed;
-  return 0;
-}
-
-double _menuAdditionalChargesFromOrder(EventOrderDto order) {
-  final raw = order.postAnalysisRaw['menu_additional_charge_total'] ??
-      order.postAnalysisRaw['menuAdditionalChargeTotal'];
-  if (raw is num) return raw.toDouble();
-  return double.tryParse('$raw') ?? 0;
-}
-
-double _additionalCostsTotal(EventOrderDto order) {
+double computeOrderTotalCost(EventOrderDto order) {
   var total = 0.0;
-  final groups = order.postAnalysisRaw['additional_costs_groups'];
-  if (groups is List) {
-    for (final group in groups) {
-      if (group is! Map) continue;
-      final items = group['items'];
-      if (items is List) {
-        for (final item in items) {
-          if (item is Map) {
-            total += double.tryParse('${item['amount'] ?? item['cost'] ?? 0}') ?? 0;
-          }
-        }
-      } else {
-        total += double.tryParse('${group['total'] ?? 0}') ?? 0;
-      }
-    }
-    return total;
-  }
-  final flat = order.postAnalysisRaw['additional_costs'];
-  if (flat is List) {
-    for (final item in flat) {
-      if (item is Map) {
-        total += double.tryParse('${item['amount'] ?? item['cost'] ?? 0}') ?? 0;
-      }
-    }
+  for (final item in order.menu) {
+    final price = _parseDoubleLoose(item.price);
+    final qty = _parsePaxQuantity(item.paxOption);
+    total += price * qty;
   }
   return total;
 }
 
-/// Mobile-aligned total: (pax × ₱500) + pax buffer + theme + labor + travel + additional costs.
-double computeOrderTotalCost(EventOrderDto order) {
-  if (order.totalCost > 0) return order.totalCost;
-
-  final guests = order.guestCount > 0 ? order.guestCount : 0;
-  final paxBuffer = _paxBufferFromOrder(order);
-  var total = (guests + paxBuffer) * kCateringInquiryPricePerGuest;
-  total += _menuAdditionalChargesFromOrder(order);
-  total += _themeDesignCostFromOrder(order);
-  total += order.themeDesign.laborCost ?? 0;
-  total += order.themeDesign.travelCost ?? 0;
-  total += _additionalCostsTotal(order);
-
-  if (total > 0) return total;
-
-  // Legacy fallback when structured pricing fields are missing.
-  var menuSum = 0.0;
-  for (final item in order.menu) {
-    final price = _parseDoubleLoose(item.price);
-    final qty = _parsePaxQuantity(item.paxOption);
-    menuSum += price * qty;
-  }
-  return menuSum;
-}
-
 int computeLoyaltyPointsFromCost(double totalCost) {
+  // Dev/test heuristic until backend stores points explicitly.
   if (totalCost <= 0) return 0;
   return (totalCost / 205.0).round();
 }

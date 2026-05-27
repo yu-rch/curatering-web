@@ -813,20 +813,6 @@ export async function initDb() {
     ADD COLUMN IF NOT EXISTS menu_dishes_additional_charge_amount NUMERIC NOT NULL DEFAULT 0;
   `);
 
-  // Back-compat column used by some clients.
-  await pool.query(`
-    ALTER TABLE menu_dishes
-    ADD COLUMN IF NOT EXISTS additional_charge NUMERIC NOT NULL DEFAULT 0;
-  `);
-
-  // Keep both additional-charge columns aligned.
-  await pool.query(`
-    UPDATE menu_dishes
-    SET
-      menu_dishes_additional_charge_amount = COALESCE(menu_dishes_additional_charge_amount, additional_charge, 0),
-      additional_charge = COALESCE(additional_charge, menu_dishes_additional_charge_amount, 0)
-  `);
-
   await pool.query(`
     ALTER TABLE menu_dishes
     ADD COLUMN IF NOT EXISTS available BOOLEAN NOT NULL DEFAULT TRUE;
@@ -1033,18 +1019,6 @@ export async function initDb() {
     console.log('Migration check for customer_accounts archived:', err.message);
   }
 
-  // Backfill customer_id from customer_code where customer_id is NULL
-  try {
-    await pool.query(`
-      UPDATE customer_accounts
-      SET customer_id = customer_code
-      WHERE customer_id IS NULL AND customer_code IS NOT NULL AND TRIM(customer_code) <> ''
-    `);
-    console.log('Migration: Backfilled customer_id from customer_code');
-  } catch (err) {
-    console.log('Migration customer_id backfill:', err.message);
-  }
-
   try {
     await pool.query(
       `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_address TEXT`,
@@ -1054,12 +1028,6 @@ export async function initDb() {
     );
     await pool.query(
       `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_lng DECIMAL(10,8)`,
-    );
-    await pool.query(
-      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS primary_delivery_address TEXT NOT NULL DEFAULT ''`,
-    );
-    await pool.query(
-      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS other_delivery_addresses JSONB NOT NULL DEFAULT '[]'::jsonb`,
     );
   } catch (err) {
     console.log('Migration check for customer_accounts delivery columns:', err.message);
@@ -1152,14 +1120,6 @@ export async function initDb() {
     console.log('Migration: Added points_earned column to event_orders');
   } catch (err) {
     console.log('Migration check for event_orders points_earned:', err.message);
-  }
-
-  // Migration: Add include_minimal_event_styling column to catering_orders
-  try {
-    await pool.query(`ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS include_minimal_event_styling BOOLEAN DEFAULT FALSE`);
-    console.log('Migration: Added include_minimal_event_styling column to catering_orders');
-  } catch (err) {
-    console.log('Migration check for catering_orders include_minimal_event_styling:', err.message);
   }
 
 
@@ -1565,31 +1525,23 @@ async function ensureCustomerTrayDraftsTrayItemsColumn() {
   const cols = await getTableColumnNames('customer_tray_drafts');
 
   await pool.query(
+    `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_lines JSONB NOT NULL DEFAULT '[]'::jsonb`,
+  );
+  await pool.query(
     `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_items JSONB NOT NULL DEFAULT '[]'::jsonb`,
   );
 
-  if (cols.has('tray_lines')) {
-    try {
-      const legacyItemsExpr = cols.has('items') ? `, items` : '';
-      await pool.query(`
-        UPDATE customer_tray_drafts
-        SET tray_items = COALESCE(
-          NULLIF(tray_items, '[]'::jsonb),
-          NULLIF(tray_lines, '[]'::jsonb)${legacyItemsExpr},
-          '[]'::jsonb
-        )
-        WHERE tray_items IS NULL OR tray_items = '[]'::jsonb
-      `);
-    } catch (err) {
-      console.warn('[db] customer_tray_drafts tray_lines → tray_items:', err.message);
-    }
-    try {
-      await pool.query(
-        `ALTER TABLE customer_tray_drafts DROP COLUMN IF EXISTS tray_lines`,
-      );
-    } catch (err) {
-      console.warn('[db] customer_tray_drafts drop tray_lines:', err.message);
-    }
+  try {
+    const legacyItemsExpr = cols.has('items') ? `, items` : '';
+    await pool.query(`
+      UPDATE customer_tray_drafts
+      SET tray_lines = COALESCE(NULLIF(tray_lines, '[]'::jsonb), tray_items${legacyItemsExpr}, '[]'::jsonb),
+          tray_items = COALESCE(NULLIF(tray_items, '[]'::jsonb), tray_lines${legacyItemsExpr}, '[]'::jsonb)
+      WHERE tray_lines IS NULL OR tray_lines = '[]'::jsonb
+         OR tray_items IS NULL OR tray_items = '[]'::jsonb
+    `);
+  } catch (err) {
+    console.warn('[db] customer_tray_drafts tray_lines/tray_items backfill:', err.message);
   }
 }
 
@@ -1635,15 +1587,11 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
       } catch (_) {}
     }
     await pool.query(
+      `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_lines JSONB NOT NULL DEFAULT '[]'::jsonb`,
+    );
+    await pool.query(
       `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_items JSONB NOT NULL DEFAULT '[]'::jsonb`,
     );
-    try {
-      await pool.query(
-        `ALTER TABLE customer_tray_drafts DROP COLUMN IF EXISTS tray_lines`,
-      );
-    } catch (err) {
-      console.warn('[db] customer_tray_drafts drop tray_lines:', err.message);
-    }
     await pool.query(
       `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS user_email TEXT`,
     );
@@ -1816,12 +1764,6 @@ async function ensureMenuCatalogTable(tableName) {
     throw new Error(`ensureMenuCatalogTable: invalid table ${tableName}`);
   }
 
-  if (tableName === 'menu_dishes_allergens') {
-    await ensureMenuDishesAllergensTable();
-    return;
-  }
-
-  // For menu_dishes_meal_types only
   const cols = await getTableColumnNames(tableName);
   if (cols.size === 0) {
     await pool.query(`
@@ -1861,7 +1803,10 @@ async function ensureMenuCatalogTable(tableName) {
   }
 
   try {
-    const indexName = 'idx_menu_dishes_meal_types_name_lower';
+    const indexName =
+      tableName === 'menu_dishes_allergens'
+        ? 'idx_menu_dishes_allergens_name_lower'
+        : 'idx_menu_dishes_meal_types_name_lower';
     await pool.query(
       `CREATE UNIQUE INDEX IF NOT EXISTS ${indexName}
        ON ${tableName} (lower(trim(name)))`,
@@ -1871,121 +1816,13 @@ async function ensureMenuCatalogTable(tableName) {
   }
 }
 
-async function ensureMenuDishesAllergensTable() {
-  const cols = await getTableColumnNames('menu_dishes_allergens');
-
-  if (cols.size === 0) {
-    // Check if a legacy table exists and restore from it
-    const legacyNames = [
-      'menu_dishes_allergens_legacy_junction',
-    ];
-    let restoredFromLegacy = false;
-    for (const legacyName of legacyNames) {
-      const legacyCols = await getTableColumnNames(legacyName);
-      if (legacyCols.size > 0 && legacyCols.has('allergen_id')) {
-        await pool.query(`ALTER TABLE ${legacyName} RENAME TO menu_dishes_allergens`);
-        console.log(`Migration: restored menu_dishes_allergens from ${legacyName}`);
-        restoredFromLegacy = true;
-        break;
-      }
-    }
-
-    if (!restoredFromLegacy) {
-      // Also check for timestamped legacy tables
-      try {
-        const { rows: tables } = await pool.query(
-          `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'menu_dishes_allergens_legacy_%'`,
-        );
-        for (const { tablename } of tables) {
-          const lCols = await getTableColumnNames(tablename);
-          if (lCols.has('allergen_id')) {
-            await pool.query(`ALTER TABLE ${tablename} RENAME TO menu_dishes_allergens`);
-            console.log(`Migration: restored menu_dishes_allergens from ${tablename}`);
-            restoredFromLegacy = true;
-            break;
-          }
-        }
-      } catch (e) {
-        console.log('Migration: legacy table scan:', e.message);
-      }
-    }
-
-    if (!restoredFromLegacy) {
-      await pool.query(`
-        CREATE TABLE menu_dishes_allergens (
-          allergen_id SERIAL PRIMARY KEY,
-          allergen_name TEXT NOT NULL
-        );
-      `);
-      console.log('Migration: created menu_dishes_allergens (allergen_id, allergen_name)');
-    }
-  } else if (cols.has('allergen_id') && cols.has('allergen_name')) {
-    // Already has the correct mobile schema — nothing to do
-  } else if (cols.has('id') && cols.has('name') && !cols.has('allergen_id')) {
-    // Web-created schema (id, name) — the original data is in a legacy table.
-    // Drop this empty web-created table and restore from legacy instead.
-    let restoredFromLegacy = false;
-    try {
-      const { rows: legacyTables } = await pool.query(
-        `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'menu_dishes_allergens_legacy%'`,
-      );
-      for (const { tablename } of legacyTables) {
-        const lCols = await getTableColumnNames(tablename);
-        if (lCols.has('allergen_id') && lCols.has('allergen_name')) {
-          // Legacy table has the real data — drop web-created table, rename legacy back
-          await pool.query(`DROP TABLE menu_dishes_allergens`);
-          await pool.query(`ALTER TABLE ${tablename} RENAME TO menu_dishes_allergens`);
-          console.log(`Migration: restored menu_dishes_allergens from ${tablename} (dropped web-created empty table)`);
-          restoredFromLegacy = true;
-          break;
-        }
-      }
-    } catch (e) {
-      console.log('Migration: legacy restore attempt:', e.message);
-    }
-
-    if (!restoredFromLegacy) {
-      // No legacy table with data found — just rename columns on the web-created table
-      try {
-        await pool.query(`ALTER TABLE menu_dishes_allergens RENAME COLUMN id TO allergen_id`);
-        await pool.query(`ALTER TABLE menu_dishes_allergens RENAME COLUMN name TO allergen_name`);
-        console.log('Migration: renamed menu_dishes_allergens columns id→allergen_id, name→allergen_name');
-      } catch (err) {
-        console.log('Migration: menu_dishes_allergens column rename:', err.message);
-      }
-    }
-  }
-
-  // Drop any remaining legacy tables (only after data is safely in main table)
-  try {
-    const { rows: legacyTables } = await pool.query(
-      `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'menu_dishes_allergens_legacy%'`,
-    );
-    for (const { tablename } of legacyTables) {
-      await pool.query(`DROP TABLE IF EXISTS ${tablename}`);
-      console.log(`Migration: dropped legacy table ${tablename}`);
-    }
-  } catch (e) {
-    console.log('Migration: drop legacy tables:', e.message);
-  }
-
-  try {
-    await pool.query(
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_dishes_allergens_name_lower
-       ON menu_dishes_allergens (lower(trim(allergen_name)))`,
-    );
-  } catch (err) {
-    console.log('Index create (menu_dishes_allergens):', err.message);
-  }
-}
-
 /** @returns {string[]} */
 export async function getMenuAllergenCatalog() {
   try {
     const r = await pool.query(
-      `SELECT allergen_name FROM menu_dishes_allergens ORDER BY lower(allergen_name) ASC`,
+      `SELECT name FROM menu_dishes_allergens ORDER BY lower(name) ASC`,
     );
-    return r.rows.map((row) => String(row.allergen_name).trim()).filter(Boolean);
+    return r.rows.map((row) => String(row.name).trim()).filter(Boolean);
   } catch (e) {
     console.log('getMenuAllergenCatalog:', e.message);
     return [];
@@ -2011,9 +1848,9 @@ export async function upsertMenuAllergensFromSerialized(serialized, basePresetLi
     known.add(p.toLowerCase());
     try {
       await pool.query(
-        `INSERT INTO menu_dishes_allergens (allergen_name)
+        `INSERT INTO menu_dishes_allergens (name)
          SELECT $1 WHERE NOT EXISTS (
-           SELECT 1 FROM menu_dishes_allergens WHERE lower(trim(allergen_name)) = lower(trim($1))
+           SELECT 1 FROM menu_dishes_allergens WHERE lower(trim(name)) = lower(trim($1))
          )`,
         [p],
       );

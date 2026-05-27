@@ -185,12 +185,6 @@ class MenuStore extends ChangeNotifier {
     );
   }
 
-  /// Find a dish by ID from the local cache (returns null if not found).
-  MenuDish? findDishById(String id) {
-    final idx = _items.indexWhere((d) => d.id == id);
-    return idx >= 0 ? _items[idx] : null;
-  }
-
   /// Get dishes that belong to a specific set menu
   List<MenuDish> getDishesBySet(String setName) {
     return _items.where((d) => d.setMenus.contains(setName)).toList();
@@ -224,7 +218,6 @@ class MenuStore extends ChangeNotifier {
           'price': price.trim(),
           'menuDishesAdditionalChargeAmount': additionalChargeAmount,
           'additionalChargeAmount': additionalChargeAmount,
-          'additional_charge': additionalChargeAmount,
           'category': category,
           'paxOptions': paxOptions,
           'sauces': sauces,
@@ -279,7 +272,6 @@ class MenuStore extends ChangeNotifier {
           'price': price.trim(),
           'menuDishesAdditionalChargeAmount': resolvedAdditionalCharge,
           'additionalChargeAmount': resolvedAdditionalCharge,
-          'additional_charge': resolvedAdditionalCharge,
           'category': category,
           'paxOptions': paxOptions,
           'sauces': sauces ?? [],

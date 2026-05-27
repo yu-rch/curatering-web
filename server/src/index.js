@@ -1,4 +1,4 @@
-﻿import "dotenv/config";
+import "dotenv/config";
 import crypto from "node:crypto";
 import dns from "node:dns";
 import express from "express";
@@ -42,7 +42,6 @@ import {
   getMenuMealTypeCatalog,
   upsertMenuMealType,
 } from "./db.js";
-import { profileAddressesFromAccountRow } from "./profile_addresses.js";
 import {
   ensureRestaurantOrdersCanonicalColumns,
   ensureCateringEventOrdersCanonicalColumns,
@@ -60,7 +59,6 @@ import {
   parseRestaurantOrderTrayItems,
   restaurantOrderItemsInsertSql,
   buildRestaurantOrderPaymentUpdateSets,
-  buildRestaurantOrderBalancePaymentUpdateSets,
 } from "./order_schema.js";
 import CartAPI from "./cart_api.js";
 import {
@@ -70,7 +68,7 @@ import {
   getTrayDraftItemsByCustomerId,
   clearTrayDraftForCustomer,
 } from "./tray_drafts_api.js";
-import { customerIdFromRequest, resolveCustomerAccountCustomerId } from "./customer_auth.js";
+import { customerIdFromRequest } from "./customer_auth.js";
 import { createPublicRateLimiter } from "./public_rate_limit.js";
 import {
   ensureRestaurantPosColumns,
@@ -86,7 +84,6 @@ import {
   isOpenAiConfigured,
   openAiModel,
 } from "./services/openaiService.js";
-import { registerManagerCateringRoutes } from "./managerCateringApi.js";
 
 // Prefer IPv4 when resolving SMTP hosts (avoids ENETUNREACH on IPv6 in many cloud/container networks).
 try {
@@ -211,7 +208,6 @@ const _corsOriginSuffixes = (() => {
 
 const _corsLocalhostPatterns = [
   /^https?:\/\/localhost(?::\d+)?$/i,
-  /^https?:\/\/[\w-]+\.localhost(?::\d+)?$/i,
   /^http:\/\/127\.0\.0\.1(?::\d+)?$/i,
 ];
 
@@ -397,7 +393,7 @@ function normalizeRunpodInput(input) {
     const maxLen = Number(process.env.RUNPOD_MAX_INIT_IMAGE_B64_LEN || 8_000_000);
     if (s.length > maxLen) {
       const err = new Error(
-        `init_image_base64 exceeds ${maxLen} characters â€” use a smaller venue photo`,
+        `init_image_base64 exceeds ${maxLen} characters — use a smaller venue photo`,
       );
       err.code = "payload_too_large";
       throw err;
@@ -2208,7 +2204,7 @@ const sql = connectionString
 
 if (!connectionString) {
   console.error(
-    "[startup] DATABASE_URL is not set â€” link Postgres on Railway or set DATABASE_URL in service variables.",
+    "[startup] DATABASE_URL is not set — link Postgres on Railway or set DATABASE_URL in service variables.",
   );
 }
 
@@ -2342,7 +2338,7 @@ function resolveThemeTintColor(prompt, fallback = "#f4511e") {
   return String(fallback || "#f4511e").toLowerCase();
 }
 
-/** Large base64 theme boards â€” omit from list endpoints; client loads full order by id for detail. */
+/** Large base64 theme boards — omit from list endpoints; client loads full order by id for detail. */
 function compactEventOrderRow(row) {
   const out = { ...row };
   const td = out.themeDesign;
@@ -2406,7 +2402,7 @@ const SEATING_MAX_TABLES = 40;
 const SEATING_MAX_SEATS = 1200;
 const SEATING_MAX_FLOOR_B64_CHARS = 1_500_000;
 
-/** Preset venue footprints (client â€œshape placerâ€); must match Flutter `kVenueFloorShapeOptions`. */
+/** Preset venue footprints (client “shape placer”); must match Flutter `kVenueFloorShapeOptions`. */
 const SEATING_VENUE_FLOOR_SHAPES = new Set([
   "banquet_rect",
   "theater",
@@ -3347,7 +3343,7 @@ async function sendCustomerNotificationEmail({ to, subject, text, html, attachme
   if (!to) return;
   if (!isEmailConfigured()) {
     console.warn(
-      "[email] Skipping notification â€” set RESEND_API_KEY and RESEND_FROM on this host",
+      "[email] Skipping notification — set RESEND_API_KEY and RESEND_FROM on this host",
     );
     return;
   }
@@ -3361,7 +3357,7 @@ async function sendCustomerNotificationEmail({ to, subject, text, html, attachme
   }
 }
 
-/** Fire-and-forget â€” never block API responses on SMTP. */
+/** Fire-and-forget — never block API responses on SMTP. */
 function sendCustomerNotificationEmailAsync(payload) {
   void sendCustomerNotificationEmail(payload);
 }
@@ -3402,8 +3398,7 @@ function sendOtpEmailAsync(email, otp) {
 /** Customer phone from DB row (Supabase uses contact_number). */
 function customerPhoneFromRow(row) {
   if (!row) return null;
-  const phone = row.contact_number ?? row.phone_number ?? row.phone;
-  return phone != null && String(phone).trim() ? String(phone).trim() : null;
+  return row.contact_number ?? row.phone ?? null;
 }
 
 function registerCustomerAuthRoutes(app, dbGate) {
@@ -3475,18 +3470,21 @@ function registerCustomerAuthRoutes(app, dbGate) {
 
       let result;
       if (useUuidPk && caCols.has('customer_code')) {
-        const insertCols = ['id', 'customer_code', 'email', 'password_hash', 'full_name', 'contact_number', 'otp_code', 'otp_expiry', 'registration_platform'];
-        const insertVals = [customerId, customerCode, emailNorm, passwordHash, fullName, phone || null, otpCode, otpExpiry, registrationPlatform];
-        if (caCols.has('customer_id')) {
-          insertCols.push('customer_id');
-          insertVals.push(customerCode);
-        }
-        const placeholders = insertVals.map((_, i) => i === 0 ? '$1::uuid' : `$${i + 1}`).join(', ');
         result = await pool.query(
-          `INSERT INTO customer_accounts (${insertCols.join(', ')})
-           VALUES (${placeholders})
+          `INSERT INTO customer_accounts (id, customer_code, email, password_hash, full_name, contact_number, otp_code, otp_expiry, registration_platform)
+           VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
            RETURNING id, email, full_name, is_verified`,
-          insertVals,
+          [
+            customerId,
+            customerCode,
+            emailNorm,
+            passwordHash,
+            fullName,
+            phone || null,
+            otpCode,
+            otpExpiry,
+            registrationPlatform,
+          ],
         );
       } else if (useUuidPk) {
         result = await pool.query(
@@ -4646,7 +4644,7 @@ app.post("/api/super-admin/users", authRequired, requireSuperAdmin, async (req, 
           );
           if (cnt.rows[0].n >= Number(cap)) {
             return res.status(400).json({
-              message: `Role limit reached: at most ${Number(cap)} active ${role} account(s). Raise the cap under Manage Accounts â†’ Role limits.`,
+              message: `Role limit reached: at most ${Number(cap)} active ${role} account(s). Raise the cap under Manage Accounts → Role limits.`,
             });
           }
         }
@@ -5080,15 +5078,15 @@ function buildHeuristicFeedbackAnalysis(feedbacks) {
   const withRemarks = feedbacks.filter((f) => String(f.remarks || "").trim().length > 0);
 
   const summary = `Based on ${count} review(s), average rating is ${avg != null ? avg.toFixed(1) : "n/a"} stars. `
-    + `${high.length} positive (4â€“5â˜…), ${low.length} critical (1â€“2â˜…), ${withRemarks.length} included written remarks.`;
+    + `${high.length} positive (4–5★), ${low.length} critical (1–2★), ${withRemarks.length} included written remarks.`;
 
   let interpretation = "Overall sentiment appears ";
   if (avg != null) {
-    if (avg >= 4.2) interpretation += "strong â€” customers are generally satisfied.";
-    else if (avg >= 3.5) interpretation += "mixed â€” some areas may need attention.";
-    else interpretation += "weak â€” investigate recurring complaints in remarks.";
+    if (avg >= 4.2) interpretation += "strong — customers are generally satisfied.";
+    else if (avg >= 3.5) interpretation += "mixed — some areas may need attention.";
+    else interpretation += "weak — investigate recurring complaints in remarks.";
   } else {
-    interpretation += "unclear â€” star ratings are missing on some rows.";
+    interpretation += "unclear — star ratings are missing on some rows.";
   }
 
   const recommendations = [];
@@ -5107,7 +5105,7 @@ function buildHeuristicFeedbackAnalysis(feedbacks) {
   );
   if (avg != null && avg < 4) {
     recommendations.push(
-      "Consider a short customer recovery offer (discount or free item) for 1â€“2â˜… orders within 48 hours.",
+      "Consider a short customer recovery offer (discount or free item) for 1–2★ orders within 48 hours.",
     );
   }
 
@@ -5497,7 +5495,7 @@ function isNonEmptyWebsiteContent(content) {
   );
 }
 
-/** One-time / lazy migration: legacy rows and website-content.json â†’ canonical row. */
+/** One-time / lazy migration: legacy rows and website-content.json → canonical row. */
 async function migrateWebsiteContentIfNeeded() {
   try {
     const canonical = await pool.query(
@@ -6916,7 +6914,6 @@ app.post(
       addChanged('guestCount', existing.guestCount, Number(guestCount));
       addChanged('menu', existing.menu, menu || []);
       addChanged('themeDesign', existing.themeDesign, themeDesign || {});
-      // total cost is recomputed server-side below (mobile parity).
       addChanged('totalCost', Number(existing.totalCost || 0), Number(totalCost || 0));
 
       const costBreakdown =
@@ -6929,37 +6926,10 @@ app.post(
       const travelCost = Number(
         req.body.travelCost ?? costBreakdown.travelCost ?? costBreakdown.travel_cost ?? 0,
       );
-      // Authoritative total cost (mobile parity).
-      // Formula: (guest_count + pax_buffer) * 500 + menu add-ons + theme + labor + travel + additional costs
-      const paxBuffer = Number(req.body?.paxBuffer ?? req.body?.pax_buffer ?? 0) || 0;
-      const guestCountNum = Number(guestCount) || 0;
-      let menuAddOns = 0;
-      if (Array.isArray(menu)) {
-        for (const m of menu) {
-          if (m && typeof m === "object") {
-            menuAddOns += Number(
-              m.additionalChargeAmount ??
-              m.additional_charge_amount ??
-              m.menu_dishes_additional_charge_amount ??
-              0,
-            ) || 0;
-          }
-        }
-      }
-      const themeDesignCost = Number(
-        req.body?.themeDesignCost ?? req.body?.theme_design_cost ?? 0,
-      ) || 0;
-      let additionalCosts = 0;
-      const addList = req.body?.additional_costs;
-      if (Array.isArray(addList)) {
-        for (const item of addList) {
-          if (item && typeof item === "object") {
-            additionalCosts += Number(item.amount ?? item.cost ?? 0) || 0;
-          }
-        }
-      }
-      const dishCost = (guestCountNum + paxBuffer) * 500 + menuAddOns;
-      const totalNum = dishCost + themeDesignCost + laborCost + travelCost + additionalCosts;
+      const dishCost = Number(
+        costBreakdown.dishCost ?? costBreakdown.dish_cost ?? 0,
+      );
+      const totalNum = totalCost != null ? Number(totalCost) : 0;
       const estimateMessage =
         `Macrina posted an updated cost estimate: PHP ${totalNum.toFixed(2)} ` +
         `(labor PHP ${laborCost.toFixed(2)}, travel PHP ${travelCost.toFixed(2)}).`;
@@ -7035,7 +7005,7 @@ app.post(
               JSON.stringify(menu || []),
               JSON.stringify(mergedThemeDesign),
               nextStatus,
-              totalNum,
+              totalCost != null ? Number(totalCost) : 0,
               req.user.id,
               orderId,
               ...(tableCols.has("labor_cost") ? [laborCost] : []),
@@ -7127,7 +7097,7 @@ app.post(
               `Hello ${customerDisplayName},\n\n` +
               `Your catering inquiry (${orderId}) has been updated with a revised cost estimation.\n` +
               `Estimated total: PHP ${Number(totalCost || 0).toFixed(2)}.\n` +
-              `Labor: PHP ${laborCost.toFixed(2)} Â· Travel: PHP ${travelCost.toFixed(2)}.\n\n` +
+              `Labor: PHP ${laborCost.toFixed(2)} · Travel: PHP ${travelCost.toFixed(2)}.\n\n` +
               `Please review your inquiry details in Curatering.\n\n` +
               `- Curatering Team`,
           });
@@ -7219,31 +7189,41 @@ app.post(
   async (req, res) => {
     try {
       const { orderId } = req.params;
+      const { businessCardsGivenAway, onTheSpotInquiries, complaints } =
+        req.body || {};
+
+      const postAnalysis = {
+        businessCardsGivenAway: Number(businessCardsGivenAway) || 0,
+        onTheSpotInquiries: Number(onTheSpotInquiries) || 0,
+        complaints: Number(complaints) || 0,
+      };
+
       const result = await pool.query(
         `UPDATE event_orders
          SET
            status = 'completed',
-           updated_by = $1,
+           post_analysis = $1::jsonb,
+           updated_by = $2,
            updated_at = now()
-         WHERE id = $2
+         WHERE id = $3
            AND status IN ('for_full_payment', 'for_post_analysis')
          RETURNING id;`,
-        [req.user.id, orderId],
+        [JSON.stringify(postAnalysis), req.user.id, orderId],
       );
 
       if (result.rowCount === 0) {
         return res
           .status(404)
           .json({
-            message: "Order not found or already completed",
+            message: "Post-analysis order not found or already completed",
           });
       }
 
       await logAction({
         userId: req.user.id,
         feature: "Events",
-        action: "completed event order",
-        other: { orderId },
+        action: "completed post-event analysis",
+        other: { orderId, postAnalysis },
       });
 
       return res.json({ ok: true, id: result.rows[0].id });
@@ -7251,47 +7231,7 @@ app.post(
       console.error(e);
       return res
         .status(500)
-        .json({ message: "Failed to complete order" });
-    }
-  },
-);
-
-// Alias: Stage 5 completion (no "post-analysis" terminology).
-app.post(
-  "/api/events/orders/:orderId/complete",
-  authRequired,
-  (req, res, next) =>
-    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin"])),
-  async (req, res) => {
-    try {
-      const { orderId } = req.params;
-      const result = await pool.query(
-        `UPDATE event_orders
-         SET
-           status = 'completed',
-           updated_by = $1,
-           updated_at = now()
-         WHERE id = $2
-           AND status IN ('for_full_payment', 'for_post_analysis')
-         RETURNING id;`,
-        [req.user.id, orderId],
-      );
-
-      if (result.rowCount === 0) {
-        return res.status(404).json({ message: "Order not found or already completed" });
-      }
-
-      await logAction({
-        userId: req.user.id,
-        feature: "Events",
-        action: "completed event order",
-        other: { orderId },
-      });
-
-      return res.json({ ok: true, id: result.rows[0].id });
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ message: "Failed to complete order" });
+        .json({ message: "Failed to complete post-analysis" });
     }
   },
 );
@@ -7620,7 +7560,7 @@ app.put(
   },
 );
 
-// Debug endpoints â€” development only
+// Debug endpoints — development only
 if (process.env.NODE_ENV !== "production") {
 app.get("/api/debug/test-account", async (req, res) => {
   try {
@@ -7875,7 +7815,7 @@ async function seedSuperAdminIfNeeded() {
   if (!email || !password) {
     if (process.env.NODE_ENV === "production") {
       console.warn(
-        "[startup] SEED_SUPER_ADMIN_EMAIL/PASSWORD not set â€” skipping default admin seed in production",
+        "[startup] SEED_SUPER_ADMIN_EMAIL/PASSWORD not set — skipping default admin seed in production",
       );
       return;
     }
@@ -7896,7 +7836,7 @@ async function seedSuperAdminIfNeeded() {
         [userId, testEmail, passwordHash, testFullName],
       );
       console.warn(
-        "[startup] Created dev super-admin admin@curatering.test / admin123 â€” set SEED_SUPER_ADMIN_* in production",
+        "[startup] Created dev super-admin admin@curatering.test / admin123 — set SEED_SUPER_ADMIN_* in production",
       );
     }
     return;
@@ -7929,8 +7869,8 @@ async function resolveRestaurantOrderEmail(order) {
   }
   if (!order.customer_id) return null;
   const r = await pool.query(
-    `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1`,
-    [String(order.customer_id)],
+    'SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1',
+    [order.customer_id],
   );
   return r.rowCount > 0 ? r.rows[0].email : null;
 }
@@ -7977,7 +7917,7 @@ let authSchemaPromise = Promise.resolve();
 
 function scheduleBootstrapRetry() {
   if (process.env.DB_INIT_FATAL === '1') {
-    console.error('[startup] DB_INIT_FATAL=1 â€” not scheduling retry');
+    console.error('[startup] DB_INIT_FATAL=1 — not scheduling retry');
     return;
   }
   if (bootstrapRetryTimer) return;
@@ -8012,7 +7952,7 @@ function runDatabaseBootstrap() {
     }))
     .then(() => {
       dbReady = true;
-      console.log('[startup] Auth schema ready â€” customer login enabled');
+      console.log('[startup] Auth schema ready — customer login enabled');
       return runInitDbWithRetries();
     })
     .then(() => seedSuperAdminIfNeeded())
@@ -8248,8 +8188,8 @@ async function registerRoutesAfterDbInit() {
           const eventLabel =
             (row.event_title || row.customer_name || 'your event').toString();
           const subject = isDown
-            ? `Order summary (down payment) â€” ${eventLabel}`
-            : `Order summary â€” ${eventLabel}`;
+            ? `Order summary (down payment) — ${eventLabel}`
+            : `Order summary — ${eventLabel}`;
           const text =
             `Hello,\n\n` +
             `Please find your order summary attached for ${eventLabel}.\n\n` +
@@ -8402,7 +8342,7 @@ async function registerRoutesAfterDbInit() {
     app.put('/api/events/orders/:orderId/payment-status', authRequired, async (req, res) => {
       try {
         const { orderId } = req.params;
-        const { paymentType, status, referenceNumber, amount, paymentProof } = req.body || {};
+        const { paymentType, status, referenceNumber, amount } = req.body || {};
         const paymentMethodRaw = String(
           req.body?.paymentMethod ?? req.body?.payment_method ?? "",
         ).trim();
@@ -8510,16 +8450,6 @@ async function registerRoutesAfterDbInit() {
         if (Number.isFinite(amountNum) && amountNum > 0) {
           updateQuery += `, ${amountColumn} = $${queryParams.length + 1}`;
           queryParams.push(amountNum);
-        }
-
-        const proofRaw = paymentProof != null ? String(paymentProof).trim() : '';
-        if (proofRaw) {
-          const proofKey =
-            paymentType === 'down_payment'
-              ? 'down_payment_proof'
-              : 'full_payment_proof';
-          updateQuery += `, post_analysis = COALESCE(post_analysis, '{}'::jsonb) || $${queryParams.length + 1}::jsonb`;
-          queryParams.push(JSON.stringify({ [proofKey]: proofRaw }));
         }
 
         updateQuery += ` WHERE id = $${queryParams.length + 1} RETURNING *`;
@@ -8939,7 +8869,6 @@ async function registerRoutesAfterDbInit() {
           allergens,
           menuDishesAdditionalChargeAmount,
           additionalChargeAmount,
-          additional_charge,
         } = req.body || {};
         
         if (!name || !price) {
@@ -8948,7 +8877,7 @@ async function registerRoutesAfterDbInit() {
 
         const dishCategory = category || 'catering';
         const additionalCharge = Number(
-          menuDishesAdditionalChargeAmount ?? additionalChargeAmount ?? additional_charge ?? 0,
+          menuDishesAdditionalChargeAmount ?? additionalChargeAmount ?? 0,
         );
         const resolvedMealType = String(mealType ?? '').trim() || String(type ?? '').trim();
         const mealTypeSaved = resolvedMealType
@@ -8956,8 +8885,8 @@ async function registerRoutesAfterDbInit() {
           : '';
 
         const result = await pool.query(
-          `INSERT INTO menu_dishes (name, price, menu_dishes_additional_charge_amount, additional_charge, category, pax_options, sauces, supports_addons, ingredients, image_base64, type, set_menus, available, public_description, allergens, meal_type)
-           VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          `INSERT INTO menu_dishes (name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, supports_addons, ingredients, image_base64, type, set_menus, available, public_description, allergens, meal_type)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
            RETURNING *`,
           [
             name,
@@ -9008,12 +8937,11 @@ async function registerRoutesAfterDbInit() {
           allergens,
           menuDishesAdditionalChargeAmount,
           additionalChargeAmount,
-          additional_charge,
         } = req.body || {};
         
         const dishCategory = category || 'catering';
         const additionalCharge = Number(
-          menuDishesAdditionalChargeAmount ?? additionalChargeAmount ?? additional_charge ?? 0,
+          menuDishesAdditionalChargeAmount ?? additionalChargeAmount ?? 0,
         );
         const resolvedMealType = String(mealType ?? '').trim() || String(type ?? '').trim();
         const mealTypeSaved = resolvedMealType
@@ -9025,7 +8953,7 @@ async function registerRoutesAfterDbInit() {
            SET name = $1, price = $2, category = $3, pax_options = $4, 
                sauces = $5, supports_addons = $6, ingredients = $7, image_base64 = $8, type = $9, set_menus = $10,
                available = $11, public_description = $12, allergens = $13, meal_type = $14,
-               menu_dishes_additional_charge_amount = $15, additional_charge = $15, updated_at = now()
+               menu_dishes_additional_charge_amount = $15, updated_at = now()
            WHERE id = $16
            RETURNING *`,
           [
@@ -9261,10 +9189,9 @@ async function registerRoutesAfterDbInit() {
           orderSource,
         } = req.body || {};
 
-        const tokenId = req.customer?.id ?? null;
-        const customerId = tokenId ? await resolveCustomerAccountCustomerId(tokenId) : null;
+        const customerId = req.customer?.id ?? null;
         const submittedEmail = userEmail ?? guestContactEmail;
-        let orderEmail = submittedEmail
+        const orderEmail = submittedEmail
           ? String(submittedEmail).trim().toLowerCase()
           : null;
 
@@ -9272,17 +9199,6 @@ async function registerRoutesAfterDbInit() {
           return res.status(400).json({
             error: 'Log in or provide userEmail for guest checkout',
           });
-        }
-
-        // For logged-in customers, fetch their email from account if not provided
-        if (customerId && !orderEmail) {
-          const acctRow = await pool.query(
-            `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1`,
-            [String(customerId)],
-          );
-          if (acctRow.rows[0]?.email) {
-            orderEmail = String(acctRow.rows[0].email).trim().toLowerCase();
-          }
         }
 
         let orderItems = Array.isArray(tray_items)
@@ -9424,8 +9340,8 @@ async function registerRoutesAfterDbInit() {
         const notifyEmail = customerId
           ? (
               await pool.query(
-                `SELECT email, full_name FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1`,
-                [String(customerId)],
+                'SELECT email, full_name FROM customer_accounts WHERE id = $1 LIMIT 1',
+                [customerId],
               )
             ).rows[0]?.email
           : orderEmail;
@@ -9461,70 +9377,10 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
-    async function enrichRestaurantTrayItems(orderItems) {
-      if (!Array.isArray(orderItems) || orderItems.length === 0) return orderItems;
-      const dishIds = [
-        ...new Set(
-          orderItems
-            .map((item) => item?.dish_id ?? item?.dishId ?? item?.menu_dish_id ?? item?.id)
-            .filter((value) => value != null && String(value).trim().isNotEmpty)
-            .map((value) => String(value).trim()),
-        ),
-      ];
-      if (dishIds.length === 0) return orderItems;
-      const dishResult = await pool.query(
-        `SELECT id::text AS id, name, price, image_base64, menu_dishes_additional_charge_amount
-         FROM menu_dishes
-         WHERE id::text = ANY($1) AND archived = false`,
-        [dishIds],
-      );
-      const dishesById = new Map(dishResult.rows.map((dish) => [dish.id, dish]));
-      return orderItems.map((raw) => {
-        if (!raw || typeof raw !== 'object') return raw;
-        const item = { ...raw };
-        const dishId = String(
-          item.dish_id ?? item.dishId ?? item.menu_dish_id ?? item.id ?? '',
-        ).trim();
-        const dish = dishesById.get(dishId);
-        if (!dish) return item;
-        const price = Number(dish.price) || Number(item.price) || 0;
-        return {
-          ...item,
-          dishId,
-          dish_id: dishId,
-          menu_dish_id: dishId,
-          name: item.name ?? item.dishName ?? dish.name,
-          dishName: item.dishName ?? item.name ?? dish.name,
-          dish_name: item.dish_name ?? dish.name,
-          item_name: item.item_name ?? dish.name,
-          price,
-          dishPrice: price,
-          image_base64: item.image_base64 ?? item.imageBase64 ?? dish.image_base64,
-          imageBase64: item.imageBase64 ?? item.image_base64 ?? dish.image_base64,
-        };
-      });
-    }
-
     app.post('/api/restaurant/orders/:orderId/payment', optionalCustomerAuth, async (req, res) => {
       try {
         const { orderId } = req.params;
-        const body = req.body || {};
-        const paymentReference =
-          body.paymentReference ??
-          body.referenceNumber ??
-          body.payment_reference ??
-          null;
-        const paymentProof =
-          body.paymentProof ??
-          body.paymentProofBase64 ??
-          body.payment_proof ??
-          null;
-        const paymentType = String(body.type ?? body.paymentType ?? 'initial')
-          .trim()
-          .toLowerCase();
-        const isBalance =
-          paymentType === 'balance' || paymentType === 'balance_payment';
-        const { guestContactEmail, userEmail } = body;
+        const { paymentReference, paymentProof, guestContactEmail, userEmail } = req.body || {};
 
         if (!paymentReference && !paymentProof) {
           return res.status(400).json({
@@ -9547,8 +9403,7 @@ async function registerRoutesAfterDbInit() {
         const order = existing.rows[0];
 
         if (req.customer?.id) {
-          const resolvedCustId = await resolveCustomerAccountCustomerId(req.customer.id);
-          if (order.customer_id && String(order.customer_id) !== resolvedCustId && String(order.customer_id) !== String(req.customer.id)) {
+          if (order.customer_id && String(order.customer_id) !== String(req.customer.id)) {
             return res.status(403).json({ error: 'Order not found' });
           }
         } else {
@@ -9570,9 +9425,7 @@ async function registerRoutesAfterDbInit() {
         }
 
         const roCols = await ensureRestaurantOrdersCanonicalColumns();
-        const paymentSets = isBalance
-          ? buildRestaurantOrderBalancePaymentUpdateSets(roCols)
-          : buildRestaurantOrderPaymentUpdateSets(roCols);
+        const paymentSets = buildRestaurantOrderPaymentUpdateSets(roCols);
 
         const result = await pool.query(
           `UPDATE restaurant_orders
@@ -9622,10 +9475,9 @@ async function registerRoutesAfterDbInit() {
           return res.status(400).json({ error: 'Invalid order id' });
         }
 
-        const resolvedCustId = await resolveCustomerAccountCustomerId(req.customer.id);
         const result = await pool.query(
-          `SELECT * FROM restaurant_orders WHERE ${lookup.sql} AND (customer_id::text = $2 OR customer_id::text = $3)`,
-          [lookup.value, resolvedCustId, req.customer.id],
+          `SELECT * FROM restaurant_orders WHERE ${lookup.sql} AND customer_id::text = $2`,
+          [lookup.value, req.customer.id],
         );
 
         if (result.rows.length === 0) {
@@ -9651,13 +9503,12 @@ async function registerRoutesAfterDbInit() {
           return res.status(400).json({ error: 'Invalid order id' });
         }
 
-        const resolvedCustIdFollowup = await resolveCustomerAccountCustomerId(req.customer.id);
         const existing = await pool.query(
           `SELECT *
            FROM restaurant_orders
-           WHERE ${lookup.sql} AND (customer_id::text = $2 OR customer_id::text = $3)
+           WHERE ${lookup.sql} AND customer_id::text = $2
            LIMIT 1`,
-          [lookup.value, resolvedCustIdFollowup, req.customer.id],
+          [lookup.value, req.customer.id],
         );
         if (existing.rowCount === 0) {
           return res.status(404).json({ error: 'Order not found' });
@@ -9718,43 +9569,6 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
-    app.post('/api/restaurant/orders/:orderId/cancel', customerAuthRequired, async (req, res) => {
-      try {
-        const { orderId } = req.params;
-        const lookup = await restaurantOrderWhereClause(orderId, 1);
-        if (!lookup) return res.status(400).json({ error: 'Invalid order id' });
-
-        const resolvedCustIdCancel = await resolveCustomerAccountCustomerId(req.customer.id);
-        const existing = await pool.query(
-          `SELECT * FROM restaurant_orders WHERE ${lookup.sql} AND (customer_id::text = $2 OR customer_id::text = $3) LIMIT 1`,
-          [lookup.value, resolvedCustIdCancel, req.customer.id],
-        );
-        if (existing.rowCount === 0) return res.status(404).json({ error: 'Order not found' });
-        const order = existing.rows[0];
-        const st = String(order.order_status || '').toUpperCase();
-        if (st === 'DELIVERED' || st === 'CANCELLED') {
-          return res.status(400).json({ error: 'Only pending orders can be cancelled' });
-        }
-        const result = await pool.query(
-          `UPDATE restaurant_orders SET order_status = 'CANCELLED', updated_at = now() WHERE id = $1 RETURNING *`,
-          [order.id],
-        );
-        const updated = result.rows[0];
-        const email = await resolveRestaurantOrderEmail(updated);
-        if (email) {
-          sendCustomerNotificationEmailAsync({
-            to: email,
-            subject: 'Curatering: Order cancelled',
-            text: `Your order ${updated.order_id} has been cancelled per your request.\n\n- Curatering Team`,
-          });
-        }
-        res.json({ ok: true, order: serializeRestaurantOrderRow(updated, parseRestaurantOrderTrayItems(updated)) });
-      } catch (error) {
-        console.error('customer cancel restaurant order:', error);
-        res.status(500).json({ error: 'Failed to cancel order' });
-      }
-    });
-
     app.post(
       '/api/restaurant/orders/:orderId/feedback',
       customerAuthRequired,
@@ -9774,7 +9588,7 @@ async function registerRoutesAfterDbInit() {
           }
 
           const existing = await pool.query(
-            `SELECT order_id, customer_id, user_email, order_status, feedback_stars
+            `SELECT id, customer_id, order_status, feedback_stars
              FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
             [lookup.value],
           );
@@ -9782,12 +9596,7 @@ async function registerRoutesAfterDbInit() {
             return res.status(404).json({ error: 'Order not found' });
           }
           const order = existing.rows[0];
-          const resolvedCustId = await resolveCustomerAccountCustomerId(req.customer.id);
-          if (
-            order.customer_id != null &&
-            resolvedCustId != null &&
-            String(order.customer_id) !== String(resolvedCustId)
-          ) {
+          if (String(order.customer_id) !== String(req.customer.id)) {
             return res.status(403).json({ error: 'Order not found' });
           }
           if (String(order.order_status).toUpperCase() !== 'DELIVERED') {
@@ -9797,31 +9606,15 @@ async function registerRoutesAfterDbInit() {
             return res.status(409).json({ error: 'Feedback was already submitted for this order' });
           }
 
-          const acct = await pool.query(
-            `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1`,
-            [req.customer.id],
-          );
-          const userEmail = acct.rows[0]?.email
-            ? String(acct.rows[0].email).trim().toLowerCase()
-            : String(order.user_email ?? '').trim().toLowerCase();
-
-          if (userEmail) {
-            await pool.query(
-              `INSERT INTO customer_order_feedback (user_email, kind, reference, rating, comment)
-               VALUES ($1, 'restaurant_order', $2, $3, $4)`,
-              [userEmail, String(order.order_id), Math.round(stars), remarks || ''],
-            );
-          }
-
           const updated = await pool.query(
             `UPDATE restaurant_orders
              SET feedback_stars = $2,
                  feedback_remarks = $3,
                  feedback_submitted_at = now(),
                  updated_at = now()
-             WHERE order_id = $1
+             WHERE id = $1
              RETURNING *`,
-            [order.order_id, Math.round(stars), remarks || null],
+            [order.id, Math.round(stars), remarks || null],
           );
 
           const parsedItems = parseRestaurantOrderTrayItems(updated.rows[0]);
@@ -9917,44 +9710,13 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
-    app.get('/api/restaurant/orders/track', async (req, res) => {
-      try {
-        const { order_no, phone } = req.query;
-        if (!order_no || !phone) {
-          return res.status(400).json({ error: 'order_no and phone are required' });
-        }
-        const result = await pool.query(
-          `SELECT order_id, order_status, fulfillment_stage, customer_name, delivery_address, created_at
-           FROM restaurant_orders
-           WHERE order_id = $1 AND phone = $2
-           LIMIT 1`,
-          [order_no.trim(), phone.trim()],
-        );
-        if (result.rowCount === 0) {
-          return res.status(404).json({ error: 'Order not found' });
-        }
-        const row = result.rows[0];
-        res.json({
-          order_no: row.order_id,
-          status: row.order_status,
-          fulfillment_stage: row.fulfillment_stage,
-          customer_name: row.customer_name,
-          delivery_address: row.delivery_address,
-          created_at: row.created_at,
-        });
-      } catch (error) {
-        console.error('[track-order]', error.message);
-        res.status(500).json({ error: 'Unable to track order' });
-      }
-    });
-
     app.get('/api/restaurant/orders', customerAuthRequired, async (req, res) => {
       try {
         const roCols = await ensureRestaurantOrdersCanonicalColumns();
         const selectSql = buildRestaurantOrderSelectSql(roCols);
 
         const acct = await pool.query(
-          'SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1',
+          'SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1',
           [req.customer.id],
         );
         const customerEmail =
@@ -9962,33 +9724,28 @@ async function registerRoutesAfterDbInit() {
             ? String(acct.rows[0].email).trim().toLowerCase()
             : null;
 
-        const resolvedCustId = await resolveCustomerAccountCustomerId(req.customer.id);
-
         const emailMatchParts = [];
         if (roCols.has('user_email')) {
-          emailMatchParts.push(`lower(COALESCE(user_email::text, '')) = $3`);
+          emailMatchParts.push(`lower(COALESCE(user_email::text, '')) = $2`);
         }
         const emailClause =
           customerEmail && emailMatchParts.length > 0
-            ? `OR ($3::text IS NOT NULL AND (${emailMatchParts.join(' OR ')}))`
+            ? `OR ($2::text IS NOT NULL AND (${emailMatchParts.join(' OR ')}))`
             : '';
 
         const result = await pool.query(
           `SELECT ${selectSql}
            FROM restaurant_orders
-           WHERE (customer_id::text = $1 OR customer_id::text = $2) ${emailClause}
+           WHERE customer_id::text = $1 ${emailClause}
            ORDER BY created_at DESC NULLS LAST`,
           customerEmail && emailMatchParts.length > 0
-            ? [resolvedCustId, req.customer.id, customerEmail]
-            : [resolvedCustId, req.customer.id],
+            ? [req.customer.id, customerEmail]
+            : [req.customer.id],
         );
 
-        const orders = [];
-        for (const order of result.rows) {
-          const parsed = parseRestaurantOrderTrayItems(order);
-          const enriched = await enrichRestaurantTrayItems(parsed);
-          orders.push(serializeRestaurantOrderRow(order, enriched));
-        }
+        const orders = result.rows.map((order) =>
+          serializeRestaurantOrderRow(order, parseRestaurantOrderTrayItems(order)),
+        );
         res.json({ orders });
       } catch (error) {
         console.error('Error fetching orders:', error);
@@ -10672,7 +10429,6 @@ async function registerRoutesAfterDbInit() {
         if (nextStatus) {
           updateFields.push(`order_status = $${paramIndex++}`);
           updateValues.push(nextStatus);
-          updateFields.push(`last_updated_order_status_dt_stamp = now()`);
         }
         
         if (payment_status === 'paid' || payment_status === 'confirmed') {
@@ -11140,7 +10896,7 @@ async function registerRoutesAfterDbInit() {
         await ensureCateringEventOrdersCanonicalColumns();
         const customerId = req.customer.id;
         const customerResult = await pool.query(
-          `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1;`,
+          `SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1;`,
           [customerId]
         );
         if (customerResult.rowCount === 0) {
@@ -11154,20 +10910,7 @@ async function registerRoutesAfterDbInit() {
 
         const result = await pool.query(unionSql, [customerEmail]);
 
-        const feedbackRows = await pool.query(
-          `SELECT reference FROM customer_order_feedback
-           WHERE lower(user_email) = lower($1) AND kind = 'catering_inquiry'`,
-          [customerEmail],
-        );
-        const feedbackRefs = new Set(
-          feedbackRows.rows.map((r) => String(r.reference)),
-        );
-
-        const orders = result.rows.map((row) => {
-          const o = normalizeCustomerCateringOrderRow(row);
-          o.feedbackSubmitted = feedbackRefs.has(String(o.id));
-          return o;
-        });
+        const orders = result.rows.map((row) => normalizeCustomerCateringOrderRow(row));
         res.json({ orders });
       } catch (error) {
         console.error('Error fetching customer event orders:', error);
@@ -11249,7 +10992,7 @@ async function registerRoutesAfterDbInit() {
           const customerId = req.customer.id;
           const { orderId } = req.params;
           const cr = await pool.query(
-            `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1`,
+            `SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1`,
             [customerId],
           );
           if (cr.rowCount === 0) {
@@ -11295,7 +11038,7 @@ async function registerRoutesAfterDbInit() {
           return res.status(400).json({ error: n.error });
         }
         const cr = await pool.query(
-          `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1`,
+          `SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1`,
           [customerId],
         );
         if (cr.rowCount === 0) {
@@ -11350,7 +11093,7 @@ async function registerRoutesAfterDbInit() {
         }
 
         const customerResult = await pool.query(
-          `SELECT email, full_name FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1;`,
+          `SELECT email, full_name FROM customer_accounts WHERE id = $1 LIMIT 1;`,
           [customerId]
         );
         if (customerResult.rowCount === 0) {
@@ -11423,83 +11166,6 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
-    app.post('/api/customer/events/orders/:orderId/follow-up', customerAuthRequired, async (req, res) => {
-      try {
-        const customerId = req.customer.id;
-        const { orderId } = req.params;
-
-        const customerResult = await pool.query(
-          `SELECT email, full_name FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1;`,
-          [customerId]
-        );
-        if (customerResult.rowCount === 0) {
-          return res.status(404).json({ error: 'Customer not found' });
-        }
-
-        const customerEmail = customerResult.rows[0].email;
-        const customerName = customerResult.rows[0].full_name || 'Customer';
-
-        await ensureOrderCateringIdColumns();
-        const eventCols = await getTableColumnNames('event_orders');
-        const cateringCols = await getTableColumnNames('catering_orders');
-
-        const tryFind = async (tableName) => {
-          const cols = tableName === 'event_orders' ? eventCols : cateringCols;
-          const result = await pool.query(
-            `SELECT id, ${cateringIdSelectAlias(cols)}, status
-             FROM ${tableName}
-             WHERE id::text = $1 AND lower(email_address) = lower($2)
-             LIMIT 1`,
-            [orderId, customerEmail]
-          );
-          return result.rows[0] || null;
-        };
-
-        let order = await tryFind('event_orders');
-        let orderType = 'event';
-        if (!order) {
-          order = await tryFind('catering_orders');
-          orderType = 'catering';
-        }
-
-        if (!order) {
-          return res.status(404).json({ error: 'Inquiry not found or not owned by customer.' });
-        }
-
-        const status = order.status || '';
-        if (['completed', 'cancelled'].includes(status)) {
-          return res.status(400).json({ error: 'Follow-up is only available for active inquiries.' });
-        }
-
-        const followupRecipient =
-          process.env.CATERING_FOLLOWUP_EMAIL ||
-          process.env.RESTAURANT_FOLLOWUP_EMAIL ||
-          process.env.SEED_SUPER_ADMIN_EMAIL ||
-          process.env.ADMIN_EMAIL;
-        if (followupRecipient) {
-          try {
-            await sendCustomerNotificationEmail({
-              to: followupRecipient,
-              subject: 'Curatering: Customer inquiry follow-up',
-              text:
-                `A customer requested a follow-up for catering inquiry ${order.catering_id || orderId}.\n\n` +
-                `Customer: ${customerName} (${customerEmail})\n` +
-                `Status: ${status}\n` +
-                `Order Type: ${orderType}\n\n` +
-                `Please review the inquiry in the Catering pipeline.`,
-            });
-          } catch (mailError) {
-            console.error('Inquiry follow-up email failed (non-fatal):', mailError);
-          }
-        }
-
-        return res.json({ ok: true, message: 'Follow-up sent successfully.' });
-      } catch (error) {
-        console.error('Error sending catering inquiry follow-up:', error);
-        res.status(500).json({ error: 'Failed to send follow-up' });
-      }
-    });
-
     app.patch('/api/customer/events/orders/:orderId/edit', customerAuthRequired, async (req, res) => {
       try {
         const customerId = req.customer.id;
@@ -11514,7 +11180,7 @@ async function registerRoutesAfterDbInit() {
         }
 
         const customerResult = await pool.query(
-          `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1;`,
+          `SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1;`,
           [customerId]
         );
         if (customerResult.rowCount === 0) {
@@ -11660,7 +11326,7 @@ async function registerRoutesAfterDbInit() {
         const customerId = req.customer.id;
 
         const accountResult = await pool.query(
-          `SELECT * FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1`,
+          `SELECT * FROM customer_accounts WHERE id = $1`,
           [customerId],
         );
 
@@ -11672,15 +11338,11 @@ async function registerRoutesAfterDbInit() {
         const restaurantPoints = Number(account.restaurant_loyalty_points ?? 0);
         const cateringPoints = Number(account.catering_loyalty_points ?? 0);
 
-        const { deliveryAddress, otherDeliveryAddresses } =
-          profileAddressesFromAccountRow(account);
-
         res.json({
           id: account.id != null ? String(account.id) : account.id,
           email: account.email,
           fullName: account.full_name,
           phone: customerPhoneFromRow(account),
-          customerCode: account.customer_code || null,
           createdAt:
             account.created_at instanceof Date
               ? account.created_at.toISOString()
@@ -11688,13 +11350,11 @@ async function registerRoutesAfterDbInit() {
           loyaltyPoints: restaurantPoints + cateringPoints,
           restaurantLoyaltyPoints: restaurantPoints,
           cateringLoyaltyPoints: cateringPoints,
-          deliveryAddress,
+          deliveryAddress: account.delivery_address || null,
           deliveryLat:
             account.delivery_lat != null ? Number(account.delivery_lat) : null,
           deliveryLng:
             account.delivery_lng != null ? Number(account.delivery_lng) : null,
-          deliveryMapConfirmed: account.delivery_map_confirmed ?? false,
-          otherDeliveryAddresses,
         });
       } catch (error) {
         console.error('Error fetching customer profile:', error);
@@ -11702,123 +11362,11 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
-    // Completed order / inquiry feedback (customer_order_feedback + restaurant_orders when applicable)
-    app.post('/api/customer/order-feedback', customerAuthRequired, async (req, res) => {
-      try {
-        const kind = String(req.body?.kind ?? 'restaurant_order').trim();
-        const reference = String(req.body?.reference ?? '').trim();
-        const rating = Number(req.body?.rating ?? req.body?.stars);
-        const comment = String(req.body?.comment ?? req.body?.remarks ?? '').trim();
-
-        if (!reference) {
-          return res.status(400).json({ error: 'reference is required' });
-        }
-        if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
-          return res.status(400).json({ error: 'Rating must be between 1 and 5 stars' });
-        }
-
-        const acct = await pool.query(
-          `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1`,
-          [req.customer.id],
-        );
-        if (acct.rowCount === 0) {
-          return res.status(404).json({ error: 'Customer not found' });
-        }
-        const userEmail = String(acct.rows[0].email).trim().toLowerCase();
-
-        const prior = await pool.query(
-          `SELECT id FROM customer_order_feedback
-           WHERE lower(user_email) = lower($1) AND kind = $2 AND reference = $3
-           LIMIT 1`,
-          [userEmail, kind, reference],
-        );
-        if (prior.rowCount > 0) {
-          return res.status(409).json({ error: 'Feedback was already submitted' });
-        }
-
-        if (kind === 'restaurant_order') {
-          const lookup = await restaurantOrderWhereClause(reference, 1);
-          if (!lookup) {
-            return res.status(400).json({ error: 'Invalid order reference' });
-          }
-          const orderRow = await pool.query(
-            `SELECT order_id, order_status, feedback_stars, customer_id
-             FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
-            [lookup.value],
-          );
-          if (orderRow.rowCount === 0) {
-            return res.status(404).json({ error: 'Order not found' });
-          }
-          const order = orderRow.rows[0];
-          const resolvedCustId = await resolveCustomerAccountCustomerId(req.customer.id);
-          if (
-            order.customer_id != null &&
-            resolvedCustId != null &&
-            String(order.customer_id) !== String(resolvedCustId)
-          ) {
-            return res.status(403).json({ error: 'Order not found' });
-          }
-          if (String(order.order_status).toUpperCase() !== 'DELIVERED') {
-            return res.status(400).json({ error: 'Feedback is only available for delivered orders' });
-          }
-          if (order.feedback_stars != null) {
-            return res.status(409).json({ error: 'Feedback was already submitted for this order' });
-          }
-        }
-
-        if (kind === 'catering_inquiry') {
-          const inquiry = await pool.query(
-            `SELECT id::text AS id, status FROM catering_orders
-             WHERE (id::text = $1 OR catering_id = $1) AND lower(email_address) = lower($2)
-             UNION ALL
-             SELECT id::text AS id, status FROM event_orders
-             WHERE (id::text = $1 OR event_id = $1 OR catering_id = $1) AND lower(email_address) = lower($2)
-             LIMIT 1`,
-            [reference, userEmail],
-          );
-          if (inquiry.rowCount === 0) {
-            return res.status(404).json({ error: 'Inquiry not found' });
-          }
-          if (String(inquiry.rows[0].status) !== 'completed') {
-            return res.status(400).json({ error: 'Feedback is only available for completed inquiries' });
-          }
-        }
-
-        await pool.query(
-          `INSERT INTO customer_order_feedback (user_email, kind, reference, rating, comment)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [userEmail, kind, reference, Math.round(rating), comment],
-        );
-
-        if (kind === 'restaurant_order') {
-          const lookup = await restaurantOrderWhereClause(reference, 1);
-          if (lookup) {
-            await pool.query(
-              `UPDATE restaurant_orders
-               SET feedback_stars = $2,
-                   feedback_remarks = $3,
-                   feedback_submitted_at = now(),
-                   updated_at = now()
-               WHERE ${lookup.sql}
-                 AND upper(order_status) = 'DELIVERED'
-                 AND feedback_stars IS NULL`,
-              [lookup.value, Math.round(rating), comment || null],
-            );
-          }
-        }
-
-        res.status(201).json({ ok: true });
-      } catch (error) {
-        console.error('customer order feedback:', error);
-        res.status(500).json({ error: 'Failed to save feedback' });
-      }
-    });
-
     // Update customer profile
     app.put('/api/customer/profile', customerAuthRequired, async (req, res) => {
       try {
         const customerId = req.customer.id;
-        const { fullName, phone, deliveryAddress, deliveryLat, deliveryLng, otherDeliveryAddresses } = req.body || {};
+        const { fullName, phone, deliveryAddress, deliveryLat, deliveryLng } = req.body || {};
 
         // Update customer_accounts
         if (fullName || phone) {
@@ -11835,9 +11383,6 @@ async function registerRoutesAfterDbInit() {
           if (phone) {
             paramCount++;
             updates.push(`contact_number = $${paramCount}`);
-            values.push(phone);
-            paramCount++;
-            updates.push(`phone_number = $${paramCount}`);
             values.push(phone);
           }
 
@@ -11857,21 +11402,16 @@ async function registerRoutesAfterDbInit() {
         if (
           deliveryAddress !== undefined ||
           deliveryLat !== undefined ||
-          deliveryLng !== undefined ||
-          otherDeliveryAddresses !== undefined
+          deliveryLng !== undefined
         ) {
           const deliveryUpdates = [];
           const deliveryValues = [];
           let p = 0;
 
           if (deliveryAddress !== undefined) {
-            const addr = deliveryAddress == null ? '' : String(deliveryAddress);
-            p += 1;
-            deliveryUpdates.push(`primary_delivery_address = $${p}`);
-            deliveryValues.push(addr);
             p += 1;
             deliveryUpdates.push(`delivery_address = $${p}`);
-            deliveryValues.push(addr);
+            deliveryValues.push(deliveryAddress);
           }
           if (deliveryLat !== undefined) {
             p += 1;
@@ -11882,14 +11422,6 @@ async function registerRoutesAfterDbInit() {
             p += 1;
             deliveryUpdates.push(`delivery_lng = $${p}`);
             deliveryValues.push(deliveryLng);
-          }
-          if (otherDeliveryAddresses !== undefined) {
-            const normalizedOther = Array.isArray(otherDeliveryAddresses)
-              ? otherDeliveryAddresses
-              : [];
-            p += 1;
-            deliveryUpdates.push(`other_delivery_addresses = $${p}::jsonb`);
-            deliveryValues.push(JSON.stringify(normalizedOther));
           }
 
           deliveryUpdates.push('updated_at = now()');
@@ -11925,7 +11457,7 @@ async function registerRoutesAfterDbInit() {
 
         // Get current password hash
         const result = await pool.query(
-          'SELECT password_hash FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1',
+          'SELECT password_hash FROM customer_accounts WHERE id = $1',
           [customerId]
         );
 
@@ -12573,7 +12105,6 @@ async function registerRoutesAfterDbInit() {
       resolveRestaurantOrderEmail,
       restaurantFeedbackLink,
     });
-    registerManagerCateringRoutes(app, { pool, authRequired, requireRoles });
 
     routesRegistered = true;
     console.log('[startup] All API routes registered after DB init');

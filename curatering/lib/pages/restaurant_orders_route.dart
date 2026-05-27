@@ -21,7 +21,7 @@ class _RestaurantOrdersRouteState extends State<RestaurantOrdersRoute> {
   Widget build(BuildContext context) {
     final role = AuthSession.instance.currentRole;
     if (role == Role.cashier) {
-      return const CashierPosShell();
+      return const AppScaffold(child: CashierPosShell());
     }
     return AppScaffold(
       child: Column(

@@ -49,12 +49,11 @@ export async function resolveCustomerAccountCustomerId(accountOrCustomerId) {
     const cols = await getTableColumnNames("customer_accounts");
     if (cols.size === 0) return raw;
 
-    const coalesceFields = [];
-    if (cols.has("customer_id")) coalesceFields.push("NULLIF(TRIM(customer_id::text), '')");
-    if (cols.has("customer_code")) coalesceFields.push("NULLIF(TRIM(customer_code::text), '')");
-    coalesceFields.push("id::text");
-    const selectExpr = `COALESCE(${coalesceFields.join(", ")})`;
-
+    const selectExpr = cols.has("customer_id")
+      ? "customer_id::text"
+      : cols.has("customer_code")
+        ? "customer_code::text"
+        : "id::text";
     const whereParts = ["id::text = $1"];
     if (cols.has("customer_id")) whereParts.push("customer_id::text = $1");
     if (cols.has("customer_code")) whereParts.push("customer_code::text = $1");
