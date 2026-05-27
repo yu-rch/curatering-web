@@ -637,6 +637,7 @@ export function registerPosRoutes(app, {
           await pool.query(
             `UPDATE restaurant_orders
              SET cashier_amount_received_initial = $2,
+                 amount_paid = $2,
                  order_status = 'PAYMENT_INSUFFICIENT',
                  balance_proof_pending_review = FALSE,
                  last_updated_order_status_dt_stamp = now(),
@@ -674,14 +675,17 @@ export function registerPosRoutes(app, {
       }
 
       if (action === "insufficient") {
+        const received = Number.isFinite(amountReceived) ? amountReceived : 0;
         await pool.query(
           `UPDATE restaurant_orders
            SET cashier_amount_received_initial = $2,
+               amount_paid = $2,
                order_status = 'PAYMENT_INSUFFICIENT',
+               balance_proof_pending_review = FALSE,
                last_updated_order_status_dt_stamp = now(),
                updated_at = now()
            WHERE ${pkWhere}`,
-          [pkVal, Number.isFinite(amountReceived) ? amountReceived : 0],
+          [pkVal, received],
         );
         return res.json({ ok: true, status: "PAYMENT INSUFFICIENT" });
       }

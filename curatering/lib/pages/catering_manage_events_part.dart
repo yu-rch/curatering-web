@@ -563,6 +563,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
     String? eventTypeOverride,
     String? formalityLevelOverride,
     int? guestCountOverride,
+    List<Map<String, dynamic>>? menuOverride,
+    String? allergensOverride,
   }) {
     final serviceType =
         order.orderType == 'catering' ? 'catering' : 'catering+event';
@@ -584,6 +586,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
       formalityLevelOverride: formalityLevelOverride,
       guestCountOverride: guestCountOverride,
       additionalCosts: additionalCosts,
+      menuOverride: menuOverride,
+      allergensOverride: allergensOverride,
     );
   }
 
@@ -665,6 +669,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
     required List<Map<String, dynamic>> additionalCosts,
     required String action,
     required String successMessage,
+    List<Map<String, dynamic>>? menuOverride,
+    String? allergensOverride,
   }) async {
     final laborCost = double.tryParse(laborController.text.trim()) ?? 0.0;
     final travelCost = double.tryParse(travelController.text.trim()) ?? 0.0;
@@ -688,6 +694,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
       eventTypeOverride: eventType,
       formalityLevelOverride: formalityLevel,
       guestCountOverride: guestCount,
+      menuOverride: menuOverride,
+      allergensOverride: allergensOverride,
     );
     await EventsApi.instance.managerFinalizeOnlineInquiry(
       orderId: order.id,
@@ -702,7 +710,10 @@ extension _ManageEventsTableExt on _ManageEventsState {
     ).showSnackBar(SnackBar(content: Text(successMessage)));
   }
 
-  Future<void> _openFinalizeOnlineInquiryDialog(EventOrderDto order) async {
+  Future<void> _openFinalizeOnlineInquiryDialog(
+    EventOrderDto order, {
+    int initialTabIndex = 0,
+  }) async {
     final laborCostController = TextEditingController(
       text: (order.themeDesign.laborCost ?? 0).toStringAsFixed(2),
     );
@@ -731,12 +742,26 @@ extension _ManageEventsTableExt on _ManageEventsState {
       }),
     );
     final detailFuture = _loadOrderForDetail(order);
+    var inquiryMenuBlocks = <Map<String, dynamic>>[];
+    var inquiryChargeOverrides = <String, double>{};
+    var inquiryAllergens = order.allergens;
+
+    List<Map<String, dynamic>>? inquiryMenuPayloadForSave() {
+      if (inquiryMenuBlocks.isEmpty) return null;
+      final guests =
+          int.tryParse(guestCountController.text.trim()) ?? order.guestCount;
+      return _menuPayloadFromInquiryBlocks(
+        inquiryMenuBlocks,
+        inquiryChargeOverrides,
+        guests,
+      );
+    }
 
     try {
       await showAntdModal<void>(
         context: context,
         title: order.eventTitle.isEmpty ? order.customerName : order.eventTitle,
-        maxWidth: 720,
+        maxWidth: 1080,
         barrierDismissible: false,
         actions: [
           Builder(
@@ -770,7 +795,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                             style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 14,
-                              color: Color(0xFFF4511E),
+                              color: Color(0xFF1E1E1E),
                             ),
                           ),
                         );
@@ -807,6 +832,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
                                 action: 'post_changes',
                                 successMessage:
                                     'Changes saved. Customer can review updates in My Caterings.',
+                                menuOverride: inquiryMenuPayloadForSave(),
+                                allergensOverride: inquiryAllergens,
                               );
                             } catch (e) {
                               if (!footerContext.mounted) return;
@@ -852,6 +879,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
                                 action: 'confirm_inquiry',
                                 successMessage:
                                     'Order accepted and moved to For down payment.',
+                                menuOverride: inquiryMenuPayloadForSave(),
+                                allergensOverride: inquiryAllergens,
                               );
                             } catch (e) {
                               if (!footerContext.mounted) return;
@@ -930,6 +959,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
           future: detailFuture,
           builder: (dialogContext, snap) {
             final full = snap.data ?? order;
+            if (inquiryMenuBlocks.isEmpty && full.menu.isNotEmpty) {
+              inquiryMenuBlocks = _inquiryMenuBlocksFromOrder(full);
+            }
+            if (inquiryAllergens.isEmpty && full.allergens.isNotEmpty) {
+              inquiryAllergens = full.allergens;
+            }
             if (snap.connectionState == ConnectionState.waiting) {
               return const Padding(
                 padding: EdgeInsets.all(24),
@@ -940,10 +975,9 @@ extension _ManageEventsTableExt on _ManageEventsState {
             final dishCostForUi = _dishCostForFinalize(full);
             final withinTaguig = full.address.toLowerCase().contains('taguig');
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(
+            Widget eventInfoTab() {
+              return SingleChildScrollView(
+                child: Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.grey.shade50,
@@ -954,7 +988,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const Text(
-                        'Inquiry information (editable)',
+                        'Event information',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 12,
@@ -1085,65 +1119,187 @@ extension _ManageEventsTableExt on _ManageEventsState {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 14),
-                      const Text(
-                        'Menu',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (full.menu.isEmpty)
-                        const Text(
-                          'No menu selected.',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
-                        )
-                      else
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: full.menu.map((m) {
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '${m.dishName} (${m.paxOption})',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  if (m.additionalChargeAmount > 0) ...[
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Extra dish fee: ${formatPesos(m.additionalChargeAmount)}',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.orange.shade800,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                  if (m.dishAllergens.trim().isNotEmpty)
-                                    Text(
-                                      'Allergens: ${m.dishAllergens}',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey.shade700,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                        ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                Container(
+              );
+            }
+
+            Widget menuAllergensTab() {
+              final chargeRows = _setMenuChargeRowsForBlocks(
+                inquiryMenuBlocks,
+                inquiryChargeOverrides,
+              );
+              final cateringDishes =
+                  MenuStore.instance.allDishes
+                      .where(
+                        (d) =>
+                            d.category.toLowerCase().trim() == 'catering' &&
+                            !d.archived &&
+                            d.available,
+                      )
+                      .toList();
+              return SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: AllergenSelectorField(
+                        initialSerialized: inquiryAllergens,
+                        onChanged: (v) => _mutateTableState(() => inquiryAllergens = v),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Menu',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: () async {
+                                  final picked = await showInquiryMenuSelectionDialog(
+                                    context,
+                                    cateringDishes: cateringDishes,
+                                    setMenus: SetMenuStore.instance.activeSetMenus,
+                                    initialSelections: inquiryMenuBlocks,
+                                    mode: InquiryMenuPickerMode.staffNewEvent,
+                                  );
+                                  if (picked == null) return;
+                                  _mutateTableState(() {
+                                    inquiryMenuBlocks = picked;
+                                    inquiryChargeOverrides.removeWhere((dishId, _) {
+                                      return !picked.any((b) {
+                                        final ids =
+                                            (b['dishIds'] as List<dynamic>? ?? const [])
+                                                .map((e) => '$e')
+                                                .toSet();
+                                        return ids.contains(dishId);
+                                      });
+                                    });
+                                  });
+                                },
+                                icon: const Icon(Icons.restaurant_menu, size: 18),
+                                label: const Text('Edit menu'),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          if (inquiryMenuBlocks.isEmpty)
+                            const Text(
+                              'No menu selected.',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                            )
+                          else
+                            ...inquiryMenuBlocks.expand((block) {
+                              final ids =
+                                  (block['dishIds'] as List<dynamic>? ?? const [])
+                                      .map((e) => '$e')
+                                      .where((id) => id.isNotEmpty)
+                                      .toList();
+                              return ids.map((id) {
+                                final dish = _newEventDishById[id];
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: Text(
+                                    dish?.name ?? id,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                );
+                              });
+                            }),
+                          if (chargeRows.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            const Text(
+                              'Menu modifications add\'l charges',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            ...chargeRows.map((row) {
+                              final dishId = '${row['dishId']}';
+                              final dishName = '${row['dishName']}';
+                              final amount = (row['amount'] as num?)?.toDouble() ?? 0;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        dishName,
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    SizedBox(
+                                      width: 140,
+                                      child: TextFormField(
+                                        initialValue: amount.toStringAsFixed(2),
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                        decoration: const InputDecoration(
+                                          labelText: 'Add\'l charge',
+                                          prefixText: 'PHP ',
+                                          isDense: true,
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        onChanged: (v) {
+                                          final parsed =
+                                              double.tryParse(v.trim()) ?? 0;
+                                          _mutateTableState(() {
+                                            inquiryChargeOverrides[dishId] =
+                                                parsed < 0 ? 0 : parsed;
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            Widget submitCostsTab() {
+              return SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     border: Border.all(color: Colors.grey.shade300),
@@ -1228,15 +1384,53 @@ extension _ManageEventsTableExt on _ManageEventsState {
                     ],
                   ),
                 ),
-                if (_orderHasEventDesign(full))
-                  _buildEventDesignDetailSection(full),
-                _buildFinalizeCostSection(
-                  order: full,
-                  laborController: laborCostController,
-                  travelController: travelCostController,
+                    if (_orderHasEventDesign(full))
+                      _buildEventDesignDetailSection(full),
+                    _buildFinalizeCostSection(
+                      order: full,
+                      laborController: laborCostController,
+                      travelController: travelCostController,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                 ),
-                const SizedBox(height: 8),
-              ],
+              );
+            }
+
+            return SizedBox(
+              height: MediaQuery.sizeOf(dialogContext).height * 0.62,
+              child: DefaultTabController(
+                length: 3,
+                initialIndex: initialTabIndex.clamp(0, 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Material(
+                      color: Colors.white,
+                      child: TabBar(
+                        labelColor: const Color(0xFF1E1E1E),
+                        unselectedLabelColor: Colors.grey.shade700,
+                        indicatorColor: const Color(0xFFFFC024),
+                        tabs: const [
+                          Tab(text: 'Event Information'),
+                          Tab(text: 'Menu & Allergens'),
+                          Tab(text: 'Submit & Costs'),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          eventInfoTab(),
+                          menuAllergensTab(),
+                          submitCostsTab(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             );
           },
         ),
@@ -1767,7 +1961,6 @@ extension _ManageEventsTableExt on _ManageEventsState {
         DataColumn(label: Text('Service type')),
         DataColumn(label: Text('Event / inquiry')),
         DataColumn(label: Text('Date and time')),
-        DataColumn(label: Text('Actions')),
       ],
       rows: filtered.map((dto) {
         final selected = _selectedManageEventsOrder?.id == dto.id;
@@ -1778,13 +1971,6 @@ extension _ManageEventsTableExt on _ManageEventsState {
             DataCell(Text(_orderTypeColumnLabel(dto))),
             DataCell(_basicInquiryColumnCell(dto)),
             DataCell(Text(_formatInquiryDateTime(dto))),
-            DataCell(
-              OutlinedButton.icon(
-                onPressed: () => _openFinalizeOnlineInquiryDialog(dto),
-                icon: const Icon(Icons.edit_outlined, size: 16),
-                label: const Text('Edit'),
-              ),
-            ),
           ],
         );
       }).toList(),

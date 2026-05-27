@@ -58,7 +58,8 @@ class _MyOrdersPageState extends State<MyOrdersPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
-    _loadOrders();
+    CustomerOrdersCache.instance.invalidateRestaurant();
+    _loadOrders(force: true);
   }
 
   @override
@@ -172,6 +173,40 @@ class _MyOrdersPageState extends State<MyOrdersPage>
   String _fulfillmentUpper(Map<String, dynamic> order) =>
       (order['fulfillment_stage'] ?? '').toString().toUpperCase();
 
+  double _effectiveAmountPaid(Map<String, dynamic> order) {
+    final cashierInitial = _parseDouble(order['cashier_amount_received_initial']);
+    final cashierBalance = _parseDouble(order['cashier_amount_received_balance']);
+    final cashierCombined = _parseDouble(order['cashier_amount_received']);
+    if (cashierInitial > 0 || cashierBalance > 0) {
+      return cashierInitial + cashierBalance;
+    }
+    if (cashierCombined > 0) return cashierCombined;
+    return _parseDouble(
+      order['amount_paid'] ??
+          order['amount_received'] ??
+          order['amountReceived'],
+    );
+  }
+
+  double _balanceDueFor(Map<String, dynamic> order) {
+    var balanceDue = _parseDouble(
+      order['balance_due'] ??
+          order['balance_amount'] ??
+          order['remaining_balance'] ??
+          order['remainingBalance'] ??
+          order['short_amount'] ??
+          order['shortAmount'] ??
+          order['unpaid_balance'] ??
+          order['unpaidBalance'],
+    );
+    final total = _parseDouble(order['total_amount'] ?? order['total_cost']);
+    final paid = _effectiveAmountPaid(order);
+    if (balanceDue <= 0 && total > 0 && paid + 0.009 < total) {
+      balanceDue = (total - paid).clamp(0, double.infinity);
+    }
+    return balanceDue;
+  }
+
   bool _isInsufficientPayment(Map<String, dynamic> order) {
     final u = _statusUpper(order);
     final stage =
@@ -206,7 +241,8 @@ class _MyOrdersPageState extends State<MyOrdersPage>
         paymentStatus.contains('WAIT_BALANCE') ||
         paymentStatus.contains('BALANCE') ||
         paymentReview ||
-        balanceDue > 0;
+        balanceDue > 0 ||
+        _balanceDueFor(order) > 0;
   }
 
   bool _isOverpayment(Map<String, dynamic> order) {
@@ -968,13 +1004,18 @@ class _MyOrdersPageState extends State<MyOrdersPage>
     final feedbackStars = order['feedback_stars'];
     final canSubmitFeedback = status == 'delivered' ||
         _statusUpper(order).contains('DELIVERED');
-    final amountPaid = _parseDouble(order['amount_paid'] ?? order['total_amount'] ?? order['total_cost']);
+    final amountPaid = _effectiveAmountPaid(order);
     final trackingUrl = order['delivery_tracking_url']?.toString();
     final paymentProof = order['payment_proof']?.toString();
     final paymentProofInitial = order['payment_proof_initial']?.toString();
-    final balanceDue = _parseDouble(order['balance_due'] ?? order['balance_amount']);
+    final balanceDue = _balanceDueFor(order);
     final isActive = _isActiveOrder(status);
-    final isPending = status == 'pending' || status == 'pending_cashier';
+    final isInsufficient = _isInsufficientPayment(order);
+    final isPending =
+        status == 'pending' ||
+        status == 'pending_cashier' ||
+        status == 'insufficient_payment' ||
+        isInsufficient;
     final key = _orderKey(order);
     final cooldownUntil = _followUpCooldownUntil(order);
     final canFollowUp = isActive &&

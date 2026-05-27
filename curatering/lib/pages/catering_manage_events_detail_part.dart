@@ -167,11 +167,26 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (!isCancelled &&
-                      (stage == 'online_inquiries' || stage == 'new_event'))
+                      (stage == 'online_inquiries' || stage == 'new_event')) ...[
                     _amberStageButton(
                       label: 'Move to Down Payment',
-                      onPressed: () => _openFinalizeOnlineInquiryDialog(order),
+                      onPressed: () => _openFinalizeOnlineInquiryDialog(
+                        order,
+                        initialTabIndex: 2,
+                      ),
                     ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => _openFinalizeOnlineInquiryDialog(order),
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('Edit'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF1E1E1E),
+                        side: BorderSide(color: Colors.grey.shade400),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ],
                   if (stage == 'on_going' && !isCancelled)
                     _amberStageButton(
                       label: 'Move to Full Payment',
@@ -635,6 +650,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                               child: PagedDataTable(
                                 title: 'Task assignment',
                                 maxTableHeight: constraints.maxHeight,
+                                forceVerticalScroll: true,
                                 toolbarActions: [
                                   AntdSecondaryButton(
                                     onPressed: () {

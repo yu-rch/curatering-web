@@ -36,6 +36,9 @@ function pickCol(cols, candidates) {
 
 const ONLINE_ORDER_STATUSES = new Set([
   'PENDING_CASHIER',
+  'PAYMENT_INSUFFICIENT',
+  'BALANCE_PAYMENT_PENDING_REVIEW',
+  'BALANCE PAYMENT PENDING REVIEW',
   'IN_PREPARATION',
   'OUT_FOR_DELIVERY',
   'DELIVERED',
@@ -46,6 +49,8 @@ export function normalizeRestaurantOrderStatus(raw, fallback = 'PENDING_CASHIER'
   const s = String(raw ?? '').trim().toUpperCase();
   if (!s) return fallback;
   if (s === 'PENDING' || s === 'WAITING FOR ORDER CONFIRMATION') return 'PENDING_CASHIER';
+  if (s === 'PAYMENT INSUFFICIENT') return 'PAYMENT_INSUFFICIENT';
+  if (s === 'BALANCE PAYMENT PENDING REVIEW') return 'BALANCE_PAYMENT_PENDING_REVIEW';
   if (s === 'CONFIRMED' || s === 'PREPARING') return 'IN_PREPARATION';
   if (ONLINE_ORDER_STATUSES.has(s)) return s;
   return fallback;
@@ -609,13 +614,38 @@ export function normalizeRestaurantOrderRow(order, parsedItems, { channel = 'web
   if (o.change == null && o.change_given != null) o.change = o.change_given;
   const statusUpper = String(o.order_status ?? o.status ?? '').toUpperCase();
   const total = Number(o.total_cost ?? o.total_amount ?? 0) || 0;
-  const paid = Number(o.amount_paid ?? o.cashier_amount_received ?? 0) || 0;
-  if (
+  const paidFromCashier =
+    (Number(o.cashier_amount_received_initial ?? 0) || 0) +
+    (Number(o.cashier_amount_received_balance ?? 0) || 0);
+  const paidFromFields = Number(
+    o.amount_paid ?? o.amount_received ?? o.cashier_amount_received ?? 0,
+  ) || 0;
+  const paid =
+    paidFromCashier > 0 ||
+    statusUpper === 'PAYMENT_INSUFFICIENT' ||
+    statusUpper.includes('INSUFFICIENT')
+      ? paidFromCashier > 0
+        ? paidFromCashier
+        : paidFromFields
+      : paidFromFields;
+  o.amount_paid = paid;
+  if (total > 0 && paid + 0.009 < total) {
+    o.balance_due = Math.max(0, Number((total - paid).toFixed(2)));
+    o.balance_amount = o.balance_due;
+    o.remaining_balance = o.balance_due;
+    if (
+      statusUpper === 'PAYMENT_INSUFFICIENT' ||
+      statusUpper.includes('INSUFFICIENT')
+    ) {
+      o.payment_status = 'PAYMENT_INSUFFICIENT';
+    }
+  } else if (
     statusUpper.includes('INSUFFICIENT') ||
     statusUpper.includes('BALANCE')
   ) {
     o.balance_due = Math.max(0, Number((total - paid).toFixed(2)));
     o.balance_amount = o.balance_due;
+    o.remaining_balance = o.balance_due;
   }
   if (o.fulfillment_stage == null && o.order_status != null) {
     o.fulfillment_stage = o.order_status;

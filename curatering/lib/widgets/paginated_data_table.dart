@@ -117,6 +117,7 @@ class PagedDataTable extends StatefulWidget {
     this.headingRowColor,
     this.columnSpacing,
     this.showVerticalScrollbar = true,
+    this.forceVerticalScroll = false,
     this.title = 'Table export',
     this.enableSearch = true,
     this.enablePrint = true,
@@ -137,6 +138,7 @@ class PagedDataTable extends StatefulWidget {
   final WidgetStateProperty<Color?>? headingRowColor;
   final double? columnSpacing;
   final bool showVerticalScrollbar;
+  final bool forceVerticalScroll;
   final String title;
   final bool enableSearch;
   final bool enablePrint;
@@ -250,7 +252,8 @@ class _PagedDataTableState extends State<PagedDataTable> {
       },
     );
 
-    if (widget.showVerticalScrollbar && pageRows.length > 12) {
+    if (widget.showVerticalScrollbar &&
+        (widget.forceVerticalScroll || pageRows.length > 12)) {
       tableScroll = Scrollbar(
         thumbVisibility: true,
         child: ConstrainedBox(

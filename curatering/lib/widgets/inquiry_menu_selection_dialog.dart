@@ -309,12 +309,8 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
     final tab = _activeTab;
     if (tab == 0) {
       final n = _customIds.length;
-      if (n < widget.minCustomDishes || n > widget.maxCustomDishes) {
-        setState(
-          () =>
-              _localError =
-                  'Select between ${widget.minCustomDishes} and ${widget.maxCustomDishes} dishes.',
-        );
+      if (n <= 0) {
+        setState(() => _localError = 'Please select at least one dish.');
         return;
       }
       Navigator.of(context).pop(_buildCurrentBlocks());
@@ -367,7 +363,7 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
           child: Text(
-            'Pick ${widget.minCustomDishes}–${widget.maxCustomDishes} dishes from the catering menu (${_customIds.length} selected).',
+            'Pick dishes from the catering menu (${_customIds.length} selected).',
             style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
           ),
         ),
@@ -406,11 +402,6 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
                 onChanged: (v) {
                   setState(() {
                     if (v == true) {
-                      if (_customIds.length >= widget.maxCustomDishes) {
-                        _localError =
-                            'Maximum ${widget.maxCustomDishes} dishes.';
-                        return;
-                      }
                       _customIds.add(d.id);
                       _localError = null;
                     } else {
@@ -612,19 +603,25 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
       }
     }
     if (addedIds.length > pairCount) {
+      final slotLimit = originalIds.length;
+      final overage =
+          (_selectedSetDishIds.length - slotLimit).clamp(0, 9999);
       for (var i = pairCount; i < addedIds.length; i++) {
+        final id = addedIds[i];
         MenuDish? dish;
         for (final d in widget.cateringDishes) {
-          if (d.id == addedIds[i]) {
+          if (d.id == id) {
             dish = d;
             break;
           }
         }
-        final addCharge = dish?.additionalChargeAmount ?? 0;
+        final addIndex = i - pairCount;
+        final addCharge =
+            addIndex < overage ? (dish?.additionalChargeAmount ?? 0) : 0;
         rows.add({
           'dish': '—',
           'action': 'ADDED',
-          'result': _dishNameById[addedIds[i]] ?? addedIds[i],
+          'result': _dishNameById[id] ?? id,
           'charge': addCharge > 0 ? 'PHP ${addCharge.toStringAsFixed(2)}' : '—',
         });
       }
@@ -644,30 +641,38 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              headingRowHeight: 34,
-              dataRowMinHeight: 34,
-              dataRowMaxHeight: 40,
-              columns: const [
-                DataColumn(label: Text('Dish')),
-                DataColumn(label: Text('Action')),
-                DataColumn(label: Text('Result')),
-                DataColumn(label: Text('Add\'l charge')),
-              ],
-              rows: rows
-                  .map(
-                    (r) => DataRow(
-                      cells: [
-                        DataCell(Text(r['dish']!)),
-                        DataCell(Text(r['action']!)),
-                        DataCell(Text(r['result']!)),
-                        DataCell(Text(r['charge']!)),
-                      ],
-                    ),
-                  )
-                  .toList(),
+          SizedBox(
+            height: 180,
+            child: Scrollbar(
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    headingRowHeight: 34,
+                    dataRowMinHeight: 34,
+                    dataRowMaxHeight: 40,
+                    columns: const [
+                      DataColumn(label: Text('Dish')),
+                      DataColumn(label: Text('Action')),
+                      DataColumn(label: Text('Result')),
+                      DataColumn(label: Text('Add\'l charge')),
+                    ],
+                    rows: rows
+                        .map(
+                          (r) => DataRow(
+                            cells: [
+                              DataCell(Text(r['dish']!)),
+                              DataCell(Text(r['action']!)),
+                              DataCell(Text(r['result']!)),
+                              DataCell(Text(r['charge']!)),
+                            ],
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ),
             ),
           ),
         ],

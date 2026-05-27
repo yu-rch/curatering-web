@@ -635,6 +635,7 @@ class _ManageEventsState extends State<ManageEvents>
 
   final List<MenuItem> _menuItems = [];
   List<Map<String, dynamic>> _newEventMenuBlocks = [];
+  final Map<String, double> _newEventSetMenuChargeOverrides = {};
   final TextEditingController _newEventPaxBufferController =
       TextEditingController(text: '0');
   final TextEditingController _newEventLaborCostController =
@@ -700,6 +701,7 @@ class _ManageEventsState extends State<ManageEvents>
       _newEventAdditionalCostLabelController.clear();
       _newEventAdditionalCostAmountController.clear();
       _newEventAdditionalCosts.clear();
+      _newEventSetMenuChargeOverrides.clear();
       _activeNewEventSideTab = _NewEventSideTab.eventInfo;
       _selectedStatus = EventStatus.newEvent;
       _eventSearchController.clear();
@@ -761,9 +763,12 @@ class _ManageEventsState extends State<ManageEvents>
     for (final dish in _allDishes) dish.id: dish,
   };
 
-  List<Map<String, dynamic>> _newEventSetMenuAdditionalChargeRows() {
-    if (_newEventMenuBlocks.isEmpty) return const [];
-    final block = _newEventMenuBlocks.first;
+  List<Map<String, dynamic>> _setMenuChargeRowsForBlocks(
+    List<Map<String, dynamic>> blocks,
+    Map<String, double> chargeOverrides,
+  ) {
+    if (blocks.isEmpty) return const [];
+    final block = blocks.first;
     if ((block['kind'] as String? ?? 'custom') != 'set') return const [];
     final selectedIds = (block['dishIds'] as List<dynamic>? ?? const [])
         .map((id) => id.toString())
@@ -775,15 +780,94 @@ class _ManageEventsState extends State<ManageEvents>
         .toSet();
     final originalCount =
         (block['originalDishCount'] as num?)?.toInt() ?? originalIds.length;
-    final overage = selectedIds.length - originalCount;
-    if (overage <= 0) return const [];
+    final overage = (selectedIds.length - originalCount).clamp(0, 9999);
     final addedIds =
-        selectedIds.where((id) => !originalIds.contains(id)).take(overage);
-    return addedIds.map((id) {
+        selectedIds.where((id) => !originalIds.contains(id)).toList();
+    if (addedIds.isEmpty) return const [];
+    return addedIds.asMap().entries.map((entry) {
+      final idx = entry.key;
+      final id = entry.value;
       final dish = _newEventDishById[id];
-      final amount = dish?.additionalChargeAmount ?? 0;
+      final baseAmount = idx < overage ? (dish?.additionalChargeAmount ?? 0) : 0;
+      final amount = chargeOverrides[id] ?? baseAmount;
       return {'dishId': id, 'dishName': dish?.name ?? id, 'amount': amount};
     }).toList();
+  }
+
+  List<Map<String, dynamic>> _newEventSetMenuAdditionalChargeRows() {
+    return _setMenuChargeRowsForBlocks(
+      _newEventMenuBlocks,
+      _newEventSetMenuChargeOverrides,
+    );
+  }
+
+  List<Map<String, dynamic>> _inquiryMenuBlocksFromOrder(EventOrderDto order) {
+    if (order.menu.isEmpty) return [];
+    final byName = <String, MenuDish>{};
+    for (final d in MenuStore.instance.allDishes) {
+      byName[d.name.trim().toLowerCase()] = d;
+    }
+    final ids = <String>[];
+    for (final m in order.menu) {
+      final dish = byName[m.dishName.trim().toLowerCase()];
+      if (dish != null) ids.add(dish.id);
+    }
+    if (ids.isEmpty) return [];
+    final setMenuName = order.menu
+        .map((m) => m.setMenuName.trim())
+        .firstWhere((n) => n.isNotEmpty, orElse: () => '');
+    if (setMenuName.isNotEmpty) {
+      for (final s in SetMenuStore.instance.activeSetMenus) {
+        if (s.name.trim().toLowerCase() == setMenuName.toLowerCase()) {
+          return [
+            {
+              'kind': 'set',
+              'setMenuId': s.id,
+              'setMenuName': s.name,
+              'dishIds': ids,
+              'originalDishIds': List<String>.from(s.dishIds),
+              'originalDishCount': s.dishIds.length,
+            },
+          ];
+        }
+      }
+    }
+    return [
+      {
+        'kind': 'custom',
+        'dishIds': ids,
+        'originalDishIds': List<String>.from(ids),
+        'originalDishCount': ids.length,
+      },
+    ];
+  }
+
+  List<Map<String, dynamic>> _menuPayloadFromInquiryBlocks(
+    List<Map<String, dynamic>> blocks,
+    Map<String, double> chargeOverrides,
+    int guestCount,
+  ) {
+    final out = <Map<String, dynamic>>[];
+    for (final block in blocks) {
+      final ids = (block['dishIds'] as List<dynamic>? ?? const [])
+          .map((e) => '$e')
+          .where((id) => id.isNotEmpty);
+      for (final id in ids) {
+        final dish = _newEventDishById[id];
+        final pax = guestCount > 0 ? guestCount : 1;
+        final addCharge =
+            chargeOverrides[id] ?? (dish?.additionalChargeAmount ?? 0);
+        out.add({
+          'dishId': id,
+          'dishName': dish?.name ?? id,
+          'paxOption': '$pax pax',
+          'price': '${500 * pax}',
+          'additionalChargeAmount': addCharge,
+          'menu_dishes_additional_charge_amount': addCharge,
+        });
+      }
+    }
+    return out;
   }
 
   double _newEventSetMenuAdditionalChargeTotal() {
@@ -797,6 +881,15 @@ class _ManageEventsState extends State<ManageEvents>
     final dishById = _newEventDishById;
     setState(() {
       _newEventMenuBlocks = blocks;
+      _newEventSetMenuChargeOverrides.removeWhere((dishId, _) {
+        final exists = blocks.any((b) {
+          final ids = (b['dishIds'] as List<dynamic>? ?? const [])
+              .map((e) => '$e')
+              .toSet();
+          return ids.contains(dishId);
+        });
+        return !exists;
+      });
       _menuItems.clear();
       for (final block in blocks) {
         final ids = (block['dishIds'] as List<dynamic>? ?? const [])
@@ -879,7 +972,8 @@ class _ManageEventsState extends State<ManageEvents>
           .toList();
       out['dishRows'] = ids.map((id) {
         final dish = dishById[id];
-        final addCharge = dish?.additionalChargeAmount ?? 0;
+        final addCharge =
+            _newEventSetMenuChargeOverrides[id] ?? (dish?.additionalChargeAmount ?? 0);
         return {
           'dishId': id,
           'dishName': dish?.name ?? id,
@@ -2068,7 +2162,9 @@ class _ManageEventsState extends State<ManageEvents>
     String? eventTitleOverride,
     String? eventTypeOverride,
     String? formalityLevelOverride,
-    int? guestCountOverride}) {
+    int? guestCountOverride,
+    List<Map<String, dynamic>>? menuOverride,
+    String? allergensOverride}) {
     final effectiveGuestCount = guestCountOverride ?? order.guestCount;
     List<Map<String, dynamic>> menuItems = [];
     final schedulePayload = <Map<String, dynamic>>[];
@@ -2157,6 +2253,7 @@ class _ManageEventsState extends State<ManageEvents>
       'guestCount': effectiveGuestCount,
       'serviceType': serviceType,
       'menu': menuItems,
+      if (allergensOverride != null) 'allergens': allergensOverride,
       'themeDesign': {
         'picksBase64': order.themeDesign.picksBase64,
         'tintEnabled': order.themeDesign.tintEnabled,
@@ -4341,10 +4438,22 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Future<void> _showChecklistDialog(EventOrderDto order) async {
+    EventOrderDto sourceOrder = order;
+    try {
+      final roleType =
+          AuthSession.instance.currentRole == Role.supervisor
+              ? 'supervisor'
+              : 'manager';
+      sourceOrder = await EventsApi.instance.getEventOrder(
+        orderId: order.id,
+        roleType: roleType,
+      );
+    } catch (_) {}
+
     final List<ChecklistItem> editableItems =
-        order.checklist.isEmpty
-            ? _buildChecklistFromMenuWithIngredients(order.menu)
-            : order.checklist
+        sourceOrder.checklist.isEmpty
+            ? _buildChecklistFromMenuWithIngredients(sourceOrder.menu)
+            : sourceOrder.checklist
                 .map(
                   (item) => ChecklistItem(
                     item: item.title,
@@ -4358,7 +4467,7 @@ class _ManageEventsState extends State<ManageEvents>
 
     final canEditChecklist =
         _isManager || AuthSession.instance.currentRole == Role.supervisor;
-    final showInventoryPicker = _isManager && _isCateringPlusEventOrder(order);
+    final showInventoryPicker = _isManager && _isCateringPlusEventOrder(sourceOrder);
     final inventoryOptions = <Map<String, dynamic>>[];
     if (showInventoryPicker) {
       try {
@@ -4534,7 +4643,7 @@ class _ManageEventsState extends State<ManageEvents>
             }
 
             return AlertDialog(
-              title: Text('Checklist for ${order.eventTitle}'),
+              title: Text('Checklist for ${sourceOrder.eventTitle}'),
               content: SizedBox(
                 width: dialogSize.width * 0.92 > 1040 ? 1040 : dialogSize.width * 0.92,
                 height: dialogSize.height * 0.82 > 680 ? 680 : dialogSize.height * 0.82,
@@ -4563,6 +4672,7 @@ class _ManageEventsState extends State<ManageEvents>
                         title: 'Event Checklist',
                         key: ValueKey(editableItems.length),
                         maxTableHeight: tableConstraints.maxHeight,
+                        forceVerticalScroll: true,
                         toolbarActions:
                             canEditChecklist
                                 ? [
@@ -5050,7 +5160,7 @@ class _ManageEventsState extends State<ManageEvents>
                         // Generate PDF button (outline style)
                         OutlinedButton(
                           onPressed:
-                              () => _exportChecklistToPDF(order, editableItems),
+                              () => _exportChecklistToPDF(sourceOrder, editableItems),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.black87,
                             side: BorderSide(color: Colors.grey.shade400),
@@ -5067,7 +5177,7 @@ class _ManageEventsState extends State<ManageEvents>
                         const SizedBox(width: 12),
                         // Save button (green outline)
                         OutlinedButton(
-                          onPressed: () => _saveChecklist(order, editableItems),
+                          onPressed: () => _saveChecklist(sourceOrder, editableItems),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.green,
                             side: const BorderSide(color: Colors.green),
@@ -5223,6 +5333,7 @@ class _ManageEventsState extends State<ManageEvents>
 
       // Refresh orders
       await _refreshOrders();
+      await _selectManageEventsOrder(order);
       setState(() {
         _selectedProcessingOrderDto = null;
       });
@@ -6745,7 +6856,215 @@ class _ManageEventsState extends State<ManageEvents>
     }
   }
 
-  Widget _buildNewEventEstimatedCostPanel() {
+  Widget _buildNewEventThemeDesignBlock() {
+    final isCateringOnly = _orderType == 'catering';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          height: 46,
+          child: OutlinedButton.icon(
+            onPressed: isCateringOnly ? null : _showThemeDesignDialog,
+            icon: const Icon(Icons.palette_outlined, size: 20),
+            label: Text(
+              isCateringOnly
+                  ? 'Event theme design (not for catering-only)'
+                  : 'Edit Event Theme Design',
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF1E1E1E),
+              side: BorderSide(color: Colors.grey.shade400),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (!isCateringOnly && _themePicks.isNotEmpty)
+          SizedBox(
+            height: 92,
+            child: Scrollbar(
+              thumbVisibility: true,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _themePicks.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, i) => Container(
+                  width: 92,
+                  height: 92,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.memory(
+                    _themePicks[i],
+                    width: 92,
+                    height: 92,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            ),
+          )
+        else if (!isCateringOnly)
+          Text(
+            'No theme design preview yet. Open the editor to add picks.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildNewEventSubmitActions() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ElevatedButton(
+          onPressed: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Saved draft.')),
+            );
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFFFA726),
+            foregroundColor: Colors.black,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+          child: const Text('SAVE DRAFT'),
+        ),
+        const SizedBox(height: 10),
+        ElevatedButton(
+          onPressed: _isSubmittingOrder ? null : _submitNewEventFromForm,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF1DB954),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+          child:
+              _isSubmittingOrder
+                  ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                  : const Text('SUBMIT'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _submitNewEventFromForm() async {
+    setState(() {
+      _contactNumberError = null;
+      _emailError = null;
+      _guestCountError = null;
+    });
+
+    final missing = <String>[];
+    final isCateringOnly = _orderType == 'catering';
+
+    if (_orderType == null) missing.add('Service type');
+
+    if (!isCateringOnly) {
+      if (_eventTitleController.text.trim().isEmpty) {
+        missing.add('Event title');
+      }
+      if (_eventType == null) missing.add('Event type');
+      if (_formalityLevel == null) missing.add('Formality level');
+    }
+
+    if (_customerController.text.trim().isEmpty) {
+      missing.add('Customer name');
+    }
+    if (_contactPersonController.text.trim().isEmpty) {
+      missing.add('Contact person');
+    }
+
+    final contactNumber = _contactNumberController.text.trim();
+    if (contactNumber.isEmpty) {
+      missing.add('Contact number');
+    } else if (contactNumber.length < 10) {
+      setState(() {
+        _contactNumberError = 'Contact number must be at least 10 digits';
+      });
+      return;
+    }
+
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      missing.add('Email address');
+    } else if (!_isValidEmail(email)) {
+      setState(() {
+        _emailError = 'Please enter a valid email address';
+      });
+      return;
+    }
+
+    if (_eventScheduleSlots.isEmpty) {
+      missing.add('Date & time');
+    }
+    if (_eventAddressController.text.trim().isEmpty) {
+      missing.add('Event address');
+    }
+
+    final guestCount = int.tryParse(_guestCountController.text.trim());
+
+    if (_guestCountController.text.trim().isEmpty) {
+      missing.add('No. of guests');
+    } else if (guestCount == null || guestCount <= 0) {
+      setState(() {
+        _guestCountError = 'Please enter a valid number of guests';
+      });
+      return;
+    }
+
+    if (_menuItems.isEmpty) {
+      missing.add('Menu');
+    } else if (_menuItems.length < 4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select at least 4 dishes for the menu.'),
+        ),
+      );
+      return;
+    }
+
+    if (missing.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please complete: ${missing.join(', ')}'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSubmittingOrder = true);
+
+    try {
+      final payload = _buildPayloadFromForm();
+      await EventsApi.instance.managerSubmitNewEventToProcessing(
+        payload: payload,
+      );
+      await _refreshOrders();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Order submitted successfully.')),
+      );
+      _resetForm();
+      setState(() => _selectedStatus = EventStatus.forDownpayment);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to submit order.')),
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmittingOrder = false);
+    }
+  }
+
+  Widget _buildNewEventEstimatedCostPanel({bool showSubmitActions = false}) {
     final guestCount = int.tryParse(_guestCountController.text.trim()) ?? 0;
     final dishCost = estimateInquiryCateringTotal(guestCount);
     final menuAddOns = _newEventSetMenuAdditionalChargeTotal();
@@ -6796,13 +7115,17 @@ class _ManageEventsState extends State<ManageEvents>
               'Formula: (pax × 500) + menu add-ons + labor + travel + additional costs',
               style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
             ),
+            if (showSubmitActions) ...[
+              const SizedBox(height: 16),
+              _buildNewEventSubmitActions(),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildNewEventCenterContent() {
+  Widget _buildNewEventCenterContent({required bool isNarrow}) {
     final isMenuTab = _activeNewEventSideTab == _NewEventSideTab.menuAndAllergens;
     Widget body;
     switch (_activeNewEventSideTab) {
@@ -6810,12 +7133,12 @@ class _ManageEventsState extends State<ManageEvents>
         body = _buildEventForm();
         break;
       case _NewEventSideTab.menuAndAllergens:
-        body = Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        body = Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildEventMenuSection(),
-            const SizedBox(height: 16),
-            _buildFoodBrowser(),
+            Expanded(child: _buildEventMenuSection()),
+            const SizedBox(width: 16),
+            Expanded(child: _buildFoodBrowser()),
           ],
         );
         break;
@@ -6915,7 +7238,7 @@ class _ManageEventsState extends State<ManageEvents>
       return Column(
         children: [
           _buildNewEventMobileTabs(),
-          Expanded(child: _buildNewEventCenterContent()),
+          Expanded(child: _buildNewEventCenterContent(isNarrow: true)),
         ],
       );
     }
@@ -6923,12 +7246,12 @@ class _ManageEventsState extends State<ManageEvents>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(width: 300, child: _buildNewEventSideTabNav()),
-        Expanded(flex: 3, child: _buildNewEventCenterContent()),
+        Expanded(flex: 3, child: _buildNewEventCenterContent(isNarrow: false)),
         SizedBox(
           width: 400,
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(0, 16, 16, 16),
-            child: _buildNewEventEstimatedCostPanel(),
+            child: _buildNewEventEstimatedCostPanel(showSubmitActions: true),
           ),
         ),
       ],
@@ -6952,26 +7275,20 @@ class _ManageEventsState extends State<ManageEvents>
     }
   }
 
-  Widget _buildNewEventSubmissionBar() {
-    final isCateringOnly = _orderType == 'catering';
-    final laborCost =
-        double.tryParse(_newEventLaborCostController.text.trim()) ?? 0.0;
-    final travelCost =
-        double.tryParse(_newEventTravelCostController.text.trim()) ?? 0.0;
-    final total = _estimateNewEventTotalCost() + laborCost + travelCost;
+  Widget _buildNewEventSubmissionBar({bool showSubmitActions = false}) {
+    final setMenuChargeRows = _newEventSetMenuAdditionalChargeRows();
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: _newEventPaxBufferController,
+            _buildNewEventThemeDesignBlock(),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _newEventPaxBufferController,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: false,
                     ),
@@ -6980,11 +7297,11 @@ class _ManageEventsState extends State<ManageEvents>
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _newEventLaborCostController,
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _newEventLaborCostController,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
@@ -6994,11 +7311,11 @@ class _ManageEventsState extends State<ManageEvents>
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _newEventTravelCostController,
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _newEventTravelCostController,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
@@ -7008,41 +7325,19 @@ class _ManageEventsState extends State<ManageEvents>
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 46,
-                    child: ElevatedButton(
-                      onPressed: isCateringOnly ? null : _showThemeDesignDialog,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            isCateringOnly
-                                ? Colors.grey.shade400
-                                : const Color(0xFF1DB954),
-                      ),
-                      child: Text(
-                        isCateringOnly
-                            ? 'EVENTS THEME DESIGN (Not Available for Catering Only)'
-                            : 'EVENTS THEME DESIGN',
-                        style: TextStyle(
-                          color: isCateringOnly ? Colors.grey.shade700 : Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Additional costs',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _newEventAdditionalCostLabelController,
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Additional costs',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _newEventAdditionalCostLabelController,
                           decoration: const InputDecoration(
                             labelText: 'Label',
                             border: OutlineInputBorder(),
@@ -7088,228 +7383,85 @@ class _ManageEventsState extends State<ManageEvents>
                       ),
                     ],
                   ),
-                  if (_newEventAdditionalCosts.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    ..._newEventAdditionalCosts.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final row = entry.value;
-                      final amount =
-                          double.tryParse('${row['amount'] ?? 0}') ?? 0;
-                      return Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '${row['label']} — ${formatPesos(amount)}',
-                              style: const TextStyle(fontSize: 12),
-                            ),
+            if (_newEventAdditionalCosts.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              ..._newEventAdditionalCosts.asMap().entries.map((entry) {
+                final index = entry.key;
+                final row = entry.value;
+                final amount = double.tryParse('${row['amount'] ?? 0}') ?? 0;
+                return Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${row['label']} — ${formatPesos(amount)}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Remove additional cost',
+                      onPressed:
+                          () => setState(
+                            () => _newEventAdditionalCosts.removeAt(index),
                           ),
-                          IconButton(
-                            tooltip: 'Remove additional cost',
-                            onPressed: () => setState(
-                              () => _newEventAdditionalCosts.removeAt(index),
-                            ),
-                            icon: const Icon(Icons.delete_outline, size: 18),
-                          ),
-                        ],
-                      );
-                    }),
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                    ),
                   ],
-                ],
+                );
+              }),
+            ],
+            if (setMenuChargeRows.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Text(
+                'Menu modifications add\'l charges',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
               ),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 220,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Total cost: ${formatPesos(total)}',
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFFF4511E),
-                    ),
+              const SizedBox(height: 6),
+              ...setMenuChargeRows.map((row) {
+                final dishId = '${row['dishId']}';
+                final dishName = '${row['dishName']}';
+                final amount = (row['amount'] as num?)?.toDouble() ?? 0;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          dishName,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 140,
+                        child: TextFormField(
+                          initialValue: amount.toStringAsFixed(2),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Add\'l charge',
+                            prefixText: 'PHP ',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (v) {
+                            final parsed = double.tryParse(v.trim()) ?? 0;
+                            setState(() {
+                              _newEventSetMenuChargeOverrides[dishId] =
+                                  parsed < 0 ? 0 : parsed;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Saved draft.')),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFFA726),
-                      foregroundColor: Colors.black,
-                    ),
-                    child: const Text('SAVE DRAFT'),
-                  ),
-                  const SizedBox(height: 10),
-                  ElevatedButton(
-                    onPressed:
-                        _isSubmittingOrder
-                            ? null
-                            : () async {
-                        // Clear previous errors
-                        setState(() {
-                          _contactNumberError = null;
-                          _emailError = null;
-                          _guestCountError = null;
-                        });
-
-                        final missing = <String>[];
-                        final isCateringOnly = _orderType == 'catering';
-
-                        if (_orderType == null) missing.add('Service type');
-
-                        // Only validate event-specific fields for catering + event orders
-                        if (!isCateringOnly) {
-                          if (_eventTitleController.text.trim().isEmpty) {
-                            missing.add('Event title');
-                          }
-                          if (_eventType == null) missing.add('Event type');
-                          if (_formalityLevel == null)
-                            missing.add('Formality level');
-                        }
-
-                        if (_customerController.text.trim().isEmpty) {
-                          missing.add('Customer name');
-                        }
-                        if (_contactPersonController.text.trim().isEmpty) {
-                          missing.add('Contact person');
-                        }
-
-                        // Contact number validation
-                        final contactNumber =
-                            _contactNumberController.text.trim();
-                        if (contactNumber.isEmpty) {
-                          missing.add('Contact number');
-                        } else if (contactNumber.length < 10) {
-                          setState(() {
-                            _contactNumberError =
-                                'Contact number must be at least 10 digits';
-                          });
-                          return;
-                        }
-
-                        // Email validation
-                        final email = _emailController.text.trim();
-                        if (email.isEmpty) {
-                          missing.add('Email address');
-                        } else if (!_isValidEmail(email)) {
-                          setState(() {
-                            _emailError = 'Please enter a valid email address';
-                          });
-                          return;
-                        }
-
-                        if (_eventScheduleSlots.isEmpty) {
-                          missing.add('Date & time');
-                        }
-                        if (_eventAddressController.text.trim().isEmpty) {
-                          missing.add('Event address');
-                        }
-
-                        final guestCount = int.tryParse(
-                          _guestCountController.text.trim(),
-                        );
-
-                        if (_guestCountController.text.trim().isEmpty) {
-                          missing.add('No. of guests');
-                        } else if (guestCount == null || guestCount <= 0) {
-                          setState(() {
-                            _guestCountError =
-                                'Please enter a valid number of guests';
-                          });
-                          return;
-                        }
-
-                        if (_menuItems.isEmpty) {
-                          missing.add('Menu');
-                        } else if (_menuItems.length < 4) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Select at least 4 dishes for the menu.',
-                              ),
-                            ),
-                          );
-                          return;
-                        }
-
-                        if (missing.isNotEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Please complete: ${missing.join(', ')}',
-                              ),
-                            ),
-                          );
-                          return;
-                        }
-
-                        setState(() {
-                          _isSubmittingOrder = true;
-                        });
-
-                        try {
-                          final payload = _buildPayloadFromForm();
-
-                          // backend commit
-                          await EventsApi.instance
-                              .managerSubmitNewEventToProcessing(
-                                payload: payload,
-                              );
-
-                          // refresh orders
-                          await _refreshOrders();
-
-                          // success indicator
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Order submitted successfully.'),
-                            ),
-                          );
-
-                          // reset form if success
-                          _resetForm();
-
-                          // switch tab
-                          setState(
-                            () => _selectedStatus = EventStatus.forDownpayment,
-                          );
-                        } catch (e) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Failed to submit order.'),
-                            ),
-                          );
-                        } finally {
-                          setState(() {
-                            _isSubmittingOrder = false;
-                          });
-                        }
-                            },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1DB954),
-                    ),
-                    child:
-                        _isSubmittingOrder
-                            ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.white,
-                                ),
-                              ),
-                            )
-                            : const Text('SUBMIT'),
-                  ),
-                ],
-              ),
-            ),
+                );
+              }),
+            ],
+            if (showSubmitActions) ...[
+              const SizedBox(height: 16),
+              _buildNewEventSubmitActions(),
+            ],
           ],
         ),
       ),
@@ -7758,67 +7910,86 @@ class _ManageEventsState extends State<ManageEvents>
           ),
         ),
         const SizedBox(height: 12),
-        AllergenSelectorField(
-          initialSerialized: _allergensSerialized,
-          onChanged: (s) => _allergensSerialized = s,
-        ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade300),
-          ),
-          child:
-              _menuItems.isEmpty
-                  ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: const [
-                      Text("You don't have anything on the menu right now..."),
-                      SizedBox(height: 20),
-                      SizedBox(height: 30),
-                    ],
-                  )
-                  : Column(
-                    children:
-                        _menuItems.map((item) {
-                          final extra = item.dish.additionalChargeAmount;
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8.0),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '${item.dish.name} · ${item.paxOption}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      if (extra > 0)
-                                        Text(
-                                          'Extra fee: ${formatPesos(extra)}',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.orange.shade800,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                IconButton(
-                                  onPressed: () => _removeFromMenu(item),
-                                  icon: const Icon(Icons.close, size: 20),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
                   ),
+                  child: SingleChildScrollView(
+                    child: AllergenSelectorField(
+                      initialSerialized: _allergensSerialized,
+                      onChanged: (s) => _allergensSerialized = s,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child:
+                      _menuItems.isEmpty
+                          ? const Text("You don't have anything on the menu right now...")
+                          : Scrollbar(
+                            thumbVisibility: true,
+                            child: SingleChildScrollView(
+                              child: Column(
+                                children:
+                                    _menuItems.map((item) {
+                                      final extra = item.dish.additionalChargeAmount;
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    '${item.dish.name} · ${item.paxOption}',
+                                                    style: const TextStyle(
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                  if (extra > 0)
+                                                    Text(
+                                                      'Extra fee: ${formatPesos(extra)}',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors.orange.shade800,
+                                                        fontWeight: FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                            IconButton(
+                                              onPressed: () => _removeFromMenu(item),
+                                              icon: const Icon(Icons.close, size: 20),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                              ),
+                            ),
+                          ),
+                ),
+              ),
+            ],
+          ),
         ),
         if (_newEventSetMenuAdditionalChargeTotal() > 0) ...[
           const SizedBox(height: 8),
@@ -8248,34 +8419,41 @@ class _ManageEventsState extends State<ManageEvents>
                             label: const Text('Choose / customize set menu'),
                           ),
                           const SizedBox(height: 12),
-                          ...sets.map((s) {
-                            final names = s.dishIds
-                                .map((id) {
-                                  for (final d in cateringDishes) {
-                                    if (d.id == id) return d.name;
-                                  }
-                                  return id;
-                                })
-                                .join(', ');
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              child: ListTile(
-                                title: Text(s.name),
-                                subtitle: Text(
-                                  s.dishIds.isEmpty ? 'No dishes' : names,
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                trailing: AntdPrimaryButton(
-                                  label: 'Customize',
-                                  onPressed:
-                                      s.dishIds.isEmpty
-                                          ? null
-                                          : () => _applySetMenuToNewEvent(s),
-                                ),
+                          Expanded(
+                            child: Scrollbar(
+                              thumbVisibility: true,
+                              child: ListView(
+                                children: sets.map((s) {
+                                  final names = s.dishIds
+                                      .map((id) {
+                                        for (final d in cateringDishes) {
+                                          if (d.id == id) return d.name;
+                                        }
+                                        return id;
+                                      })
+                                      .join(', ');
+                                  return Card(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    child: ListTile(
+                                      title: Text(s.name),
+                                      subtitle: Text(
+                                        s.dishIds.isEmpty ? 'No dishes' : names,
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      trailing: AntdPrimaryButton(
+                                        label: 'Customize',
+                                        onPressed:
+                                            s.dishIds.isEmpty
+                                                ? null
+                                                : () => _applySetMenuToNewEvent(s),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
                               ),
-                            );
-                          }),
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -8648,8 +8826,8 @@ class _ManageEventsState extends State<ManageEvents>
             ),
       );
 
-      // Refresh orders
       await _refreshOrders();
+      await _selectManageEventsOrder(order);
     } catch (e) {
       if (loaderContext != null && Navigator.of(loaderContext!).canPop()) {
         Navigator.of(loaderContext!).pop();
