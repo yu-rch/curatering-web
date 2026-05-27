@@ -351,7 +351,7 @@ def generate(
     prompt: str,
     *,
     init_image: Optional[Image.Image] = None,
-    strength: float = 0.72,
+    strength: float = 0.85,
     num_inference_steps: Optional[int] = None,
     guidance_scale: Optional[float] = None,
     negative_prompt: Optional[str] = None,
@@ -359,7 +359,7 @@ def generate(
 ) -> Tuple[bytes, str]:
     if init_image is not None:
         default_steps = IMG2IMG_INFERENCE_STEPS
-        strength = max(0.5, min(float(strength), 0.78))
+        strength = max(0.75, min(float(strength), 0.9))
     else:
         default_steps = DEFAULT_INFERENCE_STEPS
     steps = num_inference_steps if num_inference_steps is not None else default_steps
@@ -532,7 +532,7 @@ def handler(event):
         else:
             print("No venue/init image — txt2img only")
 
-        strength = data.get("strength", data.get("img2img_strength", 0.72))
+        strength = data.get("strength", data.get("img2img_strength", 0.85))
         steps = data.get("num_inference_steps") or data.get("steps")
         if steps is None:
             steps = IMG2IMG_INFERENCE_STEPS if init_image is not None else DEFAULT_INFERENCE_STEPS

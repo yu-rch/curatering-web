@@ -3,8 +3,10 @@ import re
 
 THEME_DECOR_MAP = {
     "cinderella": [
-        "royal blue dress princess",
+        "princess figure wearing royal blue dress",
+        "royal blue drapery",
         "glass slipper centerpiece",
+        "castle arch backdrop",
         "crystal chandeliers",
     ],
     "rustic": [
@@ -109,10 +111,10 @@ def controlnet_scale_for_denoise(denoise):
 def get_strength(intensity):
     value = _clamp(float(intensity), 0, 1)
     if value < 0.4:
-        return 0.5
+        return 0.75
     if value < 0.7:
-        return 0.65
-    return 0.72
+        return 0.82
+    return 0.9
 
 
 def get_controlnet(intensity):
@@ -144,9 +146,9 @@ def _clamp(value, lower, upper):
 
 def _intensity_from_strength(strength):
     value = float(strength)
-    if value < 0.55:
+    if value < 0.8:
         return 0.3
-    if value < 0.7:
+    if value < 0.86:
         return 0.55
     return 0.8
 
@@ -178,13 +180,104 @@ def _append_items(parts, values):
             parts.append(text)
 
 
+SPATIAL_TOKENS = [
+    "center of room",
+    "floor area filled with",
+    "main hall placement",
+    "foreground seating area",
+]
+
+
+def normalize_location(value):
+    text = clean(value).lower()
+    if not text:
+        return ""
+    if any(word in text for word in ("middle", "center", "centre")):
+        return "center"
+    if "side wall" in text or "wall" in text or "side" in text:
+        return "side wall"
+    if "floor" in text:
+        return "floor area"
+    if "front" in text or "foreground" in text:
+        return "foreground seating area"
+    if "main hall" in text or "hall" in text:
+        return "main hall"
+    return text
+
+
+def as_insert_objects(value):
+    if not isinstance(value, list):
+        return []
+    out = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        obj = clean(item.get("object") or item.get("item") or item.get("name"))
+        if not obj:
+            continue
+        out.append({
+            "object": obj,
+            "location": normalize_location(
+                item.get("location") or item.get("position") or item.get("placement")
+            ),
+        })
+    return out
+
+
+def location_for_object(obj, data):
+    lookup = " ".join([
+        clean(data.get("prompt")),
+        clean(data.get("notes")),
+        clean(data.get("custom_instructions")),
+        clean(data.get("theme")),
+        clean(obj),
+    ]).lower()
+    if any(word in lookup for word in ("middle", "center", "centre")):
+        return "center"
+    if "photo booth" in lookup:
+        return "side wall"
+    if any(word in lookup for word in ("table", "chair", "seating", "floor")):
+        return "floor area"
+    if any(word in lookup for word in ("backdrop", "arch", "stage")):
+        return "main hall"
+    return ""
+
+
+def compile_insert_object(item):
+    obj = clean(item.get("object") if isinstance(item, dict) else "")
+    loc = normalize_location(item.get("location") if isinstance(item, dict) else "")
+    if not obj:
+        return ""
+    if loc == "center":
+        return f"center {obj} centerpiece"
+    if loc == "side wall":
+        return f"add {obj} near side wall"
+    if loc == "floor area":
+        return f"add {obj} on floor area"
+    if loc == "foreground seating area":
+        return f"add {obj} in foreground seating area"
+    if loc == "main hall":
+        return f"add {obj} in main hall placement"
+    return f"add {obj}"
+
+
 def build_transformation_plan(data):
     existing = data.get("transformation_plan")
     if isinstance(existing, dict):
+        insert_objects = as_insert_objects(existing.get("insert_objects"))
+        objects_to_add = dedupe(as_list(existing.get("objects_to_add")), 12)
+        if not insert_objects:
+            insert_objects = [
+                {"object": obj, "location": location_for_object(obj, data)}
+                for obj in dedupe(objects_to_add, 8)
+            ]
         return {
+            "global_style": clean(existing.get("global_style")),
             "theme": clean(existing.get("theme") or data.get("theme") or data.get("style")),
-            "objects_to_add": dedupe(as_list(existing.get("objects_to_add")), 12),
+            "insert_objects": insert_objects,
+            "objects_to_add": objects_to_add,
             "objects_to_replace": dedupe(as_list(existing.get("objects_to_replace")), 8),
+            "decor": dedupe(as_list(existing.get("decor")), 12),
             "lighting_style": clean(existing.get("lighting_style")),
             "mood": clean(existing.get("mood")),
         }
@@ -199,6 +292,13 @@ def build_transformation_plan(data):
     if not any("table" in item.lower() for item in objects):
         objects.insert(0, "round banquet tables")
 
+    insert_objects = as_insert_objects(data.get("insert_objects"))
+    if not insert_objects:
+        insert_objects = [
+            {"object": obj, "location": location_for_object(obj, data)}
+            for obj in dedupe(objects, 8)
+        ]
+
     replacements = as_list(data.get("objects_to_replace"))
     colors = as_list(data.get("color_palette") or data.get("colors"))
     if colors:
@@ -208,9 +308,12 @@ def build_transformation_plan(data):
     lighting_style = lighting[0] if lighting else clean(data.get("lighting_style"))
 
     return {
+        "global_style": clean(data.get("global_style")),
         "theme": theme,
+        "insert_objects": insert_objects,
         "objects_to_add": dedupe(objects, 12),
         "objects_to_replace": dedupe(replacements, 8),
+        "decor": dedupe(as_list(data.get("decor")), 12),
         "lighting_style": lighting_style,
         "mood": clean(data.get("mood")),
     }
@@ -223,8 +326,13 @@ def compile_prompt(plan):
         parts.append(f"transform venue into {theme} event")
     else:
         parts.append("transform venue into themed event")
+    parts.append("add decor on top of venue photo")
+    parts.append("empty floor to be filled with event furniture")
+    _append_items(parts, SPATIAL_TOKENS)
 
+    _append_items(parts, [compile_insert_object(item) for item in plan.get("insert_objects", [])])
     _append_items(parts, as_list(plan.get("objects_to_add")))
+    _append_items(parts, as_list(plan.get("decor")))
     for item in as_list(plan.get("objects_to_replace")):
         text = clean(item)
         if text:
@@ -268,7 +376,7 @@ def build_prompt(data):
             "transformation_plan",
         )
     ):
-        return clean_prompt(contract_prompt)
+        return clean_prompt(f"{contract_prompt}, add decor on top of venue photo")
 
     plan = build_transformation_plan(data)
     compiled = compile_prompt(plan)

@@ -5,6 +5,11 @@ Constraints:
 - Convert themes into furniture, decor, materials, lighting fixtures, and backdrops.
 - Do NOT produce narrative prose, aesthetic descriptions, weighted tags, abstract moods, or repeated descriptors.
 - Avoid "beautiful", "luxury vibe", "cinematic atmosphere", "ultra detailed", "masterpiece", and "luxury interior photography".
+- Final compiled prompt must explicitly include "add decor on top of venue photo".
+- Preserve spatial intent in `insert_objects`; if the user says "middle", set location to "center".
+- Always support locations: center, floor area, side wall, main hall, foreground seating area.
+- The compiler will inject: "center of room", "floor area filled with", "main hall placement", "foreground seating area".
+- The compiler will inject: "empty floor to be filled with event furniture".
 - Limit objects_to_add to 4–8 distinct items. Do not use synonyms.
 - Provide boolean flags `preserve_structure` and `preserve_lighting`.
 
@@ -15,7 +20,9 @@ JSON schema (expected):
   "preserve_structure": true,
   "preserve_lighting": false,
   "theme": "Cinderella sports gala",
-  "objects_to_add": ["banquet tables with white floral centerpieces","royal blue drapery","glass slipper centerpiece","crystal chandeliers"],
+  "global_style": "Cinderella sports gala",
+  "insert_objects": [{"object":"princess figure wearing royal blue dress","location":"center"},{"object":"banquet tables","location":"floor area"}],
+  "objects_to_add": ["princess figure wearing royal blue dress","royal blue drapery","glass slipper centerpiece","castle arch backdrop","crystal chandeliers"],
   "objects_to_replace": [],
   "lighting_style": "warm candle lighting",
   "mood": "internal only"

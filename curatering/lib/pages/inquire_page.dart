@@ -264,8 +264,10 @@ class _InquirePageState extends State<InquirePage> {
 
   static const Map<String, List<String>> _eventThemeDecorMap = {
     'cinderella': [
-      'royal blue dress princess',
+      'princess figure wearing royal blue dress',
+      'royal blue drapery',
       'glass slipper centerpiece',
+      'castle arch backdrop',
       'crystal chandeliers',
     ],
     'rustic': [
@@ -2871,6 +2873,12 @@ class _InquirePageState extends State<InquirePage> {
         if (eventType != null && eventType.isNotEmpty) eventType,
         'reception',
       ].join(' ')}',
+      'add decor on top of venue photo',
+      'empty floor to be filled with event furniture',
+      'center of room',
+      'floor area filled with',
+      'main hall placement',
+      'foreground seating area',
       'round banquet tables',
       if (colors.isNotEmpty) '${colors.join(', ')} accents',
       ...mappedDecor,
@@ -2933,8 +2941,8 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   double _eventDesignControlnetForDenoise(double denoise) {
-    if (denoise < 0.55) return 0.85;
-    if (denoise < 0.7) return 0.65;
+    if (denoise < 0.8) return 0.85;
+    if (denoise < 0.86) return 0.65;
     return 0.55;
   }
 
@@ -2942,7 +2950,7 @@ class _InquirePageState extends State<InquirePage> {
     EventPromptExpansion? expansion,
   }) {
     final config = _eventDesignConfig();
-    final denoise = expansion?.recommendedStrength ?? 0.72;
+    final denoise = expansion?.recommendedStrength ?? 0.85;
     final controlnet = _eventDesignControlnetForDenoise(denoise);
     return {
       ...config,
@@ -3045,7 +3053,7 @@ class _InquirePageState extends State<InquirePage> {
         _eventDesignConfig(),
         fallbackPrompt: fallbackPrompt,
       );
-      final denoise = expansion.recommendedStrength ?? 0.72;
+      final denoise = expansion.recommendedStrength ?? 0.85;
       final prompt = expansion.positivePrompt;
       if (kDebugMode) {
         debugPrint(

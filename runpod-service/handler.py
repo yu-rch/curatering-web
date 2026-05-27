@@ -64,7 +64,7 @@ CONTROLNET_MODEL_ID = os.getenv(
 IMAGE_SIZE = int(os.getenv("SD_IMAGE_SIZE", "768"))
 MAX_IMAGE_BYTES = int(os.getenv("MAX_INIT_IMAGE_BYTES", "6000000"))
 
-DEFAULT_STRENGTH = float(os.getenv("SD_IMG2IMG_STRENGTH", "0.72"))
+DEFAULT_STRENGTH = float(os.getenv("SD_IMG2IMG_STRENGTH", "0.85"))
 DEFAULT_GUIDANCE = float(os.getenv("SD_GUIDANCE_SCALE", "7"))
 DEFAULT_CONTROL_SCALE = float(
     os.getenv("SD_CONTROLNET_CONDITIONING_SCALE", "0.55")
@@ -239,7 +239,7 @@ def generate_image(data, image, prompt, negative_prompt):
 
     control_image = canny_image
 
-    strength = max(0.5, min(float(data.get("strength", DEFAULT_STRENGTH)), 0.78))
+    strength = max(0.75, min(float(data.get("strength", DEFAULT_STRENGTH)), 0.9))
     guidance = float(data.get("guidance_scale") or data.get("cfg_scale") or DEFAULT_GUIDANCE)
 
     controlnet_config = data.get("controlnet") if isinstance(data.get("controlnet"), dict) else {}

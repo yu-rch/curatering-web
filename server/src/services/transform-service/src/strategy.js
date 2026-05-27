@@ -6,15 +6,15 @@ function lerp(a, b, t) {
 }
 
 const MODE_PRESETS = {
-  preserve: { denoise: 0.50, controlnet: 0.85, cfg: 7.0 },
-  modify: { denoise: 0.65, controlnet: 0.65, cfg: 7.0 },
-  rebuild: { denoise: 0.72, controlnet: 0.55, cfg: 7.0 }
+  preserve: { denoise: 0.75, controlnet: 0.85, cfg: 7.0 },
+  modify: { denoise: 0.82, controlnet: 0.65, cfg: 7.0 },
+  rebuild: { denoise: 0.90, controlnet: 0.55, cfg: 7.0 }
 };
 
 function strengthFor(intensity) {
-  if (intensity < 0.4) return 0.50;
-  if (intensity < 0.7) return 0.65;
-  return 0.72;
+  if (intensity < 0.4) return 0.75;
+  if (intensity < 0.7) return 0.82;
+  return 0.90;
 }
 
 function controlnetFor(intensity) {

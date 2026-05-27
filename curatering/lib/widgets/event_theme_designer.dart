@@ -737,7 +737,7 @@ Requirements:
         customPrompt: _customPrompt,
         negativePrompt:
             'blurry, distorted, unrealistic, low quality, artifacts, text, watermark',
-        strength: 0.72,
+        strength: 0.85,
       );
 
       if (result != null &&

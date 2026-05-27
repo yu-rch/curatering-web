@@ -370,9 +370,9 @@ function intensityFromStrength(strength) {
 
 function getStrength(intensity) {
   const value = clampUnit(intensity);
-  if (value < 0.4) return 0.5;
-  if (value < 0.7) return 0.65;
-  return 0.72;
+  if (value < 0.4) return 0.75;
+  if (value < 0.7) return 0.82;
+  return 0.9;
 }
 
 function getControlNet(intensity) {
@@ -473,11 +473,13 @@ function normalizeRunpodInput(input) {
 }
 
 function shouldExpandEventDesignPrompt(input) {
+  if (input?.nlp_expansion || input?.transformation_plan) return false;
   const taskType = String(input?.task_type || input?.task || "").trim().toLowerCase();
   return (
     taskType === "event_prompt_expansion" ||
     taskType === "event_design_image" ||
     taskType === "event_design" ||
+    taskType === "sdxl_event_design" ||
     input?.use_nlp_prompt_expansion === true
   );
 }
@@ -515,7 +517,7 @@ function normalizeRunpodEventPromptExpansion(output) {
     decor_tokens: Array.isArray(result.decor_tokens) ? result.decor_tokens : [],
     negative_tokens: Array.isArray(result.negative_tokens) ? result.negative_tokens : [],
     recommended_strength: Number.isFinite(recommendedStrength)
-      ? Math.min(0.78, Math.max(0.5, recommendedStrength))
+      ? Math.min(0.9, Math.max(0.75, recommendedStrength))
       : Number.isFinite(Number(result.strength))
         ? Number(result.strength)
       : undefined,

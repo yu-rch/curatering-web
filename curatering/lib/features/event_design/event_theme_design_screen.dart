@@ -9,15 +9,17 @@ import 'runpod_service.dart';
 import 'theme_design_export.dart';
 
 double _controlnetForDenoise(double denoise) {
-  if (denoise < 0.55) return 0.85;
-  if (denoise < 0.7) return 0.65;
+  if (denoise < 0.8) return 0.85;
+  if (denoise < 0.86) return 0.65;
   return 0.55;
 }
 
 const Map<String, List<String>> _themeDecorMap = {
   'cinderella': [
-    'royal blue dress princess',
+    'princess figure wearing royal blue dress',
+    'royal blue drapery',
     'glass slipper centerpiece',
+    'castle arch backdrop',
     'crystal chandeliers',
   ],
   'rustic': [
@@ -178,6 +180,12 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
     final mappedDecor = _themeDecorFor(_style);
     return [
       'transform venue into ${[_style, _eventType, 'reception'].whereType<String>().join(' ')}',
+      'add decor on top of venue photo',
+      'empty floor to be filled with event furniture',
+      'center of room',
+      'floor area filled with',
+      'main hall placement',
+      'foreground seating area',
       'round banquet tables',
       if (_palettes.isNotEmpty) '${_palettes.join(', ')} accents',
       ...mappedDecor,
@@ -209,7 +217,7 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
   }
 
   Map<String, dynamic> _runpodMeta(EventPromptExpansion expansion) {
-    final denoise = expansion.recommendedStrength ?? 0.72;
+    final denoise = expansion.recommendedStrength ?? 0.85;
     final controlnet = _controlnetForDenoise(denoise);
     return {
       ..._eventConfig(),
@@ -269,7 +277,7 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
         _eventConfig(),
         fallbackPrompt: fallbackPrompt,
       );
-      final denoise = expansion.recommendedStrength ?? 0.72;
+      final denoise = expansion.recommendedStrength ?? 0.85;
       final url = await RunPodService.generateImageWithPolling(
         expansion.positivePrompt,
         user_id: widget.userEmail,

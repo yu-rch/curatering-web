@@ -12,7 +12,13 @@ function sanitizeTheme(theme) {
 }
 
 const THEME_DECOR_MAP = {
-  cinderella: ['royal blue drapery', 'glass slipper centerpiece', 'crystal chandeliers'],
+  cinderella: [
+    'princess figure wearing royal blue dress',
+    'royal blue drapery',
+    'glass slipper centerpiece',
+    'castle arch backdrop',
+    'crystal chandeliers'
+  ],
   rustic: ['wooden tables', 'string lights', 'greenery centerpieces'],
   'modern luxury': ['gold accents', 'marble decor', 'minimalist floral arrangements'],
   luxury: ['crystal chandeliers', 'white floral centerpieces', 'gold accents', 'cream drapery'],
@@ -26,6 +32,32 @@ function mappedObjects(theme) {
     if (lookup.includes(key)) out.push(...values);
   }
   return [...new Set(out)];
+}
+
+function normalizeLocation(value) {
+  const text = String(value || '').toLowerCase();
+  if (/\b(middle|center|centre)\b/.test(text)) return 'center';
+  if (/\b(side wall|wall|side)\b/.test(text)) return 'side wall';
+  if (/\b(floor|empty floor|floor area)\b/.test(text)) return 'floor area';
+  if (/\b(front|foreground)\b/.test(text)) return 'foreground seating area';
+  if (/\b(main hall|hall)\b/.test(text)) return 'main hall';
+  return '';
+}
+
+function locationForObject(object, input) {
+  const lookup = [
+    input.prompt,
+    input.notes,
+    input.custom_instructions,
+    input.theme,
+    object
+  ].map((value) => String(value || '').toLowerCase()).join(' ');
+  const explicit = normalizeLocation(lookup);
+  if (explicit) return explicit;
+  if (lookup.includes('photo booth')) return 'side wall';
+  if (/\b(table|chair|seating|floor)\b/.test(lookup)) return 'floor area';
+  if (/\b(backdrop|arch|stage)\b/.test(lookup)) return 'main hall';
+  return '';
 }
 
 async function callOpenAI(input) {
@@ -102,9 +134,15 @@ async function localPlanner(input) {
     transformation_strength: +intensity.toFixed(2),
     preserve_structure,
     preserve_lighting,
+    global_style: theme,
     theme,
+    insert_objects: [...new Set(objects_to_add)].slice(0, 8).map((object) => ({
+      object,
+      location: locationForObject(object, input)
+    })),
     objects_to_add: [...new Set(objects_to_add)].slice(0, 8),
     objects_to_replace: [],
+    decor: [],
     lighting_style,
     mood: input.mood || 'playful luxury',
   };

@@ -9,8 +9,10 @@ import 'runpod_service.dart';
 class ApiService {
   static const Map<String, List<String>> _themeDecorMap = {
     'cinderella': [
-      'royal blue dress princess',
+      'princess figure wearing royal blue dress',
+      'royal blue drapery',
       'glass slipper centerpiece',
+      'castle arch backdrop',
       'crystal chandeliers',
     ],
     'rustic': [
@@ -40,8 +42,8 @@ class ApiService {
   }
 
   static double _controlnetForDenoise(double denoise) {
-    if (denoise < 0.55) return 0.85;
-    if (denoise < 0.7) return 0.65;
+    if (denoise < 0.8) return 0.85;
+    if (denoise < 0.86) return 0.65;
     return 0.55;
   }
 
@@ -53,7 +55,7 @@ class ApiService {
     int guestCount = 50,
     String customPrompt = '',
     String negativePrompt = 'blurry, distorted, unrealistic, poor quality',
-    double strength = 0.72,
+    double strength = 0.85,
   }) async {
     try {
       final bytes = await imageFile.readAsBytes();
@@ -62,6 +64,12 @@ class ApiService {
       final prompt =
           StringBuffer()
             ..write('transform venue into $style $eventType reception')
+            ..write(', ')
+            ..write('add decor on top of venue photo')
+            ..write(', ')
+            ..write('empty floor to be filled with event furniture')
+            ..write(', ')
+            ..write('center of room, floor area filled with, main hall placement, foreground seating area')
             ..write(', ')
             ..write('replace empty floor with banquet tables')
             ..write(', add $colorScheme accents')
@@ -99,7 +107,7 @@ class ApiService {
         fallbackPrompt: prompt.toString(),
       );
       final denoise =
-          (expansion.recommendedStrength ?? strength).clamp(0.5, 0.78).toDouble();
+          (expansion.recommendedStrength ?? strength).clamp(0.75, 0.9).toDouble();
       final controlnet = _controlnetForDenoise(denoise);
 
       final imageUrl = await RunPodService.generateImageWithPolling(
