@@ -354,6 +354,12 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
             _customFilter.trim().toLowerCase(),
           );
         }).toList();
+    filtered.sort((a, b) {
+      final aSel = _customIds.contains(a.id) ? 0 : 1;
+      final bSel = _customIds.contains(b.id) ? 0 : 1;
+      if (aSel != bSel) return aSel - bSel;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -537,7 +543,16 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
             ),
           ],
           const SizedBox(height: 8),
-          for (final d in widget.cateringDishes)
+          for (final d in (() {
+            final sorted = [...widget.cateringDishes];
+            sorted.sort((a, b) {
+              final aSel = _selectedSetDishIds.contains(a.id) ? 0 : 1;
+              final bSel = _selectedSetDishIds.contains(b.id) ? 0 : 1;
+              if (aSel != bSel) return aSel - bSel;
+              return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+            });
+            return sorted;
+          })())
             CheckboxListTile(
               dense: true,
               secondary: _dishThumb(d),

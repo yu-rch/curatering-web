@@ -461,7 +461,7 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
     final found = widget.plan.seats.where((e) => e.id == seatId).toList();
     if (found.isEmpty) return;
     final s = found.first;
-    const dragScale = 0.4;
+    const dragScale = 1.15;
     final atTable = widget.plan.seats.where((e) => e.tableId == table.id).length;
     final step = 1 / math.max(atTable, 1);
     final tangent = (d.delta.dx - d.delta.dy) * 0.0015 * dragScale;
@@ -595,6 +595,17 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                   onPressed: () => _bumpSeatCount(-1),
                   icon: const Icon(Icons.remove_circle_outline),
                 ),
+                if (_selectedTableId != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Text(
+                      '${p.tables.firstWhere((t) => t.id == _selectedTableId).seatCount}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
                 IconButton(
                   tooltip: 'More seats',
                   onPressed: () => _bumpSeatCount(1),
@@ -909,28 +920,30 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                    vertical: 1,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.92),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: Colors.black26),
-                                  ),
-                                  child: Text(
-                                    chip,
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w700,
-                                      color: selSeat
-                                          ? const Color(0xFFF4511E)
-                                          : Colors.black87,
+                                if (pos.dy <= (tbl.yNorm + tbl.hNorm / 2)) ...[
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 1,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.92),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: Colors.black26),
+                                    ),
+                                    child: Text(
+                                      chip,
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w700,
+                                        color: selSeat
+                                            ? const Color(0xFFF4511E)
+                                            : Colors.black87,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(height: 2),
+                                  const SizedBox(height: 2),
+                                ],
                                 DecoratedBox(
                                   decoration: BoxDecoration(
                                     color: selSeat
@@ -946,6 +959,30 @@ class _SeatingPlanInteractiveState extends State<SeatingPlanInteractive> {
                                   ),
                                   child: const SizedBox(width: 22, height: 22),
                                 ),
+                                if (pos.dy > (tbl.yNorm + tbl.hNorm / 2)) ...[
+                                  const SizedBox(height: 2),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 1,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.92),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: Colors.black26),
+                                    ),
+                                    child: Text(
+                                      chip,
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w700,
+                                        color: selSeat
+                                            ? const Color(0xFFF4511E)
+                                            : Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),

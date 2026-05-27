@@ -487,6 +487,103 @@ extension _ManageEventsDetailExt on _ManageEventsState {
         final size = MediaQuery.sizeOf(ctx);
         return StatefulBuilder(
           builder: (ctx, setModal) {
+            Future<void> editRowDialog(int index) async {
+              final row = rows[index];
+              final employee = TextEditingController(text: '${row['employee'] ?? ''}');
+              final task = TextEditingController(text: '${row['tasks'] ?? ''}');
+              final schedule = TextEditingController(
+                text: '${row['schedule_of_tasks'] ?? ''}',
+              );
+              final budget = TextEditingController(text: '${row['budget'] ?? ''}');
+              var status = '${row['status'] ?? 'not done'}';
+              await showDialog<void>(
+                context: ctx,
+                builder: (dctx) => AlertDialog(
+                  title: const Text('Edit task row'),
+                  content: SizedBox(
+                    width: 420,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: employee,
+                          decoration: const InputDecoration(
+                            labelText: 'Employee',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: task,
+                          decoration: const InputDecoration(
+                            labelText: 'Task',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: schedule,
+                          decoration: const InputDecoration(
+                            labelText: 'Schedule',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: budget,
+                          decoration: const InputDecoration(
+                            labelText: 'Budget',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          value: status,
+                          items: const [
+                            DropdownMenuItem(value: 'not done', child: Text('not done')),
+                            DropdownMenuItem(value: 'done', child: Text('done')),
+                          ],
+                          onChanged: (v) => status = v ?? status,
+                          decoration: const InputDecoration(
+                            labelText: 'Status',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dctx),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      onPressed: () {
+                        setModal(() {
+                          row['employee'] = employee.text.trim();
+                          row['tasks'] = task.text.trim();
+                          row['schedule_of_tasks'] = schedule.text.trim();
+                          row['budget'] = budget.text.trim();
+                          row['status'] = status;
+                        });
+                        Navigator.pop(dctx);
+                      },
+                      child: const Text('Apply'),
+                    ),
+                  ],
+                ),
+              );
+              employee.dispose();
+              task.dispose();
+              schedule.dispose();
+              budget.dispose();
+            }
+
             DataCell taskCell(
               String label,
               String key,
@@ -551,7 +648,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                 columnSpacing: 12,
                                 horizontalMargin: 8,
                                 dataRowMinHeight: 52,
-                                dataRowMaxHeight: 88,
+                                dataRowMaxHeight: 76,
                                 headingRowColor: WidgetStateProperty.all(
                                   Colors.grey.shade200,
                                 ),
@@ -578,7 +675,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                   ),
                                   DataColumn(
                                     label: Text('Actions'),
-                                    columnWidth: FixedColumnWidth(72),
+                                    columnWidth: FixedColumnWidth(104),
                                   ),
                                 ],
                                 rows: rows.asMap().entries.map((entry) {
@@ -625,12 +722,22 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                         ),
                                       ),
                                       DataCell(
-                                        IconButton(
-                                          tooltip: 'Remove row',
-                                          onPressed: () {
-                                            setModal(() => rows.removeAt(index));
-                                          },
-                                          icon: const Icon(Icons.delete_outline),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              tooltip: 'Edit row',
+                                              onPressed: () => editRowDialog(index),
+                                              icon: const Icon(Icons.edit_outlined),
+                                            ),
+                                            IconButton(
+                                              tooltip: 'Remove row',
+                                              onPressed: () {
+                                                setModal(() => rows.removeAt(index));
+                                              },
+                                              icon: const Icon(Icons.delete_outline),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ],

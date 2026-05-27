@@ -553,6 +553,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
     EventOrderDto order, {
     required double laborCost,
     required double travelCost,
+    required List<Map<String, dynamic>> additionalCosts,
     required double totalCost,
     required String action,
     required String address,
@@ -582,6 +583,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
       eventTypeOverride: eventTypeOverride,
       formalityLevelOverride: formalityLevelOverride,
       guestCountOverride: guestCountOverride,
+      additionalCosts: additionalCosts,
     );
   }
 
@@ -660,17 +662,23 @@ extension _ManageEventsTableExt on _ManageEventsState {
     String? eventType,
     String? formalityLevel,
     int? guestCount,
+    required List<Map<String, dynamic>> additionalCosts,
     required String action,
     required String successMessage,
   }) async {
     final laborCost = double.tryParse(laborController.text.trim()) ?? 0.0;
     final travelCost = double.tryParse(travelController.text.trim()) ?? 0.0;
     final dishCost = _dishCostForFinalize(order);
-    final totalCost = dishCost + laborCost + travelCost;
+    final additionalCostsTotal = additionalCosts.fold<double>(
+      0,
+      (sum, e) => sum + (double.tryParse('${e['amount'] ?? e['cost'] ?? 0}') ?? 0),
+    );
+    final totalCost = dishCost + laborCost + travelCost + additionalCostsTotal;
     final payload = _finalizeInquiryPayload(
       order,
       laborCost: laborCost,
       travelCost: travelCost,
+      additionalCosts: additionalCosts,
       totalCost: totalCost,
       action: action,
       address: address,
@@ -709,6 +717,19 @@ extension _ManageEventsTableExt on _ManageEventsState {
     final addressController = TextEditingController(text: order.address);
     final dateController = TextEditingController(text: slot?.date ?? '');
     final timeController = TextEditingController(text: slot?.startTime ?? '');
+    final additionalCostLabelController = TextEditingController();
+    final additionalCostAmountController = TextEditingController();
+    final additionalCosts = List<Map<String, dynamic>>.from(
+      _additionalCostGroupsFromOrder(order).expand((g) {
+        final items = g['items'];
+        if (items is! List) return const <Map<String, dynamic>>[];
+        return items.whereType<Map>().map((e) {
+          final label = '${e['label'] ?? e['name'] ?? 'Item'}'.trim();
+          final amount = double.tryParse('${e['amount'] ?? e['cost'] ?? 0}') ?? 0;
+          return {'label': label, 'amount': amount};
+        });
+      }),
+    );
     final detailFuture = _loadOrderForDetail(order);
 
     try {
@@ -729,14 +750,19 @@ extension _ManageEventsTableExt on _ManageEventsState {
                   children: [
                     AnimatedBuilder(
                       animation: Listenable.merge(
-                        [laborCostController, travelCostController],
+                        [laborCostController, travelCostController, additionalCostAmountController],
                       ),
                       builder: (context, _) {
                         final laborCost =
                             double.tryParse(laborCostController.text.trim()) ?? 0.0;
                         final travelCost =
                             double.tryParse(travelCostController.text.trim()) ?? 0.0;
-                        final totalCost = dishCost + laborCost + travelCost;
+                        final additionalCostsTotal = additionalCosts.fold<double>(
+                          0,
+                          (sum, e) => sum + (double.tryParse('${e['amount'] ?? 0}') ?? 0),
+                        );
+                        final totalCost =
+                            dishCost + laborCost + travelCost + additionalCostsTotal;
                         return Align(
                           alignment: Alignment.centerRight,
                           child: Text(
@@ -777,6 +803,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                                 guestCount: int.tryParse(
                                   guestCountController.text.trim(),
                                 ),
+                                additionalCosts: additionalCosts,
                                 action: 'post_changes',
                                 successMessage:
                                     'Changes saved. Customer can review updates in My Caterings.',
@@ -821,6 +848,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                                 guestCount: int.tryParse(
                                   guestCountController.text.trim(),
                                 ),
+                                additionalCosts: additionalCosts,
                                 action: 'confirm_inquiry',
                                 successMessage:
                                     'Order accepted and moved to For down payment.',
@@ -865,6 +893,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                                 guestCount: int.tryParse(
                                   guestCountController.text.trim(),
                                 ),
+                                additionalCosts: additionalCosts,
                                 action: 'cancel_event',
                                 successMessage: 'Inquiry cancelled.',
                               );
@@ -1113,6 +1142,92 @@ extension _ManageEventsTableExt on _ManageEventsState {
                     ],
                   ),
                 ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Additional costs',
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: additionalCostLabelController,
+                              decoration: const InputDecoration(
+                                labelText: 'Label',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 130,
+                            child: TextField(
+                              controller: additionalCostAmountController,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: const InputDecoration(
+                                labelText: 'Amount',
+                                prefixText: 'PHP ',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Add additional cost',
+                            onPressed: () {
+                              final label = additionalCostLabelController.text.trim();
+                              final amount =
+                                  double.tryParse(additionalCostAmountController.text.trim());
+                              if (label.isEmpty || amount == null) return;
+                              _mutateTableState(() {
+                                additionalCosts.add({'label': label, 'amount': amount});
+                              });
+                              additionalCostLabelController.clear();
+                              additionalCostAmountController.clear();
+                            },
+                            icon: const Icon(Icons.add_circle_outline),
+                          ),
+                        ],
+                      ),
+                      if (additionalCosts.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        ...additionalCosts.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final row = entry.value;
+                          final amount = double.tryParse('${row['amount'] ?? 0}') ?? 0;
+                          return Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${row['label']} — ${formatPesos(amount)}',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Remove',
+                                onPressed: () => _mutateTableState(
+                                  () => additionalCosts.removeAt(index),
+                                ),
+                                icon: const Icon(Icons.delete_outline, size: 18),
+                              ),
+                            ],
+                          );
+                        }),
+                      ],
+                    ],
+                  ),
+                ),
                 if (_orderHasEventDesign(full))
                   _buildEventDesignDetailSection(full),
                 _buildFinalizeCostSection(
@@ -1136,6 +1251,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
       addressController.dispose();
       dateController.dispose();
       timeController.dispose();
+      additionalCostLabelController.dispose();
+      additionalCostAmountController.dispose();
     }
   }
 
@@ -1178,6 +1295,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
   Widget _mergedInquiryColumnCell(EventOrderDto dto) {
     final eventType =
         dto.eventType.trim().isEmpty ? '—' : dto.eventType.trim();
+    final menuLine =
+        dto.menu.isEmpty
+            ? 'Menu: —'
+            : 'Menu: ${dto.menu.take(2).map((m) => m.dishName).join(', ')}${dto.menu.length > 2 ? ' +${dto.menu.length - 2} more' : ''}';
+    final allergensLine =
+        dto.allergens.trim().isEmpty ? 'Allergens: —' : 'Allergens: ${dto.allergens.trim()}';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -1187,10 +1310,18 @@ extension _ManageEventsTableExt on _ManageEventsState {
           style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
         ),
         const SizedBox(height: 4),
+        Text(
+          'TXN: ${dto.transactionNo}',
+          style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+        ),
+        const SizedBox(height: 2),
         Text(dto.customerName, style: const TextStyle(fontSize: 12)),
         if (dto.contactPerson.trim().isNotEmpty &&
             dto.contactPerson.trim() != dto.customerName.trim())
           Text(dto.contactPerson, style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
+        const SizedBox(height: 2),
+        Text(menuLine, style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
+        Text(allergensLine, style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
       ],
     );
   }

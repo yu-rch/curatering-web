@@ -238,6 +238,8 @@ enum EventStatus {
   completed,
 }
 
+enum _NewEventSideTab { eventInfo, menuAndAllergens, submitAndCosts }
+
 enum PaymentConfirmationMode { downpayment, fullPayment }
 
 enum DownpaymentAmountOption { percent50, custom, fullPayment }
@@ -413,6 +415,7 @@ class _ManageEventsState extends State<ManageEvents>
     with TickerProviderStateMixin {
   late TabController _tabController;
   bool _showNewEventForm = false;
+  _NewEventSideTab _activeNewEventSideTab = _NewEventSideTab.eventInfo;
 
   static const _stageKeys = [
     'new_event',
@@ -543,6 +546,8 @@ class _ManageEventsState extends State<ManageEvents>
     _newEventPaxBufferController.dispose();
     _newEventLaborCostController.dispose();
     _newEventTravelCostController.dispose();
+    _newEventAdditionalCostLabelController.dispose();
+    _newEventAdditionalCostAmountController.dispose();
     _foodTabController?.dispose();
     super.dispose();
   }
@@ -636,6 +641,11 @@ class _ManageEventsState extends State<ManageEvents>
       TextEditingController(text: '0.00');
   final TextEditingController _newEventTravelCostController =
       TextEditingController(text: '0.00');
+  final TextEditingController _newEventAdditionalCostLabelController =
+      TextEditingController();
+  final TextEditingController _newEventAdditionalCostAmountController =
+      TextEditingController();
+  final List<Map<String, dynamic>> _newEventAdditionalCosts = [];
   String _allergensSerialized = '';
   final Map<String, String> _selectedPaxPerDish = {};
   List<MenuDish> _allDishes = MenuStore.instance.activeDishes;
@@ -684,6 +694,13 @@ class _ManageEventsState extends State<ManageEvents>
       _collageOrder = const [];
       _themeTintEnabled = false;
       _themeTintColor = const Color(0xFFF4511E);
+      _newEventPaxBufferController.text = '0';
+      _newEventLaborCostController.text = '0.00';
+      _newEventTravelCostController.text = '0.00';
+      _newEventAdditionalCostLabelController.clear();
+      _newEventAdditionalCostAmountController.clear();
+      _newEventAdditionalCosts.clear();
+      _activeNewEventSideTab = _NewEventSideTab.eventInfo;
       _selectedStatus = EventStatus.newEvent;
       _eventSearchController.clear();
       _inquirySearchController.clear();
@@ -882,6 +899,10 @@ class _ManageEventsState extends State<ManageEvents>
     final guests = int.tryParse(_guestCountController.text.trim()) ?? 0;
     var total = estimateInquiryCateringTotal(guests);
     total += _newEventSetMenuAdditionalChargeTotal();
+    total += _newEventAdditionalCosts.fold<double>(
+      0,
+      (sum, e) => sum + (double.tryParse('${e['amount'] ?? 0}') ?? 0),
+    );
     return total;
   }
 
@@ -952,37 +973,37 @@ class _ManageEventsState extends State<ManageEvents>
           EventsApi.instance.listOrders(
             status: 'for_processing',
             roleType: 'supervisor',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'new_event',
             roleType: 'supervisor',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'for_down_payment',
             roleType: 'supervisor',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'on_going',
             roleType: 'supervisor',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'for_full_payment',
             roleType: 'supervisor',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'completed',
             roleType: 'supervisor',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'cancelled',
             roleType: 'supervisor',
-            compact: true,
+            compact: false,
           ),
         ]);
         _processingOrdersDto = [
@@ -1000,42 +1021,42 @@ class _ManageEventsState extends State<ManageEvents>
           EventsApi.instance.listOrders(
             status: 'online_inquiries',
             roleType: 'manager',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'for_processing',
             roleType: 'manager',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'new_event',
             roleType: 'manager',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'for_down_payment',
             roleType: 'manager',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'on_going',
             roleType: 'manager',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'for_full_payment',
             roleType: 'manager',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'completed',
             roleType: 'manager',
-            compact: true,
+            compact: false,
           ),
           EventsApi.instance.listOrders(
             status: 'cancelled',
             roleType: 'manager',
-            compact: true,
+            compact: false,
           ),
         ]);
         _onlineInquiryOrders = lists[0];
@@ -1340,6 +1361,7 @@ class _ManageEventsState extends State<ManageEvents>
       'allergens': _allergensSerialized.trim(),
       'menu': _buildNewEventMenuPayload(),
       'menu_additional_charge_total': _newEventSetMenuAdditionalChargeTotal(),
+      'additional_costs': _newEventAdditionalCosts,
       'themeDesign': {
         'picksBase64': _themePicks.map((b) => base64Encode(b)).toList(),
         'tintEnabled': _themeTintEnabled,
@@ -2042,7 +2064,8 @@ class _ManageEventsState extends State<ManageEvents>
     double travelCost,
     double totalCost,
     String action,
-    {String? eventTitleOverride,
+    {List<Map<String, dynamic>> additionalCosts = const [],
+    String? eventTitleOverride,
     String? eventTypeOverride,
     String? formalityLevelOverride,
     int? guestCountOverride}) {
@@ -2149,6 +2172,7 @@ class _ManageEventsState extends State<ManageEvents>
           'travelCost': travelCost,
         },
       },
+      'additional_costs': additionalCosts,
       'totalCost': totalCost,
       'action': action,
     };
@@ -4351,6 +4375,8 @@ class _ManageEventsState extends State<ManageEvents>
     }
 
     final newItemController = TextEditingController();
+    int? duplicateHighlightIndex;
+    var showNewItemRow = false;
     try {
     await showDialog<void>(
       context: context,
@@ -4358,9 +4384,6 @@ class _ManageEventsState extends State<ManageEvents>
         final dialogSize = MediaQuery.sizeOf(context);
         return StatefulBuilder(
           builder: (context, dialogSetState) {
-            int? duplicateHighlightIndex;
-            var showNewItemRow = false;
-
             void addChecklistByName(
               String raw, {
               Map<String, dynamic>? inventoryRow,
@@ -4893,7 +4916,20 @@ class _ManageEventsState extends State<ManageEvents>
                         },
                       ),
                     ),
-                    const Spacer(),
+                    if (canEditChecklist)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: IconButton(
+                          tooltip: 'Add item',
+                          onPressed: () => dialogSetState(() {
+                            showNewItemRow = true;
+                            duplicateHighlightIndex = null;
+                            newItemController.clear();
+                          }),
+                          icon: const Icon(Icons.add_circle_outline),
+                        ),
+                      ),
+                    const SizedBox(height: 8),
                     // Bottom action buttons
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -6424,6 +6460,348 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
+  String _newEventSideTabLabel(_NewEventSideTab tab) {
+    switch (tab) {
+      case _NewEventSideTab.eventInfo:
+        return 'Event Information';
+      case _NewEventSideTab.menuAndAllergens:
+        return 'Menu & Allergens';
+      case _NewEventSideTab.submitAndCosts:
+        return 'Submit & Costs';
+    }
+  }
+
+  IconData _newEventSideTabIcon(_NewEventSideTab tab) {
+    switch (tab) {
+      case _NewEventSideTab.eventInfo:
+        return Icons.event_note;
+      case _NewEventSideTab.menuAndAllergens:
+        return Icons.restaurant_menu;
+      case _NewEventSideTab.submitAndCosts:
+        return Icons.payments;
+    }
+  }
+
+  Widget _buildNewEventSideTabNav() {
+    final tabs = _NewEventSideTab.values;
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Text(
+              'New Event',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                color: Color(0xFF1E1E1E),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          ...tabs.map((tab) {
+            final active = _activeNewEventSideTab == tab;
+            return Material(
+              color:
+                  active
+                      ? const Color(0xFFFFC024).withValues(alpha: 0.16)
+                      : Colors.transparent,
+              child: InkWell(
+                onTap: () => setState(() => _activeNewEventSideTab = tab),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      left: BorderSide(
+                        color:
+                            active ? const Color(0xFFFFC024) : Colors.transparent,
+                        width: 4,
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _newEventSideTabIcon(tab),
+                        size: 20,
+                        color: active ? Colors.black87 : Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _newEventSideTabLabel(tab),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight:
+                                active ? FontWeight.w700 : FontWeight.w500,
+                            color: active ? Colors.black87 : Colors.grey.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewEventMobileTabs() {
+    final tabs = _NewEventSideTab.values;
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        children:
+            tabs.map((tab) {
+              final active = _activeNewEventSideTab == tab;
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _activeNewEventSideTab = tab),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color:
+                              active
+                                  ? const Color(0xFFFFC024)
+                                  : Colors.transparent,
+                          width: 3,
+                        ),
+                      ),
+                    ),
+                    child: Text(
+                      _newEventSideTabLabel(tab),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                        color: active ? Colors.black87 : Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+      ),
+    );
+  }
+
+  bool _isLastNewEventSideTab() {
+    final tabs = _NewEventSideTab.values;
+    return _activeNewEventSideTab == tabs.last;
+  }
+
+  bool _isFirstNewEventSideTab() {
+    final tabs = _NewEventSideTab.values;
+    return _activeNewEventSideTab == tabs.first;
+  }
+
+  void _nextNewEventSideTab() {
+    final tabs = _NewEventSideTab.values;
+    final idx = tabs.indexOf(_activeNewEventSideTab);
+    if (idx >= 0 && idx < tabs.length - 1) {
+      setState(() => _activeNewEventSideTab = tabs[idx + 1]);
+    }
+  }
+
+  void _prevNewEventSideTab() {
+    final tabs = _NewEventSideTab.values;
+    final idx = tabs.indexOf(_activeNewEventSideTab);
+    if (idx > 0) {
+      setState(() => _activeNewEventSideTab = tabs[idx - 1]);
+    }
+  }
+
+  Widget _buildNewEventEstimatedCostPanel() {
+    final guestCount = int.tryParse(_guestCountController.text.trim()) ?? 0;
+    final dishCost = estimateInquiryCateringTotal(guestCount);
+    final menuAddOns = _newEventSetMenuAdditionalChargeTotal();
+    final labor = double.tryParse(_newEventLaborCostController.text.trim()) ?? 0.0;
+    final travel =
+        double.tryParse(_newEventTravelCostController.text.trim()) ?? 0.0;
+    final additional = _newEventAdditionalCosts.fold<double>(
+      0,
+      (sum, e) => sum + (double.tryParse('${e['amount'] ?? 0}') ?? 0),
+    );
+    final total = dishCost + menuAddOns + labor + travel + additional;
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.receipt_long, size: 20, color: Color(0xFF1E1E1E)),
+                SizedBox(width: 8),
+                Text(
+                  'Estimated Cost',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    color: Color(0xFF1E1E1E),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _buildInfoRow('Dish Cost', formatPesos(dishCost)),
+            _buildInfoRow('Menu Add-ons', formatPesos(menuAddOns)),
+            _buildInfoRow('Labor', formatPesos(labor)),
+            _buildInfoRow('Travel', formatPesos(travel)),
+            _buildInfoRow('Additional Costs', formatPesos(additional)),
+            const SizedBox(height: 8),
+            _buildCostBlock(
+              'Total',
+              formatPesos(total),
+              const Color(0xFFFFC024),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Formula: (pax × 500) + menu add-ons + labor + travel + additional costs',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNewEventCenterContent() {
+    Widget body;
+    switch (_activeNewEventSideTab) {
+      case _NewEventSideTab.eventInfo:
+        body = _buildEventForm();
+        break;
+      case _NewEventSideTab.menuAndAllergens:
+        body = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildEventMenuSection(),
+            const SizedBox(height: 16),
+            _buildFoodBrowser(),
+          ],
+        );
+        break;
+      case _NewEventSideTab.submitAndCosts:
+        body = _buildNewEventSubmissionBar();
+        break;
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            _newEventSideTabLabel(_activeNewEventSideTab),
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1E1E1E),
+            ),
+          ),
+          const SizedBox(height: 12),
+          body,
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              if (!_isFirstNewEventSideTab())
+                OutlinedButton.icon(
+                  onPressed: _prevNewEventSideTab,
+                  icon: const Icon(Icons.arrow_back, size: 16),
+                  label: const Text('Previous'),
+                ),
+              const Spacer(),
+              if (_isLastNewEventSideTab())
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFC024).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check, size: 16),
+                      SizedBox(width: 6),
+                      Text(
+                        'Review submit actions below',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ElevatedButton.icon(
+                  onPressed: _nextNewEventSideTab,
+                  icon: const Text('Next'),
+                  label: const Icon(Icons.arrow_forward, size: 16),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFFC024),
+                    foregroundColor: const Color(0xFF1E1E1E),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewEventFormLayout(bool isNarrow) {
+    if (isNarrow) {
+      return Column(
+        children: [
+          _buildNewEventMobileTabs(),
+          Expanded(child: _buildNewEventCenterContent()),
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(width: 300, child: _buildNewEventSideTabNav()),
+        Expanded(flex: 3, child: _buildNewEventCenterContent()),
+        SizedBox(
+          width: 400,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(0, 16, 16, 16),
+            child: _buildNewEventEstimatedCostPanel(),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildBodyContent(EventStatus status, bool isNarrow) {
     switch (status) {
       case EventStatus.onlineInquiries:
@@ -6437,29 +6815,7 @@ class _ManageEventsState extends State<ManageEvents>
       case EventStatus.completed:
         return _buildCompletedEventsView(isNarrow);
       case EventStatus.newEvent:
-        // Mobile-like layout: single column flow + smaller centered window.
-        return Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 940),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildEventForm(),
-                  const SizedBox(height: 20),
-                  _buildEventMenuSection(),
-                  const SizedBox(height: 20),
-                  _buildFoodBrowser(),
-                  const SizedBox(height: 20),
-                  _buildNewEventSubmissionBar(),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            ),
-          ),
-        );
+        return _buildNewEventFormLayout(isNarrow);
     }
   }
 
@@ -6539,6 +6895,88 @@ class _ManageEventsState extends State<ManageEvents>
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Additional costs',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _newEventAdditionalCostLabelController,
+                          decoration: const InputDecoration(
+                            labelText: 'Label',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 140,
+                        child: TextField(
+                          controller: _newEventAdditionalCostAmountController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Amount',
+                            prefixText: 'PHP ',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Add additional cost',
+                        onPressed: () {
+                          final label =
+                              _newEventAdditionalCostLabelController.text.trim();
+                          final amount = double.tryParse(
+                            _newEventAdditionalCostAmountController.text.trim(),
+                          );
+                          if (label.isEmpty || amount == null) return;
+                          setState(() {
+                            _newEventAdditionalCosts.add({
+                              'label': label,
+                              'amount': amount,
+                            });
+                            _newEventAdditionalCostLabelController.clear();
+                            _newEventAdditionalCostAmountController.clear();
+                          });
+                        },
+                        icon: const Icon(Icons.add_circle_outline),
+                      ),
+                    ],
+                  ),
+                  if (_newEventAdditionalCosts.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    ..._newEventAdditionalCosts.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final row = entry.value;
+                      final amount =
+                          double.tryParse('${row['amount'] ?? 0}') ?? 0;
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${row['label']} — ${formatPesos(amount)}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Remove additional cost',
+                            onPressed: () => setState(
+                              () => _newEventAdditionalCosts.removeAt(index),
+                            ),
+                            icon: const Icon(Icons.delete_outline, size: 18),
+                          ),
+                        ],
+                      );
+                    }),
+                  ],
                   const SizedBox(height: 8),
                   Text(
                     'Total cost: ${formatPesos(total)}',
@@ -7443,7 +7881,10 @@ class _ManageEventsState extends State<ManageEvents>
             child: Row(
               children: [
                 TextButton.icon(
-                  onPressed: () => setState(() => _showNewEventForm = false),
+                  onPressed: () => setState(() {
+                    _showNewEventForm = false;
+                    _activeNewEventSideTab = _NewEventSideTab.eventInfo;
+                  }),
                   icon: const Icon(Icons.arrow_back),
                   label: const Text('Back to list'),
                 ),
@@ -7466,7 +7907,10 @@ class _ManageEventsState extends State<ManageEvents>
             child: Align(
               alignment: Alignment.centerLeft,
               child: FilledButton.icon(
-                onPressed: () => setState(() => _showNewEventForm = true),
+                onPressed: () => setState(() {
+                  _showNewEventForm = true;
+                  _activeNewEventSideTab = _NewEventSideTab.eventInfo;
+                }),
                 icon: const Icon(Icons.add_circle_outline),
                 label: const Text('CREATE NEW EVENT'),
                 style: FilledButton.styleFrom(

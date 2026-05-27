@@ -174,16 +174,36 @@ class _MyOrdersPageState extends State<MyOrdersPage>
 
   bool _isInsufficientPayment(Map<String, dynamic> order) {
     final u = _statusUpper(order);
+    final stage =
+        (order['fulfillment_stage'] ?? order['fulfillmentStage'] ?? '')
+            .toString()
+            .toUpperCase();
     final paymentStatus =
         (order['payment_status'] ?? order['paymentStatus'] ?? '')
             .toString()
             .toUpperCase();
     final paymentReview =
         (order['balance_proof_pending_review'] ?? false) == true;
-    final balanceDue = _parseDouble(order['balance_due'] ?? order['balance_amount']);
+    final balanceDue = _parseDouble(
+      order['balance_due'] ??
+          order['balance_amount'] ??
+          order['remaining_balance'] ??
+          order['remainingBalance'] ??
+          order['short_amount'] ??
+          order['shortAmount'] ??
+          order['unpaid_balance'] ??
+          order['unpaidBalance'],
+    );
     return u.contains('INSUFFICIENT') ||
+        u.contains('PAYMENT_INSUFFICIENT') ||
+        u.contains('WAIT_BALANCE') ||
+        u.contains('BALANCE_REVIEW') ||
         u.contains('PAYMENT INSUFFICIENT') ||
+        stage.contains('WAIT_BALANCE') ||
+        stage.contains('BALANCE_REVIEW') ||
         paymentStatus.contains('INSUFFICIENT') ||
+        paymentStatus.contains('PAYMENT_INSUFFICIENT') ||
+        paymentStatus.contains('WAIT_BALANCE') ||
         paymentStatus.contains('BALANCE') ||
         paymentReview ||
         balanceDue > 0;
