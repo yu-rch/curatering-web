@@ -462,11 +462,8 @@ extension _ManageEventsDetailExt on _ManageEventsState {
     );
     if (ok != true || !mounted) return;
     try {
-      await EventsApi.instance.completePostAnalysis(
+      await EventsApi.instance.completeOrder(
         orderId: order.id,
-        businessCardsGivenAway: 0,
-        onTheSpotInquiries: 0,
-        complaints: 0,
       );
       if (!mounted) return;
       await _refreshOrders();

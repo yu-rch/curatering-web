@@ -1694,13 +1694,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
           onPressed: () async {
             _mutateTableState(() => _postAnalysisSaving = true);
             try {
-              await EventsApi.instance.completePostAnalysis(
+              await EventsApi.instance.completeOrder(
                 orderId: dto.id,
-                businessCardsGivenAway:
-                    int.tryParse(_postCardsController.text.trim()) ?? 0,
-                onTheSpotInquiries:
-                    int.tryParse(_postInquiriesController.text.trim()) ?? 0,
-                complaints: 0,
               );
               if (!mounted) return;
               Navigator.of(context).pop();
