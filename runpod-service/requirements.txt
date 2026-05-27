@@ -2,6 +2,7 @@ runpod
 
 torch==2.1.0
 torchvision==0.16.0
+torchaudio==2.1.0
 
 diffusers==0.27.2
 transformers==4.39.3
@@ -9,8 +10,8 @@ accelerate==0.28.0
 huggingface_hub==0.20.3
 
 xformers==0.0.22.post7
-safetensors
 
+safetensors
 controlnet_aux
 opencv-python
 timm

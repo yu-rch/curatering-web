@@ -38,7 +38,11 @@ async function chatJson(system, user) {
 export async function expandEventPrompt(input = {}) {
   const intensity = resolveIntensity(input);
 
-  const corrected = autoSceneCorrector(input);
+  const planned = await planEventScene(input);
+  const corrected = autoSceneCorrector({
+    ...input,
+    scene_graph: planned,
+  });
   const scene = corrected.scene_graph;
 
   const prompt = compileScenePrompt(scene, {
