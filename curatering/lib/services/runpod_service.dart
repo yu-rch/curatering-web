@@ -190,6 +190,17 @@ class RunPodService {
     return status.toString().trim().toUpperCase();
   }
 
+  static bool _isNanoEventDesignInput(Map<String, dynamic> input) {
+    final taskType =
+        '${input['task_type'] ?? input['task'] ?? ''}'.trim().toLowerCase();
+    return taskType == 'nano_event_design';
+  }
+
+  static String _nanoResultUrl(String jobId) {
+    return 'https://image.runpod.ai/google-nano-banana-2-edit/'
+        '${Uri.encodeComponent(jobId)}/result.png';
+  }
+
   static bool _statusIsQueued(String? status) {
     if (status == null) return false;
     return status == 'IN_QUEUE' ||
@@ -520,6 +531,7 @@ class RunPodService {
         input['init_image_base64'] = _normalizeB64(init);
         input['strength'] = strength;
       }
+      final useNanoResultFallback = _isNanoEventDesignInput(input);
       final response = await http
           .post(
             _runUri(),
@@ -541,13 +553,21 @@ class RunPodService {
               _runpodOutputError(data['output']) ?? _runpodOutputError(data);
           if (outputError != null) throw _RunPodTerminalException(outputError);
           if (jobId != null && jobId.isNotEmpty) {
-            return await _pollForCompletion(jobId);
+            return await _pollForCompletion(
+              jobId,
+              fallbackImageUrl:
+                  useNanoResultFallback ? _nanoResultUrl(jobId) : null,
+            );
           }
           throw _RunPodTerminalException(_formatNoImageResult(data));
         }
 
         if (jobId != null && jobId.isNotEmpty) {
-          return await _pollForCompletion(jobId);
+          return await _pollForCompletion(
+            jobId,
+            fallbackImageUrl:
+                useNanoResultFallback ? _nanoResultUrl(jobId) : null,
+          );
         }
 
         if (_statusIsFailed(status)) {
@@ -578,7 +598,10 @@ class RunPodService {
     return 'Job failed: $err';
   }
 
-  static Future<String?> _pollForCompletion(String jobId) async {
+  static Future<String?> _pollForCompletion(
+    String jobId, {
+    String? fallbackImageUrl,
+  }) async {
     int attempts = 0;
     Object? lastError;
 
@@ -607,6 +630,7 @@ class RunPodService {
                 _runpodOutputError(data['output']) ?? _runpodOutputError(data);
             if (outputError != null)
               throw _RunPodTerminalException(outputError);
+            if (fallbackImageUrl != null) return fallbackImageUrl;
             throw _RunPodTerminalException(_formatNoImageResult(data));
           }
           if (_statusIsFailed(status)) {
