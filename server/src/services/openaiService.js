@@ -323,13 +323,13 @@ ${JSON.stringify(data)}
 
 export async function expandEventPrompt(input) {
   const prompt = `
-Transform this event design request into SDXL-ready visual prompt JSON.
+Transform this event design request into SDXL img2img editing prompt JSON.
 
 Return ONLY valid JSON.
 
 Schema:
 {
-  "positive_prompt": "concise comma-separated SDXL prompt, maximum 60-70 meaningful tokens",
+  "positive_prompt": "concise comma-separated SDXL img2img edit prompt, under 60 meaningful tokens",
   "negative_prompt": "concise comma-separated negative prompt",
   "theme_tokens": ["string"],
   "decor_tokens": ["string"],
@@ -339,17 +339,22 @@ Schema:
 
 Rules:
 - You are an SDXL prompt engineer.
-- Generate concise, visually dense prompts optimized for SDXL.
-- Maximum 60-70 meaningful tokens.
+- Generate concise SDXL img2img editing prompts.
+- Focus on what should be ADDED.
+- Focus on what should be REPLACED.
+- Focus on what should be TRANSFORMED.
+- Avoid generic environment descriptions.
+- Avoid repeating existing venue details.
+- Keep prompts under 60 meaningful tokens.
 - Avoid repetition.
-- Prioritize visual elements.
+- Prioritize requested visual edits, decor, props, palette, focal pieces, and surface transformations.
 - Use cinematic descriptors.
 - Keep architecture realistic.
 - Preserve room geometry.
 - Avoid redundant lighting/style terms.
 - Optimize for photorealism.
 - Remove prose, explanations, and instructions.
-- Return comma-separated dense visual concepts only.
+- Return comma-separated edit concepts only.
 - Normalize themes and remove conflicting aesthetics.
 
 Event config:
@@ -358,14 +363,14 @@ ${JSON.stringify(input)}
 
   const json = await createJsonCompletion({
     system:
-      "You are an SDXL prompt engineer. Generate concise, visually dense prompts optimized for SDXL.",
+      "You are an SDXL prompt engineer. Generate concise SDXL img2img editing prompts focused on added, replaced, and transformed elements.",
     user: prompt,
     temperature: 0.25,
     maxTokens: 450,
   });
 
   return {
-    positive_prompt: compactSdxlPrompt(json.positive_prompt || json.prompt),
+    positive_prompt: compactSdxlPrompt(json.positive_prompt || json.prompt, 60),
     negative_prompt: compactSdxlPrompt(json.negative_prompt, 35),
     theme_tokens: stringList(json.theme_tokens),
     decor_tokens: stringList(json.decor_tokens),
