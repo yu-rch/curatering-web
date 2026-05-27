@@ -104,6 +104,9 @@ class CartStore extends ChangeNotifier {
 
   CartStore._();
 
+  bool _initInProgress = false;
+  bool _initialized = false;
+
   List<CartItem> _items = [];
 
   List<CartItem> get items => List.unmodifiable(_items);
@@ -333,14 +336,32 @@ class CartStore extends ChangeNotifier {
   }
 
   Future<void> init() async {
-    // Always load local cart first so tray is never empty on reload
-    await _loadCart();
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('customer_token');
-    if (token != null && token.isNotEmpty) {
+    if (_initInProgress) return;
+    if (_initialized) return;
+    _initInProgress = true;
+    try {
+      await _loadCart();
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('customer_token');
+      if (token == null || token.isEmpty) {
+        if (_items.isNotEmpty) {
+          _items = [];
+          await _saveCart();
+          notifyListeners();
+        }
+        return;
+      }
       ApiClient.instance.setCustomerBearer(token);
-      // Only replace local if server has items; don't clear local tray
       await CartSyncService.instance.syncFromServer();
+    } finally {
+      _initInProgress = false;
+      _initialized = true;
     }
+  }
+
+  /// Call after logout so the next login re-syncs tray from the server.
+  void resetInitState() {
+    _initialized = false;
+    _initInProgress = false;
   }
 }

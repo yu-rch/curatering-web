@@ -11,6 +11,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config.dart';
 import '../utils/order_display_utils.dart';
 import '../services/customer_orders_cache.dart';
+import '../services/menu_store.dart';
+import '../widgets/restaurant_order_feedback_dialog.dart';
 
 class MyOrdersPage extends StatefulWidget {
   const MyOrdersPage({super.key});
@@ -164,24 +166,68 @@ class _MyOrdersPageState extends State<MyOrdersPage>
     }
   }
 
+  String _statusUpper(Map<String, dynamic> order) =>
+      (order['order_status'] ?? order['status'] ?? '').toString().toUpperCase();
+
+  String _fulfillmentUpper(Map<String, dynamic> order) =>
+      (order['fulfillment_stage'] ?? '').toString().toUpperCase();
+
+  bool _isInsufficientPayment(Map<String, dynamic> order) {
+    final u = _statusUpper(order);
+    return u.contains('INSUFFICIENT') || u.contains('PAYMENT INSUFFICIENT');
+  }
+
+  bool _isOverpayment(Map<String, dynamic> order) {
+    return _statusUpper(order).contains('OVERPAYMENT');
+  }
+
   List<Map<String, dynamic>> _ordersForTab(String tab) {
     return _orders.where((o) {
-      final s = (o['order_status'] ?? o['status'] ?? '').toString().toLowerCase();
+      final u = _statusUpper(o);
+      final stage = _fulfillmentUpper(o);
+      if (u.contains('CANCEL')) {
+        return tab == 'cancelled';
+      }
       switch (tab) {
         case 'pending':
-          return s == 'pending' || s == 'pending_cashier';
+          return u.contains('PENDING') ||
+              u.contains('WAITING FOR PAYMENT') ||
+              u.contains('WAITING FOR ORDER') ||
+              u.contains('BALANCE PAYMENT') ||
+              _isInsufficientPayment(o);
         case 'confirmed':
-          return s == 'confirmed' || s == 'preparing';
+          if (u.contains('DELIVERED') || stage == 'DELIVERED') return false;
+          if (u.contains('OUT FOR DELIVERY') || stage == 'OUT_FOR_DELIVERY') {
+            return false;
+          }
+          return u.contains('ORDER CONFIRMED') ||
+              u.contains('CONFIRMED') ||
+              u.contains('PREPARING') ||
+              stage == 'IN_PREPARATION' ||
+              _isOverpayment(o);
         case 'out_for_delivery':
-          return s == 'out_for_delivery' || s == 'out for delivery';
+          return u.contains('OUT FOR DELIVERY') || stage == 'OUT_FOR_DELIVERY';
         case 'delivered':
-          return s == 'delivered' || s == 'completed';
+          return u.contains('DELIVERED') || stage == 'DELIVERED';
         case 'cancelled':
-          return s == 'cancelled';
+          return false;
         default:
           return false;
       }
     }).toList();
+  }
+
+  Future<void> _openTrackingLink(String url) async {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return;
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null) return;
+    if (!uri.hasScheme && trimmed.startsWith('/')) {
+      if (!mounted) return;
+      Navigator.of(context).pushNamed(trimmed);
+      return;
+    }
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   String _orderKey(Map<String, dynamic> order) {
@@ -217,7 +263,85 @@ class _MyOrdersPageState extends State<MyOrdersPage>
 
   List<Map<String, dynamic>> _normalizeItems(dynamic raw) {
     if (raw is! List) return const [];
-    return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    return raw.whereType<Map>().map((e) {
+      final item = Map<String, dynamic>.from(e);
+      final dishId = (item['dish_id'] ??
+              item['dishId'] ??
+              item['menu_dish_id'] ??
+              item['id'] ??
+              '')
+          .toString();
+      var name = (item['name'] ??
+              item['dishName'] ??
+              item['dish_name'] ??
+              item['item_name'] ??
+              '')
+          .toString()
+          .trim();
+      final looksUnknown =
+          name.isEmpty || name.toLowerCase().contains('unknown');
+      if (looksUnknown && dishId.isNotEmpty) {
+        final dish = MenuStore.instance.findDishById(dishId);
+        if (dish != null) {
+          name = dish.name;
+          item['name'] = name;
+          item['dishName'] = name;
+          if (item['image_base64'] == null && item['imageBase64'] == null) {
+            item['image_base64'] = dish.imageBase64;
+          }
+        }
+      }
+      if (name.isEmpty) name = 'Item';
+      item['name'] = name;
+      return item;
+    }).toList();
+  }
+
+  Widget _buildFeedbackPrompt({
+    required VoidCallback onPressed,
+    bool submitted = false,
+  }) {
+    if (submitted) {
+      return Row(
+        children: [
+          Icon(Icons.check_circle, color: Colors.green.shade400, size: 20),
+          const SizedBox(width: 8),
+          Text(
+            'Thank you for your feedback!',
+            style: TextStyle(color: Colors.green.shade700, fontSize: 12),
+          ),
+        ],
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFC024).withOpacity(0.22),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFFC024).withOpacity(0.5)),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: 'Rate this order',
+            onPressed: onPressed,
+            icon: const Icon(Icons.rate_review_outlined, color: Color(0xFF1E1E1E)),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+          Expanded(
+            child: Text(
+              'How was your order? Your feedback will help us improve!',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF1E1E1E),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   String _formatDate(String? iso) {
@@ -346,8 +470,8 @@ class _MyOrdersPageState extends State<MyOrdersPage>
             Uri.parse('$_apiBaseUrl/api/restaurant/orders/${Uri.encodeComponent(key)}/payment'),
             headers: _authHeaders(token),
             body: jsonEncode({
-              'paymentProofBase64': base64Img,
-              'referenceNumber': refNumber,
+              'paymentProof': base64Img,
+              'paymentReference': refNumber,
               'type': 'balance',
             }),
           )
@@ -653,7 +777,12 @@ class _MyOrdersPageState extends State<MyOrdersPage>
         final key = _orderKey(order);
         final isSelected = _selectedOrder != null && _orderKey(_selectedOrder!) == key;
         final status = (order['order_status'] ?? order['status'] ?? 'pending').toString().toLowerCase();
-        final customerName = order['customer_name'] ?? order['customerName'] ?? '';
+        final customerName = order['full_name'] ??
+            order['customer_name'] ??
+            order['customerName'] ??
+            '';
+        final paymentMethod =
+            order['payment_method'] ?? order['payment_mode'] ?? '';
         final total = _parseDouble(order['total_amount'] ?? order['total_cost']);
 
         return Material(
@@ -714,6 +843,38 @@ class _MyOrdersPageState extends State<MyOrdersPage>
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
+                  if (paymentMethod.toString().isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      paymentMethod.toString(),
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (_isInsufficientPayment(order))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Insufficient payment',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.red.shade700,
+                        ),
+                      ),
+                    ),
+                  if (_isOverpayment(order))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Overpayment',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.orange.shade800,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -746,10 +907,18 @@ class _MyOrdersPageState extends State<MyOrdersPage>
   Widget _buildOrderDetail(Map<String, dynamic> order) {
     final items = _normalizeItems(order['tray_items'] ?? order['items']);
     final status = (order['order_status'] ?? order['status'] ?? 'pending').toString().toLowerCase();
-    final customerName = order['customer_name'] ?? order['customerName'] ?? '—';
-    final customerPhone = order['customer_phone'] ?? order['phone'] ?? '';
+    final customerName = order['full_name'] ??
+        order['customer_name'] ??
+        order['customerName'] ??
+        '—';
+    final customerPhone =
+        order['contact_number'] ?? order['customer_phone'] ?? order['phone'] ?? '';
     final deliveryAddress = order['delivery_address'] ?? '';
-    final paymentMethod = order['payment_method'] ?? order['paymentMethod'] ?? '—';
+    final paymentMethod =
+        order['payment_method'] ?? order['payment_mode'] ?? order['paymentMethod'] ?? '—';
+    final feedbackStars = order['feedback_stars'];
+    final canSubmitFeedback = status == 'delivered' ||
+        _statusUpper(order).contains('DELIVERED');
     final amountPaid = _parseDouble(order['amount_paid'] ?? order['total_amount'] ?? order['total_cost']);
     final trackingUrl = order['delivery_tracking_url']?.toString();
     final paymentProof = order['payment_proof']?.toString();
@@ -802,11 +971,48 @@ class _MyOrdersPageState extends State<MyOrdersPage>
           ),
           // Detail body
           Expanded(
-            child: SingleChildScrollView(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (canSubmitFeedback)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: _buildFeedbackPrompt(
+                        submitted: feedbackStars != null,
+                        onPressed: () async {
+                          final submitted = await showRestaurantOrderFeedbackDialog(
+                            context,
+                            orderId: key,
+                            orderLabel: _shortOrderId(order),
+                            getToken: _getToken,
+                          );
+                          if (submitted) _loadOrders(force: true);
+                        },
+                      ),
+                    ),
+                  if (_isInsufficientPayment(order))
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Text(
+                        'Insufficient payment — please submit balance payment proof and GCash reference below.',
+                        style: TextStyle(
+                          color: Colors.red.shade800,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
                   // Customer info
                   _sectionTitle('Customer Information'),
                   const SizedBox(height: 8),
@@ -829,12 +1035,7 @@ class _MyOrdersPageState extends State<MyOrdersPage>
                     _sectionTitle('Delivery Tracking'),
                     const SizedBox(height: 8),
                     InkWell(
-                      onTap: () async {
-                        final uri = Uri.tryParse(trackingUrl);
-                        if (uri != null) {
-                          await launchUrl(uri, mode: LaunchMode.externalApplication);
-                        }
-                      },
+                      onTap: () => _openTrackingLink(trackingUrl),
                       child: Row(
                         children: [
                           Icon(Icons.local_shipping, size: 16, color: Colors.blue.shade700),
@@ -860,21 +1061,33 @@ class _MyOrdersPageState extends State<MyOrdersPage>
                   _sectionTitle('Items (${items.length})'),
                   const SizedBox(height: 8),
                   ...items.map((item) {
-                    final name = item['name'] ?? item['dishName'] ?? 'Unknown item';
-                    final qty = item['quantity'] ?? 1;
-                    final price = _parseDouble(item['price']);
+                    final name = item['name'] ?? item['dishName'] ?? 'Item';
+                    final qty = item['quantity'] ?? item['qty'] ?? 1;
+                    final price = _parseDouble(item['price'] ?? item['dishPrice']);
+                    final imgB64 = (item['image_base64'] ?? item['imageBase64'])?.toString();
+                    Widget thumb;
+                    if (imgB64 != null && imgB64.isNotEmpty) {
+                      try {
+                        thumb = ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.memory(
+                            base64Decode(imgB64),
+                            width: 36,
+                            height: 36,
+                            fit: BoxFit.cover,
+                          ),
+                        );
+                      } catch (_) {
+                        thumb = _itemPlaceholderThumb();
+                      }
+                    } else {
+                      thumb = _itemPlaceholderThumb();
+                    }
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Row(
                         children: [
-                          Container(
-                            width: 36, height: 36,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(Icons.restaurant, color: Colors.grey.shade500, size: 18),
-                          ),
+                          thumb,
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
@@ -920,7 +1133,8 @@ class _MyOrdersPageState extends State<MyOrdersPage>
                   ],
 
                   // Balance payment section
-                  if (balanceDue > 0 && isActive) ...[
+                  if ((_isInsufficientPayment(order) || balanceDue > 0) &&
+                      (isActive || isPending)) ...[
                     const SizedBox(height: 8),
                     _buildBalancePaymentSection(order, balanceDue),
                     const SizedBox(height: 20),
@@ -974,6 +1188,7 @@ class _MyOrdersPageState extends State<MyOrdersPage>
                 ],
               ),
             ),
+            ),
           ),
         ],
       ),
@@ -1000,6 +1215,18 @@ class _MyOrdersPageState extends State<MyOrdersPage>
     return Text(
       title,
       style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 14),
+    );
+  }
+
+  Widget _itemPlaceholderThumb() {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(Icons.restaurant, color: Colors.grey.shade500, size: 18),
     );
   }
 

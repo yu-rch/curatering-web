@@ -2,10 +2,13 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:async';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:printing/printing.dart';
+import '../features/event_design/event_theme_design_screen.dart';
+import '../features/seating/seating_layout_editor_screen.dart';
 import '../auth/action_permissions.dart';
 import '../auth/auth_session.dart';
 import '../config/api_config.dart';
@@ -3476,15 +3479,8 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   String _transactionNumberForOrder(EventOrderDto order) {
-    try {
-      final txn =
-          (order as dynamic).orderNumber ??
-          (order as dynamic).orderNo ??
-          (order as dynamic).orderId;
-      if (txn is String && txn.trim().isNotEmpty) return txn;
-      if (txn is int) return txn.toString();
-    } catch (_) {}
-    return 'N/A';
+    final txn = order.transactionNo.trim();
+    return txn.isNotEmpty ? txn : 'N/A';
   }
 
   Future<bool> _confirmOrderPayment(
@@ -3493,6 +3489,7 @@ class _ManageEventsState extends State<ManageEvents>
     PaymentService paymentService,
     String referenceNumber, {
     double? amount,
+    String? paymentProofBase64,
   }) async {
     try {
       setState(() => _paymentDialogLoading = true);
@@ -3508,6 +3505,7 @@ class _ManageEventsState extends State<ManageEvents>
         referenceNumber: referenceNumber,
         paymentMethod: paymentService.apiValue,
         amount: amount,
+        paymentProofBase64: paymentProofBase64,
       );
 
       try {
@@ -3606,6 +3604,8 @@ class _ManageEventsState extends State<ManageEvents>
     var selectedPaymentService = PaymentService.cash;
     var downpaymentOption = DownpaymentAmountOption.percent50;
     var fullPaymentOption = FullPaymentAmountOption.remainingBalance;
+    String? paymentProofBase64;
+    String? paymentProofFileName;
     final referenceController = TextEditingController();
     final customAmountController = TextEditingController();
     final orderTotal = _orderTotalAmount(order);
@@ -3664,6 +3664,52 @@ class _ManageEventsState extends State<ManageEvents>
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Total cost',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                formatPesos(orderTotal),
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (isDownpayment)
+                                Text(
+                                  'Down payment due (50%): ${formatPesos(orderTotal / 2)}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                )
+                              else
+                                Text(
+                                  'Balance due: ${formatPesos(remainingBalance)}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         if (isDownpayment) ...[
                           const Text(
                             'Downpayment amount',
@@ -3842,6 +3888,33 @@ class _ManageEventsState extends State<ManageEvents>
                           onChanged: (_) => dialogSetState(() {}),
                         ),
                         const SizedBox(height: 16),
+                        const Text(
+                          'Payment proof (optional)',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final result = await FilePicker.platform.pickFiles(
+                              type: FileType.image,
+                              withData: true,
+                            );
+                            if (result == null || result.files.isEmpty) return;
+                            final file = result.files.first;
+                            if (file.bytes == null) return;
+                            dialogSetState(() {
+                              paymentProofFileName = file.name;
+                              paymentProofBase64 = base64Encode(file.bytes!);
+                            });
+                          },
+                          icon: const Icon(Icons.upload_file, size: 18),
+                          label: Text(
+                            paymentProofBase64 == null
+                                ? 'Upload proof image'
+                                : 'Proof: ${paymentProofFileName ?? 'image'}',
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         Center(
                           child: TextButton(
                             onPressed: () => _showOrderSummaryDialog(order),
@@ -3897,6 +3970,7 @@ class _ManageEventsState extends State<ManageEvents>
                                 selectedPaymentService,
                                 reference,
                                 amount: payAmount,
+                                paymentProofBase64: paymentProofBase64,
                               );
                               if (confirmed && mounted) {
                                 Navigator.of(context).pop();
@@ -4423,43 +4497,58 @@ class _ManageEventsState extends State<ManageEvents>
                       if (showInventoryPicker &&
                           inventoryOptions.isNotEmpty) ...[
                         const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Add from inventory',
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                          hint: const Text('Select inventory item'),
-                          items:
-                              inventoryOptions
-                                  .map(
-                                    (row) => DropdownMenuItem<String>(
-                                      value: row['id']?.toString(),
-                                      child: Text(
-                                        '${row['name']} (${row['quantity']} ${row['unit']})',
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                          onChanged: (id) {
-                            if (id == null) return;
-                            final row = inventoryOptions.firstWhere(
-                              (r) => r['id']?.toString() == id,
+                        Autocomplete<Map<String, dynamic>>(
+                          optionsBuilder: (text) {
+                            final q = text.text.trim().toLowerCase();
+                            if (q.isEmpty) {
+                              return inventoryOptions.take(20);
+                            }
+                            return inventoryOptions.where((row) {
+                              final name =
+                                  '${row['name'] ?? ''}'.toLowerCase();
+                              final cat =
+                                  '${row['category'] ?? ''}'.toLowerCase();
+                              return name.contains(q) || cat.contains(q);
+                            }).take(20);
+                          },
+                          displayStringForOption: (row) =>
+                              '${row['name']} (${row['quantity']} ${row['unit']})',
+                          fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
+                            return TextField(
+                              controller: controller,
+                              focusNode: focusNode,
+                              decoration: const InputDecoration(
+                                labelText: 'Add from inventory (type to search)',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
                             );
-                            final unitCost =
-                                row['unitCost'] is num
-                                    ? (row['unitCost'] as num).toDouble()
-                                    : double.tryParse('${row['unitCost']}') ??
-                                        0;
+                          },
+                          onSelected: (row) {
+                            final name = '${row['name']}'.trim();
+                            final duplicate = editableItems.any(
+                              (e) => e.item.trim().toLowerCase() == name.toLowerCase(),
+                            );
+                            if (duplicate) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    '"$name" is already on the checklist.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                            final id = row['id']?.toString() ?? '';
+                            final unitCost = row['unitCost'] is num
+                                ? (row['unitCost'] as num).toDouble()
+                                : double.tryParse('${row['unitCost']}') ?? 0;
                             dialogSetState(() {
                               editableItems.add(
                                 ChecklistItem(
-                                  item: '${row['name']}',
+                                  item: name,
                                   description:
-                                      (row['category'] ?? 'Inventory')
-                                          .toString(),
+                                      (row['category'] ?? 'Inventory').toString(),
                                   quantity: 1,
                                   cost: unitCost,
                                   inventoryId: id,

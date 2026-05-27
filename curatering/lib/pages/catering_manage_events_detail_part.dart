@@ -116,8 +116,21 @@ extension _ManageEventsDetailExt on _ManageEventsState {
     }
 
     final stage = _activeManageEventsStage;
-    final tx = order.cateringId.isNotEmpty ? order.cateringId : order.id;
+    final tx = order.transactionNo;
     final total = order.totalCost > 0 ? order.totalCost : computeOrderTotalCost(order);
+    final isCancelled = stage == 'cancelled' || order.status == 'cancelled';
+    final isReadOnlyStage =
+        isCancelled || stage == 'completed' || stage == 'for_full_payment';
+    final canEditTheme = !isCancelled &&
+        stage != 'for_full_payment' &&
+        stage != 'completed' &&
+        (order.orderType == 'catering_event' ||
+            order.orderType.contains('event') ||
+            order.includeMinimalEventStyling == true);
+    final showSeating = stage == 'for_down_payment' ||
+        stage == 'on_going' ||
+        stage == 'for_full_payment' ||
+        stage == 'completed';
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -142,7 +155,8 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                     ),
                   ),
                 ),
-                if (stage == 'online_inquiries' || stage == 'new_event')
+                if (!isCancelled &&
+                    (stage == 'online_inquiries' || stage == 'new_event'))
                   TextButton(
                     onPressed: () => _openFinalizeOnlineInquiryDialog(order),
                     child: const Text('Move to Down Payment', style: TextStyle(color: Colors.white)),
@@ -151,7 +165,9 @@ extension _ManageEventsDetailExt on _ManageEventsState {
             ),
           ),
           Expanded(
-            child: SingleChildScrollView(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -161,6 +177,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        _detailInfoRow('Transaction #', tx),
                         _detailInfoRow('Event', order.eventTitle),
                         _detailInfoRow('Customer', order.customerName),
                         _detailInfoRow('Contact', order.contactPerson),
@@ -174,7 +191,30 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                       ],
                     ),
                   ),
-                  if (stage == 'for_down_payment') ...[
+                  if (showSeating) ...[
+                    const SizedBox(height: 12),
+                    _detailSection(
+                      'Seating layout',
+                      child: isReadOnlyStage
+                          ? Text(
+                              order.seatingPlan.tables.isEmpty
+                                  ? 'No seating plan saved.'
+                                  : '${order.seatingPlan.tables.length} table(s) configured.',
+                              style: const TextStyle(fontSize: 12),
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: () => _openSeatingEditor(order),
+                                  icon: const Icon(Icons.event_seat, size: 18),
+                                  label: const Text('Edit seating layout'),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ],
+                  if (stage == 'for_down_payment' && !isCancelled) ...[
                     const SizedBox(height: 12),
                     _detailSection(
                       'Down payment',
@@ -208,7 +248,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                       ),
                     ),
                   ],
-                  if (stage == 'on_going') ...[
+                  if (stage == 'on_going' && !isCancelled) ...[
                     const SizedBox(height: 12),
                     _detailSection(
                       'Checklist',
@@ -249,6 +289,12 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           OutlinedButton.icon(
+                            onPressed: () => _showTaskAssignmentEditor(order),
+                            icon: const Icon(Icons.edit_note, size: 18),
+                            label: const Text('Task Assignment Editor'),
+                          ),
+                          const SizedBox(height: 6),
+                          OutlinedButton.icon(
                             onPressed: () async {
                               final rows = _taskRowsFromOrder(order);
                               final bytes = await buildTaskAssignmentPdf(
@@ -275,7 +321,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                       ),
                     ),
                   ],
-                  if (stage == 'for_full_payment') ...[
+                  if (stage == 'for_full_payment' && !isCancelled) ...[
                     const SizedBox(height: 12),
                     _detailSection(
                       'Full payment',
@@ -297,11 +343,24 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                           ),
                           const SizedBox(height: 8),
                           FilledButton.icon(
-                            onPressed: () => _openFullPaymentCompleteModal(order),
+                            onPressed: order.fullPaymentStatus == 'paid'
+                                ? () => _completeOrderWithConfirm(order)
+                                : null,
                             icon: const Icon(Icons.check_circle_outline, size: 18),
                             label: const Text('Complete order'),
                             style: FilledButton.styleFrom(backgroundColor: Colors.green.shade700),
                           ),
+                          if (order.fullPaymentStatus != 'paid')
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Text(
+                                'Confirm full payment before completing this order.',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.orange.shade800,
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -349,17 +408,214 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                       ],
                     ),
                   ),
-                  if (_orderHasEventDesign(order)) ...[
+                  if (_orderHasEventDesign(order) || canEditTheme) ...[
                     const SizedBox(height: 12),
-                    _buildEventDesignDetailSection(order),
+                    _buildEventDesignDetailSection(order, readOnly: !canEditTheme),
                   ],
                 ],
               ),
+            ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _completeOrderWithConfirm(EventOrderDto order) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Complete order'),
+        content: const Text(
+          'Are you sure you want to mark this transaction complete?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Complete')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await EventsApi.instance.completePostAnalysis(
+        orderId: order.id,
+        businessCardsGivenAway: 0,
+        onTheSpotInquiries: 0,
+        complaints: 0,
+      );
+      if (!mounted) return;
+      await _refreshOrders();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Order marked completed.')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _showTaskAssignmentEditor(EventOrderDto order) async {
+    final rows = List<Map<String, dynamic>>.from(_taskRowsFromOrder(order));
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModal) {
+            return AlertDialog(
+              title: Text('Task assignment — ${order.transactionNo}'),
+              content: SizedBox(
+                width: 720,
+                height: 420,
+                child: Column(
+                  children: [
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () {
+                          setModal(() {
+                            rows.add({
+                              'task': '',
+                              'assignee': '',
+                              'notes': '',
+                            });
+                          });
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add row'),
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: rows.length,
+                        itemBuilder: (_, i) {
+                          final row = rows[i];
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Column(
+                                children: [
+                                  TextField(
+                                    decoration: const InputDecoration(
+                                      labelText: 'Task',
+                                      isDense: true,
+                                    ),
+                                    controller: TextEditingController(text: '${row['task'] ?? ''}'),
+                                    onChanged: (v) => row['task'] = v,
+                                  ),
+                                  TextField(
+                                    decoration: const InputDecoration(
+                                      labelText: 'Assignee',
+                                      isDense: true,
+                                    ),
+                                    controller: TextEditingController(text: '${row['assignee'] ?? ''}'),
+                                    onChanged: (v) => row['assignee'] = v,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                FilledButton(
+                  onPressed: () async {
+                    try {
+                      await ManagerCateringApi.instance.patchPostAnalysis(
+                        id: order.id,
+                        orderKind: order.orderKind.isNotEmpty
+                            ? order.orderKind
+                            : (order.orderType == 'catering' ? 'catering' : 'event'),
+                        patch: {'task_assignment_rows': rows},
+                      );
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      await _selectManageEventsOrder(order);
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Save failed: $e')),
+                        );
+                      }
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _openSeatingEditor(EventOrderDto order) async {
+    await _openSeatingAssignmentEditor(order);
+  }
+
+  Future<void> _openSeatingAssignmentEditor(EventOrderDto order) async {
+    final email = AuthSession.instance.currentUser.value?.email ?? '';
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => SeatingLayoutEditorScreen(
+          apiBase: ApiConfig.baseUrl,
+          userEmail: email,
+          orderId: order.id,
+          orderKind: order.orderKind.isNotEmpty ? order.orderKind : 'event',
+          initialPlan: order.seatingPlan,
+          eventTitle: order.eventTitle,
+          transactionNo: order.transactionNo,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    await _selectManageEventsOrder(order);
+  }
+
+  Map<String, dynamic> _themeDesignMap(EventOrderDto order) {
+    final td = order.themeDesign;
+    return {
+      'picksBase64': td.picksBase64,
+      'tintEnabled': td.tintEnabled,
+      if (td.tintColorHex != null) 'tintColorHex': td.tintColorHex,
+      if (td.colorPrompt != null) 'colorPrompt': td.colorPrompt,
+      'wantsCustomDesign': td.wantsCustomDesign,
+      if (td.customerThemeRequest != null) 'customerThemeRequest': td.customerThemeRequest,
+      if (td.generatedImageUrl != null) 'generatedImageUrl': td.generatedImageUrl,
+      if (td.customInstructions != null) 'customInstructions': td.customInstructions,
+      if (td.eventDesignSource != null) 'eventDesignSource': td.eventDesignSource,
+      if (td.macrinaColorPalette != null) 'macrinaColorPalette': td.macrinaColorPalette,
+      if (td.macrinaTheme != null) 'macrinaTheme': td.macrinaTheme,
+    };
+  }
+
+  Future<void> _openThemeDesignEditor(EventOrderDto order) async {
+    final email = AuthSession.instance.currentUser.value?.email ?? '';
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => EventThemeDesignScreen(
+          apiBase: ApiConfig.baseUrl,
+          userEmail: email,
+          orderId: order.id,
+          orderKind: order.orderKind.isNotEmpty ? order.orderKind : 'event',
+          initialEventType: order.eventType.isNotEmpty ? order.eventType : 'other',
+          initialThemeDesign: _themeDesignMap(order),
+          eventTitle: order.eventTitle,
+          formalityLevel: order.formalityLevel,
+          persistToOrder: true,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    await _selectManageEventsOrder(order);
   }
 
   Widget _detailSection(String title, {required Widget child}) {

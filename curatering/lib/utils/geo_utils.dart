@@ -6,7 +6,8 @@ const String nominatimUserAgent = 'CurateringWeb/1.0 (support@macrina.local)';
 /// Restaurant anchor — Taguig. Kept for map defaults and distance utilities.
 const double restaurantLat = 14.513436;
 const double restaurantLng = 121.059198;
-const double deliveryMaxDistanceKm = 50;
+/// Restaurant delivery radius for online ordering (matches mobile).
+const double deliveryMaxDistanceKm = 5;
 
 const double defaultMapLat = 14.5995;
 const double defaultMapLng = 120.9842;
@@ -37,7 +38,11 @@ double haversineKm(GeoPin a, GeoPin b) {
 double _deg2rad(double deg) => deg * math.pi / 180;
 
 bool isWithinDeliveryRadius(GeoPin pin) {
-  return true;
+  final km = haversineKm(
+    const GeoPin(lat: restaurantLat, lng: restaurantLng),
+    pin,
+  );
+  return km <= deliveryMaxDistanceKm;
 }
 
 bool isAllowedCateringAddress(String address) {

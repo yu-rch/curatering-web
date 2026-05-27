@@ -16,6 +16,8 @@ import '../pages/my_order_tracking_page.dart';
 import '../pages/my_orders_page.dart';
 import '../pages/my_profile_page.dart';
 import '../services/cart_store.dart';
+import '../services/cart_sync_service.dart';
+import 'confirm_logout_dialog.dart';
 import 'antd_message.dart';
 import 'antd_profile_menu.dart';
 import 'antd_tokens.dart';
@@ -84,6 +86,13 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
   }
 
   Future<void> _handleLogout() async {
+    final confirmed = await confirmLogout(context);
+    if (confirmed != true) return;
+
+    // Keep server tray draft; only clear local session UI until next login.
+    CartStore.instance.clearCart(skipServerSync: true);
+    CartStore.instance.resetInitState();
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('customer_token');
     await prefs.remove('customer_data');

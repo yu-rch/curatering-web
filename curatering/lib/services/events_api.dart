@@ -217,6 +217,7 @@ class EventsApi {
     String? referenceNumber,
     String? paymentMethod,
     double? amount,
+    String? paymentProofBase64,
   }) async {
     final body = <String, dynamic>{
       'paymentType': paymentType,
@@ -230,6 +231,9 @@ class EventsApi {
     }
     if (amount != null && amount > 0) {
       body['amount'] = amount;
+    }
+    if (paymentProofBase64 != null && paymentProofBase64.trim().isNotEmpty) {
+      body['paymentProof'] = paymentProofBase64.trim();
     }
     await ApiClient.instance.putJson(
       '/api/events/orders/$orderId/payment-status',
@@ -575,15 +579,25 @@ class EventsApi {
             ? rawOrderType
             : (eventTitleStr.isNotEmpty ? 'catering_event' : 'catering');
 
+    final orderTypeForId =
+        rawOrderType.isNotEmpty
+            ? rawOrderType
+            : (eventTitleStr.isNotEmpty ? 'catering_event' : 'catering');
+    final eventIdStr =
+        (map['eventId'] ?? map['event_id'] ?? '').toString().trim();
+    final cateringIdStr =
+        (map['cateringId'] ??
+                map['catering_id'] ??
+                map['inquiryId'] ??
+                map['inquiry_id'] ??
+                '')
+            .toString()
+            .trim();
+
     return EventOrderDto(
       id: (map['id'] ?? '').toString(),
-      cateringId:
-          (map['cateringId'] ??
-                  map['catering_id'] ??
-                  map['inquiryId'] ??
-                  map['inquiry_id'] ??
-                  '')
-              .toString(),
+      eventId: eventIdStr,
+      cateringId: cateringIdStr,
       customerId: (map['customerId'] ?? map['customer_id'] ?? '').toString(),
       source: (map['source'] ?? '').toString(),
       status: (map['status'] ?? '').toString(),
@@ -592,6 +606,9 @@ class EventsApi {
       orderType: orderType,
       eventType: map['eventType'] as String? ?? '',
       formalityLevel: map['formalityLevel'] as String? ?? '',
+      includeMinimalEventStyling: _toBool(
+        map['includeMinimalEventStyling'] ?? map['include_minimal_event_styling'],
+      ),
       customerName:
           (map['customerName'] ?? map['customer_name'] ?? '').toString(),
       contactPerson:

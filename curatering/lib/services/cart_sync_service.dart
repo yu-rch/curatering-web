@@ -6,7 +6,7 @@ import 'cart_store.dart';
 import '../models/menu_dish.dart';
 
 /// Service for synchronizing cart between mobile and web platforms.
-/// Canonical store: `customer_tray_drafts.tray_lines` + `tray_items`.
+/// Canonical store: `customer_tray_drafts.tray_items`.
 class CartSyncService {
   static CartSyncService? _instance;
   static CartSyncService get instance => _instance ??= CartSyncService._();
@@ -285,7 +285,7 @@ class CartSyncService {
           }
           await ApiClient.instance.putJson(
             '/api/tray-draft',
-            body: {'tray_lines': deduped, 'tray_items': deduped},
+            body: {'tray_items': deduped},
           );
 
           await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());

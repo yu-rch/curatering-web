@@ -463,6 +463,8 @@ export function buildRestaurantOrderSelectSql(cols) {
     `${sqlExpr(cols, ['payment_confirmed_balance'], 'FALSE')} AS payment_confirmed_balance`,
     `${sqlExpr(cols, ['amount_paid'], 'NULL')} AS amount_paid`,
     `${sqlExpr(cols, ['change_given'], 'NULL')} AS change_given`,
+    `${sqlExpr(cols, ['change_given'], 'NULL')} AS change`,
+    `${sqlExpr(cols, ['cashier_amount_received', 'cashier_amount_received_initial', 'amount_paid'], 'NULL')} AS amount_received`,
     `${sqlExpr(cols, ['loyalty_points_restaurant_obtained'], '0')} AS points_earned`,
     `${sqlExpr(cols, ['loyalty_points_restaurant_obtained'], '0')} AS loyalty_points_restaurant_obtained`,
     `${sqlExpr(cols, ['order_source'], "'ONLINE'")} AS order_source`,
@@ -544,6 +546,27 @@ export function buildRestaurantOrderPaymentUpdateSets(cols) {
   return sets.join(', ');
 }
 
+/** Balance / supplemental payment after insufficient-payment review. */
+export function buildRestaurantOrderBalancePaymentUpdateSets(cols) {
+  const sets = ['updated_at = now()'];
+  if (cols.has('payment_reference_balance')) {
+    sets.push('payment_reference_balance = COALESCE($1, payment_reference_balance)');
+  }
+  if (cols.has('payment_proof_balance')) {
+    sets.push('payment_proof_balance = COALESCE($2, payment_proof_balance)');
+  }
+  if (cols.has('payment_uploaded_balance')) {
+    sets.push('payment_uploaded_balance = TRUE');
+  }
+  if (cols.has('balance_proof_pending_review')) {
+    sets.push('balance_proof_pending_review = TRUE');
+  }
+  if (cols.has('order_status')) {
+    sets.push("order_status = 'BALANCE PAYMENT PENDING REVIEW'");
+  }
+  return sets.join(', ');
+}
+
 /**
  * @param {'web'|'mobile'|'staff'} [channel]
  */
@@ -575,6 +598,28 @@ export function normalizeRestaurantOrderRow(order, parsedItems, { channel = 'web
 
   if (o.order_no == null && o.order_id != null) o.order_no = String(o.order_id);
   if (o.order_id == null && o.order_no != null) o.order_id = String(o.order_no);
+
+  if (o.amount_received == null) {
+    o.amount_received =
+      o.cashier_amount_received ??
+      o.cashier_amount_received_initial ??
+      o.amount_paid ??
+      null;
+  }
+  if (o.change == null && o.change_given != null) o.change = o.change_given;
+  const statusUpper = String(o.order_status ?? o.status ?? '').toUpperCase();
+  const total = Number(o.total_cost ?? o.total_amount ?? 0) || 0;
+  const paid = Number(o.amount_paid ?? o.cashier_amount_received ?? 0) || 0;
+  if (
+    statusUpper.includes('INSUFFICIENT') ||
+    statusUpper.includes('BALANCE')
+  ) {
+    o.balance_due = Math.max(0, Number((total - paid).toFixed(2)));
+    o.balance_amount = o.balance_due;
+  }
+  if (o.fulfillment_stage == null && o.order_status != null) {
+    o.fulfillment_stage = o.order_status;
+  }
 
   if (o.phone == null && o.contact_number != null) o.phone = o.contact_number;
   if (o.contact_number == null && o.phone != null) o.contact_number = o.phone;
@@ -737,50 +782,83 @@ function cateringSelectField(cols, alias, candidates, defaultSql) {
   return `${defaultSql} AS "${alias}"`;
 }
 
-/** UNION query for customer catering + event orders (email match). */
-export function buildCustomerCateringOrdersSql(eventCols, cateringCols) {
-  const eventSeating = eventCols.has('seating_plan')
+function buildCustomerCateringOrderSelectList(cols, { orderTypeLiteral, includeEventTitle }) {
+  const seating = cols.has('seating_plan')
     ? 'COALESCE(seating_plan, \'{}\'::jsonb)'
     : '\'{}\'::jsonb';
-  const eventTheme = eventCols.has('theme_design')
-    ? 'theme_design'
-    : '\'{}\'::jsonb';
+  const theme = cols.has('theme_design') ? 'theme_design' : '\'{}\'::jsonb';
+  const eventIdExpr = cols.has('event_id') ? 'event_id::text' : 'NULL::text';
+  const eventTitleExpr = includeEventTitle
+    ? cateringSelectField(cols, 'eventTitle', ['event_title'], 'NULL::text')
+    : `NULL::text AS "eventTitle"`;
+  const eventTypeExpr = includeEventTitle
+    ? cateringSelectField(cols, 'eventType', ['event_type'], 'NULL::text')
+    : `'catering'::text AS "eventType"`;
+
+  return [
+    'id::text AS id',
+    cateringIdSelectAlias(cols),
+    `${eventIdExpr} AS "eventId"`,
+    eventTitleExpr,
+    eventTypeExpr,
+    'status',
+    cateringSelectField(cols, 'customerName', ['customer_name'], "''"),
+    cateringSelectField(cols, 'contactPerson', ['contact_person'], "''"),
+    cateringSelectField(cols, 'contactNumber', ['contact_number'], "''"),
+    cateringSelectField(cols, 'emailAddress', ['email_address'], "''"),
+    cateringSelectField(cols, 'guestCount', ['guest_count'], '0'),
+    cateringSelectField(cols, 'scheduleSlots', ['schedule_slots'], "'[]'::jsonb"),
+    cateringSelectField(cols, 'address', ['address'], "''"),
+    cateringSelectField(cols, 'menu', ['menu'], "'[]'::jsonb"),
+    cateringSelectField(cols, 'paymentMethod', ['payment_method'], "'cash'"),
+    cateringSelectField(cols, 'downPaymentAmount', ['down_payment_amount'], '0'),
+    cateringSelectField(cols, 'downPaymentStatus', ['down_payment_status'], "'pending'"),
+    cateringSelectField(cols, 'fullPaymentAmount', ['full_payment_amount'], '0'),
+    cateringSelectField(cols, 'fullPaymentStatus', ['full_payment_status'], "'pending'"),
+    cateringSelectField(cols, 'totalCost', ['total_cost'], '0'),
+    cateringSelectField(cols, 'estimatedCost', ['estimated_cost'], '0'),
+    cateringSelectField(cols, 'estimatedTotal', ['estimated_total'], '0'),
+    cateringSelectField(cols, 'formalityLevel', ['formality_level'], "''"),
+    cateringSelectField(cols, 'eventSetting', ['event_setting'], "''"),
+    cateringSelectField(cols, 'allergens', ['allergens'], "''"),
+    cateringSelectField(cols, 'serviceIncluded', ['service_included'], "'no'"),
+    cateringSelectField(cols, 'selectedSetMenu', ['selected_set_menu'], "''"),
+    cateringSelectField(cols, 'downPaymentReference', ['down_payment_reference'], 'NULL::text'),
+    cateringSelectField(cols, 'fullPaymentReference', ['full_payment_reference'], 'NULL::text'),
+    cols.has('food_tasting_requested')
+      ? 'food_tasting_requested AS "foodTastingRequested"'
+      : 'FALSE AS "foodTastingRequested"',
+    cateringSelectField(cols, 'foodTastingDate', ['food_tasting_date'], "''"),
+    cateringSelectField(cols, 'foodTastingTime', ['food_tasting_time'], "''"),
+    cols.has('include_minimal_event_styling')
+      ? 'include_minimal_event_styling AS "includeMinimalEventStyling"'
+      : 'FALSE AS "includeMinimalEventStyling"',
+    cateringSelectField(cols, 'laborCost', ['labor_cost'], '0'),
+    cateringSelectField(cols, 'travelCost', ['travel_cost'], '0'),
+    `${theme} AS "themeDesign"`,
+    `${seating} AS "seatingPlan"`,
+    cateringSelectField(cols, 'createdAt', ['created_at'], 'now()'),
+    `'${orderTypeLiteral}' AS order_type`,
+  ].join(',\n      ');
+}
+
+/** UNION query for customer catering + event orders (email match). */
+export function buildCustomerCateringOrdersSql(eventCols, cateringCols) {
   const eventPart = `
     SELECT
-      id::text AS id,
-      ${cateringIdSelectAlias(eventCols)},
-      ${cateringSelectField(eventCols, 'eventTitle', ['event_title'], 'NULL::text')},
-      ${cateringSelectField(eventCols, 'eventType', ['event_type'], 'NULL::text')},
-      status,
-      ${cateringSelectField(eventCols, 'guestCount', ['guest_count'], '0')},
-      ${cateringSelectField(eventCols, 'scheduleSlots', ['schedule_slots'], "'[]'::jsonb")},
-      ${cateringSelectField(eventCols, 'menu', ['menu'], "'[]'::jsonb")},
-      ${cateringSelectField(eventCols, 'totalCost', ['total_cost'], '0')},
-      ${eventTheme} AS "themeDesign",
-      ${eventSeating} AS "seatingPlan",
-      ${cateringSelectField(eventCols, 'createdAt', ['created_at'], 'now()')},
-      'event' AS order_type
+      ${buildCustomerCateringOrderSelectList(eventCols, {
+        orderTypeLiteral: 'event',
+        includeEventTitle: true,
+      })}
     FROM event_orders
     WHERE lower(email_address) = lower($1)`;
 
-  const cateringTheme = cateringCols.has('theme_design')
-    ? 'theme_design'
-    : '\'{}\'::jsonb';
   const cateringPart = `
     SELECT
-      id::text AS id,
-      ${cateringIdSelectAlias(cateringCols)},
-      NULL::text AS "eventTitle",
-      'catering'::text AS "eventType",
-      status,
-      ${cateringSelectField(cateringCols, 'guestCount', ['guest_count'], '0')},
-      ${cateringSelectField(cateringCols, 'scheduleSlots', ['schedule_slots'], "'[]'::jsonb")},
-      ${cateringSelectField(cateringCols, 'menu', ['menu'], "'[]'::jsonb")},
-      ${cateringSelectField(cateringCols, 'totalCost', ['total_cost'], '0')},
-      ${cateringTheme} AS "themeDesign",
-      '{}'::jsonb AS "seatingPlan",
-      ${cateringSelectField(cateringCols, 'createdAt', ['created_at'], 'now()')},
-      'catering' AS order_type
+      ${buildCustomerCateringOrderSelectList(cateringCols, {
+        orderTypeLiteral: 'catering',
+        includeEventTitle: false,
+      })}
     FROM catering_orders
     WHERE lower(email_address) = lower($1)`;
 
@@ -814,6 +892,25 @@ export function normalizeCustomerCateringOrderRow(row) {
   if (o.travelCost == null && breakdown.travelCost != null) {
     o.travelCost = breakdown.travelCost;
   }
+
+  if (typeof o.seatingPlan === 'string' && o.seatingPlan.trim()) {
+    try {
+      o.seatingPlan = JSON.parse(o.seatingPlan);
+    } catch {
+      o.seatingPlan = {};
+    }
+  }
+
+  o.venue = o.address ?? o.venue ?? '';
+  o.event_title = o.eventTitle ?? o.event_title;
+  o.catering_id = o.cateringId ?? o.catering_id;
+  o.event_id = o.eventId ?? o.event_id;
+  o.guest_count = o.guestCount ?? o.guest_count;
+  o.schedule_slots = o.scheduleSlots ?? o.schedule_slots;
+  o.total_cost = o.totalCost ?? o.total_cost;
+  o.payment_method = o.paymentMethod ?? o.payment_method;
+  o.down_payment_status = o.downPaymentStatus ?? o.down_payment_status;
+  o.full_payment_status = o.fullPaymentStatus ?? o.full_payment_status;
 
   return o;
 }

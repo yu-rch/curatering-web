@@ -42,6 +42,7 @@ import {
   getMenuMealTypeCatalog,
   upsertMenuMealType,
 } from "./db.js";
+import { profileAddressesFromAccountRow } from "./profile_addresses.js";
 import {
   ensureRestaurantOrdersCanonicalColumns,
   ensureCateringEventOrdersCanonicalColumns,
@@ -59,6 +60,7 @@ import {
   parseRestaurantOrderTrayItems,
   restaurantOrderItemsInsertSql,
   buildRestaurantOrderPaymentUpdateSets,
+  buildRestaurantOrderBalancePaymentUpdateSets,
 } from "./order_schema.js";
 import CartAPI from "./cart_api.js";
 import {
@@ -3002,7 +3004,8 @@ function sendOtpEmailAsync(email, otp) {
 /** Customer phone from DB row (Supabase uses contact_number). */
 function customerPhoneFromRow(row) {
   if (!row) return null;
-  return row.contact_number ?? row.phone ?? null;
+  const phone = row.contact_number ?? row.phone_number ?? row.phone;
+  return phone != null && String(phone).trim() ? String(phone).trim() : null;
 }
 
 function registerCustomerAuthRoutes(app, dbGate) {
@@ -8003,7 +8006,7 @@ async function registerRoutesAfterDbInit() {
     app.put('/api/events/orders/:orderId/payment-status', authRequired, async (req, res) => {
       try {
         const { orderId } = req.params;
-        const { paymentType, status, referenceNumber, amount } = req.body || {};
+        const { paymentType, status, referenceNumber, amount, paymentProof } = req.body || {};
         const paymentMethodRaw = String(
           req.body?.paymentMethod ?? req.body?.payment_method ?? "",
         ).trim();
@@ -8111,6 +8114,16 @@ async function registerRoutesAfterDbInit() {
         if (Number.isFinite(amountNum) && amountNum > 0) {
           updateQuery += `, ${amountColumn} = $${queryParams.length + 1}`;
           queryParams.push(amountNum);
+        }
+
+        const proofRaw = paymentProof != null ? String(paymentProof).trim() : '';
+        if (proofRaw) {
+          const proofKey =
+            paymentType === 'down_payment'
+              ? 'down_payment_proof'
+              : 'full_payment_proof';
+          updateQuery += `, post_analysis = COALESCE(post_analysis, '{}'::jsonb) || $${queryParams.length + 1}::jsonb`;
+          queryParams.push(JSON.stringify({ [proofKey]: proofRaw }));
         }
 
         updateQuery += ` WHERE id = $${queryParams.length + 1} RETURNING *`;
@@ -9050,10 +9063,70 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
+    async function enrichRestaurantTrayItems(orderItems) {
+      if (!Array.isArray(orderItems) || orderItems.length === 0) return orderItems;
+      const dishIds = [
+        ...new Set(
+          orderItems
+            .map((item) => item?.dish_id ?? item?.dishId ?? item?.menu_dish_id ?? item?.id)
+            .filter((value) => value != null && String(value).trim().isNotEmpty)
+            .map((value) => String(value).trim()),
+        ),
+      ];
+      if (dishIds.length === 0) return orderItems;
+      const dishResult = await pool.query(
+        `SELECT id::text AS id, name, price, image_base64, menu_dishes_additional_charge_amount
+         FROM menu_dishes
+         WHERE id::text = ANY($1) AND archived = false`,
+        [dishIds],
+      );
+      const dishesById = new Map(dishResult.rows.map((dish) => [dish.id, dish]));
+      return orderItems.map((raw) => {
+        if (!raw || typeof raw !== 'object') return raw;
+        const item = { ...raw };
+        const dishId = String(
+          item.dish_id ?? item.dishId ?? item.menu_dish_id ?? item.id ?? '',
+        ).trim();
+        const dish = dishesById.get(dishId);
+        if (!dish) return item;
+        const price = Number(dish.price) || Number(item.price) || 0;
+        return {
+          ...item,
+          dishId,
+          dish_id: dishId,
+          menu_dish_id: dishId,
+          name: item.name ?? item.dishName ?? dish.name,
+          dishName: item.dishName ?? item.name ?? dish.name,
+          dish_name: item.dish_name ?? dish.name,
+          item_name: item.item_name ?? dish.name,
+          price,
+          dishPrice: price,
+          image_base64: item.image_base64 ?? item.imageBase64 ?? dish.image_base64,
+          imageBase64: item.imageBase64 ?? item.image_base64 ?? dish.image_base64,
+        };
+      });
+    }
+
     app.post('/api/restaurant/orders/:orderId/payment', optionalCustomerAuth, async (req, res) => {
       try {
         const { orderId } = req.params;
-        const { paymentReference, paymentProof, guestContactEmail, userEmail } = req.body || {};
+        const body = req.body || {};
+        const paymentReference =
+          body.paymentReference ??
+          body.referenceNumber ??
+          body.payment_reference ??
+          null;
+        const paymentProof =
+          body.paymentProof ??
+          body.paymentProofBase64 ??
+          body.payment_proof ??
+          null;
+        const paymentType = String(body.type ?? body.paymentType ?? 'initial')
+          .trim()
+          .toLowerCase();
+        const isBalance =
+          paymentType === 'balance' || paymentType === 'balance_payment';
+        const { guestContactEmail, userEmail } = body;
 
         if (!paymentReference && !paymentProof) {
           return res.status(400).json({
@@ -9099,7 +9172,9 @@ async function registerRoutesAfterDbInit() {
         }
 
         const roCols = await ensureRestaurantOrdersCanonicalColumns();
-        const paymentSets = buildRestaurantOrderPaymentUpdateSets(roCols);
+        const paymentSets = isBalance
+          ? buildRestaurantOrderBalancePaymentUpdateSets(roCols)
+          : buildRestaurantOrderPaymentUpdateSets(roCols);
 
         const result = await pool.query(
           `UPDATE restaurant_orders
@@ -9301,7 +9376,7 @@ async function registerRoutesAfterDbInit() {
           }
 
           const existing = await pool.query(
-            `SELECT id, customer_id, order_status, feedback_stars
+            `SELECT order_id, customer_id, user_email, order_status, feedback_stars
              FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
             [lookup.value],
           );
@@ -9309,7 +9384,12 @@ async function registerRoutesAfterDbInit() {
             return res.status(404).json({ error: 'Order not found' });
           }
           const order = existing.rows[0];
-          if (String(order.customer_id) !== String(req.customer.id)) {
+          const resolvedCustId = await resolveCustomerAccountCustomerId(req.customer.id);
+          if (
+            order.customer_id != null &&
+            resolvedCustId != null &&
+            String(order.customer_id) !== String(resolvedCustId)
+          ) {
             return res.status(403).json({ error: 'Order not found' });
           }
           if (String(order.order_status).toUpperCase() !== 'DELIVERED') {
@@ -9319,15 +9399,31 @@ async function registerRoutesAfterDbInit() {
             return res.status(409).json({ error: 'Feedback was already submitted for this order' });
           }
 
+          const acct = await pool.query(
+            `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1`,
+            [req.customer.id],
+          );
+          const userEmail = acct.rows[0]?.email
+            ? String(acct.rows[0].email).trim().toLowerCase()
+            : String(order.user_email ?? '').trim().toLowerCase();
+
+          if (userEmail) {
+            await pool.query(
+              `INSERT INTO customer_order_feedback (user_email, kind, reference, rating, comment)
+               VALUES ($1, 'restaurant_order', $2, $3, $4)`,
+              [userEmail, String(order.order_id), Math.round(stars), remarks || ''],
+            );
+          }
+
           const updated = await pool.query(
             `UPDATE restaurant_orders
              SET feedback_stars = $2,
                  feedback_remarks = $3,
                  feedback_submitted_at = now(),
                  updated_at = now()
-             WHERE id = $1
+             WHERE order_id = $1
              RETURNING *`,
-            [order.id, Math.round(stars), remarks || null],
+            [order.order_id, Math.round(stars), remarks || null],
           );
 
           const parsedItems = parseRestaurantOrderTrayItems(updated.rows[0]);
@@ -9489,9 +9585,12 @@ async function registerRoutesAfterDbInit() {
             : [resolvedCustId, req.customer.id],
         );
 
-        const orders = result.rows.map((order) =>
-          serializeRestaurantOrderRow(order, parseRestaurantOrderTrayItems(order)),
-        );
+        const orders = [];
+        for (const order of result.rows) {
+          const parsed = parseRestaurantOrderTrayItems(order);
+          const enriched = await enrichRestaurantTrayItems(parsed);
+          orders.push(serializeRestaurantOrderRow(order, enriched));
+        }
         res.json({ orders });
       } catch (error) {
         console.error('Error fetching orders:', error);
@@ -10657,7 +10756,20 @@ async function registerRoutesAfterDbInit() {
 
         const result = await pool.query(unionSql, [customerEmail]);
 
-        const orders = result.rows.map((row) => normalizeCustomerCateringOrderRow(row));
+        const feedbackRows = await pool.query(
+          `SELECT reference FROM customer_order_feedback
+           WHERE lower(user_email) = lower($1) AND kind = 'catering_inquiry'`,
+          [customerEmail],
+        );
+        const feedbackRefs = new Set(
+          feedbackRows.rows.map((r) => String(r.reference)),
+        );
+
+        const orders = result.rows.map((row) => {
+          const o = normalizeCustomerCateringOrderRow(row);
+          o.feedbackSubmitted = feedbackRefs.has(String(o.id));
+          return o;
+        });
         res.json({ orders });
       } catch (error) {
         console.error('Error fetching customer event orders:', error);
@@ -11096,14 +11208,8 @@ async function registerRoutesAfterDbInit() {
         const restaurantPoints = Number(account.restaurant_loyalty_points ?? 0);
         const cateringPoints = Number(account.catering_loyalty_points ?? 0);
 
-        let otherAddresses = [];
-        if (account.other_delivery_addresses) {
-          try {
-            otherAddresses = typeof account.other_delivery_addresses === 'string'
-              ? JSON.parse(account.other_delivery_addresses)
-              : account.other_delivery_addresses;
-          } catch { /* ignore parse errors */ }
-        }
+        const { deliveryAddress, otherDeliveryAddresses } =
+          profileAddressesFromAccountRow(account);
 
         res.json({
           id: account.id != null ? String(account.id) : account.id,
@@ -11118,17 +11224,129 @@ async function registerRoutesAfterDbInit() {
           loyaltyPoints: restaurantPoints + cateringPoints,
           restaurantLoyaltyPoints: restaurantPoints,
           cateringLoyaltyPoints: cateringPoints,
-          deliveryAddress: account.delivery_address || null,
+          deliveryAddress,
           deliveryLat:
             account.delivery_lat != null ? Number(account.delivery_lat) : null,
           deliveryLng:
             account.delivery_lng != null ? Number(account.delivery_lng) : null,
           deliveryMapConfirmed: account.delivery_map_confirmed ?? false,
-          otherDeliveryAddresses: Array.isArray(otherAddresses) ? otherAddresses : [],
+          otherDeliveryAddresses,
         });
       } catch (error) {
         console.error('Error fetching customer profile:', error);
         res.status(500).json({ error: 'Failed to fetch profile' });
+      }
+    });
+
+    // Completed order / inquiry feedback (customer_order_feedback + restaurant_orders when applicable)
+    app.post('/api/customer/order-feedback', customerAuthRequired, async (req, res) => {
+      try {
+        const kind = String(req.body?.kind ?? 'restaurant_order').trim();
+        const reference = String(req.body?.reference ?? '').trim();
+        const rating = Number(req.body?.rating ?? req.body?.stars);
+        const comment = String(req.body?.comment ?? req.body?.remarks ?? '').trim();
+
+        if (!reference) {
+          return res.status(400).json({ error: 'reference is required' });
+        }
+        if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+          return res.status(400).json({ error: 'Rating must be between 1 and 5 stars' });
+        }
+
+        const acct = await pool.query(
+          `SELECT email FROM customer_accounts WHERE id::text = $1 OR customer_id::text = $1 LIMIT 1`,
+          [req.customer.id],
+        );
+        if (acct.rowCount === 0) {
+          return res.status(404).json({ error: 'Customer not found' });
+        }
+        const userEmail = String(acct.rows[0].email).trim().toLowerCase();
+
+        const prior = await pool.query(
+          `SELECT id FROM customer_order_feedback
+           WHERE lower(user_email) = lower($1) AND kind = $2 AND reference = $3
+           LIMIT 1`,
+          [userEmail, kind, reference],
+        );
+        if (prior.rowCount > 0) {
+          return res.status(409).json({ error: 'Feedback was already submitted' });
+        }
+
+        if (kind === 'restaurant_order') {
+          const lookup = await restaurantOrderWhereClause(reference, 1);
+          if (!lookup) {
+            return res.status(400).json({ error: 'Invalid order reference' });
+          }
+          const orderRow = await pool.query(
+            `SELECT order_id, order_status, feedback_stars, customer_id
+             FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
+            [lookup.value],
+          );
+          if (orderRow.rowCount === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+          }
+          const order = orderRow.rows[0];
+          const resolvedCustId = await resolveCustomerAccountCustomerId(req.customer.id);
+          if (
+            order.customer_id != null &&
+            resolvedCustId != null &&
+            String(order.customer_id) !== String(resolvedCustId)
+          ) {
+            return res.status(403).json({ error: 'Order not found' });
+          }
+          if (String(order.order_status).toUpperCase() !== 'DELIVERED') {
+            return res.status(400).json({ error: 'Feedback is only available for delivered orders' });
+          }
+          if (order.feedback_stars != null) {
+            return res.status(409).json({ error: 'Feedback was already submitted for this order' });
+          }
+        }
+
+        if (kind === 'catering_inquiry') {
+          const inquiry = await pool.query(
+            `SELECT id::text AS id, status FROM catering_orders
+             WHERE (id::text = $1 OR catering_id = $1) AND lower(email_address) = lower($2)
+             UNION ALL
+             SELECT id::text AS id, status FROM event_orders
+             WHERE (id::text = $1 OR event_id = $1 OR catering_id = $1) AND lower(email_address) = lower($2)
+             LIMIT 1`,
+            [reference, userEmail],
+          );
+          if (inquiry.rowCount === 0) {
+            return res.status(404).json({ error: 'Inquiry not found' });
+          }
+          if (String(inquiry.rows[0].status) !== 'completed') {
+            return res.status(400).json({ error: 'Feedback is only available for completed inquiries' });
+          }
+        }
+
+        await pool.query(
+          `INSERT INTO customer_order_feedback (user_email, kind, reference, rating, comment)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [userEmail, kind, reference, Math.round(rating), comment],
+        );
+
+        if (kind === 'restaurant_order') {
+          const lookup = await restaurantOrderWhereClause(reference, 1);
+          if (lookup) {
+            await pool.query(
+              `UPDATE restaurant_orders
+               SET feedback_stars = $2,
+                   feedback_remarks = $3,
+                   feedback_submitted_at = now(),
+                   updated_at = now()
+               WHERE ${lookup.sql}
+                 AND upper(order_status) = 'DELIVERED'
+                 AND feedback_stars IS NULL`,
+              [lookup.value, Math.round(rating), comment || null],
+            );
+          }
+        }
+
+        res.status(201).json({ ok: true });
+      } catch (error) {
+        console.error('customer order feedback:', error);
+        res.status(500).json({ error: 'Failed to save feedback' });
       }
     });
 
@@ -11153,6 +11371,9 @@ async function registerRoutesAfterDbInit() {
           if (phone) {
             paramCount++;
             updates.push(`contact_number = $${paramCount}`);
+            values.push(phone);
+            paramCount++;
+            updates.push(`phone_number = $${paramCount}`);
             values.push(phone);
           }
 
@@ -11180,9 +11401,13 @@ async function registerRoutesAfterDbInit() {
           let p = 0;
 
           if (deliveryAddress !== undefined) {
+            const addr = deliveryAddress == null ? '' : String(deliveryAddress);
+            p += 1;
+            deliveryUpdates.push(`primary_delivery_address = $${p}`);
+            deliveryValues.push(addr);
             p += 1;
             deliveryUpdates.push(`delivery_address = $${p}`);
-            deliveryValues.push(deliveryAddress);
+            deliveryValues.push(addr);
           }
           if (deliveryLat !== undefined) {
             p += 1;
@@ -11195,9 +11420,12 @@ async function registerRoutesAfterDbInit() {
             deliveryValues.push(deliveryLng);
           }
           if (otherDeliveryAddresses !== undefined) {
+            const normalizedOther = Array.isArray(otherDeliveryAddresses)
+              ? otherDeliveryAddresses
+              : [];
             p += 1;
             deliveryUpdates.push(`other_delivery_addresses = $${p}::jsonb`);
-            deliveryValues.push(JSON.stringify(Array.isArray(otherDeliveryAddresses) ? otherDeliveryAddresses : []));
+            deliveryValues.push(JSON.stringify(normalizedOther));
           }
 
           deliveryUpdates.push('updated_at = now()');

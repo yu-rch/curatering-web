@@ -13,6 +13,7 @@ import '../services/menu_store.dart';
 import '../models/menu_dish.dart';
 import '../utils/cashier_pos_filters.dart';
 import '../widgets/antd_tokens.dart';
+import '../widgets/confirm_logout_dialog.dart';
 
 class CashierPosShell extends StatefulWidget {
   const CashierPosShell({super.key});
@@ -166,6 +167,54 @@ class _CashierPosShellState extends State<CashierPosShell> {
     return double.tryParse(value?.toString().trim() ?? '') ?? 0;
   }
 
+  Future<void> _withStatusUpdate(Future<void> Function() action) async {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      await action();
+    } finally {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+  }
+
+  Widget? _paymentAmountSummary(Map<String, dynamic> raw, {bool walkIn = false}) {
+    final due = _toMoney(raw['total'] ?? raw['total_cost'] ?? 0);
+    final received = _toMoney(
+      raw['amount_received'] ??
+          raw['cashier_amount_received'] ??
+          raw['amount_paid'] ??
+          0,
+    );
+    final change = _toMoney(raw['change'] ?? raw['change_given'] ?? 0);
+    if (!walkIn && due <= 0 && received <= 0 && change <= 0) return null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (due > 0)
+          Text(
+            'Amount due: ₱${due.toStringAsFixed(2)}',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+          ),
+        if (received > 0)
+          Text(
+            'Amount received: ₱${received.toStringAsFixed(2)}',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+          ),
+        if (change > 0)
+          Text(
+            'Change: ₱${change.toStringAsFixed(2)}',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+          ),
+      ],
+    );
+  }
+
   int _toQty(dynamic value) {
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString().trim() ?? '') ?? 1;
@@ -184,8 +233,12 @@ class _CashierPosShellState extends State<CashierPosShell> {
   }
 
   List<dynamic> _orderItems(Map<String, dynamic> raw) {
-    return (raw['tray_items'] ?? raw['lines'] ?? raw['items'] ?? [])
-        as List<dynamic>;
+    final items = raw['tray_items'] ??
+        raw['order_lines_snapshot'] ??
+        raw['lines'] ??
+        raw['items'];
+    if (items is List && items.isNotEmpty) return items;
+    return const [];
   }
 
   // ---------------------------------------------------------------------------
@@ -860,17 +913,21 @@ class _CashierPosShellState extends State<CashierPosShell> {
     paidCtrl.dispose();
     if (dialogAction == null) return;
 
-    try {
+    await _withStatusUpdate(() async {
       await CashierPosApi.instance.reviewOnlineOrder(
         order.raw['order_id'] ?? order.raw['order_no'] ?? order.raw['id'],
         action: dialogAction!,
         amountReceived: paid,
       );
       await _refreshOnline();
-      if (mounted) _snack(dialogAction == 'insufficient' ? 'Marked as insufficient' : 'Payment confirmed');
-    } catch (e) {
-      if (mounted) _snack('$e');
-    }
+      if (mounted) {
+        _snack(
+          dialogAction == 'insufficient'
+              ? 'Marked as insufficient'
+              : 'Payment confirmed',
+        );
+      }
+    });
   }
 
   Future<void> _showOutForDeliveryDialog(PosOrderView order) async {
@@ -942,12 +999,14 @@ class _CashierPosShellState extends State<CashierPosShell> {
     if (confirmed != true) return;
 
     try {
-      await CashierPosApi.instance.patchFulfillment(
-        order.raw['order_id'] ?? order.raw['order_no'] ?? order.raw['id'],
-        fulfillmentStage: 'OUT_FOR_DELIVERY',
-        deliveryTrackingUrl: trackingUrl,
-      );
-      await _refreshOnline();
+      await _withStatusUpdate(() async {
+        await CashierPosApi.instance.patchFulfillment(
+          order.raw['order_id'] ?? order.raw['order_no'] ?? order.raw['id'],
+          fulfillmentStage: 'OUT_FOR_DELIVERY',
+          deliveryTrackingUrl: trackingUrl,
+        );
+        await _refreshOnline();
+      });
       if (mounted) _snack('Marked Out for Delivery');
     } catch (e) {
       if (mounted) _snack('$e');
@@ -975,11 +1034,13 @@ class _CashierPosShellState extends State<CashierPosShell> {
     );
     if (confirmed != true) return;
     try {
-      await CashierPosApi.instance.patchFulfillment(
-        order.raw['order_id'] ?? order.raw['order_no'] ?? order.raw['id'],
-        fulfillmentStage: 'DELIVERED',
-      );
-      await _refreshOnline();
+      await _withStatusUpdate(() async {
+        await CashierPosApi.instance.patchFulfillment(
+          order.raw['order_id'] ?? order.raw['order_no'] ?? order.raw['id'],
+          fulfillmentStage: 'DELIVERED',
+        );
+        await _refreshOnline();
+      });
       if (mounted) _snack('Marked as Delivered');
     } catch (e) {
       if (mounted) _snack('$e');
@@ -1008,8 +1069,12 @@ class _CashierPosShellState extends State<CashierPosShell> {
     );
     if (yes != true) return;
     try {
-      await CashierPosApi.instance.claimWalkIn(raw['order_id'] ?? raw['order_no'] ?? raw['id']);
-      await _refreshWalkIn();
+      await _withStatusUpdate(() async {
+        await CashierPosApi.instance.claimWalkIn(
+          raw['order_id'] ?? raw['order_no'] ?? raw['id'],
+        );
+        await _refreshWalkIn();
+      });
       if (mounted) _snack('Order claimed');
     } catch (e) {
       if (mounted) _snack('$e');
@@ -1037,8 +1102,12 @@ class _CashierPosShellState extends State<CashierPosShell> {
     );
     if (yes != true) return;
     try {
-      await CashierPosApi.instance.cancelWalkIn(raw['order_id'] ?? raw['order_no'] ?? raw['id']);
-      await _refreshWalkIn();
+      await _withStatusUpdate(() async {
+        await CashierPosApi.instance.cancelWalkIn(
+          raw['order_id'] ?? raw['order_no'] ?? raw['id'],
+        );
+        await _refreshWalkIn();
+      });
       if (mounted) _snack('Order cancelled');
     } catch (e) {
       if (mounted) _snack('$e');
@@ -1278,7 +1347,9 @@ class _CashierPosShellState extends State<CashierPosShell> {
           const SizedBox(height: 8),
           _sidebarAction(Icons.refresh, 'Refresh', Colors.white60, _refreshAll),
           const SizedBox(height: 4),
-          _sidebarAction(Icons.logout, 'Logout', Colors.red.shade400, () {
+          _sidebarAction(Icons.logout, 'Logout', Colors.red.shade400, () async {
+            final ok = await confirmLogout(context);
+            if (ok != true || !mounted) return;
             AuthSession.instance.clear();
             Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
           }),
@@ -2197,6 +2268,10 @@ class _CashierPosShellState extends State<CashierPosShell> {
                     style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade700)),
+              if (_paymentAmountSummary(o.raw) != null) ...[
+                const SizedBox(height: 4),
+                _paymentAmountSummary(o.raw)!,
+              ],
             ],
           ),
         ),
@@ -2245,7 +2320,9 @@ class _CashierPosShellState extends State<CashierPosShell> {
             raw['payment_proof_initial'])
         ?.toString();
 
-    return SingleChildScrollView(
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2445,6 +2522,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
           ...lines.map((l) => _buildOrderItemRow(l)),
         ],
       ),
+    ),
     );
   }
 
@@ -2467,6 +2545,20 @@ class _CashierPosShellState extends State<CashierPosShell> {
         label: const Text('Confirm Payment'),
       );
     }
+    if (stage == 'OUT_FOR_DELIVERY' || status.contains('OUT FOR DELIVERY')) {
+      return FilledButton.icon(
+        style: FilledButton.styleFrom(
+          backgroundColor: AntdTokens.success,
+          foregroundColor: Colors.white,
+          padding:
+              const EdgeInsets.symmetric(horizontal: 10),
+          minimumSize: const Size(0, 36),
+        ),
+        onPressed: () => _markDelivered(o),
+        icon: const Icon(Icons.check_circle, size: 16),
+        label: const Text('Mark as Delivered'),
+      );
+    }
     if (stage == 'IN_PREPARATION' ||
         status.contains('ORDER CONFIRMED')) {
       return FilledButton.icon(
@@ -2480,20 +2572,6 @@ class _CashierPosShellState extends State<CashierPosShell> {
         onPressed: () => _showOutForDeliveryDialog(o),
         icon: const Icon(Icons.local_shipping, size: 16),
         label: const Text('Out for Delivery'),
-      );
-    }
-    if (stage == 'OUT_FOR_DELIVERY') {
-      return FilledButton.icon(
-        style: FilledButton.styleFrom(
-          backgroundColor: AntdTokens.success,
-          foregroundColor: Colors.white,
-          padding:
-              const EdgeInsets.symmetric(horizontal: 10),
-          minimumSize: const Size(0, 36),
-        ),
-        onPressed: () => _markDelivered(o),
-        icon: const Icon(Icons.check_circle, size: 16),
-        label: const Text('Mark Delivered'),
       );
     }
     return const SizedBox.shrink();
@@ -2680,6 +2758,12 @@ class _CashierPosShellState extends State<CashierPosShell> {
                         fontSize: 11,
                         color:
                             Colors.grey.shade600)),
+              const SizedBox(height: 4),
+              _paymentAmountSummary(raw, walkIn: true) ??
+                  Text(
+                    'Amount due: ₱${o.total.toStringAsFixed(2)}',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                  ),
             ],
           ),
         ),
@@ -2722,7 +2806,9 @@ class _CashierPosShellState extends State<CashierPosShell> {
             raw['payment_proof_initial'])
         ?.toString();
 
-    return SingleChildScrollView(
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2821,6 +2907,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
           ...lines.map((l) => _buildOrderItemRow(l)),
         ],
       ),
+    ),
     );
   }
 

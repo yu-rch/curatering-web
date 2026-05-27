@@ -94,11 +94,21 @@ class _MyProfilePageState extends State<MyProfilePage> {
           _deliveryLat = data['deliveryLat']?.toDouble();
           _deliveryLng = data['deliveryLng']?.toDouble();
           if (data['otherDeliveryAddresses'] is List) {
-            _otherAddresses = List<Map<String, dynamic>>.from(
-              (data['otherDeliveryAddresses'] as List).map(
-                (e) => e is Map<String, dynamic> ? e : <String, dynamic>{},
-              ),
-            );
+            var index = 0;
+            _otherAddresses = (data['otherDeliveryAddresses'] as List).map((e) {
+              index += 1;
+              if (e is Map<String, dynamic>) {
+                return e;
+              }
+              if (e is Map) {
+                return Map<String, dynamic>.from(e);
+              }
+              final address = e?.toString().trim() ?? '';
+              return {
+                'label': 'Address $index',
+                'address': address,
+              };
+            }).where((m) => (m['address']?.toString().trim().isNotEmpty ?? false)).toList();
           }
           _isLoading = false;
         });
@@ -595,6 +605,33 @@ class _MyProfilePageState extends State<MyProfilePage> {
   void _removeOtherAddress(int index) {
     setState(() {
       _otherAddresses.removeAt(index);
+    });
+  }
+
+  void _makeOtherAddressPrimary(int index) {
+    if (index < 0 || index >= _otherAddresses.length) return;
+    final picked = Map<String, dynamic>.from(_otherAddresses[index]);
+    final pickedAddress = (picked['address'] ?? '').toString().trim();
+    if (pickedAddress.isEmpty) return;
+
+    setState(() {
+      final previousPrimary = _addressController.text.trim();
+      final previousLabel = 'Previous primary';
+
+      _addressController.text = pickedAddress;
+      _otherAddresses.removeAt(index);
+
+      if (previousPrimary.isNotEmpty) {
+        final alreadyListed = _otherAddresses.any(
+          (a) => (a['address'] ?? '').toString().trim() == previousPrimary,
+        );
+        if (!alreadyListed) {
+          _otherAddresses.add({
+            'label': previousLabel,
+            'address': previousPrimary,
+          });
+        }
+      }
     });
   }
 
@@ -1184,6 +1221,19 @@ class _MyProfilePageState extends State<MyProfilePage> {
                               ),
                             ),
                           ],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => _makeOtherAddressPrimary(i),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFF4511E),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text(
+                          'Set as primary',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
                         ),
                       ),
                       IconButton(

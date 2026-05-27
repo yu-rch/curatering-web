@@ -153,6 +153,22 @@ export function mapRestaurantOrderRowForPosApi(row, customerName = null) {
     payment_reference_initial: refInitial,
     payment_references_initial: refInitial,
     payment_reference_balance: row.payment_reference_balance ?? "",
+    amount_paid:
+      row.amount_paid != null
+        ? Number(row.amount_paid)
+        : row.cashier_amount_received_initial != null
+          ? Number(row.cashier_amount_received_initial)
+          : null,
+    amount_received:
+      row.cashier_amount_received != null
+        ? Number(row.cashier_amount_received)
+        : row.cashier_amount_received_initial != null
+          ? Number(row.cashier_amount_received_initial)
+          : row.amount_paid != null
+            ? Number(row.amount_paid)
+            : null,
+    change: row.change_given != null ? Number(row.change_given) : null,
+    change_given: row.change_given != null ? Number(row.change_given) : null,
     cashier_amount_received:
       row.cashier_amount_received_initial != null
         ? Number(row.cashier_amount_received_initial)

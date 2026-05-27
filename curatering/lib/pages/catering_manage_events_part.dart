@@ -127,7 +127,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         td.wantsCustomDesign;
   }
 
-  Widget _buildEventDesignDetailSection(EventOrderDto dto) {
+  Widget _buildEventDesignDetailSection(EventOrderDto dto, {bool readOnly = true}) {
     final td = dto.themeDesign;
     final imageUrl = td.generatedImageUrl?.trim() ?? '';
     final picks =
@@ -211,6 +211,14 @@ extension _ManageEventsTableExt on _ManageEventsState {
                   );
                 },
               ),
+            ),
+          ],
+          if (!readOnly) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => _openThemeDesignEditor(dto),
+              icon: const Icon(Icons.palette_outlined, size: 18),
+              label: const Text('Edit event theme design'),
             ),
           ],
         ],
@@ -810,26 +818,30 @@ extension _ManageEventsTableExt on _ManageEventsState {
   }
 
   Future<void> _selectManageEventsOrder(EventOrderDto dto) async {
+    // ignore: invalid_use_of_protected_member
     setState(() {
       _manageEventsDetailLoading = true;
       _manageEventsDetailError = null;
       _selectedManageEventsOrder = dto;
     });
     try {
-      final orderKind = dto.orderKind.isNotEmpty
-          ? dto.orderKind
-          : (dto.orderType == 'catering' ? 'catering' : 'event');
-      final raw = await ManagerCateringApi.instance.getItem(
-        id: dto.id,
-        orderKind: orderKind,
+      final roleType =
+          AuthSession.instance.currentRole == Role.supervisor
+              ? 'supervisor'
+              : 'manager';
+      final raw = await EventsApi.instance.getEventOrder(
+        orderId: dto.id,
+        roleType: roleType,
       );
       if (!mounted) return;
+      // ignore: invalid_use_of_protected_member
       setState(() {
-        _selectedManageEventsOrder = EventsApi.instance.parseOrder(raw);
+        _selectedManageEventsOrder = raw;
         _manageEventsDetailLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
+      // ignore: invalid_use_of_protected_member
       setState(() {
         _manageEventsDetailLoading = false;
         _manageEventsDetailError = '$e';
@@ -911,8 +923,13 @@ extension _ManageEventsTableExt on _ManageEventsState {
     required List<DataColumn> columns,
     required List<DataRow> rows,
   }) {
-    return SizedBox(
-      height: MediaQuery.sizeOf(context).height - 220,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final panelHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : MediaQuery.sizeOf(context).height - 220;
+        return SizedBox(
+      height: panelHeight,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -980,6 +997,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
           ),
         ],
       ),
+    );
+      },
     );
   }
 

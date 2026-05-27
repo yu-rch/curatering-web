@@ -77,6 +77,7 @@ class PostAnalysisDto {
 class EventOrderDto {
   final String id;
   final String cateringId;
+  final String eventId;
   final String customerId;
   final String source;
   final String status;
@@ -85,6 +86,7 @@ class EventOrderDto {
   final String orderType; // catering | catering_event
   final String eventType;
   final String formalityLevel;
+  final bool includeMinimalEventStyling;
 
   final String customerName;
   final String contactPerson;
@@ -126,9 +128,21 @@ class EventOrderDto {
 
   final DateTime? updatedAt;
 
+  /// Public transaction number: `event_id` for events, `catering_id` for catering.
+  String get transactionNo {
+    final isEvent =
+        orderKind == 'event' ||
+        orderType == 'catering_event' ||
+        orderType.contains('event');
+    if (isEvent && eventId.isNotEmpty) return eventId;
+    if (cateringId.isNotEmpty) return cateringId;
+    return id;
+  }
+
   const EventOrderDto({
     required this.id,
     this.cateringId = '',
+    this.eventId = '',
     this.customerId = '',
     required this.source,
     required this.status,
@@ -136,6 +150,7 @@ class EventOrderDto {
     required this.orderType,
     required this.eventType,
     required this.formalityLevel,
+    this.includeMinimalEventStyling = false,
     required this.customerName,
     required this.contactPerson,
     required this.contactNumber,

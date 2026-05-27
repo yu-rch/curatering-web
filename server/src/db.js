@@ -1012,6 +1012,12 @@ export async function initDb() {
     await pool.query(
       `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_lng DECIMAL(10,8)`,
     );
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS primary_delivery_address TEXT NOT NULL DEFAULT ''`,
+    );
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS other_delivery_addresses JSONB NOT NULL DEFAULT '[]'::jsonb`,
+    );
   } catch (err) {
     console.log('Migration check for customer_accounts delivery columns:', err.message);
   }
@@ -1516,23 +1522,31 @@ async function ensureCustomerTrayDraftsTrayItemsColumn() {
   const cols = await getTableColumnNames('customer_tray_drafts');
 
   await pool.query(
-    `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_lines JSONB NOT NULL DEFAULT '[]'::jsonb`,
-  );
-  await pool.query(
     `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_items JSONB NOT NULL DEFAULT '[]'::jsonb`,
   );
 
-  try {
-    const legacyItemsExpr = cols.has('items') ? `, items` : '';
-    await pool.query(`
-      UPDATE customer_tray_drafts
-      SET tray_lines = COALESCE(NULLIF(tray_lines, '[]'::jsonb), tray_items${legacyItemsExpr}, '[]'::jsonb),
-          tray_items = COALESCE(NULLIF(tray_items, '[]'::jsonb), tray_lines${legacyItemsExpr}, '[]'::jsonb)
-      WHERE tray_lines IS NULL OR tray_lines = '[]'::jsonb
-         OR tray_items IS NULL OR tray_items = '[]'::jsonb
-    `);
-  } catch (err) {
-    console.warn('[db] customer_tray_drafts tray_lines/tray_items backfill:', err.message);
+  if (cols.has('tray_lines')) {
+    try {
+      const legacyItemsExpr = cols.has('items') ? `, items` : '';
+      await pool.query(`
+        UPDATE customer_tray_drafts
+        SET tray_items = COALESCE(
+          NULLIF(tray_items, '[]'::jsonb),
+          NULLIF(tray_lines, '[]'::jsonb)${legacyItemsExpr},
+          '[]'::jsonb
+        )
+        WHERE tray_items IS NULL OR tray_items = '[]'::jsonb
+      `);
+    } catch (err) {
+      console.warn('[db] customer_tray_drafts tray_lines → tray_items:', err.message);
+    }
+    try {
+      await pool.query(
+        `ALTER TABLE customer_tray_drafts DROP COLUMN IF EXISTS tray_lines`,
+      );
+    } catch (err) {
+      console.warn('[db] customer_tray_drafts drop tray_lines:', err.message);
+    }
   }
 }
 
@@ -1578,11 +1592,15 @@ async function ensureCustomerTrayDraftsSchemaOnce() {
       } catch (_) {}
     }
     await pool.query(
-      `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_lines JSONB NOT NULL DEFAULT '[]'::jsonb`,
-    );
-    await pool.query(
       `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS tray_items JSONB NOT NULL DEFAULT '[]'::jsonb`,
     );
+    try {
+      await pool.query(
+        `ALTER TABLE customer_tray_drafts DROP COLUMN IF EXISTS tray_lines`,
+      );
+    } catch (err) {
+      console.warn('[db] customer_tray_drafts drop tray_lines:', err.message);
+    }
     await pool.query(
       `ALTER TABLE customer_tray_drafts ADD COLUMN IF NOT EXISTS user_email TEXT`,
     );
