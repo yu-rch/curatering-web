@@ -359,7 +359,7 @@ class _DashboardState extends State<Dashboard> {
     return SizedBox(
       width: 190,
       child: DropdownButtonFormField<String>(
-        initialValue: value,
+        value: value,
         decoration: InputDecoration(
           labelText: label,
           isDense: true,

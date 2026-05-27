@@ -555,7 +555,7 @@ class _MenuState extends State<Menu> {
                       if (category == 'restaurant') ...[
                         const SizedBox(height: 16),
                         DropdownButtonFormField<String>(
-                          initialValue:
+                          value:
                               _restaurantMealTypes.contains(_editingType)
                                   ? _editingType
                                   : 'others',
@@ -675,7 +675,7 @@ class _MenuState extends State<Menu> {
                       if (category == 'catering') ...[
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
-                          initialValue:
+                          value:
                               kCateringMealTypes.contains(_editingMealType)
                                   ? _editingMealType
                                   : 'main',

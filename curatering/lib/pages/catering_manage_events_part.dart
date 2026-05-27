@@ -1000,7 +1000,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         SizedBox(
           width: 220,
           child: DropdownButtonFormField<String>(
-            initialValue: _eventTableServiceTypeFilter,
+            value: _eventTableServiceTypeFilter,
             decoration: const InputDecoration(
               labelText: 'Service type',
               isDense: true,
@@ -1020,7 +1020,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         SizedBox(
           width: 220,
           child: DropdownButtonFormField<String>(
-            initialValue: _eventTableEventTypeFilter,
+            value: _eventTableEventTypeFilter,
             decoration: const InputDecoration(
               labelText: 'Event type',
               isDense: true,
@@ -1040,7 +1040,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         SizedBox(
           width: 220,
           child: DropdownButtonFormField<String>(
-            initialValue: _eventTableDateFilter,
+            value: _eventTableDateFilter,
             decoration: const InputDecoration(
               labelText: 'Event datetime',
               isDense: true,
@@ -1086,7 +1086,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         SizedBox(
           width: 220,
           child: DropdownButtonFormField<String>(
-            initialValue: _inquiryServiceTypeFilter,
+            value: _inquiryServiceTypeFilter,
             decoration: const InputDecoration(
               labelText: 'Service type',
               isDense: true,
@@ -1109,7 +1109,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         SizedBox(
           width: 220,
           child: DropdownButtonFormField<String>(
-            initialValue: _inquiryEventTypeFilter,
+            value: _inquiryEventTypeFilter,
             decoration: const InputDecoration(
               labelText: 'Event type',
               isDense: true,
@@ -1129,7 +1129,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         SizedBox(
           width: 220,
           child: DropdownButtonFormField<String>(
-            initialValue: _inquiryDateFilter,
+            value: _inquiryDateFilter,
             decoration: const InputDecoration(
               labelText: 'Inquiry datetime',
               isDense: true,

@@ -592,7 +592,7 @@ class _InventoryState extends State<Inventory> {
                         label: 'Category',
                         required: true,
                         child: DropdownButtonFormField<String>(
-                          initialValue: _categoryController.text,
+                          value: _categoryController.text,
                           isExpanded: true,
                           decoration: const InputDecoration(
                             border: InputBorder.none,
@@ -630,7 +630,7 @@ class _InventoryState extends State<Inventory> {
                               label: 'Unit',
                               required: true,
                               child: DropdownButtonFormField<String>(
-                                initialValue:
+                                value:
                                     _units.contains(_unitController.text)
                                         ? _unitController.text
                                         : 'pcs',
@@ -1139,7 +1139,7 @@ class _InventoryState extends State<Inventory> {
     return SizedBox(
       width: width,
       child: DropdownButtonFormField<T>(
-        initialValue: value,
+        value: value,
         isExpanded: true,
         decoration: InputDecoration(
           labelText: label,

@@ -167,7 +167,7 @@ class _GalleryPageState extends State<GalleryPage> {
         ),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
-          initialValue: value,
+          value: value,
           isExpanded: true,
           decoration: InputDecoration(
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),

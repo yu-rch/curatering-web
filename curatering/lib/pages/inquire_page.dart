@@ -1120,7 +1120,7 @@ class _InquirePageState extends State<InquirePage> {
           label: 'Event Type',
           required: true,
           child: DropdownButtonFormField<String>(
-            initialValue: eventTypeValue,
+            value: eventTypeValue,
             isExpanded: true,
             decoration: const InputDecoration(
               border: InputBorder.none,
@@ -1147,7 +1147,7 @@ class _InquirePageState extends State<InquirePage> {
           label: 'Formality',
           required: true,
           child: DropdownButtonFormField<String>(
-            initialValue: _formality,
+            value: _formality,
             isExpanded: true,
             decoration: const InputDecoration(
               border: InputBorder.none,
@@ -1462,7 +1462,7 @@ class _InquirePageState extends State<InquirePage> {
         AntdFieldShell(
           label: 'Event Setting',
           child: DropdownButtonFormField<String>(
-            initialValue: _eventSetting,
+            value: _eventSetting,
             isExpanded: true,
             decoration: const InputDecoration(border: OutlineInputBorder()),
             items: const [
@@ -2740,7 +2740,7 @@ class _InquirePageState extends State<InquirePage> {
     Function(String?) onChanged,
   ) {
     return DropdownButtonFormField<String>(
-      initialValue: value != null && items.contains(value) ? value : null,
+      value: value != null && items.contains(value) ? value : null,
       items:
           items.map((item) {
             return DropdownMenuItem(value: item, child: Text(item));

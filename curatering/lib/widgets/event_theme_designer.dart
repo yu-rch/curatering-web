@@ -199,7 +199,7 @@ class _EventThemeDesignerState extends State<EventThemeDesigner> {
 
             // Event Type
             DropdownButtonFormField<String>(
-              initialValue: _selectedEventType,
+              value: _selectedEventType,
               decoration: const InputDecoration(
                 labelText: 'Event Type',
                 border: OutlineInputBorder(),
@@ -238,7 +238,7 @@ class _EventThemeDesignerState extends State<EventThemeDesigner> {
 
             // Color Scheme
             DropdownButtonFormField<String>(
-              initialValue: _selectedColorScheme,
+              value: _selectedColorScheme,
               decoration: const InputDecoration(
                 labelText: 'Color Scheme',
                 border: OutlineInputBorder(),
@@ -277,7 +277,7 @@ class _EventThemeDesignerState extends State<EventThemeDesigner> {
 
             // Style
             DropdownButtonFormField<String>(
-              initialValue: _selectedStyle,
+              value: _selectedStyle,
               decoration: const InputDecoration(
                 labelText: 'Design Style',
                 border: OutlineInputBorder(),
