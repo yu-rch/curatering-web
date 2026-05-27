@@ -1283,6 +1283,130 @@ function buildDashboardExplainability({ current, previous, filters, alerts }) {
   return points.slice(0, 8);
 }
 
+function dashboardNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function dashboardInt(value) {
+  return Math.round(dashboardNumber(value));
+}
+
+function dashboardAggregate(value = {}) {
+  const sentiment = value?.sentiment && typeof value.sentiment === "object" ? value.sentiment : {};
+  return {
+    total: dashboardInt(value?.total),
+    sentiment: {
+      positive: dashboardInt(sentiment.positive),
+      neutral: dashboardInt(sentiment.neutral),
+      negative: dashboardInt(sentiment.negative),
+    },
+    complaint_count: dashboardInt(value?.complaint_count),
+    top_topics: Array.isArray(value?.top_topics) ? value.top_topics : [],
+  };
+}
+
+function formatPeso(value) {
+  return `₱${Math.round(dashboardNumber(value)).toLocaleString("en-PH")}`;
+}
+
+function buildDashboardFallbackSections({ current, previous, dashboardData, range, alerts }) {
+  const client = dashboardData?.client_dashboard || {};
+  const restaurant = client.restaurant || {};
+  const catering = client.catering || {};
+  const salesThisYear = client.salesThisYear || {};
+  const monthlySales = Array.isArray(client.monthlySales) ? client.monthlySales : [];
+  const latestMonth = monthlySales.filter(Boolean).sort((a, b) => dashboardInt(b.month) - dashboardInt(a.month))[0] || {};
+  const trends = [];
+  const problems = [];
+  const recommendations = [];
+  const fallbackAlerts = Array.isArray(alerts) ? [...alerts] : [];
+
+  const totalSales = dashboardNumber(salesThisYear.all);
+  if (totalSales > 0) {
+    trends.push(`Year-to-date combined sales are ${formatPeso(totalSales)} across restaurant and catering.`);
+  }
+  if (dashboardNumber(latestMonth.totalSales) > 0 || dashboardInt(latestMonth.totalOrders) > 0) {
+    trends.push(
+      `Latest month shows ${formatPeso(latestMonth.totalSales)} from ${dashboardInt(latestMonth.totalOrders)} order(s).`,
+    );
+  }
+  if (current.total > 0) {
+    trends.push(
+      `Recent feedback is ${current.sentiment.positive} positive, ${current.sentiment.neutral} neutral, and ${current.sentiment.negative} negative over the selected ${range.key} range.`,
+    );
+  }
+  if (catering.inquiriesThisMonth != null) {
+    trends.push(`${dashboardInt(catering.inquiriesThisMonth)} catering inquiry/inquiries were recorded this month.`);
+  }
+
+  const pending = dashboardInt(restaurant.pendingConfirmations);
+  const forDownPayment = dashboardInt(catering.forDownPayment);
+  const forFullPayment = dashboardInt(catering.forFullPayment);
+  const cancelled = dashboardInt(restaurant.cancelled) + dashboardInt(catering.cancelled);
+  const restaurantComplaints = dashboardInt(restaurant.feedback?.complaintCount);
+  const cateringComplaints = dashboardInt(catering.feedback?.complaintCount);
+
+  if (pending > 0) problems.push(`${pending} restaurant order(s) still need confirmation.`);
+  if (forDownPayment > 0) problems.push(`${forDownPayment} catering transaction(s) are waiting for down payment.`);
+  if (forFullPayment > 0) problems.push(`${forFullPayment} catering transaction(s) are waiting for full payment.`);
+  if (cancelled > 0) problems.push(`${cancelled} cancelled order/transaction record(s) need review for avoidable causes.`);
+  if (restaurantComplaints + cateringComplaints > 0) {
+    problems.push(`${restaurantComplaints + cateringComplaints} complaint signal(s) are present in feedback metrics.`);
+  }
+  if (current.total === 0) {
+    problems.push("No analyzed feedback records were found for this AI range; feedback insights may be incomplete.");
+  }
+
+  if (pending > 0) {
+    fallbackAlerts.push({
+      type: "pending_confirmations",
+      severity: pending >= 5 ? "high" : "medium",
+      message: `${pending} restaurant order(s) need confirmation.`,
+    });
+  }
+  if (forDownPayment + forFullPayment > 0) {
+    fallbackAlerts.push({
+      type: "catering_payment_followup",
+      severity: forDownPayment + forFullPayment >= 5 ? "high" : "medium",
+      message: `${forDownPayment + forFullPayment} catering transaction(s) need payment follow-up.`,
+    });
+  }
+  if (restaurantComplaints + cateringComplaints > 0) {
+    fallbackAlerts.push({
+      type: "feedback_complaints",
+      severity: restaurantComplaints + cateringComplaints >= 3 ? "high" : "medium",
+      message: `${restaurantComplaints + cateringComplaints} complaint signal(s) are present in dashboard feedback.`,
+    });
+  }
+  if (current.total === 0) {
+    fallbackAlerts.push({
+      type: "feedback_analysis_gap",
+      severity: "info",
+      message: "No analyzed feedback records were found for this AI range.",
+    });
+  }
+
+  if (pending > 0) recommendations.push("Review pending restaurant confirmations and contact customers before peak service hours.");
+  if (forDownPayment + forFullPayment > 0) {
+    recommendations.push("Follow up payment-stage catering transactions and prioritize events closest to their schedule date.");
+  }
+  if (current.top_topics?.length) {
+    recommendations.push(`Use feedback topics (${current.top_topics.map((item) => item.topic).join(", ")}) for the next staff briefing.`);
+  }
+  recommendations.push("Compare the latest month’s sales and order counts with staffing and inventory plans before the next operating day.");
+  if (Array.isArray(alerts) && alerts.length) {
+    recommendations.push("Assign an owner for each AI alert and record the resolution in the next manager handoff.");
+  }
+
+  return {
+    trends: trends.slice(0, 6),
+    problems: problems.slice(0, 6),
+    recommendations: recommendations.slice(0, 6),
+    alerts: fallbackAlerts.slice(0, 8),
+  };
+}
+
 function normalizeDashboardAiResult(output) {
   const parsed = extractRunpodNlpResult(output) || output?.analysis || output;
   const data = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
@@ -1516,6 +1640,19 @@ async function analyzeDashboardThroughGateway({
     ? normalized.explainability
     : explainability;
   normalized.alerts = normalized.alerts.length ? normalized.alerts : alerts;
+  const fallbackSections = buildDashboardFallbackSections({
+    current,
+    previous,
+    dashboardData,
+    range,
+    alerts: normalized.alerts,
+  });
+  normalized.trends = normalized.trends.length ? normalized.trends : fallbackSections.trends;
+  normalized.problems = normalized.problems.length ? normalized.problems : fallbackSections.problems;
+  normalized.recommendations = normalized.recommendations.length
+    ? normalized.recommendations
+    : fallbackSections.recommendations;
+  normalized.alerts = normalized.alerts.length ? normalized.alerts : fallbackSections.alerts;
 
   const stored = await storeDashboardInsight({
     analysisType,
@@ -1537,6 +1674,21 @@ async function analyzeDashboardThroughGateway({
 function serializeDashboardInsight(row) {
   if (!row) return null;
   const jsonArray = (value) => (Array.isArray(value) ? value : []);
+  const dashboardData =
+    row.dashboard_data && typeof row.dashboard_data === "object" && !Array.isArray(row.dashboard_data)
+      ? row.dashboard_data
+      : {};
+  const fallback = buildDashboardFallbackSections({
+    current: dashboardAggregate(dashboardData.current),
+    previous: dashboardAggregate(dashboardData.previous),
+    dashboardData,
+    range: { key: String(row.range_key || row.range || "7d") },
+    alerts: jsonArray(row.alerts),
+  });
+  const trends = jsonArray(row.trends);
+  const problems = jsonArray(row.problems);
+  const recommendations = jsonArray(row.recommendations);
+  const alerts = jsonArray(row.alerts);
   return {
     id: String(row.id || ""),
     analysisType: String(row.analysis_type || "dashboard"),
@@ -1545,18 +1697,51 @@ function serializeDashboardInsight(row) {
     filters: row.filters && typeof row.filters === "object" ? row.filters : {},
     summary: String(row.summary || ""),
     insights: jsonArray(row.insights),
-    trends: jsonArray(row.trends),
-    problems: jsonArray(row.problems),
-    recommendations: jsonArray(row.recommendations),
-    alerts: jsonArray(row.alerts),
+    trends: trends.length ? trends : fallback.trends,
+    problems: problems.length ? problems : fallback.problems,
+    recommendations: recommendations.length ? recommendations : fallback.recommendations,
+    alerts: alerts.length ? alerts : fallback.alerts,
     explainability: jsonArray(row.explainability),
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
   };
 }
 
 function toStringArray(value, max = 5) {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, max);
+  const itemText = (item) => {
+    if (item == null) return "";
+    if (typeof item === "string" || typeof item === "number") {
+      return String(item).trim();
+    }
+    if (typeof item === "object" && !Array.isArray(item)) {
+      return String(
+        item.message ||
+          item.summary ||
+          item.title ||
+          item.insight ||
+          item.trend ||
+          item.problem ||
+          item.recommendation ||
+          item.action ||
+          item.description ||
+          "",
+      ).trim();
+    }
+    return "";
+  };
+  if (Array.isArray(value)) {
+    return value.map(itemText).filter(Boolean).slice(0, max);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(/\n+|;\s*|(?:^|\s)\d+\.\s+/)
+      .map((item) => item.replace(/^[-*•]\s*/, "").trim())
+      .filter(Boolean)
+      .slice(0, max);
+  }
+  if (value && typeof value === "object") {
+    return Object.values(value).flatMap((item) => toStringArray(item, max)).slice(0, max);
+  }
+  return [];
 }
 
 function normalizeSingleFeedbackResult(aiResponse) {

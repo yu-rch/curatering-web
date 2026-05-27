@@ -51,8 +51,39 @@ async function chatJson(system, user) {
 }
 
 function stringList(value, max = 8) {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, max);
+  const fromObject = (item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return "";
+    return String(
+      item.message ||
+        item.summary ||
+        item.title ||
+        item.insight ||
+        item.trend ||
+        item.problem ||
+        item.recommendation ||
+        item.action ||
+        item.description ||
+        "",
+    ).trim();
+  };
+  const normalize = (item) =>
+    typeof item === "string" || typeof item === "number"
+      ? String(item).trim()
+      : fromObject(item);
+  if (Array.isArray(value)) {
+    return value.map(normalize).filter(Boolean).slice(0, max);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(/\n+|;\s*|(?:^|\s)\d+\.\s+/)
+      .map((item) => item.replace(/^[-*•]\s*/, "").trim())
+      .filter(Boolean)
+      .slice(0, max);
+  }
+  if (value && typeof value === "object") {
+    return Object.values(value).flatMap((item) => stringList(item, max)).slice(0, max);
+  }
+  return [];
 }
 
 export async function analyzeSingleFeedback(feedback) {
@@ -104,8 +135,21 @@ export async function analyzeCustomerFeedbackOverview(feedbacks) {
 
 export async function analyzeDashboard(data) {
   const json = await chatJson(
-    "You are a business dashboard analyst for a catering and restaurant operation. Return JSON only.",
-    `Return JSON with summary, insights, trends, problems, recommendations, alerts, explainability.\nDashboard:\n${JSON.stringify(data)}`,
+    [
+      "You are a business dashboard analyst for a catering and restaurant operation.",
+      "Return JSON only. Use this exact shape:",
+      "{",
+      '  "summary": "2-4 sentence management summary",',
+      '  "insights": ["3-6 concise observations"],',
+      '  "trends": ["3-6 sales, order, feedback, or event trends"],',
+      '  "problems": ["2-5 operational or data-quality problems; use [] only if none"],',
+      '  "recommendations": ["3-6 specific next actions for managers"],',
+      '  "alerts": [{"type":"short_key","severity":"info|medium|high","message":"specific alert"}],',
+      '  "explainability": ["3-6 data points used"]',
+      "}",
+      "Always include arrays for trends, problems, recommendations, alerts, and explainability.",
+    ].join("\n"),
+    `Analyze the dashboard data and fill every section with useful management content.\nDashboard:\n${JSON.stringify(data)}`,
   );
   return {
     summary: String(json.summary || "").trim(),
