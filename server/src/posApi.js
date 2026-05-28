@@ -726,8 +726,11 @@ export function registerPosRoutes(app, {
       const amountReceived = Number(req.body?.amount_received ?? 0);
       const total = items.reduce((s, it) => s + it.price * it.qty, 0);
       const proof = req.body?.payment_proof ? String(req.body.payment_proof) : null;
-      if (paymentMethod === "GCASH" && !proof) {
-        return res.status(400).json({ error: "payment_proof required for GCASH" });
+      const paymentReferenceInitial = req.body?.payment_reference_initial
+        ? String(req.body.payment_reference_initial).trim()
+        : null;
+      if (paymentMethod === "GCASH" && !proof && !paymentReferenceInitial) {
+        return res.status(400).json({ error: "payment_proof or payment_reference_initial required for GCASH" });
       }
 
       const orderNo = await allocateRestaurantOrderNo();
@@ -744,15 +747,15 @@ export function registerPosRoutes(app, {
            ${orderIdCol}, full_name, contact_number, ${itemsInsert.columns}, total_cost,
            delivery_address, delivery_lat, delivery_lng,
            order_status, payment_method,
-           order_source, pos_customer_label, payment_proof,
+           order_source, pos_customer_label, payment_proof, payment_reference_initial,
            payment_uploaded, cashier_amount_received_initial, amount_paid,
            change_given, pos_claimed_at, note
          ) VALUES (
            $1, $2, '', ${itemsSql}, $4,
            'Walk-in', NULL, NULL,
            'IN_PREPARATION', $5,
-           'POS_WEB', $6, $7,
-           $10, $8, $8, $9, now(), $11
+           'POS_WEB', $6, $7, $8,
+           $11, $9, $9, $10, now(), $12
          )
          RETURNING *`,
         [
@@ -763,9 +766,10 @@ export function registerPosRoutes(app, {
           paymentMethod,
           String(req.body?.pos_customer_label || "").trim(),
           proof,
+          paymentReferenceInitial,
           amountReceived,
           change,
-          Boolean(proof),
+          Boolean(proof || paymentReferenceInitial),
           String(req.body?.note || "").trim(),
         ],
       );

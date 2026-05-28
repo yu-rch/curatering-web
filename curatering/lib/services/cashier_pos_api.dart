@@ -108,6 +108,7 @@ class CashierPosApi {
     String note = '',
     String posCustomerLabel = '',
     String? paymentProofBase64,
+    String? paymentReferenceInitial,
   }) async {
     final res = await http.post(
       Uri.parse('$apiBaseUrl/api/cashier/pos/walkin-order'),
@@ -117,6 +118,8 @@ class CashierPosApi {
         'amount_received': amountReceived,
         'note': note,
         'pos_customer_label': posCustomerLabel,
+        if (paymentReferenceInitial != null)
+          'payment_reference_initial': paymentReferenceInitial,
         if (paymentProofBase64 != null) 'payment_proof': paymentProofBase64,
         'items': items,
       }),
@@ -126,7 +129,9 @@ class CashierPosApi {
   }
 
   Future<List<Map<String, dynamic>>> walkInQueue(String filter) async {
-    final data = await _post('/api/cashier/pos/walkin-queue', {'filter': filter});
+    final data = await _post('/api/cashier/pos/walkin-queue', {
+      'filter': filter,
+    });
     return _asOrderList(data);
   }
 
