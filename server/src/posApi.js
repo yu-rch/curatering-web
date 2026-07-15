@@ -692,7 +692,7 @@ export function registerPosRoutes(app, {
               `UPDATE customer_accounts
                SET restaurant_loyalty_points = COALESCE(restaurant_loyalty_points, 0) + $2,
                    updated_at = now()
-               WHERE ${customerWhereSql}`,
+               WHERE id = $1`,
               [order.customer_id, points],
             );
           }
@@ -754,8 +754,8 @@ export function registerPosRoutes(app, {
            $1, $2, '', ${itemsSql}, $4,
            'Walk-in', NULL, NULL,
            'IN_PREPARATION', $5,
-           'POS_WEB', $6, $7, $8,
-           $11, $9, $9, $10, now(), $12
+           'POS_WEB', $6, $7,
+           $10, $8, $8, $9, now(), $11
          )
          RETURNING *`,
         [

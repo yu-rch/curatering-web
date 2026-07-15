@@ -7880,7 +7880,7 @@ async function resolveRestaurantOrderEmail(order) {
   if (!order.customer_id) return null;
   const customerWhereSql = await customerAccountIdentityWhereSql('$1');
   const r = await pool.query(
-    `SELECT email FROM customer_accounts WHERE ${customerWhereSql} LIMIT 1`,
+    'SELECT email FROM customer_accounts WHERE id = $1 LIMIT 1',
     [order.customer_id],
   );
   return r.rowCount > 0 ? r.rows[0].email : null;

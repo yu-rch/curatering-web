@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/menu_dish.dart';
 import 'api_client.dart';
 import 'cart_sync_service.dart';
-import 'menu_store.dart';
 
 const double kRestaurantAddonExtraPhp = 15;
 
@@ -164,9 +163,6 @@ class CartStore extends ChangeNotifier {
   static const String _legacyCartKey = 'cart';
 
   CartStore._();
-
-  bool _initInProgress = false;
-  bool _initialized = false;
 
   List<CartItem> _items = [];
 
@@ -348,46 +344,11 @@ class CartStore extends ChangeNotifier {
   void replaceItemsWithoutSync(List<dynamic> rawItems) {
     _items = [];
     for (final raw in rawItems) {
-      var parsed = CartSyncService.parseTrayLineItem(raw);
+      final parsed = CartSyncService.parseTrayLineItem(raw);
       if (parsed == null) continue;
-
-      // Enrich from local menu cache if name/price/image is missing
-      if (parsed.dish.name.isEmpty ||
-          parsed.dish.price == '0' ||
-          parsed.dish.imageBase64 == null) {
-        MenuDish? cached;
-        for (final dish in MenuStore.instance.allDishes) {
-          if (dish.id == parsed.dish.id) {
-            cached = dish;
-            break;
-          }
-        }
-        if (cached != null) {
-          parsed = CartItem(
-            dish: parsed.dish.copyWith(
-              name: parsed.dish.name.isEmpty ? cached.name : null,
-              price: parsed.dish.price == '0' ? cached.price : null,
-              imageBase64: parsed.dish.imageBase64 ?? cached.imageBase64,
-              category:
-                  parsed.dish.category == 'restaurant' ? cached.category : null,
-              additionalChargeAmount:
-                  parsed.dish.additionalChargeAmount == 0
-                      ? cached.additionalChargeAmount
-                      : null,
-            ),
-            quantity: parsed.quantity,
-            selectedSauce: parsed.selectedSauce,
-            addOnQuantity: parsed.addOnQuantity,
-            addOns: parsed.addOns,
-            specialInstructions: parsed.specialInstructions,
-          );
-        }
-      }
-
-      final parsedItem = parsed;
       final existingIndex = _items.indexWhere(
         (item) =>
-            item.dish.id == parsedItem.dish.id &&
+            item.dish.id == parsed.dish.id &&
             _sameCustomizations(
               item,
               parsedItem.selectedSauce,
@@ -445,35 +406,13 @@ class CartStore extends ChangeNotifier {
   }
 
   Future<void> init() async {
-    if (_initInProgress) return;
-    if (_initialized) return;
-    _initInProgress = true;
-    try {
-      await _loadCart();
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('customer_token');
-      if (token == null || token.isEmpty) {
-        CartSyncService.instance.stopRealtimeSync();
-        if (_items.isNotEmpty) {
-          _items = [];
-          await _saveCart();
-          notifyListeners();
-        }
-        return;
-      }
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('customer_token');
+    if (token != null && token.isNotEmpty) {
       ApiClient.instance.setCustomerBearer(token);
       await CartSyncService.instance.syncFromServer();
-      CartSyncService.instance.startRealtimeSync();
-    } finally {
-      _initInProgress = false;
-      _initialized = true;
+    } else {
+      await _loadCart();
     }
-  }
-
-  /// Call after logout so the next login re-syncs tray from the server.
-  void resetInitState() {
-    CartSyncService.instance.stopRealtimeSync();
-    _initialized = false;
-    _initInProgress = false;
   }
 }

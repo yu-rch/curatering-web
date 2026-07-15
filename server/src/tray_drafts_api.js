@@ -50,80 +50,20 @@ export function normalizeTrayLineItem(raw) {
     m.selectedSauce ??
     (m.dip && String(m.dip).trim() ? m.dip : null);
   const sauceStr = sauceRaw != null ? String(sauceRaw).trim() : '';
-
-  const category = String(
-    m.category ?? m.dish_category ?? m.dishCategory ?? dish.category ?? 'restaurant',
-  );
-  const mealType = String(
-    m.meal_type ?? m.mealType ?? dish.meal_type ?? dish.mealType ?? '',
-  );
-  const dishType = String(m.dish_type ?? m.dishType ?? dish.type ?? mealType);
-
-  const addOnQty = Math.max(
-    1,
-    Number(m.addOnQuantity ?? m.add_on_quantity ?? m.dip_qty ?? 1) || 1,
-  );
-  const addOns = Array.isArray(m.addOns)
-    ? m.addOns.map((e) => String(e)).filter(Boolean)
-    : Array.isArray(m.add_ons)
-      ? m.add_ons.map((e) => String(e)).filter(Boolean)
-      : [];
+  const rawDipQty = Number(m.dip_qty ?? m.addOnQuantity ?? 1);
+  const dipQty = sauceStr
+    ? Math.max(1, Number.isFinite(rawDipQty) ? Math.floor(rawDipQty) : 1)
+    : 1;
   const notes = String(
-    m.specialInstructions ?? m.special_instructions ?? m.notes ?? '',
+    m.notes ?? m.special_instructions ?? m.specialInstructions ?? '',
   ).trim();
-  const dishName = String(
-    m.dish_name ?? m.dishName ?? m.item_name ?? m.name ?? dish.name ?? 'Item',
-  );
-  const priceStr = String(
-    m.dish_price ?? m.dishPrice ?? m.price ?? dish.price ?? '0',
-  );
-  const priceNum = Number(priceStr) || 0;
-  const imageBase64 =
-    m.image_base64 ?? m.imageBase64 ?? dish.image_base64 ?? dish.imageBase64 ?? null;
 
   return {
     id: dishId,
-    dishId,
-    dish_id: dishId,
-    dishName,
-    dish_name: dishName,
-    name: dishName,
-    item_name: dishName,
-    dishPrice: priceStr,
-    dish_price: priceStr,
-    price: priceNum,
-    qty,
-    quantity: qty,
-    category,
-    image_base64: imageBase64,
-    imageBase64: imageBase64,
-    selectedSauce: sauceStr || null,
-    selected_sauce: sauceStr || null,
     dip: sauceStr,
-    addOnQuantity: addOnQty,
-    dip_qty: addOnQty,
-    addOns,
-    add_ons: addOns,
+    qty,
     notes,
-    specialInstructions: notes,
-    special_instructions: notes,
-    dish_category: category,
-    dishCategory: category,
-    dish_type: dishType,
-    dishType,
-    meal_type: mealType,
-    mealType,
-    dish: {
-      id: dishId,
-      name: dishName,
-      price: priceStr,
-      category,
-      type: dishType,
-      mealType,
-      meal_type: mealType,
-      image_base64: imageBase64,
-      imageBase64: imageBase64,
-    },
+    dip_qty: dipQty,
   };
 }
 
@@ -209,9 +149,10 @@ async function upsertTrayDraftItems(customerId, items, { replace = false } = {})
   }
   const json = JSON.stringify(normalized);
   await pool.query(
-    `INSERT INTO customer_tray_drafts (customer_id, tray_items, updated_at)
-     VALUES ($1, $2::jsonb, now())
+    `INSERT INTO customer_tray_drafts (customer_id, tray_lines, tray_items, updated_at)
+     VALUES ($1, $2::jsonb, $2::jsonb, now())
      ON CONFLICT (customer_id) DO UPDATE SET
+       tray_lines = EXCLUDED.tray_lines,
        tray_items = EXCLUDED.tray_items,
        updated_at = now()`,
     [customerId, json],
@@ -263,13 +204,14 @@ export async function getTrayDraftItemsByCustomerId(customerId) {
   await ensureCustomerTrayDraftsSchema();
   const id = await resolveCustomerAccountCustomerId(customerId);
   const result = await pool.query(
-    `SELECT tray_items FROM customer_tray_drafts WHERE customer_id = $1`,
+    `SELECT tray_lines, tray_items FROM customer_tray_drafts WHERE customer_id = $1`,
     [id],
   );
   if (result.rowCount === 0) return [];
   const row = result.rows[0];
+  const lines = parseItemsArray(row.tray_lines);
   const items = parseItemsArray(row.tray_items);
-  return items;
+  return items.length > 0 ? items : lines;
 }
 
 export async function getTrayDraft(req, res) {
@@ -282,7 +224,7 @@ export async function getTrayDraft(req, res) {
     }
     console.debug && console.debug('getTrayDraft: customerId resolved', customerId);
     const result = await pool.query(
-      `SELECT tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
+      `SELECT tray_lines, tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
       [customerId],
     );
     console.debug && console.debug('getTrayDraft: db result rowCount', result.rowCount, 'row', result.rows[0]);
@@ -290,16 +232,20 @@ export async function getTrayDraft(req, res) {
       return res.json({
         success: true,
         items: [],
+        tray_lines: [],
         tray_items: [],
         updatedAt: null,
       });
     }
     const row = result.rows[0];
+    const trayLines = parseItemsArray(row.tray_lines);
     const trayItems = parseItemsArray(row.tray_items);
+    const items = trayItems.length > 0 ? trayItems : trayLines;
     return res.json({
       success: true,
-      items: trayItems,
-      tray_items: trayItems,
+      items,
+      tray_lines: items,
+      tray_items: items,
       updatedAt: row.updated_at?.toISOString?.() ?? row.updated_at,
     });
   } catch (error) {
@@ -324,15 +270,18 @@ export async function saveTrayDraft(req, res) {
     const replace = req.body?.replace === true || req.body?.mode === 'replace';
     await upsertTrayDraftItems(customerId, items, { replace });
     const saved = await pool.query(
-      `SELECT tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
+      `SELECT tray_lines, tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,
       [customerId],
     );
     const row = saved.rows[0];
+    const trayLines = row ? parseItemsArray(row.tray_lines) : [];
     const trayItems = row ? parseItemsArray(row.tray_items) : [];
+    const itemsSaved = trayItems.length > 0 ? trayItems : trayLines;
     res.json({
       success: true,
-      items: trayItems,
-      tray_items: trayItems,
+      items: itemsSaved,
+      tray_lines: trayLines.length > 0 ? trayLines : itemsSaved,
+      tray_items: itemsSaved,
       updatedAt: row?.updated_at?.toISOString?.() ?? row?.updated_at ?? null,
     });
   } catch (error) {

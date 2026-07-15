@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_client.dart';
@@ -7,7 +6,7 @@ import 'menu_store.dart';
 import '../models/menu_dish.dart';
 
 /// Service for synchronizing cart between mobile and web platforms.
-/// Canonical store: `customer_tray_drafts.tray_items`.
+/// Canonical store: `customer_tray_drafts.tray_lines` + `tray_items`.
 class CartSyncService {
   static CartSyncService? _instance;
   static CartSyncService get instance => _instance ??= CartSyncService._();
@@ -77,60 +76,13 @@ class CartSyncService {
   static Map<String, dynamic> trayLineToJson(CartItem item) {
     final sauce = item.selectedSauce?.trim();
     final sauceVal = (sauce != null && sauce.isNotEmpty) ? sauce : '';
-    final priceNum = double.tryParse(item.dish.price) ?? 0;
-    final addOnQty = sauceVal.isNotEmpty ? item.addOnQuantity : 1;
-    final category =
-        item.dish.category.trim().isNotEmpty
-            ? item.dish.category.trim()
-            : 'restaurant';
-    final dishType =
-        item.dish.effectiveMealType.trim().isNotEmpty
-            ? item.dish.effectiveMealType.trim()
-            : item.dish.type.trim();
-    final mealType = item.dish.effectiveMealType.trim();
-    final imageBase64 = item.dish.imageBase64;
 
     return {
       'id': item.dish.id,
-      'dishId': item.dish.id,
-      'dish_id': item.dish.id,
-      'dishName': item.dish.name,
-      'dish_name': item.dish.name,
-      'name': item.dish.name,
-      'item_name': item.dish.name,
-      'dishPrice': item.dish.price,
-      'dish_price': item.dish.price,
-      'price': priceNum,
       'dip': sauceVal,
       'qty': item.quantity,
-      'quantity': item.quantity,
-      'category': category,
-      'dish_type': dishType,
-      'dishType': dishType,
-      'meal_type': mealType,
-      'mealType': mealType,
-      'image_base64': imageBase64,
-      'imageBase64': imageBase64,
-      'selectedSauce': sauceVal.isEmpty ? null : sauceVal,
-      'selected_sauce': sauceVal.isEmpty ? null : sauceVal,
       'notes': item.specialInstructions?.trim() ?? '',
-      'specialInstructions': item.specialInstructions,
-      'special_instructions': item.specialInstructions,
-      'dip_qty': addOnQty,
-      'addOnQuantity': addOnQty,
-      'addOns': item.addOns,
-      'dish': {
-        'id': item.dish.id,
-        'name': item.dish.name,
-        'price': item.dish.price,
-        'additionalChargeAmount': item.dish.additionalChargeAmount,
-        'category': category,
-        'type': dishType,
-        'mealType': mealType,
-        'meal_type': mealType,
-        'image_base64': imageBase64,
-        'imageBase64': imageBase64,
-      },
+      'dip_qty': sauceVal.isNotEmpty ? item.addOnQuantity : 1,
     };
   }
 
@@ -347,10 +299,6 @@ class CartSyncService {
       }
 
       if (trayLoaded) {
-        if (pushLocalWhenServerEmpty && CartStore.instance.items.isNotEmpty) {
-          unawaited(syncToServer());
-          return;
-        }
         await prefs.remove(_trayKey);
         await prefs.remove(_legacyCartKey);
         await prefs.setString(_lastSyncKey, DateTime.now().toIso8601String());
@@ -362,16 +310,8 @@ class CartSyncService {
     }
   }
 
-  /// Sync local cart to `customer_tray_drafts.tray_items`.
+  /// Sync local cart to `customer_tray_drafts.tray_lines` and `tray_items`.
   Future<void> syncToServer() async {
-    _syncDebounce?.cancel();
-    _syncDebounce = Timer(const Duration(milliseconds: 500), _doSyncToServer);
-  }
-
-  Future<void> _doSyncToServer() async {
-    if (_syncing) return;
-    _syncing = true;
-    _localWriteDepth++;
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
@@ -381,29 +321,10 @@ class CartSyncService {
         final cartItems = CartStore.instance.items;
 
         if (cartItems.isNotEmpty) {
-          // Deduplicate by dishId+customizations before sending
-          final deduped = <Map<String, dynamic>>[];
-          for (final item in cartItems) {
-            final json = trayLineToJson(item);
-            final key =
-                '${json['id']}_${json['dip'] ?? ''}_${json['notes'] ?? ''}_${json['dip_qty'] ?? 1}';
-            final existing = deduped.indexWhere(
-              (d) =>
-                  '${d['id']}_${d['dip'] ?? ''}_${d['notes'] ?? ''}_${d['dip_qty'] ?? 1}' ==
-                  key,
-            );
-            if (existing >= 0) {
-              deduped[existing]['quantity'] =
-                  (deduped[existing]['quantity'] as int) +
-                  (json['quantity'] as int);
-              deduped[existing]['qty'] = deduped[existing]['quantity'];
-            } else {
-              deduped.add(json);
-            }
-          }
-          final response = await ApiClient.instance.putJson(
+          final trayData = cartItems.map(trayLineToJson).toList();
+          await ApiClient.instance.putJson(
             '/api/tray-draft',
-            body: {'tray_items': deduped, 'merge': true},
+            body: {'tray_items': trayData, 'replace': true},
           );
           _lastServerUpdatedAt = response['updatedAt']?.toString();
 
@@ -419,9 +340,6 @@ class CartSyncService {
       }
     } catch (e) {
       print('Error syncing cart to server: $e');
-    } finally {
-      _syncing = false;
-      _localWriteDepth--;
     }
   }
 

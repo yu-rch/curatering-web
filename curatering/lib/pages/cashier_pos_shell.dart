@@ -198,49 +198,11 @@ class _CashierPosShellState extends State<CashierPosShell>
     }
     final received = double.tryParse(_amountCtrl.text) ?? _trayTotal;
     try {
-      String? paymentRef;
-      if (_paymentMethod.toUpperCase() == 'GCASH') {
-        final refCtrl = TextEditingController();
-        final okRef = await showDialog<bool>(
-          context: context,
-          builder:
-              (ctx) => AlertDialog(
-                title: const Text('GCash reference'),
-                content: TextField(
-                  controller: refCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Payment reference',
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text('Cancel'),
-                  ),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('Confirm'),
-                  ),
-                ],
-              ),
-        );
-        if (okRef != true || refCtrl.text.trim().isEmpty) {
-          refCtrl.dispose();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('GCash reference is required')),
-          );
-          return;
-        }
-        paymentRef = refCtrl.text.trim();
-        refCtrl.dispose();
-      }
-
       final result = await CashierPosApi.instance.submitWalkInOrder(
         paymentMethod: _paymentMethod,
         amountReceived: received,
         posCustomerLabel: _walkInLabelCtrl.text.trim(),
         items: _tray,
-        paymentReferenceInitial: paymentRef,
       );
       setState(() => _tray.clear());
       await _refreshAll();
