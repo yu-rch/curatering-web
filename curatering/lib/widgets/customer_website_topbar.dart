@@ -180,18 +180,65 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                                                           FontWeight.w600,
                                                     ),
                                                   ),
-                                                  if (item.selectedSauce !=
-                                                      null)
+                                                  if (item
+                                                              .selectedSauce
+                                                              ?.trim()
+                                                              .isNotEmpty ==
+                                                          true ||
+                                                      item.addOns.isNotEmpty ||
+                                                      item
+                                                              .specialInstructions
+                                                              ?.trim()
+                                                              .isNotEmpty ==
+                                                          true ||
+                                                      item.addonExtraSubtotal >
+                                                          0) ...[
+                                                    const SizedBox(height: 4),
                                                     Text(
-                                                      'Sauce: ${item.selectedSauce}',
+                                                      [
+                                                        if (item
+                                                                .selectedSauce
+                                                                ?.trim()
+                                                                .isNotEmpty ==
+                                                            true)
+                                                          'Sauce: ${item.selectedSauce} × ${item.addOnQuantity}',
+                                                        if (item
+                                                                .addonExtraSubtotal >
+                                                            0)
+                                                          'Extra add-on: ₱${item.addonExtraSubtotal.toStringAsFixed(2)}',
+                                                        if (item
+                                                            .addOns
+                                                            .isNotEmpty)
+                                                          'Add-ons: ${item.addOns.join(', ')}',
+                                                        if (item
+                                                                .specialInstructions
+                                                                ?.trim()
+                                                                .isNotEmpty ==
+                                                            true)
+                                                          'Note: ${item.specialInstructions}',
+                                                      ].join('\n'),
                                                       style: TextStyle(
                                                         fontSize: 12,
                                                         color:
                                                             Colors
                                                                 .grey
                                                                 .shade600,
+                                                        height: 1.35,
                                                       ),
                                                     ),
+                                                  ],
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    '₱${item.lineSubtotal.toStringAsFixed(2)}',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: Colors
+                                                          .amber
+                                                          .shade900,
+                                                    ),
+                                                  ),
                                                 ],
                                               ),
                                             ),
@@ -200,17 +247,11 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                                                 Icons.remove_circle_outline,
                                               ),
                                               onPressed: () {
-                                                if (item.quantity > 1) {
-                                                  CartStore.instance
-                                                      .updateQuantity(
-                                                        item.dish.id,
-                                                        item.quantity - 1,
-                                                      );
-                                                } else {
-                                                  CartStore.instance.removeItem(
-                                                    item.dish.id,
-                                                  );
-                                                }
+                                                CartStore.instance
+                                                    .updateCartItemQuantity(
+                                                      item,
+                                                      item.quantity - 1,
+                                                    );
                                               },
                                             ),
                                             Text('${item.quantity}'),
@@ -220,8 +261,8 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                                               ),
                                               onPressed: () {
                                                 CartStore.instance
-                                                    .updateQuantity(
-                                                      item.dish.id,
+                                                    .updateCartItemQuantity(
+                                                      item,
                                                       item.quantity + 1,
                                                     );
                                               },

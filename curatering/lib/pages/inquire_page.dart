@@ -701,8 +701,7 @@ class _InquirePageState extends State<InquirePage> {
             _selectedEventType ?? _mapInquiryEventTypeToDesign(_eventType);
       } else {
         _wantsCustomDesign = false;
-        _generatedImageUrl = null;
-        _generatedDesignPrompt = null;
+        _clearGeneratedDesignOutputs();
       }
     });
   }
@@ -835,7 +834,16 @@ class _InquirePageState extends State<InquirePage> {
       _decorOtherController.clear();
       _designPromptController.clear();
       _venuePhotoBase64 = null;
+      _clearGeneratedDesignOutputs();
     });
+  }
+
+  /// Clears AI outputs so a new venue reference starts a fresh generation set.
+  void _clearGeneratedDesignOutputs() {
+    _generatedImageUrl = null;
+    _generatedDesignPrompt = null;
+    _generatedImageHistory.clear();
+    _genAiError = null;
   }
 
   void _applyMenuSelections(List<Map<String, dynamic>> blocks) {
@@ -2397,7 +2405,11 @@ class _InquirePageState extends State<InquirePage> {
         if (_venuePhotoBase64 != null && isMobile(context)) ...[
           const SizedBox(height: 8),
           TextButton.icon(
-            onPressed: () => setState(() => _venuePhotoBase64 = null),
+            onPressed:
+                () => setState(() {
+                  _venuePhotoBase64 = null;
+                  _clearGeneratedDesignOutputs();
+                }),
             icon: const Icon(Icons.delete, color: Colors.red),
             label: const Text(
               'Remove Photo',
@@ -2829,8 +2841,16 @@ class _InquirePageState extends State<InquirePage> {
           final base64String = await _encodeVenueForRunpod(file.bytes!);
           if (mounted && base64String != null) {
             setState(() {
+              final shouldResetGenerated =
+                  _venuePhotoBase64 != null ||
+                  _generatedImageUrl != null ||
+                  _generatedImageHistory.isNotEmpty;
               _venuePhotoBase64 = base64String;
               _venueFieldError = null;
+              // New/changed reference photo invalidates prior AI generations.
+              if (shouldResetGenerated) {
+                _clearGeneratedDesignOutputs();
+              }
             });
           }
         }

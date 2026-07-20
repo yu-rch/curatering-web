@@ -596,10 +596,24 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     await _showSauceSelectionDialog(dish);
   }
 
+  static const List<String> _defaultExtras = [
+    'Extra cheese',
+    'Extra vegetables',
+    'Extra meat',
+    'Spicy',
+    'No onions',
+  ];
+
   Future<void> _showSauceSelectionDialog(MenuDish dish) async {
     String? selectedSauce;
     var addOnQuantity = 1;
+    final selectedExtras = <String>{};
     final notesController = TextEditingController();
+    final extraFee =
+        dish.additionalChargeAmount > 0
+            ? dish.additionalChargeAmount
+            : kRestaurantAddonExtraPhp;
+    final hasSauces = dish.sauces.isNotEmpty;
 
     await showDialog<void>(
       context: context,
@@ -611,131 +625,183 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     'Add to tray',
                     style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                   ),
-                  content: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          dish.name,
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        _dishInfoLine(
-                          label: 'Description',
-                          value:
-                              dish.publicDescription.trim().isEmpty
-                                  ? 'No description provided.'
-                                  : dish.publicDescription.trim(),
-                        ),
-                        const SizedBox(height: 8),
-                        _dishInfoLine(
-                          label: 'Ingredients',
-                          value:
-                              dish.ingredients.isEmpty
-                                  ? 'No ingredients listed.'
-                                  : dish.ingredients.join(', '),
-                        ),
-                        const SizedBox(height: 8),
-                        _dishInfoLine(
-                          label: 'Allergens',
-                          value:
-                              dish.allergens.trim().isEmpty
-                                  ? 'No allergens listed.'
-                                  : dish.allergens.trim(),
-                          valueColor:
-                              dish.allergens.trim().isEmpty
-                                  ? Colors.grey.shade700
-                                  : Colors.red.shade700,
-                          valueWeight: FontWeight.w600,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Add-ons',
-                          style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        if (dish.sauces.isEmpty)
+                  content: SizedBox(
+                    width: 420,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            'No add-ons available for this dish.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade700,
-                            ),
-                          )
-                        else
-                          ...dish.sauces.map(
-                            (sauce) => RadioListTile<String>(
-                              title: Text(
-                                sauce.toUpperCase(),
-                                style: GoogleFonts.poppins(fontSize: 13),
-                              ),
-                              value: sauce,
-                              groupValue: selectedSauce,
-                              onChanged: (value) {
-                                setDialogState(() {
-                                  selectedSauce = value;
-                                  addOnQuantity = 1;
-                                });
-                              },
-                              activeColor: Colors.amber.shade700,
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
+                            dish.name,
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              color: Colors.grey.shade600,
                             ),
                           ),
-                        if (selectedSauce != null) ...[
+                          const SizedBox(height: 10),
+                          _dishInfoLine(
+                            label: 'Description',
+                            value:
+                                dish.publicDescription.trim().isEmpty
+                                    ? 'No description provided.'
+                                    : dish.publicDescription.trim(),
+                          ),
                           const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'Add-on quantity',
+                          _dishInfoLine(
+                            label: 'Ingredients',
+                            value:
+                                dish.ingredients.isEmpty
+                                    ? 'No ingredients listed.'
+                                    : dish.ingredients.join(', '),
+                          ),
+                          const SizedBox(height: 8),
+                          _dishInfoLine(
+                            label: 'Allergens',
+                            value:
+                                dish.allergens.trim().isEmpty
+                                    ? 'No allergens listed.'
+                                    : dish.allergens.trim(),
+                            valueColor:
+                                dish.allergens.trim().isEmpty
+                                    ? Colors.grey.shade700
+                                    : Colors.red.shade700,
+                            valueWeight: FontWeight.w600,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Sauces / dips',
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          if (!hasSauces)
+                            Text(
+                              'No sauces available for this dish.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade700,
+                              ),
+                            )
+                          else ...[
+                            ...dish.sauces.map(
+                              (sauce) => RadioListTile<String>(
+                                title: Text(
+                                  sauce.toUpperCase(),
                                   style: GoogleFonts.poppins(fontSize: 13),
                                 ),
+                                value: sauce,
+                                groupValue: selectedSauce,
+                                onChanged: (value) {
+                                  setDialogState(() {
+                                    selectedSauce = value;
+                                    addOnQuantity = 1;
+                                  });
+                                },
+                                activeColor: Colors.amber.shade700,
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
                               ),
-                              IconButton(
-                                visualDensity: VisualDensity.compact,
-                                onPressed:
-                                    addOnQuantity > 1
-                                        ? () => setDialogState(
-                                          () => addOnQuantity--,
-                                        )
-                                        : null,
-                                icon: const Icon(Icons.remove_circle_outline),
+                            ),
+                            if (selectedSauce != null) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Add-on portions',
+                                      style: GoogleFonts.poppins(fontSize: 13),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed:
+                                        addOnQuantity > 1
+                                            ? () => setDialogState(
+                                              () => addOnQuantity--,
+                                            )
+                                            : null,
+                                    icon: const Icon(
+                                      Icons.remove_circle_outline,
+                                    ),
+                                  ),
+                                  Text(
+                                    '$addOnQuantity',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed:
+                                        () => setDialogState(
+                                          () => addOnQuantity++,
+                                        ),
+                                    icon: const Icon(Icons.add_circle_outline),
+                                  ),
+                                ],
                               ),
                               Text(
-                                '$addOnQuantity',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
+                                'First portion is included; +₱${extraFee.toStringAsFixed(0)} for each extra per main dish.',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade700,
                                 ),
                               ),
-                              IconButton(
-                                visualDensity: VisualDensity.compact,
-                                onPressed:
-                                    () => setDialogState(() => addOnQuantity++),
-                                icon: const Icon(Icons.add_circle_outline),
-                              ),
                             ],
+                          ],
+                          const SizedBox(height: 14),
+                          Text(
+                            'Extras',
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children:
+                                _defaultExtras.map((extra) {
+                                  final selected = selectedExtras.contains(
+                                    extra,
+                                  );
+                                  return FilterChip(
+                                    label: Text(
+                                      extra,
+                                      style: GoogleFonts.poppins(fontSize: 12),
+                                    ),
+                                    selected: selected,
+                                    selectedColor: Colors.amber.shade100,
+                                    checkmarkColor: Colors.amber.shade900,
+                                    onSelected: (value) {
+                                      setDialogState(() {
+                                        if (value) {
+                                          selectedExtras.add(extra);
+                                        } else {
+                                          selectedExtras.remove(extra);
+                                        }
+                                      });
+                                    },
+                                  );
+                                }).toList(),
+                          ),
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: notesController,
+                            maxLines: 3,
+                            decoration: const InputDecoration(
+                              labelText: 'Notes',
+                              hintText:
+                                  'Optional notes for this dish, e.g. no onions',
+                              border: OutlineInputBorder(),
+                            ),
                           ),
                         ],
-                        const SizedBox(height: 14),
-                        TextField(
-                          controller: notesController,
-                          maxLines: 3,
-                          decoration: const InputDecoration(
-                            labelText: 'Notes',
-                            hintText:
-                                'Optional notes for this dish, e.g. no onions',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                   actions: [
@@ -748,14 +814,22 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     ),
                     ElevatedButton(
                       onPressed:
-                          dish.sauces.isEmpty || selectedSauce != null
+                          !hasSauces || selectedSauce != null
                               ? () async {
+                                final extrasLabel =
+                                    selectedExtras.isEmpty
+                                        ? null
+                                        : selectedExtras.join(', ');
                                 final ok = await _confirmAction(
                                   title: 'Add to tray?',
                                   message:
                                       selectedSauce == null
-                                          ? 'Add ${dish.name} to your tray?'
-                                          : 'Add ${dish.name} with $selectedSauce to your tray?',
+                                          ? extrasLabel == null
+                                              ? 'Add ${dish.name} to your tray?'
+                                              : 'Add ${dish.name} with $extrasLabel to your tray?'
+                                          : extrasLabel == null
+                                          ? 'Add ${dish.name} with $selectedSauce to your tray?'
+                                          : 'Add ${dish.name} with $selectedSauce and $extrasLabel to your tray?',
                                   confirmLabel: 'Add to tray',
                                 );
                                 if (!ok) return;
@@ -766,6 +840,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                       dish,
                                       selectedSauce: selectedSauce,
                                       addOnQuantity: addOnQuantity,
+                                      addOns: selectedExtras.toList(),
                                       specialInstructions:
                                           notesController.text.trim(),
                                     );
@@ -794,9 +869,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         foregroundColor: Colors.white,
                       ),
                       child: Text(
-                        selectedSauce == null && dish.sauces.isEmpty
-                            ? 'Add to Tray'
-                            : 'Add to Tray',
+                        'Add to Tray',
                         style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                       ),
                     ),
@@ -805,6 +878,65 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           ),
     );
     notesController.dispose();
+  }
+
+  /// Shared tray line details for sidebar / drawer (sauces, extras, notes, fees).
+  Widget _cartItemAddonDetails(
+    CartItem cartItem, {
+    double fontSize = 11,
+    bool compact = false,
+  }) {
+    final children = <Widget>[];
+    void addLine(String text, {Color? color}) {
+      children.add(
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: fontSize,
+            color: color ?? Colors.grey.shade600,
+            height: 1.35,
+          ),
+        ),
+      );
+    }
+
+    if (cartItem.selectedSauce?.trim().isNotEmpty == true) {
+      addLine(
+        compact
+            ? '${cartItem.selectedSauce!.toUpperCase()} × ${cartItem.addOnQuantity}'
+            : 'Sauce: ${cartItem.selectedSauce} × ${cartItem.addOnQuantity}',
+      );
+    }
+    if (cartItem.addonExtraSubtotal > 0) {
+      addLine(
+        compact
+            ? 'EXTRA ADD-ON: ₱${cartItem.addonExtraSubtotal.toStringAsFixed(2)}'
+            : 'Extra add-on: ₱${cartItem.addonExtraSubtotal.toStringAsFixed(2)}',
+        color: Colors.orange.shade800,
+      );
+    }
+    if (cartItem.addOns.isNotEmpty) {
+      addLine(
+        compact
+            ? 'ADD-ONS: ${cartItem.addOns.join(', ').toUpperCase()}'
+            : 'Add-ons: ${cartItem.addOns.join(', ')}',
+      );
+    }
+    if (cartItem.specialInstructions?.trim().isNotEmpty == true) {
+      addLine(
+        compact
+            ? 'NOTE: ${cartItem.specialInstructions}'
+            : 'Note: ${cartItem.specialInstructions}',
+      );
+    }
+    if (children.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
+    );
   }
 
   Widget _dishInfoLine({
@@ -3482,15 +3614,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                               maxLines: 2,
                                               overflow: TextOverflow.ellipsis,
                                             ),
-                                            if (cartItem.selectedSauce != null)
-                                              Text(
-                                                cartItem.selectedSauce!
-                                                    .toUpperCase(),
-                                                style: TextStyle(
-                                                  fontSize: 8,
-                                                  color: Colors.grey.shade600,
-                                                ),
-                                              ),
+                                            _cartItemAddonDetails(
+                                              cartItem,
+                                              fontSize: 8,
+                                              compact: true,
+                                            ),
                                           ],
                                         ),
                                       ),
@@ -3505,7 +3633,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                             ),
                                           ),
                                           Text(
-                                            '₱${(double.tryParse(cartItem.dish.price) ?? 0) * cartItem.quantity}',
+                                            '₱${cartItem.lineSubtotal.toStringAsFixed(2)}',
                                             style: const TextStyle(
                                               fontSize: 10,
                                               fontWeight: FontWeight.bold,
@@ -3914,21 +4042,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                                     fontSize: 14,
                                                   ),
                                                 ),
-                                                if (cartItem.selectedSauce !=
-                                                    null) ...[
-                                                  const SizedBox(height: 4),
-                                                  Text(
-                                                    'Sauce: ${cartItem.selectedSauce}',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color:
-                                                          Colors.grey.shade600,
-                                                    ),
-                                                  ),
-                                                ],
+                                                _cartItemAddonDetails(
+                                                  cartItem,
+                                                  fontSize: 12,
+                                                ),
                                                 const SizedBox(height: 4),
                                                 Text(
-                                                  '₱${cartItem.dish.price} each',
+                                                  '₱${cartItem.lineSubtotal.toStringAsFixed(2)}',
                                                   style: TextStyle(
                                                     color:
                                                         Colors.amber.shade900,
@@ -3949,18 +4069,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                                   size: 22,
                                                 ),
                                                 onPressed: () {
-                                                  if (cartItem.quantity > 1) {
-                                                    CartStore.instance
-                                                        .updateQuantity(
-                                                          cartItem.dish.id,
-                                                          cartItem.quantity - 1,
-                                                        );
-                                                  } else {
-                                                    CartStore.instance
-                                                        .removeItem(
-                                                          cartItem.dish.id,
-                                                        );
-                                                  }
+                                                  CartStore.instance
+                                                      .updateCartItemQuantity(
+                                                        cartItem,
+                                                        cartItem.quantity - 1,
+                                                      );
                                                 },
                                               ),
                                               Text(
@@ -3979,8 +4092,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                                 ),
                                                 onPressed: () {
                                                   CartStore.instance
-                                                      .updateQuantity(
-                                                        cartItem.dish.id,
+                                                      .updateCartItemQuantity(
+                                                        cartItem,
                                                         cartItem.quantity + 1,
                                                       );
                                                 },

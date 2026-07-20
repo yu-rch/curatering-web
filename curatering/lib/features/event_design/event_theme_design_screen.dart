@@ -159,6 +159,13 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
     } catch (_) {}
   }
 
+  void _clearGeneratedDesignOutputs() {
+    _generatedUrl = null;
+    _generatedPrompt = null;
+    _previousUrls.clear();
+    _generateError = null;
+  }
+
   Future<void> _pickVenuePhotos() async {
     final picked = await pickImagesBase64(
       context: context,
@@ -167,8 +174,19 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
     );
     if (!mounted || picked.isEmpty) return;
     setState(() {
-      for (final image in picked) {
-        if (!_venuePhotosB64.contains(image)) _venuePhotosB64.add(image);
+      final previousPrimary =
+          _venuePhotosB64.isNotEmpty ? _venuePhotosB64.first : null;
+      final replacingReference = previousPrimary != null;
+      if (replacingReference) {
+        // Replacing the venue reference starts a fresh generation set.
+        _venuePhotosB64
+          ..clear()
+          ..addAll(picked);
+        _clearGeneratedDesignOutputs();
+      } else {
+        for (final image in picked) {
+          if (!_venuePhotosB64.contains(image)) _venuePhotosB64.add(image);
+        }
       }
     });
   }
@@ -448,7 +466,7 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
             label: Text(
               _venuePhotosB64.isEmpty
                   ? 'Upload venue photo'
-                  : 'Add venue photos (${_venuePhotosB64.length})',
+                  : 'Change venue photo(s)',
             ),
           ),
           const SizedBox(height: 12),
@@ -460,15 +478,44 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
                 itemCount: _venuePhotosB64.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                 itemBuilder:
-                    (context, index) => ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.memory(
-                        base64Decode(_venuePhotosB64[index]),
-                        width: 92,
-                        height: 92,
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                      ),
+                    (context, index) => Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.memory(
+                            base64Decode(_venuePhotosB64[index]),
+                            width: 92,
+                            height: 92,
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                          ),
+                        ),
+                        Positioned(
+                          top: 2,
+                          right: 2,
+                          child: Material(
+                            color: Colors.black54,
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: () {
+                                setState(() {
+                                  _venuePhotosB64.removeAt(index);
+                                  _clearGeneratedDesignOutputs();
+                                });
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.all(4),
+                                child: Icon(
+                                  Icons.close,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
               ),
             ),
