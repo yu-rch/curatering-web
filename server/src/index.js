@@ -8749,9 +8749,11 @@ async function registerRoutesAfterDbInit() {
       
       while (retryCount < maxRetries) {
         try {
+          // Omit image_base64 on the list endpoint — payloads were multi‑MB and
+          // blocked first paint. Use /with-images or /:id/with-image for photos.
           const result = await pool.query(
             `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, supports_addons, ingredients,
-                    image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus,
+                    NULL::text AS image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus,
                     public_description, allergens, meal_type
              FROM menu_dishes
              WHERE archived = false

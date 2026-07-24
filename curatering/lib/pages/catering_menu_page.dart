@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -56,10 +57,7 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
     super.initState();
     MenuStore.instance.addListener(_onMenuChanged);
     SetMenuStore.instance.addListener(_onMenuChanged);
-    if (MenuStore.instance.activeDishes.isEmpty &&
-        !MenuStore.instance.isLoading) {
-      MenuStore.instance.loadDishes();
-    }
+    unawaited(MenuStore.instance.ensureImagesLoaded());
     SetMenuStore.instance.loadSetMenus();
   }
 

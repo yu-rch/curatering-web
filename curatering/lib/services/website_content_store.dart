@@ -170,26 +170,33 @@ class WebsiteContentStore extends ChangeNotifier {
       'COPYRIGHT © 2026 MACRINA\'S KITCHEN AND CATERING. POWERED BY CURATERING.';
 
   bool _loaded = false;
+  bool _hydratedFromLocalCache = false;
 
   Future<void> ensureLoaded({bool force = false}) async {
     if (_loaded && !force) return;
-    _loaded = true;
+
+    // Hydrate from local cache first so the home shell can paint quickly.
+    if (!_hydratedFromLocalCache) {
+      await _loadFromLocalCache();
+      _hydratedFromLocalCache = true;
+      notifyListeners();
+    }
+
     try {
-      ApiCache().invalidate('/api/website-content');
       final decoded = await ApiClient.instance.getJson(
         '/api/website-content',
-        useCache: false,
+        useCache: !force,
+        cacheExpiry: const Duration(minutes: 10),
       );
       final content = decoded['content'];
       if (content is Map<String, dynamic> && content.isNotEmpty) {
         _applyMap(content);
         await _writeLocalCacheBestEffort(_toMap());
-      } else {
-        await _loadFromLocalCache();
       }
     } catch (_) {
-      await _loadFromLocalCache();
+      // Keep local/defaults already applied above.
     }
+    _loaded = true;
     notifyListeners();
   }
 

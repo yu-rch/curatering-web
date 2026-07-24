@@ -9,17 +9,17 @@ import 'api_client.dart';
 class MenuStore extends ChangeNotifier {
   MenuStore._internal() {
     _items = [];
-    // Defer loading to avoid notifyListeners during widget build
-    Future.microtask(() => loadDishes());
   }
 
   static final MenuStore instance = MenuStore._internal();
 
   late List<MenuDish> _items;
   bool _isLoading = false;
+  bool _imagesLoaded = false;
   String? _error;
 
   bool get isLoading => _isLoading;
+  bool get imagesLoaded => _imagesLoaded;
   String? get error => _error;
 
   Future<void> loadDishes() async {
@@ -28,7 +28,10 @@ class MenuStore extends ChangeNotifier {
       _error = null;
       notifyListeners();
 
-      final decoded = await ApiClient.instance.getJson('/api/menu/dishes');
+      final decoded = await ApiClient.instance.getJson(
+        '/api/menu/dishes',
+        cacheExpiry: const Duration(minutes: 5),
+      );
       final raw = decoded['dishes'];
 
       if (raw is! List) {
@@ -37,6 +40,7 @@ class MenuStore extends ChangeNotifier {
         _items = raw.map((json) => _dishFromJson(json)).toList();
       }
 
+      _imagesLoaded = false;
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -47,15 +51,18 @@ class MenuStore extends ChangeNotifier {
     }
   }
 
-  // Load dishes with images (slower, use when needed)
-  Future<void> loadDishesWithImages() async {
+  // Load dishes with images (slower, use when menu grids need photos).
+  Future<void> loadDishesWithImages({bool silent = false}) async {
     try {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
+      if (!silent || _items.isEmpty) {
+        _isLoading = true;
+        _error = null;
+        notifyListeners();
+      }
 
       final decoded = await ApiClient.instance.getJson(
         '/api/menu/dishes/with-images',
+        cacheExpiry: const Duration(minutes: 5),
       );
       final raw = decoded['dishes'];
 
@@ -65,6 +72,7 @@ class MenuStore extends ChangeNotifier {
         _items = raw.map((json) => _dishFromJson(json)).toList();
       }
 
+      _imagesLoaded = true;
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -73,6 +81,17 @@ class MenuStore extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Ensures dish photos are present (for restaurant/catering grids).
+  Future<void> ensureImagesLoaded() async {
+    if (_imagesLoaded && _items.isNotEmpty) return;
+    if (_items.isEmpty) {
+      await loadDishesWithImages();
+      return;
+    }
+    // Already have names/prices — refresh photos without a full-page spinner.
+    await loadDishesWithImages(silent: true);
   }
 
   // Load single dish with image

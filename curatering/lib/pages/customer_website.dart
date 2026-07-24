@@ -37,6 +37,7 @@ import '../theme/website_header_font.dart';
 import '../constants/catering_meal_types.dart';
 import '../utils/gallery_search.dart';
 import '../utils/inquiry_pricing.dart';
+import '../utils/image_cache.dart';
 import 'customer_login.dart';
 import 'checkout_page.dart';
 import 'my_orders_page.dart';
@@ -325,15 +326,42 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   Future<void> _initialize() async {
     _recordPageView();
+    MenuStore.instance.addListener(_onMenuChanged);
+    CartStore.instance.addListener(_onCartChanged);
+
+    // CMS first (local-cache hydrated) so home can paint without waiting on menu/cart.
     await WebsiteContentStore.instance.ensureLoaded();
     if (mounted) setState(() {});
-    MenuStore.instance.addListener(_onMenuChanged);
-    if (MenuStore.instance.activeDishes.isEmpty) {
-      await MenuStore.instance.loadDishes();
+
+    // Menu metadata, cart sync, and auth continue in the background.
+    unawaited(_loadDeferredBootstrap());
+  }
+
+  Future<void> _loadDeferredBootstrap() async {
+    try {
+      if (MenuStore.instance.activeDishes.isEmpty) {
+        await MenuStore.instance.loadDishes();
+      }
+      await CartStore.instance.init();
+      await _checkCustomerAuth();
+    } catch (e) {
+      debugPrint('Deferred bootstrap error: $e');
     }
-    await CartStore.instance.init();
-    CartStore.instance.addListener(_onCartChanged);
-    await _checkCustomerAuth();
+    if (mounted) setState(() {});
+  }
+
+  void _selectNavIndex(int index) {
+    setState(() {
+      _galleryDetailIndex = null;
+      _navIndex = index;
+    });
+    // Dish photos are heavy — fetch only when opening menu tabs.
+    if (index == 2 || index == 3) {
+      unawaited(MenuStore.instance.ensureImagesLoaded());
+    }
+    if (index == 3) {
+      unawaited(LoyaltyRewardsStore.instance.ensureLoaded());
+    }
   }
 
   Future<bool> _confirmAction({
@@ -572,14 +600,22 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   void _onMenuChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // Avoid rebuilding the whole site (and re-decoding home images) for every
+    // menu notify — only refresh when a dish grid tab is visible.
+    if (_navIndex == 2 || _navIndex == 3 || _isCustomerLoggedIn) {
+      setState(() {});
+    }
     if (_isCustomerLoggedIn) {
       unawaited(_loadPopularOrdersForHome());
     }
   }
 
   void _onCartChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // End drawer / header badge use ListenableBuilder. Restaurant tab has an
+    // inline tray that still needs a local rebuild.
+    if (_navIndex == 3) setState(() {});
   }
 
   Future<void> _addToCart(MenuDish dish) async {
@@ -1081,6 +1117,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Widget _b64Image(
     String? b64, {
     double? height,
+    double? width,
     BoxFit fit = BoxFit.cover,
     Alignment alignment = Alignment.center,
     Widget? placeholder,
@@ -1096,23 +1133,18 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           ),
         );
     if (b64 == null || b64.isEmpty) return ph;
-    try {
-      final normalized =
-          b64
-              .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
-              .replaceAll('\n', '')
-              .trim();
-      return Image.memory(
-        base64Decode(normalized),
-        height: height,
-        width: double.infinity,
-        fit: fit,
-        alignment: alignment,
-        gaplessPlayback: true,
-      );
-    } catch (_) {
-      return ph;
-    }
+    final normalized =
+        b64
+            .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
+            .replaceAll('\n', '')
+            .trim();
+    return CachedBase64Image(
+      base64String: normalized,
+      height: height,
+      width: width ?? double.infinity,
+      fit: fit,
+      placeholder: ph,
+    );
   }
 
   String _imageKey(String? b64) {
@@ -1237,40 +1269,46 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           ),
           if (!widget.contentEditable) ...[
             // Tray icon
-            Stack(
-              children: [
-                IconButton(
-                  icon: const Icon(
-                    Icons.shopping_bag_outlined,
-                    color: Colors.white,
-                  ),
-                  onPressed: _openCartSidebar,
-                ),
-                if (CartStore.instance.itemCount > 0)
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(10),
+            ListenableBuilder(
+              listenable: CartStore.instance,
+              builder: (context, _) {
+                final count = CartStore.instance.itemCount;
+                return Stack(
+                  children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.shopping_bag_outlined,
+                        color: Colors.white,
                       ),
-                      constraints: const BoxConstraints(
-                        minWidth: 18,
-                        minHeight: 18,
-                      ),
-                      child: Text(
-                        '${CartStore.instance.itemCount}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
+                      onPressed: _openCartSidebar,
                     ),
-                  ),
-              ],
+                    if (count > 0)
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 18,
+                            minHeight: 18,
+                          ),
+                          child: Text(
+                            '$count',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
             const SizedBox(width: 8),
             // Login/Logout Button
@@ -1430,11 +1468,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     }
 
     return InkWell(
-      onTap:
-          () => setState(() {
-            _galleryDetailIndex = null;
-            _navIndex = index;
-          }),
+      onTap: () => _selectNavIndex(index),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Column(
@@ -1458,10 +1492,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   void _showCustomerSiteTab(int index) {
-    setState(() {
-      _galleryDetailIndex = null;
-      _navIndex = index;
-    });
+    _selectNavIndex(index);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_pageScrollController.hasClients) return;
       _pageScrollController.animateTo(
@@ -1834,41 +1865,47 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 ),
               ),
               if (!widget.contentEditable) ...[
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    IconButton(
-                      icon: const Icon(
-                        Icons.shopping_bag_outlined,
-                        color: Colors.white,
-                      ),
-                      onPressed: _openCartSidebar,
-                    ),
-                    if (CartStore.instance.itemCount > 0)
-                      Positioned(
-                        right: 6,
-                        top: 6,
-                        child: Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(10),
+                ListenableBuilder(
+                  listenable: CartStore.instance,
+                  builder: (context, _) {
+                    final count = CartStore.instance.itemCount;
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.shopping_bag_outlined,
+                            color: Colors.white,
                           ),
-                          constraints: const BoxConstraints(
-                            minWidth: 16,
-                            minHeight: 16,
-                          ),
-                          child: Text(
-                            '${CartStore.instance.itemCount}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
+                          onPressed: _openCartSidebar,
                         ),
-                      ),
-                  ],
+                        if (count > 0)
+                          Positioned(
+                            right: 6,
+                            top: 6,
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              constraints: const BoxConstraints(
+                                minWidth: 16,
+                                minHeight: 16,
+                              ),
+                              child: Text(
+                                '$count',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
                 ),
                 if (_isCustomerLoggedIn)
                   AntdProfileMenu(
@@ -2944,7 +2981,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     ],
                   ),
                   child: ElevatedButton.icon(
-                    onPressed: () => MenuStore.instance.loadDishes(),
+                    onPressed: () => MenuStore.instance.ensureImagesLoaded(),
                     icon: const Icon(
                       Icons.refresh_rounded,
                       color: Colors.white,
@@ -3569,15 +3606,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                   padding: const EdgeInsets.only(bottom: 12),
                                   child: Row(
                                     children: [
-                                      if (cartItem.dish.imageBase64 != null)
+                                      if (cartItem.dish.imageBase64 != null &&
+                                          cartItem.dish.imageBase64!
+                                              .isNotEmpty)
                                         ClipRRect(
                                           borderRadius: BorderRadius.circular(
                                             4,
                                           ),
-                                          child: Image.memory(
-                                            base64Decode(
-                                              cartItem.dish.imageBase64!,
-                                            ),
+                                          child: CachedBase64Image(
+                                            base64String:
+                                                cartItem.dish.imageBase64,
                                             width: 50,
                                             height: 50,
                                             fit: BoxFit.cover,
@@ -4001,14 +4039,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          if (cartItem.dish.imageBase64 != null)
+                                          if (cartItem.dish.imageBase64 !=
+                                                  null &&
+                                              cartItem.dish.imageBase64!
+                                                  .isNotEmpty)
                                             ClipRRect(
                                               borderRadius:
                                                   BorderRadius.circular(8),
-                                              child: Image.memory(
-                                                base64Decode(
-                                                  cartItem.dish.imageBase64!,
-                                                ),
+                                              child: CachedBase64Image(
+                                                base64String:
+                                                    cartItem.dish.imageBase64,
                                                 width: 56,
                                                 height: 56,
                                                 fit: BoxFit.cover,
@@ -4205,8 +4245,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
     final int currentPoints = _restaurantLoyaltyPoints;
     final availableRewards = LoyaltyRewardsStore.instance.rewardsConditions;
-    // Ensure store is loaded
-    LoyaltyRewardsStore.instance.ensureLoaded();
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -4470,23 +4508,19 @@ class _HoverZoomPhotoTileState extends State<_HoverZoomPhotoTile> {
   Widget _image({BoxFit fit = BoxFit.cover}) {
     final image = widget.imageB64;
     if (image != null && image.isNotEmpty) {
-      try {
-        final normalized =
-            image
-                .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
-                .replaceAll('\n', '')
-                .trim();
-        return Image.memory(
-          base64Decode(normalized),
-          fit: fit,
-          gaplessPlayback: true,
-        );
-      } catch (_) {
-        return Container(
+      final normalized =
+          image
+              .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
+              .replaceAll('\n', '')
+              .trim();
+      return CachedBase64Image(
+        base64String: normalized,
+        fit: fit,
+        placeholder: Container(
           color: Colors.grey.shade300,
           child: const Icon(Icons.broken_image_outlined, size: 42),
-        );
-      }
+        ),
+      );
     }
     return Container(
       color: Colors.grey.shade300,

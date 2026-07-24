@@ -71,6 +71,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     if (MenuStore.instance.activeDishes.isEmpty) {
       await MenuStore.instance.loadDishes();
     }
+    await MenuStore.instance.ensureImagesLoaded();
     await CartStore.instance.init();
     if (mounted) setState(() {});
   }

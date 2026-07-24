@@ -89,7 +89,7 @@ class ImageCacheManager {
   }
 }
 
-/// Optimized widget for displaying cached base64 images
+  /// Optimized widget for displaying cached base64 images
 class CachedBase64Image extends StatelessWidget {
   final String? base64String;
   final double? width;
@@ -112,17 +112,34 @@ class CachedBase64Image extends StatelessWidget {
       return placeholder ?? _defaultPlaceholder();
     }
 
-    final bytes = ImageCacheManager().getImageBytes(base64String!);
+    final normalized =
+        base64String!
+            .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
+            .replaceAll('\n', '')
+            .trim();
+    final bytes = ImageCacheManager().getImageBytes(normalized);
     if (bytes == null) {
       return placeholder ?? _defaultPlaceholder();
     }
+
+    final dpr = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0;
+    final cacheW =
+        width != null && width!.isFinite && width! > 0
+            ? (width! * dpr).round()
+            : null;
+    final cacheH =
+        height != null && height!.isFinite && height! > 0
+            ? (height! * dpr).round()
+            : null;
 
     return Image.memory(
       bytes,
       width: width,
       height: height,
       fit: fit,
-      gaplessPlayback: true, // Prevent flickering on image updates
+      gaplessPlayback: true,
+      cacheWidth: cacheW,
+      cacheHeight: cacheW == null ? cacheH : null,
       errorBuilder: (context, error, stackTrace) {
         return placeholder ?? _defaultPlaceholder();
       },
