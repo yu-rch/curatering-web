@@ -1042,9 +1042,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Future<void> _navigateToMyCaterings() async {
-    final result = await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (context) => const MyCateringsPage()));
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const MyCateringsPage()),
+    );
     if (result == 'login_required' && mounted) {
       await _handleLogin();
     }

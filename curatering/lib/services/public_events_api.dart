@@ -173,4 +173,25 @@ class PublicEventsApi {
         )
         .timeout(_compositeTimeout);
   }
+
+  /// Returns how many proposed windows overlap orders in `for_processing`.
+  Future<int> countCateringScheduleConflicts(
+    List<Map<String, String>> windows,
+  ) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$apiBaseUrl/api/mobile/catering/schedule-conflicts'),
+        headers: const <String, String>{'Content-Type': 'application/json'},
+        body: jsonEncode({'windows': windows}),
+      );
+      if (res.statusCode < 200 || res.statusCode >= 300) return 0;
+      final decoded = jsonDecode(res.body);
+      if (decoded is! Map) return 0;
+      final n = decoded['conflict_window_count'] ?? decoded['conflictWindowCount'];
+      if (n is num) return n.toInt();
+      return int.tryParse(n?.toString() ?? '') ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
 }

@@ -30,11 +30,15 @@ class MyCateringsPage extends StatefulWidget {
   State<MyCateringsPage> createState() => _MyCateringsPageState();
 }
 
-class _MyCateringsPageState extends State<MyCateringsPage> {
+class _MyCateringsPageState extends State<MyCateringsPage>
+    with SingleTickerProviderStateMixin {
   List<dynamic> _caterings = [];
   bool _isLoading = true;
   String? _error;
   bool _gridView = false;
+  late final TabController _tabController;
+  final _searchCtrl = TextEditingController();
+  String _typeFilter = 'all'; // all | catering_only | event_only
   static const Duration _requestTimeout = Duration(seconds: 45);
 
   String get _apiBaseUrl {
@@ -44,7 +48,189 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 4, vsync: this);
     _loadCaterings();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  String _statusOf(Map<String, dynamic> catering) =>
+      (catering['status'] ?? '').toString().trim().toLowerCase();
+
+  bool _isWaitingStatus(String status) {
+    const waiting = {
+      'submitted',
+      'pending',
+      'online_inquiries',
+      'online_inquiry',
+      'new_event',
+    };
+    return waiting.contains(status);
+  }
+
+  bool _isCompletedStatus(String status) => status == 'completed';
+
+  bool _isCancelledStatus(String status) => status == 'cancelled';
+
+  bool _isRespondedStatus(String status) =>
+      !_isWaitingStatus(status) &&
+      !_isCompletedStatus(status) &&
+      !_isCancelledStatus(status);
+
+  bool _matchesTypeFilter(Map<String, dynamic> catering) {
+    if (_typeFilter == 'all') return true;
+    final type =
+        (catering['inquiryType'] ??
+                catering['inquiry_type'] ??
+                catering['orderType'] ??
+                catering['order_type'] ??
+                '')
+            .toString()
+            .toUpperCase();
+    final isEvent =
+        type.contains('EVENT') ||
+        type.contains('STYLING') ||
+        type == 'CATERING_EVENT' ||
+        type == 'CATERING+EVENT';
+    if (_typeFilter == 'event_only') return isEvent;
+    return !isEvent;
+  }
+
+  bool _matchesSearch(Map<String, dynamic> catering) {
+    final q = _searchCtrl.text.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    final hay =
+        [
+          catering['catering_id'],
+          catering['cateringId'],
+          catering['id'],
+          catering['inquiryType'],
+          catering['inquiry_type'],
+          catering['event_title'],
+          catering['eventTitle'],
+          catering['status'],
+        ].map((e) => (e ?? '').toString().toLowerCase()).join(' ');
+    return hay.contains(q);
+  }
+
+  bool _inPast30Days(Map<String, dynamic> catering) {
+    final raw =
+        (catering['updated_at'] ??
+                catering['updatedAt'] ??
+                catering['completed_at'] ??
+                catering['created_at'] ??
+                catering['createdAt'] ??
+                '')
+            .toString();
+    final dt = DateTime.tryParse(raw);
+    if (dt == null) return true;
+    return dt.isAfter(DateTime.now().subtract(const Duration(days: 30)));
+  }
+
+  List<Map<String, dynamic>> _filteredForTab(int tabIndex) {
+    final maps =
+        _caterings
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .where(_matchesSearch)
+            .where(_matchesTypeFilter)
+            .toList();
+    switch (tabIndex) {
+      case 0:
+        return maps.where((c) => _isWaitingStatus(_statusOf(c))).toList();
+      case 1:
+        return maps.where((c) => _isRespondedStatus(_statusOf(c))).toList();
+      case 2:
+        return maps
+            .where((c) => _isCompletedStatus(_statusOf(c)) && _inPast30Days(c))
+            .toList();
+      case 3:
+        return maps.where((c) => _isCancelledStatus(_statusOf(c))).toList();
+      default:
+        return maps;
+    }
+  }
+
+  Future<void> _submitFollowUp(Map<String, dynamic> catering) async {
+    final noteCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Follow up'),
+            content: TextField(
+              controller: noteCtrl,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                hintText: 'Tell us how we can help with this inquiry',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Send'),
+              ),
+            ],
+          ),
+    );
+    final note = noteCtrl.text.trim();
+    noteCtrl.dispose();
+    if (ok != true || note.isEmpty || !mounted) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('customer_data');
+    String email = '';
+    String name = '';
+    try {
+      if (raw != null) {
+        final data = jsonDecode(raw) as Map<String, dynamic>;
+        email = (data['email'] ?? '').toString();
+        name = (data['fullName'] ?? data['full_name'] ?? '').toString();
+      }
+    } catch (_) {}
+
+    final ref =
+        (catering['catering_id'] ??
+                catering['cateringId'] ??
+                catering['id'] ??
+                '')
+            .toString();
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$_apiBaseUrl/api/public/help-requests'),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'name': name.isEmpty ? 'Customer' : name,
+              'email': email.isEmpty ? 'customer@unknown' : email,
+              'message': 'Inquiry follow-up ($ref)\n\n$note',
+            }),
+          )
+          .timeout(_requestTimeout);
+      if (!mounted) return;
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Follow-up sent to our team.')),
+        );
+      } else {
+        throw Exception('HTTP ${res.statusCode}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not send follow-up: $e')));
+    }
   }
 
   Future<void> _loadCaterings({bool force = false}) async {
@@ -224,7 +410,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       AntdDescriptionItem(label: 'Status', value: _formatStatus(status)),
       AntdDescriptionItem(
         label: 'Total cost',
-        value: _formatPeso(catering['total_cost'] ?? catering['totalCost']),
+        value: _displayTotalCost(catering),
       ),
       AntdDescriptionItem(
         label: 'Event type',
@@ -267,15 +453,70 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
   }
 
   bool _isEditableInquiryStatus(String? status) =>
-      status == 'online_inquiries' || status == 'new_event';
+      status == 'online_inquiries' ||
+      status == 'new_event' ||
+      status == 'online_inquiry';
+
+  bool _canCancelInquiry(String? status) =>
+      _isEditableInquiryStatus(status) ||
+      status == 'for_down_payment' ||
+      status == 'for_processing';
 
   bool _canEditVenueAndGuests(String? status) =>
       status == 'online_inquiries' ||
       status == 'new_event' ||
+      status == 'online_inquiry' ||
       status == 'for_down_payment' ||
       status == 'on_going' ||
       status == 'for_processing' ||
       status == 'for_post_analysis';
+
+  String _displayTotalCost(Map<String, dynamic> catering) {
+    final total = catering['total_cost'] ?? catering['totalCost'];
+    final estimated =
+        catering['estimated_total'] ??
+        catering['estimatedTotal'] ??
+        catering['estimated_cost'] ??
+        catering['estimatedCost'];
+    final totalNum = total is num ? total.toDouble() : double.tryParse('$total');
+    if (totalNum != null && totalNum > 0) return _formatPeso(totalNum);
+    final estNum =
+        estimated is num
+            ? estimated.toDouble()
+            : double.tryParse('$estimated');
+    if (estNum != null && estNum > 0) return _formatPeso(estNum);
+    return _formatPeso(total ?? estimated);
+  }
+
+  Widget _buildCostBreakdownView(Map<String, dynamic> themeDesign) {
+    final breakdown =
+        themeDesign['costBreakdown'] ?? themeDesign['cost_breakdown'];
+    if (breakdown is Map) {
+      final b = Map<String, dynamic>.from(breakdown);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Dish: ${_formatPeso(b['dishCost'] ?? b['dish_cost'])}'),
+          Text('Labor: ${_formatPeso(b['laborCost'] ?? b['labor_cost'])}'),
+          Text('Travel: ${_formatPeso(b['travelCost'] ?? b['travel_cost'])}'),
+        ],
+      );
+    }
+    if (breakdown is List && breakdown.isNotEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final raw in breakdown)
+            if (raw is Map)
+              Text(
+                '${raw['label'] ?? 'Item'}: ${_formatPeso(raw['amount'])}'
+                '${raw['detail'] != null ? ' (${raw['detail']})' : ''}',
+              ),
+        ],
+      );
+    }
+    return Text('—', style: TextStyle(color: Colors.grey.shade700));
+  }
 
   Color _getStatusColor(String? status) {
     switch (status) {
@@ -1408,23 +1649,21 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
             style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
           ),
           const SizedBox(height: 6),
-          Builder(
-            builder: (_) {
-              final breakdown = themeDesign['costBreakdown'];
-              if (breakdown is! Map) {
-                return Text('—', style: TextStyle(color: Colors.grey.shade700));
-              }
-              final b = Map<String, dynamic>.from(breakdown);
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Dish: ${_formatPeso(b['dishCost'])}'),
-                  Text('Labor: ${_formatPeso(b['laborCost'])}'),
-                  Text('Travel: ${_formatPeso(b['travelCost'])}'),
-                ],
-              );
-            },
-          ),
+          _buildCostBreakdownView(themeDesign),
+          if ((themeDesign['customerNote'] ?? themeDesign['note'] ?? '')
+              .toString()
+              .trim()
+              .isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Notes',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              (themeDesign['customerNote'] ?? themeDesign['note']).toString(),
+            ),
+          ],
           if (_buildEstimateUpdateBanner(themeDesign) != null)
             _buildEstimateUpdateBanner(themeDesign)!,
           if (themeDesign['managerUpdateNotice'] is Map &&
@@ -1491,12 +1730,21 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
           OutlinedButton.icon(
             onPressed: () async {
               Navigator.of(context).pop();
+              await _submitFollowUp(catering);
+            },
+            icon: const Icon(Icons.support_agent_outlined, size: 18),
+            label: const Text('Follow up'),
+          ),
+        if (isInquiry)
+          OutlinedButton.icon(
+            onPressed: () async {
+              Navigator.of(context).pop();
               await _showEditCateringDialog(catering);
             },
             icon: const Icon(Icons.edit, size: 18),
             label: const Text('Edit inquiry'),
           ),
-        if (isInquiry)
+        if (_canCancelInquiry(status))
           AntdCancelButton(
             label: 'Cancel inquiry',
             onPressed: () async {
@@ -1517,30 +1765,6 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                 ScaffoldMessenger.of(
                   context,
                 ).showSnackBar(SnackBar(content: Text('Cancel failed: $e')));
-              }
-            },
-          ),
-        if (isInquiry)
-          AntdPrimaryButton(
-            label: 'Confirm order',
-            onPressed: () async {
-              try {
-                await _respondToInquiry(
-                  orderId: catering['id'].toString(),
-                  action: 'confirm_inquiry',
-                );
-                if (!mounted) return;
-                Navigator.of(context).pop();
-                await _loadCaterings(force: true);
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Order confirmed.')),
-                );
-              } catch (e) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('Confirm failed: $e')));
               }
             },
           ),
@@ -1718,19 +1942,25 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                   ),
                 ),
               ],
-              if (catering['total_cost'] != null ||
-                  catering['totalCost'] != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    '₱${catering['total_cost'] ?? catering['totalCost']}',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFFF4511E),
+              Builder(
+                builder: (_) {
+                  final display = _displayTotalCost(catering);
+                  if (display == '—' || display == '₱0.00') {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      display,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFF4511E),
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
+              ),
             ],
           ),
         ),
@@ -1777,12 +2007,63 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
             tooltip: 'Refresh caterings',
           ),
         ],
+        bottom: TabBar(
+          controller: _tabController,
+          isScrollable: true,
+          indicatorColor: const Color(0xFFFFC024),
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          tabs: const [
+            Tab(text: 'WAITING'),
+            Tab(text: 'RESPONDED'),
+            Tab(text: 'COMPLETED'),
+            Tab(text: 'CANCELLED'),
+          ],
+        ),
       ),
       body: Column(
         children: [
           CustomerPagesTopBar(
             currentTab: CustomerPageTab.caterings,
             onTabSelected: _navigateFromTopBar,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchCtrl,
+                    decoration: const InputDecoration(
+                      hintText: 'Search by ref, type, title, status',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                DropdownButton<String>(
+                  value: _typeFilter,
+                  items: const [
+                    DropdownMenuItem(value: 'all', child: Text('All types')),
+                    DropdownMenuItem(
+                      value: 'catering_only',
+                      child: Text('Catering'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'event_only',
+                      child: Text('Event styling'),
+                    ),
+                  ],
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() => _typeFilter = v);
+                  },
+                ),
+              ],
+            ),
           ),
           Expanded(
             child:
@@ -1809,390 +2090,113 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                         ],
                       ),
                     )
-                    : _caterings.isEmpty
-                    ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.event_outlined,
-                            size: 64,
-                            color: Colors.grey.shade400,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No caterings yet',
-                            style: TextStyle(
-                              fontSize: 18,
-                              color: Colors.grey.shade600,
+                    : TabBarView(
+                      controller: _tabController,
+                      children: List.generate(4, (tabIndex) {
+                        final items = _filteredForTab(tabIndex);
+                        if (items.isEmpty) {
+                          return Center(
+                            child: Text(
+                              tabIndex == 2
+                                  ? 'No completed caterings in the past 30 days'
+                                  : 'No caterings in this tab',
+                              style: TextStyle(color: Colors.grey.shade600),
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Your booked caterings will appear here',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey.shade500,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton.icon(
-                            onPressed: () => _loadCaterings(force: true),
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('Refresh'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1E1E1E),
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                    : _gridView
-                    ? LayoutBuilder(
-                      builder: (context, c) {
-                        final cross =
-                            c.maxWidth >= 900
-                                ? 3
-                                : c.maxWidth >= 520
-                                ? 2
-                                : 1;
-                        return GridView.builder(
+                          );
+                        }
+                        if (_gridView) {
+                          return LayoutBuilder(
+                            builder: (context, c) {
+                              final cross =
+                                  c.maxWidth >= 900
+                                      ? 3
+                                      : c.maxWidth >= 520
+                                      ? 2
+                                      : 1;
+                              return GridView.builder(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  12,
+                                  16,
+                                  16,
+                                ),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: cross,
+                                      mainAxisSpacing: 12,
+                                      crossAxisSpacing: 12,
+                                      childAspectRatio:
+                                          cross == 1 ? 1.4 : 0.95,
+                                    ),
+                                itemCount: items.length,
+                                itemBuilder: (context, index) {
+                                  return _buildCateringGridTile(items[index]);
+                                },
+                              );
+                            },
+                          );
+                        }
+                        return ListView.builder(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: cross,
-                                mainAxisSpacing: 12,
-                                crossAxisSpacing: 12,
-                                childAspectRatio: cross == 1 ? 1.4 : 0.95,
-                              ),
-                          itemCount: _caterings.length,
+                          itemCount: items.length,
                           itemBuilder: (context, index) {
-                            final raw = _caterings[index];
-                            if (raw is! Map) return const SizedBox.shrink();
-                            return _buildCateringGridTile(
-                              Map<String, dynamic>.from(raw),
-                            );
+                            return _buildInquiryListTile(items[index]);
                           },
                         );
-                      },
-                    )
-                    : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                      itemCount: _caterings.length,
-                      itemBuilder: (context, index) {
-                        final catering = _caterings[index];
-                        final status = catering['status'] ?? 'online_inquiries';
-                        final isCurrent =
-                            status != 'completed' && status != 'cancelled';
-                        final themeDesign = _parseThemeDesign(
-                          catering['themeDesign'] ?? catering['theme_design'],
-                        );
-                        final managerNotice =
-                            themeDesign['managerUpdateNotice'];
-                        final hasPreferenceChangeNotice =
-                            managerNotice is Map &&
-                            (managerNotice['preferencesChanged'] == true ||
-                                managerNotice['estimateUpdated'] == true ||
-                                (managerNotice['action'] ?? '').toString() ==
-                                    'post_changes');
-
-                        return InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: () => _showCateringDetailsDialog(catering),
-                          child: Card(
-                            margin: const EdgeInsets.only(bottom: 16),
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              side: BorderSide(
-                                color: Colors.black.withValues(alpha: 0.08),
-                              ),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          catering['event_title'] ??
-                                              catering['eventTitle'] ??
-                                              'Untitled Event',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      if (isCurrent)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.green.shade100,
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            'ACTIVE',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.green.shade700,
-                                            ),
-                                          ),
-                                        ),
-                                      if (hasPreferenceChangeNotice) ...[
-                                        const SizedBox(width: 8),
-                                        Tooltip(
-                                          message:
-                                              _managerUpdateMessage(
-                                                themeDesign,
-                                              ) ??
-                                              'Macrina posted updates. Please review your latest estimate in My Caterings.',
-                                          child: const Icon(
-                                            Icons.info_outline,
-                                            color: Color(0xFF1976D2),
-                                            size: 20,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.event,
-                                        size: 16,
-                                        color: Colors.grey.shade600,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        _getEventTypeDisplay(
-                                          catering['event_type'] ??
-                                              catering['eventType'],
-                                        ),
-                                        style: TextStyle(
-                                          color: Colors.grey.shade700,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.calendar_today,
-                                        size: 16,
-                                        color: Colors.grey.shade600,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        _formatDate(
-                                          catering['created_at'] ??
-                                              catering['createdAt'],
-                                        ),
-                                        style: TextStyle(
-                                          color: Colors.grey.shade700,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (catering['guest_count'] != null ||
-                                      catering['guestCount'] != null) ...[
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.people,
-                                          size: 16,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          '${catering['guest_count'] ?? catering['guestCount']} guests',
-                                          style: TextStyle(
-                                            color: Colors.grey.shade700,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                  if (_hasEventThemeDesign(themeDesign)) ...[
-                                    const SizedBox(height: 12),
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        if (_buildThemeImagePreview(
-                                              context,
-                                              themeDesign,
-                                              height: 72,
-                                            ) !=
-                                            null) ...[
-                                          SizedBox(
-                                            width: 96,
-                                            child:
-                                                _buildThemeImagePreview(
-                                                  context,
-                                                  themeDesign,
-                                                  height: 72,
-                                                )!,
-                                          ),
-                                          const SizedBox(width: 12),
-                                        ],
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                'Event theme design',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.grey.shade800,
-                                                  fontSize: 13,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                _eventDesignSourceLabel(
-                                                  themeDesign,
-                                                ),
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.grey.shade600,
-                                                ),
-                                              ),
-                                              if ((themeDesign['style'] ?? '')
-                                                  .toString()
-                                                  .isNotEmpty)
-                                                Text(
-                                                  'Style: ${themeDesign['style']}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.grey.shade600,
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                  const Divider(height: 24),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Chip(
-                                        label: Text(
-                                          _formatStatus(status),
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                        backgroundColor: _getStatusColor(
-                                          status,
-                                        ),
-                                        padding: EdgeInsets.zero,
-                                      ),
-                                      if (catering['total_cost'] != null ||
-                                          catering['totalCost'] != null)
-                                        Text(
-                                          '₱${catering['total_cost'] ?? catering['totalCost']}',
-                                          style: const TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFFF4511E),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  if (_hasFeedbackSubmitted(catering)) ...[
-                                    const SizedBox(height: 10),
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: Chip(
-                                        avatar: const Icon(
-                                          Icons.check_circle,
-                                          size: 18,
-                                          color: Colors.white,
-                                        ),
-                                        label: const Text(
-                                          'Feedback submitted',
-                                          style: TextStyle(color: Colors.white),
-                                        ),
-                                        backgroundColor: Colors.green,
-                                      ),
-                                    ),
-                                  ] else if (_canReviewCatering(catering)) ...[
-                                    const SizedBox(height: 10),
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: OutlinedButton.icon(
-                                        onPressed:
-                                            () => _submitCateringFeedback(
-                                              catering,
-                                            ),
-                                        icon: const Icon(
-                                          Icons.rate_review_outlined,
-                                        ),
-                                        label: const Text('Leave feedback'),
-                                      ),
-                                    ),
-                                  ],
-                                  if (_buildEstimateUpdateBanner(themeDesign) !=
-                                      null)
-                                    _buildEstimateUpdateBanner(themeDesign)!,
-                                  if (status == 'online_inquiries' &&
-                                      !_hasManagerEstimateUpdate(
-                                        themeDesign,
-                                      )) ...[
-                                    const SizedBox(height: 12),
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(10),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFE3F2FD),
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(
-                                          color: const Color(0xFF90CAF9),
-                                        ),
-                                      ),
-                                      child: const Text(
-                                        'Your inquiry is being reviewed. You will see labor, travel, and total estimates here when Macrina posts them.',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFF0D47A1),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+                      }),
                     ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildInquiryListTile(Map<String, dynamic> catering) {
+    final status = _statusOf(catering);
+    final title =
+        (catering['event_title'] ?? catering['eventTitle'] ?? 'Catering')
+            .toString();
+    final ref =
+        (catering['catering_id'] ??
+                catering['cateringId'] ??
+                catering['id'] ??
+                '')
+            .toString();
+    final waiting = _isWaitingStatus(status);
+    final completed = _isCompletedStatus(status);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        onTap: () => _showCateringDetailsDialog(catering),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Text(
+          [
+            if (ref.isNotEmpty) 'Ref: $ref',
+            _formatStatus(status),
+            orderTypeDisplayLabel(
+              (catering['order_type'] ?? catering['orderType'] ?? '').toString(),
+              eventTitle: title,
+            ),
+          ].join(' \u00b7 '),
+        ),
+        trailing: Wrap(
+          spacing: 4,
+          children: [
+            if (waiting)
+              IconButton(
+                tooltip: 'Follow up',
+                icon: const Icon(Icons.support_agent_outlined),
+                onPressed: () => _submitFollowUp(catering),
+              ),
+            if (completed && !_hasFeedbackSubmitted(catering))
+              IconButton(
+                tooltip: 'Leave feedback',
+                icon: const Icon(Icons.rate_review_outlined),
+                onPressed: () => _submitCateringFeedback(catering),
+              ),
+            Icon(Icons.chevron_right, color: _getStatusColor(status)),
+          ],
+        ),
       ),
     );
   }

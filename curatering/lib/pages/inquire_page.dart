@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
 
@@ -32,8 +33,24 @@ import '../widgets/event_venue_map_preview.dart';
 import '../utils/inquiry_pricing.dart';
 import '../widgets/antd_dialog.dart';
 import '../utils/image_download.dart';
+import 'customer_login.dart';
+import 'my_caterings_page.dart';
 
 const String _primaryFont = 'Inter';
+
+const _kInquiryWizardStepLabels = <String>[
+  'Catering Packages',
+  'Enter number of guests',
+  'Fill Inquiry Form',
+  'Completed',
+];
+
+const _kInquiryWizardStepIcons = <IconData>[
+  Icons.menu_book_outlined,
+  Icons.groups_outlined,
+  Icons.edit_note_outlined,
+  Icons.check_circle_outline,
+];
 bool isMobile(BuildContext context) => MediaQuery.of(context).size.width < 700;
 
 bool isTablet(BuildContext context) =>
@@ -78,9 +95,12 @@ class _InquirePageState extends State<InquirePage> {
   double? _addressLat;
   double? _addressLng;
   final _guests = TextEditingController();
+  final _landingPax = TextEditingController();
+  final _paxBuffer = TextEditingController();
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
   final _endTimeController = TextEditingController();
+  final _notesController = TextEditingController();
   final _eventCityController = TextEditingController();
   final _foodTastingDateController = TextEditingController();
   final _foodTastingTimeController = TextEditingController();
@@ -89,31 +109,36 @@ class _InquirePageState extends State<InquirePage> {
   // State
   String _eventType = 'Birthday';
   String _formality = 'casual';
-  String _eventSetting = 'Indoor';
+  String _eventSetting = 'open';
   bool _foodTastingRequested = false;
   bool _suggestMenu = false;
+  bool _customerSameAsContact = false;
   String? _submittedCateringId;
   bool _submitting = false;
   bool _generatingDesign = false;
   String? _generatedImageUrl;
   String? _generatedDesignPrompt;
   final List<String> _generatedImageHistory = [];
+  int _scheduleConflictCount = 0;
+  Timer? _scheduleConflictDebounce;
 
   String _generatedImageDisplayUrl(String url) {
     return RunPodService.proxyImageUrlIfNeeded(url);
   }
 
-  // Service Type Selection
+  // Service Type Selection — set from landing pax / form sync
   String _serviceType = 'catering'; // 'catering' or 'catering+event'
+  String _serviceIncluded = 'no'; // event styling yes/no for catering-only
 
   // Menu preferences: 0 = custom dishes, 1 = set menu (exclusive)
   int _menuPrefTabIndex = 0;
-  bool? _includeCateringService; // catering-only, guests < 50
   final List<String> _selectedDishIds = [];
   final List<Map<String, dynamic>> _menuSelections = [];
   String _allergensSerialized = '';
 
-  /// Phase 0 = main inquiry form; 1 = event design path choice; 2 = macrina fields OR customer AI.
+  /// Wizard: 0 packages, 1 guests landing, 2 form (+ design substeps), 3 completed.
+  int _wizardStep = 0;
+  /// Within wizard step 2: 0 = main form, 1 = design path, 2 = design fields.
   int _formPhase = 0;
   String? _eventDesignMode; // 'macrina' | 'customer'
   final _macrinaPalette = TextEditingController();
@@ -240,9 +265,12 @@ class _InquirePageState extends State<InquirePage> {
     _email.dispose();
     _address.dispose();
     _guests.dispose();
+    _landingPax.dispose();
+    _paxBuffer.dispose();
     _dateController.dispose();
     _timeController.dispose();
     _endTimeController.dispose();
+    _notesController.dispose();
     _eventCityController.dispose();
     _foodTastingDateController.dispose();
     _foodTastingTimeController.dispose();
@@ -255,6 +283,7 @@ class _InquirePageState extends State<InquirePage> {
     _moodOtherController.dispose();
     _colorOtherController.dispose();
     _decorOtherController.dispose();
+    _scheduleConflictDebounce?.cancel();
     super.dispose();
   }
 
@@ -316,12 +345,101 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   bool get _isCateringWithEventStyling {
-    final guests = int.tryParse(_guests.text.trim()) ?? 0;
-    return _serviceType == 'catering+event' || guests >= 50;
+    return isInquiryCateringWithEventStyling(_inquiryTypeLabel) ||
+        _serviceType == 'catering+event';
   }
 
-  String get _inquiryTypeLabel =>
-      _isCateringWithEventStyling ? 'CATERING WITH EVENT STYLING' : 'CATERING';
+  String get _inquiryTypeLabel {
+    if (_serviceType == 'catering+event') {
+      return kInquiryTypeCateringWithEventStyling;
+    }
+    return inquiryTypeForLandingPax(int.tryParse(_guests.text.trim()) ?? 0);
+  }
+
+  int get _paxBufferValue {
+    final n = int.tryParse(_paxBuffer.text.trim()) ?? 0;
+    return n < 0 ? 0 : n;
+  }
+
+  /// Guest count used for per-pax add-on charges (matches handoff billable guests).
+  int get _billableGuestCountForPricing {
+    final g = int.tryParse(_guests.text.trim()) ?? 0;
+    return g <= 0 ? 0 : g;
+  }
+
+  void _syncInquiryPackageFromGuestCount() {
+    final pax = int.tryParse(_guests.text.trim()) ?? 0;
+    if (pax >= kInquiryLandingEventStylingMinPax) {
+      _serviceType = 'catering+event';
+      _serviceIncluded = 'yes';
+    } else if (pax > 0) {
+      // Below 50: catering-only package; styling is an opt-in surcharge.
+      _serviceType = 'catering';
+    }
+  }
+
+  int? _parseTimeOfDayMinutes(String raw) {
+    final t = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (t.isEmpty) return null;
+    try {
+      final dt = DateFormat('h:mm a').parse(t.replaceAllMapped(
+        RegExp(r'^(\d{1,2}:\d{2})(AM|PM)$', caseSensitive: false),
+        (m) => '${m[1]} ${m[2]}',
+      ));
+      return dt.hour * 60 + dt.minute;
+    } catch (_) {}
+    final m = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(t);
+    if (m == null) return null;
+    final hh = int.tryParse(m.group(1)!);
+    final mm = int.tryParse(m.group(2)!);
+    if (hh == null || mm == null || hh > 23 || mm > 59) return null;
+    return hh * 60 + mm;
+  }
+
+  bool _isDateTimePast(String dateYmd, String timeRaw) {
+    final mins = _parseTimeOfDayMinutes(timeRaw);
+    if (mins == null) return false;
+    final parts = dateYmd.split('-');
+    if (parts.length != 3) return false;
+    final y = int.tryParse(parts[0]);
+    final mo = int.tryParse(parts[1]);
+    final d = int.tryParse(parts[2]);
+    if (y == null || mo == null || d == null) return false;
+    final dt = DateTime(y, mo, d, mins ~/ 60, mins % 60);
+    return dt.isBefore(DateTime.now());
+  }
+
+  void _scheduleConflictRefresh() {
+    _scheduleConflictDebounce?.cancel();
+    _scheduleConflictDebounce = Timer(const Duration(milliseconds: 450), () async {
+      final slots = _buildScheduleSlotsForApi();
+      final windows =
+          slots
+              .where(
+                (s) =>
+                    '${s['date']}'.trim().isNotEmpty &&
+                    '${s['startTime']}'.trim().isNotEmpty &&
+                    '${s['endTime']}'.trim().isNotEmpty,
+              )
+              .map(
+                (s) => {
+                  'date': '${s['date']}'.trim(),
+                  'from': '${s['startTime']}'.trim(),
+                  'to': '${s['endTime']}'.trim(),
+                },
+              )
+              .toList();
+      if (!mounted) return;
+      if (windows.isEmpty) {
+        setState(() => _scheduleConflictCount = 0);
+        return;
+      }
+      final n = await PublicEventsApi.instance.countCateringScheduleConflicts(
+        windows,
+      );
+      if (mounted) setState(() => _scheduleConflictCount = n);
+    });
+  }
 
   List<Map<String, dynamic>> _buildScheduleSlotsForApi() {
     final slots = <Map<String, dynamic>>[
@@ -350,22 +468,13 @@ class _InquirePageState extends State<InquirePage> {
 
   List<Map<String, dynamic>> _buildInquiryCostBreakdown() {
     final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
-    final base = estimateInquiryCateringTotal(guestCount);
-    final extra = _menuAdditionalChargeTotal();
-    return [
-      {
-        'label': 'Initial catering estimate',
-        'amount': base,
-        'note':
-            '₱${kCateringInquiryPricePerGuest.toStringAsFixed(0)} × $guestCount guests',
-      },
-      if (extra > 0)
-        {
-          'label': 'Set menu extra dishes',
-          'amount': extra,
-          'note': 'Additional charge for dishes added beyond the set menu',
-        },
-    ];
+    return buildInquiryCostBreakdownLines(
+      guestCount: guestCount,
+      paxBuffer: _paxBufferValue,
+      menuModificationsExtra: _menuAdditionalChargeTotal(),
+      inquiryType: _inquiryTypeLabel,
+      serviceIncluded: _isCateringWithEventStyling ? 'yes' : _serviceIncluded,
+    );
   }
 
   Map<String, MenuDish> get _activeDishById => {
@@ -402,23 +511,23 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   double _menuAdditionalChargeTotal() {
-    return _setMenuAdditionalChargeRows().fold<double>(
+    final guests = _billableGuestCountForPricing;
+    if (guests <= 0) return 0;
+    final perPax = _setMenuAdditionalChargeRows().fold<double>(
       0,
       (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
     );
+    return perPax * guests;
   }
 
   double _estimateMenuCost() {
-    final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
-    return estimateInquiryCateringTotal(guestCount) +
-        _menuAdditionalChargeTotal();
+    return sumInquiryCostBreakdown(_buildInquiryCostBreakdown());
   }
 
   Future<void> _showOrderSummaryAndConfirm() async {
     final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
     final estimated = _estimateMenuCost();
-    final additionalRows = _setMenuAdditionalChargeRows();
-    final additionalTotal = _menuAdditionalChargeTotal();
+    final breakdown = _buildInquiryCostBreakdown();
 
     final confirmed = await showAntdModal<bool>(
       context: context,
@@ -428,36 +537,27 @@ class _InquirePageState extends State<InquirePage> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Event: ${_eventTitle.text.trim()}'),
+          Text('Package: ${inquiryTypeDisplayLabel(_inquiryTypeLabel)}'),
+          Text('Event: ${_eventTitle.text.trim().isEmpty ? _customer.text.trim() : _eventTitle.text.trim()}'),
           Text('Customer: ${_customer.text.trim()}'),
           Text('Guests: $guestCount'),
-          Text('Service: $_serviceType'),
+          if (_paxBufferValue > 0) Text('Pax buffer: $_paxBufferValue'),
           const SizedBox(height: 12),
-          Text(
-            'Initial catering estimate (₱${kCateringInquiryPricePerGuest.toStringAsFixed(0)} × guests — final quote may differ):',
-            style: const TextStyle(fontWeight: FontWeight.w600),
+          const Text(
+            'Estimate (final quote may differ):',
+            style: TextStyle(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
-          Text('Estimated subtotal: ₱${estimated.toStringAsFixed(2)}'),
-          if (guestCount > 0)
+          for (final line in breakdown)
             Text(
-              '₱${kCateringInquiryPricePerGuest.toStringAsFixed(0)} × $guestCount guests',
+              '${line['label']}: ₱${((line['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}'
+              '${line['detail'] != null ? ' (${line['detail']})' : ''}',
             ),
-          if (additionalRows.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            const Text(
-              'Set menu extra dish fees:',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            for (final row in additionalRows)
-              Text(
-                '${row['dishName']}: ₱${((row['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
-              ),
-            Text(
-              'Additional fees: ₱${additionalTotal.toStringAsFixed(2)}',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ],
+          const SizedBox(height: 8),
+          Text(
+            'Estimated total: ₱${estimated.toStringAsFixed(2)}',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
           const SizedBox(height: 12),
           Text(
             'By confirming, you submit this inquiry to our team for review.',
@@ -498,9 +598,7 @@ class _InquirePageState extends State<InquirePage> {
             _isCateringWithEventStyling ? 'catering_event' : 'catering',
         'inquiryType': _inquiryTypeLabel,
         'serviceIncluded':
-            _isCateringWithEventStyling
-                ? 'yes'
-                : (_includeCateringService == true ? 'yes' : 'no'),
+            _isCateringWithEventStyling ? 'yes' : _serviceIncluded,
         'eventTitle':
             !_isCateringWithEventStyling
                 ? _customer.text.trim()
@@ -517,7 +615,7 @@ class _InquirePageState extends State<InquirePage> {
         if (_addressLat != null) 'addressLat': _addressLat,
         if (_addressLng != null) 'addressLng': _addressLng,
         'guestCount': guestCount,
-        'paxBuffer': 0,
+        'paxBuffer': _paxBufferValue,
         'scheduleSlots': scheduleSlots,
         'menu': _buildMenuForApi(),
         'curateOwnMenu': !_suggestMenu,
@@ -540,6 +638,7 @@ class _InquirePageState extends State<InquirePage> {
         },
         'allergens': _allergensSerialized.trim(),
         'guestAllergens': _allergensSerialized.trim(),
+        'note': _notesController.text.trim(),
         'source': 'web',
       };
       final themeDesign = _buildThemeDesignForApi();
@@ -562,7 +661,8 @@ class _InquirePageState extends State<InquirePage> {
         _clearForm();
         setState(() {
           _submittedCateringId = submittedId.isEmpty ? null : submittedId;
-          _formPhase = 3;
+          _wizardStep = 3;
+          _formPhase = 0;
         });
       }
     } catch (e) {
@@ -605,14 +705,40 @@ class _InquirePageState extends State<InquirePage> {
       err('email', 'Enter a valid email address');
     }
     final guestCount = int.tryParse(_guests.text.trim()) ?? 0;
-    if (guestCount < 1) err('guests', 'Enter a valid guest count (at least 1)');
+    if (guestCount < kMinCateringOnlyPax) {
+      err(
+        'guests',
+        'Enter at least $kMinCateringOnlyPax guests',
+      );
+    }
     if (_address.text.trim().isEmpty) {
       err('address', 'Please enter the event address');
     }
     if (_dateController.text.trim().isEmpty)
       err('date', 'Please select an event date');
     if (_timeController.text.trim().isEmpty) {
-      err('time', 'Please select an event time');
+      err('time', 'Please select an event start time');
+    }
+    if (_endTimeController.text.trim().isEmpty) {
+      err('endTime', 'Please select an event end time');
+    } else {
+      final startMins = _parseTimeOfDayMinutes(_timeController.text);
+      final endMins = _parseTimeOfDayMinutes(_endTimeController.text);
+      if (startMins != null && endMins != null && endMins <= startMins) {
+        err('endTime', 'End time must be after start time');
+      }
+    }
+    final dateYmd = _dateController.text.trim();
+    if (dateYmd.isNotEmpty &&
+        _timeController.text.trim().isNotEmpty &&
+        _isDateTimePast(dateYmd, _timeController.text)) {
+      err('time', 'Start time cannot be in the past');
+    }
+    if (dateYmd.isNotEmpty &&
+        _endTimeController.text.trim().isNotEmpty &&
+        _isDateTimePast(dateYmd, _endTimeController.text) &&
+        _fieldErrors['endTime'] == null) {
+      err('endTime', 'End time cannot be in the past');
     }
     if (!_suggestMenu && _menuSelections.isEmpty) {
       err('menu', 'Choose your menu using the options below');
@@ -635,10 +761,13 @@ class _InquirePageState extends State<InquirePage> {
     }
     if (_serviceType == 'catering') {
       final guests = int.tryParse(_guests.text.trim()) ?? 0;
-      if (guests > 0 && guests < 50 && _includeCateringService == null) {
+      if (guests > 0 &&
+          guests < kInquiryLandingEventStylingMinPax &&
+          _serviceIncluded != 'yes' &&
+          _serviceIncluded != 'no') {
         err(
           'cateringService',
-          'Please choose whether to include catering service',
+          'Please choose whether to include event styling',
         );
       }
     }
@@ -708,55 +837,60 @@ class _InquirePageState extends State<InquirePage> {
 
   /// Event design payload for staff "view details" (AI image vs Macrina text inspiration).
   Map<String, dynamic>? _buildThemeDesignForApi() {
-    if (!_isCateringWithEventStyling) return null;
-    if (_eventDesignMode == 'macrina') {
-      return {
-        'eventDesignSource': 'macrina',
-        'macrinaColorPalette': _macrinaPalette.text.trim(),
-        'macrinaTheme': _macrinaTheme.text.trim(),
-        'serviceType':
-            _isCateringWithEventStyling ? 'catering+event' : _serviceType,
-        'eventSetting': _eventSetting,
-        'event_setting': _eventSetting,
-      };
+    final note = _notesController.text.trim();
+    Map<String, dynamic>? base;
+    if (_isCateringWithEventStyling) {
+      if (_eventDesignMode == 'macrina') {
+        base = {
+          'eventDesignSource': 'macrina',
+          'macrinaColorPalette': _macrinaPalette.text.trim(),
+          'macrinaTheme': _macrinaTheme.text.trim(),
+          'serviceType':
+              _isCateringWithEventStyling ? 'catering+event' : _serviceType,
+          'eventSetting': _eventSetting,
+          'event_setting': _eventSetting,
+        };
+      } else if (_eventDesignMode == 'customer') {
+        final style =
+            _resolvedCategory(_selectedStyle, _styleOtherController) ?? '';
+        final mood =
+            _resolvedCategory(_selectedMood, _moodOtherController) ?? '';
+        final eventType =
+            _resolvedCategory(_selectedEventType, _eventTypeOtherController) ??
+            '';
+        final colors = _resolvedMultiSelectWithOther(
+          _selectedColors,
+          _colorOtherController,
+        );
+        final decor = _resolvedMultiSelectWithOther(
+          _selectedDecor,
+          _decorOtherController,
+        );
+        base = {
+          'eventDesignSource': 'customer_ai',
+          'wantsCustomDesign': _wantsCustomDesign,
+          'serviceType':
+              _isCateringWithEventStyling ? 'catering+event' : _serviceType,
+          'eventSetting': _eventSetting,
+          'event_setting': _eventSetting,
+          if (_generatedImageUrl != null &&
+              _generatedImageUrl!.trim().isNotEmpty)
+            'generatedImageUrl': _generatedImageDisplayUrl(_generatedImageUrl!),
+          if (_generatedDesignPrompt != null &&
+              _generatedDesignPrompt!.trim().isNotEmpty)
+            'generatedPrompt': _generatedDesignPrompt!.trim(),
+          if (eventType.isNotEmpty) 'eventDesignEventType': eventType,
+          if (style.isNotEmpty) 'style': style,
+          if (mood.isNotEmpty) 'mood': mood,
+          if (colors.isNotEmpty) 'colorPalette': colors,
+          if (decor.isNotEmpty) 'decorElements': decor,
+          if (_designPromptController.text.trim().isNotEmpty)
+            'customInstructions': _designPromptController.text.trim(),
+        };
+      }
     }
-    if (_eventDesignMode == 'customer') {
-      final style =
-          _resolvedCategory(_selectedStyle, _styleOtherController) ?? '';
-      final mood = _resolvedCategory(_selectedMood, _moodOtherController) ?? '';
-      final eventType =
-          _resolvedCategory(_selectedEventType, _eventTypeOtherController) ??
-          '';
-      final colors = _resolvedMultiSelectWithOther(
-        _selectedColors,
-        _colorOtherController,
-      );
-      final decor = _resolvedMultiSelectWithOther(
-        _selectedDecor,
-        _decorOtherController,
-      );
-      return {
-        'eventDesignSource': 'customer_ai',
-        'wantsCustomDesign': _wantsCustomDesign,
-        'serviceType':
-            _isCateringWithEventStyling ? 'catering+event' : _serviceType,
-        'eventSetting': _eventSetting,
-        'event_setting': _eventSetting,
-        if (_generatedImageUrl != null && _generatedImageUrl!.trim().isNotEmpty)
-          'generatedImageUrl': _generatedImageDisplayUrl(_generatedImageUrl!),
-        if (_generatedDesignPrompt != null &&
-            _generatedDesignPrompt!.trim().isNotEmpty)
-          'generatedPrompt': _generatedDesignPrompt!.trim(),
-        if (eventType.isNotEmpty) 'eventDesignEventType': eventType,
-        if (style.isNotEmpty) 'style': style,
-        if (mood.isNotEmpty) 'mood': mood,
-        if (colors.isNotEmpty) 'colorPalette': colors,
-        if (decor.isNotEmpty) 'decorElements': decor,
-        if (_designPromptController.text.trim().isNotEmpty)
-          'customInstructions': _designPromptController.text.trim(),
-      };
-    }
-    return null;
+    if (note.isEmpty) return base;
+    return {...?base, 'customerNote': note, 'note': note};
   }
 
   /// API `/api/online-inquiries` menu: inquiry blocks (set name + dish names) or flat rows.
@@ -798,20 +932,26 @@ class _InquirePageState extends State<InquirePage> {
       _addressLat = null;
       _addressLng = null;
       _guests.clear();
+      _landingPax.clear();
+      _paxBuffer.clear();
       _dateController.clear();
       _timeController.clear();
       _endTimeController.clear();
+      _notesController.clear();
       _eventCityController.clear();
-      _eventSetting = 'Indoor';
+      _eventSetting = 'open';
       _foodTastingRequested = false;
       _foodTastingDateController.clear();
       _foodTastingTimeController.clear();
       _extraScheduleSlots.clear();
       _suggestMenu = false;
+      _customerSameAsContact = false;
       _eventType = 'Birthday';
       _inquiryEventTypeOtherController.clear();
       _formality = 'casual';
       _serviceType = 'catering';
+      _serviceIncluded = 'no';
+      _wizardStep = 0;
       _formPhase = 0;
       _eventDesignMode = null;
       _macrinaPalette.clear();
@@ -819,8 +959,8 @@ class _InquirePageState extends State<InquirePage> {
       _fieldErrors.clear();
       _venueFieldError = null;
       _genAiError = null;
+      _scheduleConflictCount = 0;
       _menuPrefTabIndex = 0;
-      _includeCateringService = null;
       _selectedDishIds.clear();
       _menuSelections.clear();
       // Reset event design
@@ -1072,6 +1212,9 @@ class _InquirePageState extends State<InquirePage> {
             ? _eventType
             : _inquiryEventTypes.first;
     final isEventStyling = _isCateringWithEventStyling;
+    final guestsNow = int.tryParse(_guests.text.trim()) ?? 0;
+    final canPickEventPackage =
+        guestsNow >= kInquiryLandingEventStylingMinPax;
 
     return [
       _inquirySectionTitle('Event Information'),
@@ -1106,27 +1249,42 @@ class _InquirePageState extends State<InquirePage> {
           ),
           Expanded(
             child: RadioListTile<String>(
-              title: const Text(
-                'Catering + Event Design',
-                style: TextStyle(fontSize: 14),
+              title: Text(
+                canPickEventPackage
+                    ? 'Catering + Event Design'
+                    : 'Event Design (50+ guests)',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: canPickEventPackage ? null : Colors.grey.shade500,
+                ),
               ),
               value: 'catering+event',
               groupValue: _serviceType,
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() {
-                    _serviceType = value;
-                    _selectedEventType = _mapInquiryEventTypeToDesign(
-                      _eventType,
-                    );
-                  });
-                }
-              },
+              onChanged:
+                  canPickEventPackage
+                      ? (value) {
+                        if (value != null) {
+                          setState(() {
+                            _serviceType = value;
+                            _selectedEventType = _mapInquiryEventTypeToDesign(
+                              _eventType,
+                            );
+                          });
+                        }
+                      }
+                      : null,
               contentPadding: const EdgeInsets.symmetric(horizontal: 4),
             ),
           ),
         ],
       ),
+      if (!canPickEventPackage && guestsNow > 0) ...[
+        const SizedBox(height: 4),
+        Text(
+          'Below $kInquiryLandingEventStylingMinPax guests, use Event styling (with surcharge) instead of the full event package.',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+        ),
+      ],
       const SizedBox(height: 20),
       _responsiveThreeCol(
         context,
@@ -1212,7 +1370,22 @@ class _InquirePageState extends State<InquirePage> {
       ],
       const SizedBox(height: 32),
       _inquirySectionTitle('Contact Information'),
-      const SizedBox(height: 16),
+      const SizedBox(height: 8),
+      CheckboxListTile(
+        contentPadding: EdgeInsets.zero,
+        value: _customerSameAsContact,
+        title: const Text('Customer same as contact person'),
+        onChanged: (value) {
+          setState(() {
+            _customerSameAsContact = value == true;
+            if (_customerSameAsContact) {
+              _customer.text = _contactPerson.text;
+              _fieldErrors.remove('customer');
+            }
+          });
+        },
+      ),
+      const SizedBox(height: 8),
       _responsiveThreeCol(
         context,
         AntdFieldShell(
@@ -1222,6 +1395,7 @@ class _InquirePageState extends State<InquirePage> {
           child: AntdOutlineInput(
             controller: _customer,
             hintText: 'Enter your name',
+            readOnly: _customerSameAsContact,
             onChanged: (_) => onFieldChanged('customer'),
           ),
         ),
@@ -1232,7 +1406,12 @@ class _InquirePageState extends State<InquirePage> {
           child: AntdOutlineInput(
             controller: _contactPerson,
             hintText: 'Contact person name',
-            onChanged: (_) => onFieldChanged('contactPerson'),
+            onChanged: (v) {
+              onFieldChanged('contactPerson');
+              if (_customerSameAsContact) {
+                setState(() => _customer.text = v);
+              }
+            },
           ),
         ),
         AntdFieldShell(
@@ -1282,14 +1461,26 @@ class _InquirePageState extends State<InquirePage> {
           errorText: _fieldErrors['guests'],
           child: AntdOutlineInput(
             controller: _guests,
-            hintText: 'Guest count',
+            hintText: 'Min $kMinCateringOnlyPax',
             keyboardType: TextInputType.number,
-            onChanged:
-                (_) => setState(() {
-                  _fieldErrors.remove('guests');
-                  _fieldErrors.remove('cateringService');
-                }),
+            onChanged: (_) {
+              setState(() {
+                _fieldErrors.remove('guests');
+                _fieldErrors.remove('cateringService');
+                _syncInquiryPackageFromGuestCount();
+              });
+            },
           ),
+        ),
+      ),
+      const SizedBox(height: 16),
+      AntdFieldShell(
+        label: 'Pax buffer (optional)',
+        child: AntdOutlineInput(
+          controller: _paxBuffer,
+          hintText: 'Extra pax on estimate only',
+          keyboardType: TextInputType.number,
+          onChanged: (_) => setState(() {}),
         ),
       ),
       if (_address.text.trim().isNotEmpty) ...[
@@ -1324,6 +1515,7 @@ class _InquirePageState extends State<InquirePage> {
                   ).format(pickedDate);
                   _fieldErrors.remove('date');
                 });
+                _scheduleConflictRefresh();
               }
             },
           ),
@@ -1356,12 +1548,15 @@ class _InquirePageState extends State<InquirePage> {
                       .replaceAll(' ', '');
                   _fieldErrors.remove('time');
                 });
+                _scheduleConflictRefresh();
               }
             },
           ),
         ),
         AntdFieldShell(
           label: 'End Time',
+          required: true,
+          errorText: _fieldErrors['endTime'],
           child: AntdPickerInput(
             value: _endTimeController.text,
             hintText: 'e.g. 10:00 PM',
@@ -1384,10 +1579,21 @@ class _InquirePageState extends State<InquirePage> {
                   _endTimeController.text = pickedTime
                       .format(context)
                       .replaceAll(' ', '');
+                  _fieldErrors.remove('endTime');
                 });
+                _scheduleConflictRefresh();
               }
             },
           ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      AntdFieldShell(
+        label: 'Notes (optional)',
+        child: AntdOutlineInput(
+          controller: _notesController,
+          hintText: 'Special requests, dietary notes, or other details',
+          maxLines: 3,
         ),
       ),
       const SizedBox(height: 12),
@@ -1468,19 +1674,44 @@ class _InquirePageState extends State<InquirePage> {
         AntdFieldShell(
           label: 'Event Setting',
           child: DropdownButtonFormField<String>(
-            value: _eventSetting,
+            value:
+                (_eventSetting == 'open' ||
+                        _eventSetting == 'closed' ||
+                        _eventSetting == 'mixed')
+                    ? _eventSetting
+                    : 'open',
             isExpanded: true,
             decoration: const InputDecoration(border: OutlineInputBorder()),
             items: const [
-              DropdownMenuItem(value: 'Indoor', child: Text('Indoor')),
-              DropdownMenuItem(value: 'Outdoor', child: Text('Outdoor')),
-              DropdownMenuItem(value: 'Mixed', child: Text('Mixed')),
+              DropdownMenuItem(value: 'open', child: Text('Open')),
+              DropdownMenuItem(value: 'closed', child: Text('Closed')),
+              DropdownMenuItem(value: 'mixed', child: Text('Mixed')),
             ],
             onChanged:
-                (value) => setState(() => _eventSetting = value ?? 'Indoor'),
+                (value) => setState(() => _eventSetting = value ?? 'open'),
           ),
         ),
       ),
+      if (_scheduleConflictCount > 0) ...[
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.amber.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.amber.shade300),
+          ),
+          child: Text(
+            'Schedule advisory: $_scheduleConflictCount overlapping window(s) with events already in processing. You can still submit — our team will confirm availability.',
+            style: TextStyle(
+              color: Colors.amber.shade900,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
       const SizedBox(height: 16),
       CheckboxListTile(
         contentPadding: EdgeInsets.zero,
@@ -1519,7 +1750,9 @@ class _InquirePageState extends State<InquirePage> {
         Builder(
           builder: (context) {
             final guests = int.tryParse(_guests.text.trim()) ?? 0;
-            if (guests <= 0 || guests >= 50) return const SizedBox.shrink();
+            if (guests <= 0 || guests >= kInquiryLandingEventStylingMinPax) {
+              return const SizedBox.shrink();
+            }
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1543,7 +1776,7 @@ class _InquirePageState extends State<InquirePage> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'For catering orders with less than 50 guests, additional charges may apply.',
+                          'Below $kInquiryLandingEventStylingMinPax guests, event styling adds ₱${kEventStylingSurchargePerPaxBelow50.toStringAsFixed(0)} per guest.',
                           style: TextStyle(
                             color: Colors.orange.shade800,
                             fontSize: 13,
@@ -1555,21 +1788,21 @@ class _InquirePageState extends State<InquirePage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                _inquirySectionTitle('Include catering service'),
+                _inquirySectionTitle('Event styling'),
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
-                      child: RadioListTile<bool>(
+                      child: RadioListTile<String>(
                         title: const Text(
-                          'Yes',
+                          'Without',
                           style: TextStyle(fontSize: 14),
                         ),
-                        value: true,
-                        groupValue: _includeCateringService,
+                        value: 'no',
+                        groupValue: _serviceIncluded,
                         onChanged: (v) {
                           setState(() {
-                            _includeCateringService = v;
+                            _serviceIncluded = v ?? 'no';
                             _fieldErrors.remove('cateringService');
                           });
                         },
@@ -1577,13 +1810,16 @@ class _InquirePageState extends State<InquirePage> {
                       ),
                     ),
                     Expanded(
-                      child: RadioListTile<bool>(
-                        title: const Text('No', style: TextStyle(fontSize: 14)),
-                        value: false,
-                        groupValue: _includeCateringService,
+                      child: RadioListTile<String>(
+                        title: const Text(
+                          'With',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                        value: 'yes',
+                        groupValue: _serviceIncluded,
                         onChanged: (v) {
                           setState(() {
-                            _includeCateringService = v;
+                            _serviceIncluded = v ?? 'yes';
                             _fieldErrors.remove('cateringService');
                           });
                         },
@@ -1592,12 +1828,12 @@ class _InquirePageState extends State<InquirePage> {
                     ),
                   ],
                 ),
-                if (_includeCateringService == true)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 4, bottom: 8),
+                if (_serviceIncluded == 'yes')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 8),
                     child: Text(
-                      'May incur additional charges.',
-                      style: TextStyle(
+                      'Styling surcharge: ₱${(guests * kEventStylingSurchargePerPaxBelow50).toStringAsFixed(0)}',
+                      style: const TextStyle(
                         color: AntdTokens.warning,
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
@@ -2642,16 +2878,305 @@ class _InquirePageState extends State<InquirePage> {
       ),
       const SizedBox(height: 24),
       Center(
-        child: FilledButton(
-          onPressed:
-              () => setState(() {
-                _submittedCateringId = null;
-                _formPhase = 0;
-              }),
-          child: const Text('Submit another inquiry'),
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          alignment: WrapAlignment.center,
+          children: [
+            FilledButton(
+              onPressed: () => _openMyCaterings(),
+              child: const Text('View My Caterings'),
+            ),
+            OutlinedButton(
+              onPressed:
+                  () => setState(() {
+                    _submittedCateringId = null;
+                    _wizardStep = 0;
+                    _formPhase = 0;
+                  }),
+              child: const Text('Submit another inquiry'),
+            ),
+          ],
         ),
       ),
     ];
+  }
+
+  Future<void> _openMyCaterings() async {
+    final prefs = await SharedPreferences.getInstance();
+    var token = prefs.getString('customer_token');
+    if (!mounted) return;
+    if (token == null || token.isEmpty) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const CustomerLoginPage()),
+      );
+      if (!mounted) return;
+      token = (await SharedPreferences.getInstance()).getString('customer_token');
+      if (token == null || token.isEmpty) return;
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const MyCateringsPage()),
+    );
+  }
+
+  Widget _buildWizardProgressBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 10, 8, 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: List.generate(_kInquiryWizardStepLabels.length, (i) {
+          final done = i < _wizardStep;
+          final active = i == _wizardStep;
+          final reached = i <= _wizardStep;
+          return Expanded(
+            child: Column(
+              children: [
+                CircleAvatar(
+                  radius: active ? 16 : 14,
+                  backgroundColor:
+                      reached ? const Color(0xFFFFC024) : Colors.grey.shade300,
+                  child: Icon(
+                    done ? Icons.check : _kInquiryWizardStepIcons[i],
+                    size: active ? 18 : 16,
+                    color: reached ? const Color(0xFF1E1E1E) : Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _kInquiryWizardStepLabels[i],
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  style: TextStyle(
+                    fontSize: 10,
+                    height: 1.2,
+                    fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+                    color: reached ? Colors.black87 : Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _packageCopyBlock({
+    required String title,
+    required List<String> bullets,
+    required String note,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 6),
+        for (final b in bullets) Text(b),
+        const SizedBox(height: 6),
+        Text(
+          note,
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.35,
+            color: Colors.grey.shade700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildPackagesStep() {
+    return [
+      const Text(
+        'Catering Packages',
+        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+      ),
+      const SizedBox(height: 12),
+      DefaultTabController(
+        length: 2,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const TabBar(
+              labelColor: Color(0xFF1E1E1E),
+              tabs: [
+                Tab(text: 'Within Taguig'),
+                Tab(text: 'Outside Taguig'),
+              ],
+            ),
+            SizedBox(
+              height: 320,
+              child: TabBarView(
+                children: [
+                  SingleChildScrollView(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _packageCopyBlock(
+                          title: 'Catering',
+                          bullets: const [
+                            '1) Php 500 per pax',
+                            '2) Setup: staff and buffet service',
+                          ],
+                          note:
+                              'For requests such as event styling, menu modifications, tables and chairs, etc., please include in your notes upon inquiry submission.',
+                        ),
+                        const SizedBox(height: 16),
+                        _packageCopyBlock(
+                          title: 'Catering with Event Styling',
+                          bullets: const [
+                            '1) Php 500 per pax',
+                            '2) Minimal Design: tables and chairs with linen and centerpiece',
+                            '3) Setup: staff and buffet service',
+                          ],
+                          note:
+                              'For extensive event styling and other requests, please include in your notes upon inquiry submission.',
+                        ),
+                      ],
+                    ),
+                  ),
+                  SingleChildScrollView(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _packageCopyBlock(
+                          title: 'Catering',
+                          bullets: const [
+                            '1) Php 500 per pax',
+                            '2) Setup: staff and buffet service',
+                          ],
+                          note:
+                              'Travel / logistics may apply outside Taguig. Include details in your notes.',
+                        ),
+                        const SizedBox(height: 16),
+                        _packageCopyBlock(
+                          title: 'Catering with Event Styling',
+                          bullets: const [
+                            '1) Php 500 per pax',
+                            '2) Minimal Design: tables and chairs with linen and centerpiece',
+                            '3) Setup: staff and buffet service',
+                          ],
+                          note:
+                              'Travel / logistics may apply outside Taguig. Include details in your notes.',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 20),
+      Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton(
+          onPressed: () => setState(() => _wizardStep = 1),
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF1E1E1E),
+          ),
+          child: const Text('NEXT'),
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _buildGuestsLandingStep() {
+    final pax = int.tryParse(_landingPax.text.trim());
+    final estimate =
+        pax != null && pax > 0 ? estimateInquiryCateringTotal(pax) : 0.0;
+    final packageLabel =
+        (pax ?? 0) >= kInquiryLandingEventStylingMinPax
+            ? 'Catering with Event Styling'
+            : 'Catering';
+    return [
+      const Text(
+        'How many guests?',
+        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        'Enter your guest count. At $kInquiryLandingEventStylingMinPax or more guests, we use Catering with Event Styling.',
+        style: TextStyle(color: Colors.grey.shade700),
+      ),
+      const SizedBox(height: 20),
+      Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 280),
+          child: AntdOutlineInput(
+            controller: _landingPax,
+            hintText: 'Number of guests',
+            keyboardType: TextInputType.number,
+            onChanged: (_) => setState(() {}),
+          ),
+        ),
+      ),
+      const SizedBox(height: 16),
+      if (pax != null && pax > 0) ...[
+        Center(
+          child: Text(
+            'Package: $packageLabel',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Center(
+          child: Text(
+            'Base estimate: ₱${estimate.toStringAsFixed(0)}',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: Colors.amber.shade900,
+            ),
+          ),
+        ),
+      ],
+      const SizedBox(height: 24),
+      Row(
+        children: [
+          OutlinedButton(
+            onPressed: () => setState(() => _wizardStep = 0),
+            child: const Text('BACK'),
+          ),
+          const Spacer(),
+          FilledButton(
+            onPressed: _proceedFromLanding,
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF1E1E1E),
+            ),
+            child: const Text('NEXT'),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  void _proceedFromLanding() {
+    final pax = int.tryParse(_landingPax.text.trim());
+    if (pax == null || pax < 1) {
+      showAntdMessage(
+        context,
+        'Enter how many guests you will have.',
+        type: AntdMessageType.error,
+      );
+      return;
+    }
+    _guests.text = '$pax';
+    if (pax >= kInquiryLandingEventStylingMinPax) {
+      _serviceType = 'catering+event';
+      _serviceIncluded = 'yes';
+    } else {
+      _serviceType = 'catering';
+      _serviceIncluded = 'no';
+    }
+    setState(() {
+      _wizardStep = 2;
+      _formPhase = 0;
+    });
   }
 
   @override
@@ -2715,12 +3240,20 @@ class _InquirePageState extends State<InquirePage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (_formPhase == 0) ..._buildPhase0Content(context),
-                          if (_formPhase == 1 && _isCateringWithEventStyling)
+                          _buildWizardProgressBar(),
+                          if (_wizardStep == 0) ..._buildPackagesStep(),
+                          if (_wizardStep == 1) ..._buildGuestsLandingStep(),
+                          if (_wizardStep == 2 && _formPhase == 0)
+                            ..._buildPhase0Content(context),
+                          if (_wizardStep == 2 &&
+                              _formPhase == 1 &&
+                              _isCateringWithEventStyling)
                             ..._buildPhase1Content(),
-                          if (_formPhase == 2 && _isCateringWithEventStyling)
+                          if (_wizardStep == 2 &&
+                              _formPhase == 2 &&
+                              _isCateringWithEventStyling)
                             ..._buildPhase2Content(context),
-                          if (_formPhase == 3) ..._buildCompletedContent(),
+                          if (_wizardStep == 3) ..._buildCompletedContent(),
                         ],
                       ),
                     ),

@@ -25,6 +25,7 @@ import 'pages/customer_website.dart';
 import 'pages/gallery_page.dart';
 import 'pages/contact_us_page.dart';
 import 'pages/inquire_page.dart';
+import 'pages/my_caterings_page.dart';
 import 'pages/restaurant_order_page.dart';
 import 'pages/restaurant_feedback_public_page.dart';
 import 'pages/catering_menu_page.dart';
@@ -119,6 +120,11 @@ Route<dynamic>? _buildRouteForPath(String path) {
         (context) => _customerPage(
           const InquirePage(contentEditable: false, showStaffChrome: false),
           '/inquire',
+        ),
+    '/my-inquiries':
+        (context) => _customerPage(
+          const MyCateringsPage(),
+          '/my-inquiries',
         ),
     '/restaurant':
         (context) => _customerPage(
@@ -602,6 +608,11 @@ class _MyAppState extends State<MyApp> {
                     showStaffChrome: false,
                   ),
                   '/inquire',
+                ),
+            '/my-inquiries':
+                (context) => _customerPage(
+                  const MyCateringsPage(),
+                  '/my-inquiries',
                 ),
             '/restaurant':
                 (context) => _customerPage(

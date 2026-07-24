@@ -347,7 +347,9 @@ const EVENT_CATERING_COLUMN_DEFS = [
   ['event_id', 'TEXT'],
   ['pax_buffer', 'INT DEFAULT 0'],
   ['estimated_cost', 'DECIMAL(10,2) DEFAULT 0.00'],
+  ['estimated_total', 'DECIMAL(10,2) DEFAULT 0.00'],
   ['allergens', "TEXT NOT NULL DEFAULT ''"],
+  ['note', "TEXT NOT NULL DEFAULT ''"],
   ['catering_id', 'TEXT'],
   ['created_at', 'TIMESTAMPTZ NOT NULL DEFAULT now()'],
   ['updated_at', 'TIMESTAMPTZ NOT NULL DEFAULT now()'],
@@ -759,6 +761,9 @@ export function buildCustomerCateringOrdersSql(eventCols, cateringCols) {
       ${cateringSelectField(eventCols, 'scheduleSlots', ['schedule_slots'], "'[]'::jsonb")},
       ${cateringSelectField(eventCols, 'menu', ['menu'], "'[]'::jsonb")},
       ${cateringSelectField(eventCols, 'totalCost', ['total_cost'], '0')},
+      ${cateringSelectField(eventCols, 'estimatedTotal', ['estimated_total', 'estimated_cost'], '0')},
+      ${cateringSelectField(eventCols, 'allergens', ['allergens'], "''")},
+      ${cateringSelectField(eventCols, 'note', ['note'], "''")},
       ${cateringSelectField(eventCols, 'feedback_stars', ['feedback_stars'], 'NULL::int')},
       ${cateringSelectField(eventCols, 'feedback_remarks', ['feedback_remarks'], 'NULL::text')},
       ${cateringSelectField(eventCols, 'feedback_submitted_at', ['feedback_submitted_at'], 'NULL::timestamptz')},
@@ -783,6 +788,9 @@ export function buildCustomerCateringOrdersSql(eventCols, cateringCols) {
       ${cateringSelectField(cateringCols, 'scheduleSlots', ['schedule_slots'], "'[]'::jsonb")},
       ${cateringSelectField(cateringCols, 'menu', ['menu'], "'[]'::jsonb")},
       ${cateringSelectField(cateringCols, 'totalCost', ['total_cost'], '0')},
+      ${cateringSelectField(cateringCols, 'estimatedTotal', ['estimated_total', 'estimated_cost'], '0')},
+      ${cateringSelectField(cateringCols, 'allergens', ['allergens'], "''")},
+      ${cateringSelectField(cateringCols, 'note', ['note'], "''")},
       ${cateringSelectField(cateringCols, 'feedback_stars', ['feedback_stars'], 'NULL::int')},
       ${cateringSelectField(cateringCols, 'feedback_remarks', ['feedback_remarks'], 'NULL::text')},
       ${cateringSelectField(cateringCols, 'feedback_submitted_at', ['feedback_submitted_at'], 'NULL::timestamptz')},
@@ -817,8 +825,15 @@ export function normalizeCustomerCateringOrderRow(row) {
   }
 
   const theme = o.themeDesign && typeof o.themeDesign === 'object' ? o.themeDesign : {};
+  if (!theme.costBreakdown && theme.cost_breakdown != null) {
+    theme.costBreakdown = theme.cost_breakdown;
+  }
+  if (!theme.customerNote && (theme.note || o.note)) {
+    theme.customerNote = String(theme.note || o.note || '').trim();
+  }
+  o.themeDesign = theme;
   const breakdown =
-    theme.costBreakdown && typeof theme.costBreakdown === 'object'
+    theme.costBreakdown && typeof theme.costBreakdown === 'object' && !Array.isArray(theme.costBreakdown)
       ? theme.costBreakdown
       : {};
   if (o.laborCost == null && breakdown.laborCost != null) {
@@ -826,6 +841,13 @@ export function normalizeCustomerCateringOrderRow(row) {
   }
   if (o.travelCost == null && breakdown.travelCost != null) {
     o.travelCost = breakdown.travelCost;
+  }
+  if (
+    (o.totalCost == null || Number(o.totalCost) === 0) &&
+    o.estimatedTotal != null &&
+    Number(o.estimatedTotal) > 0
+  ) {
+    o.totalCost = o.estimatedTotal;
   }
 
   return o;

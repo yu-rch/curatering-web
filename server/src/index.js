@@ -7323,6 +7323,7 @@ app.post(
 // Public: customer submits online inquiries
 app.post("/api/online-inquiries", async (req, res) => {
   try {
+    await ensureCateringEventOrdersCanonicalColumns();
     const {
       orderType,
       eventTitle,
@@ -7355,9 +7356,11 @@ app.post("/api/online-inquiries", async (req, res) => {
       curateOwnMenu,
       guestAllergens,
       themeDesign,
+      note,
       source = 'web', // 'web' or 'mobile'
     } = req.body || {};
     const allergensText = String(guestAllergens ?? allergens ?? '').trim();
+    const noteText = String(note ?? '').trim();
     const normalizedServiceIncluded = String(serviceIncluded ?? '').trim().toLowerCase() === 'yes' ? 'yes' : 'no';
     const normalizedMenuMods = Array.isArray(menuModifications)
       ? { additionalChargeRows: menuModifications }
@@ -7375,6 +7378,10 @@ app.post("/api/online-inquiries", async (req, res) => {
     if (curateOwnMenu !== undefined) slimTheme.curate_own_menu = Boolean(curateOwnMenu);
     if (normalizedCostBreakdown.length) slimTheme.cost_breakdown = normalizedCostBreakdown;
     if (Object.keys(normalizedMenuMods).length) slimTheme.menu_modifications = normalizedMenuMods;
+    if (noteText) {
+      slimTheme.customerNote = noteText;
+      slimTheme.note = noteText;
+    }
     if (
       typeof slimTheme.venuePhotoBase64 === "string" &&
       slimTheme.venuePhotoBase64.length > 120_000
@@ -7408,6 +7415,24 @@ app.post("/api/online-inquiries", async (req, res) => {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
+    const guestCountNum = Number(guestCount);
+    if (!Number.isFinite(guestCountNum) || guestCountNum < 10) {
+      return res.status(400).json({ message: "Guest count must be at least 10" });
+    }
+
+    const hasCompleteSchedule = scheduleSlots.some((slot) => {
+      if (!slot || typeof slot !== "object") return false;
+      const date = String(slot.date ?? "").trim();
+      const start = String(slot.startTime ?? slot.start_time ?? "").trim();
+      const end = String(slot.endTime ?? slot.end_time ?? "").trim();
+      return Boolean(date && start && end);
+    });
+    if (!hasCompleteSchedule) {
+      return res.status(400).json({
+        message: "At least one schedule slot needs date, start time, and end time",
+      });
+    }
+
     // Only validate event-specific fields for catering+event
     if (!isCateringOnly) {
       if (!eventTitle || !eventType || !formalityLevel) {
@@ -7426,10 +7451,10 @@ app.post("/api/online-inquiries", async (req, res) => {
            schedule_slots, address, address_lat, address_lng, guest_count, pax_buffer, menu, allergens,
            event_city, event_setting, service_included, selected_set_menu, menu_modifications,
            cost_breakdown, food_tasting_requested, food_tasting_date, food_tasting_time,
-           estimated_total, theme_design)
+           estimated_total, theme_design, note)
         VALUES
           ('online_inquiry', 'online_inquiries', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-           $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, $19, $20, $21, $22, $23, $24::jsonb)
+           $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, $19, $20, $21, $22, $23, $24::jsonb, $25)
          RETURNING id, catering_id;`,
         [
           cateringId,
@@ -7441,7 +7466,7 @@ app.post("/api/online-inquiries", async (req, res) => {
           address,
           resolvedAddressLat,
           resolvedAddressLng,
-          Number(guestCount),
+          guestCountNum,
           Number(paxBuffer ?? 0) || 0,
           JSON.stringify(menu),
           allergensText,
@@ -7456,6 +7481,7 @@ app.post("/api/online-inquiries", async (req, res) => {
           String(foodTastingTime ?? '').trim(),
           Number(estimatedTotal ?? 0) || 0,
           themeDesignJson,
+          noteText,
         ]
       );
     } else {
@@ -7467,10 +7493,10 @@ app.post("/api/online-inquiries", async (req, res) => {
            schedule_slots, address, address_lat, address_lng, guest_count, pax_buffer, menu, theme_design, allergens,
            event_city, event_setting, service_included, selected_set_menu, menu_modifications,
            cost_breakdown, food_tasting_requested, food_tasting_date, food_tasting_time,
-           estimated_total)
+           estimated_total, note)
          VALUES
           ('online_inquiry', 'online_inquiries',
-           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::jsonb,$24::jsonb,$25,$26,$27,$28)
+           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::jsonb,$24::jsonb,$25,$26,$27,$28,$29)
          RETURNING id, catering_id;`,
         [
           eventTitle,
@@ -7486,7 +7512,7 @@ app.post("/api/online-inquiries", async (req, res) => {
           address,
           resolvedAddressLat,
           resolvedAddressLng,
-          Number(guestCount),
+          guestCountNum,
           Number(paxBuffer ?? 0) || 0,
           JSON.stringify(menu),
           themeDesignJson,
@@ -7501,6 +7527,7 @@ app.post("/api/online-inquiries", async (req, res) => {
           String(foodTastingDate ?? '').trim(),
           String(foodTastingTime ?? '').trim(),
           Number(estimatedTotal ?? 0) || 0,
+          noteText,
         ]
       );
     }
@@ -7519,6 +7546,98 @@ app.post("/api/online-inquiries", async (req, res) => {
   } catch (e) {
     console.error(e);
     return res.status(500).json({ message: "Failed to create online inquiry" });
+  }
+});
+
+/** Parse HH:MM or h:mmAM/PM into minutes from midnight. */
+function parseInquiryTimeMinutes(v) {
+  const raw = String(v ?? "").trim();
+  if (!raw) return null;
+  const ampm = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(raw.replace(/\s+/g, ""));
+  if (ampm) {
+    let hh = Number(ampm[1]);
+    const mm = Number(ampm[2]);
+    const ap = ampm[3].toUpperCase();
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+    if (ap === "PM" && hh < 12) hh += 12;
+    if (ap === "AM" && hh === 12) hh = 0;
+    return hh * 60 + mm;
+  }
+  const m = /^(\d{1,2}):(\d{2})/.exec(raw);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
+function inquiryWindowsFromSlots(raw) {
+  const out = [];
+  let arr = [];
+  if (raw == null) return out;
+  if (Array.isArray(raw)) arr = raw;
+  else if (typeof raw === "string") {
+    try {
+      const j = JSON.parse(raw);
+      if (Array.isArray(j)) arr = j;
+      else if (j && typeof j === "object") arr = [j];
+    } catch {
+      return out;
+    }
+  } else if (typeof raw === "object") {
+    arr = [raw];
+  }
+  for (const item of arr) {
+    if (!item || typeof item !== "object") continue;
+    const date = String(item.date ?? "").trim().slice(0, 10);
+    const from = item.from ?? item.startTime ?? item.start_time;
+    const to = item.to ?? item.endTime ?? item.end_time;
+    const sm = parseInquiryTimeMinutes(from);
+    const em = parseInquiryTimeMinutes(to);
+    if (!date || sm == null || em == null || em <= sm) continue;
+    out.push({ date, sm, em });
+  }
+  return out;
+}
+
+function inquiryWindowsOverlap(a, b) {
+  if (a.date !== b.date) return false;
+  return a.sm < b.em && b.sm < a.em;
+}
+
+/** Public: count proposed windows that overlap any order currently in For Processing. */
+app.post("/api/mobile/catering/schedule-conflicts", async (req, res) => {
+  try {
+    const windowsBody = Array.isArray(req.body?.windows) ? req.body.windows : [];
+    const candidate = inquiryWindowsFromSlots(windowsBody);
+    const { rows } = await pool.query(
+      `SELECT schedule_slots FROM catering_orders WHERE status = 'for_processing'
+       UNION ALL
+       SELECT schedule_slots FROM event_orders WHERE status = 'for_processing'`
+    );
+    let conflictWindowCount = 0;
+    for (const c of candidate) {
+      let hit = false;
+      for (const row of rows) {
+        const busy = inquiryWindowsFromSlots(row.schedule_slots);
+        for (const b of busy) {
+          if (inquiryWindowsOverlap(c, b)) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) break;
+      }
+      if (hit) conflictWindowCount += 1;
+    }
+    return res.json({
+      conflict_window_count: conflictWindowCount,
+      has_conflict: conflictWindowCount > 0,
+    });
+  } catch (err) {
+    console.error("schedule-conflicts", err);
+    return res.status(500).json({ error: "database error" });
   }
 });
 
@@ -11125,12 +11244,16 @@ async function registerRoutesAfterDbInit() {
 
         const tryUpdateByTable = async (tableName) => {
           const cols = tableName === 'event_orders' ? eventCols : cateringCols;
+          const cancelable =
+            normalizedAction === 'cancel_inquiry'
+              ? `('online_inquiries', 'new_event', 'online_inquiry', 'for_down_payment', 'for_processing')`
+              : `('online_inquiries', 'new_event', 'online_inquiry')`;
           const result = await pool.query(
             `UPDATE ${tableName}
              SET status = $1, updated_at = now()
              WHERE id::text = $2
                AND lower(email_address) = lower($3)
-               AND status = 'online_inquiries'
+               AND status IN ${cancelable}
              RETURNING id, ${cateringIdSelectAlias(cols)}, status, updated_at as "updatedAt"`,
             [nextStatus, orderId, customerEmail]
           );

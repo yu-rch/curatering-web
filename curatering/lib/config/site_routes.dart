@@ -196,6 +196,7 @@ bool isStaffRoute(String? routeName) {
     '/gallery',
     '/contact-us',
     '/inquire',
+    '/my-inquiries',
     '/restaurant',
     '/catering-menu',
   };
@@ -234,6 +235,7 @@ bool isCustomerContentRoute(String? routeName) {
     '/gallery',
     '/contact-us',
     '/inquire',
+    '/my-inquiries',
     '/restaurant',
     '/catering-menu',
   ];
