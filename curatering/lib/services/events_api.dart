@@ -383,6 +383,13 @@ class EventsApi {
     return const <dynamic>[];
   }
 
+  List<String> _toStringList(dynamic value) {
+    return _toList(value)
+        .map((e) => e.toString().trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
   EventOrderDto _orderFromJson(dynamic raw) {
     final map = _toMap(raw);
     final scheduleRaw = map['scheduleSlots'] ?? map['schedule_slots'];
@@ -458,10 +465,26 @@ class EventsApi {
     final macrinaTheme =
         (themeRaw['macrinaTheme'] ?? themeRaw['macrina_theme'])?.toString();
     final generatedImageUrl =
-        (themeRaw['generatedImageUrl'] ?? themeRaw['generated_image_url'])
+        (themeRaw['generatedImageUrl'] ??
+                themeRaw['generated_image_url'] ??
+                themeRaw['imageUrl'] ??
+                themeRaw['image_url'])
             ?.toString();
     final eventDesignSource =
         (themeRaw['eventDesignSource'] ?? themeRaw['event_design_source'])
+            ?.toString();
+    final style = (themeRaw['style'] ?? '')?.toString();
+    final mood = (themeRaw['mood'] ?? '')?.toString();
+    final colorPalette = _toStringList(
+      themeRaw['colorPalette'] ?? themeRaw['color_palette'],
+    );
+    final decorElements = _toStringList(
+      themeRaw['decorElements'] ?? themeRaw['decor_elements'],
+    );
+    final customerNote =
+        (themeRaw['customerNote'] ??
+                themeRaw['customer_note'] ??
+                themeRaw['note'])
             ?.toString();
 
     String? customerThemeRequest =
@@ -492,6 +515,11 @@ class EventsApi {
       generatedImageUrl: generatedImageUrl,
       customInstructions: customInstructions,
       eventDesignSource: eventDesignSource,
+      style: style?.trim().isEmpty == true ? null : style,
+      mood: mood?.trim().isEmpty == true ? null : mood,
+      colorPalette: colorPalette,
+      decorElements: decorElements,
+      customerNote: customerNote?.trim().isEmpty == true ? null : customerNote,
       macrinaColorPalette: macrinaPalette,
       macrinaTheme: macrinaTheme,
       dishCost: _toNullableDouble(
@@ -541,6 +569,11 @@ class EventsApi {
           title: cc['title'] as String? ?? '',
           description: cc['description'] as String? ?? '',
           price: _toDouble(cc['price']),
+          quantity: () {
+            final q = cc['quantity'] ?? cc['qty'];
+            if (q is num) return q.toInt();
+            return int.tryParse('$q') ?? 1;
+          }(),
           isCompleted: cc['isCompleted'] as bool? ?? false,
           assignedTo: cc['assignedTo'] as String? ?? '',
         ),

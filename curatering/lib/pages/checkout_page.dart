@@ -38,7 +38,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   bool _saveAddress = false;
   bool _showValidation = false;
   Map<String, dynamic>? _customerData;
-  int _currentPoints = 0; // User's current points - in production from API
+  int _currentPoints = 0;
 
   // Delivery time selection
   // - ASAP (internal 'NOW'): send no delivery_time
@@ -62,8 +62,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
     super.dispose();
   }
 
+  int _restaurantLoyaltyPointsFromMap(Map<String, dynamic>? data) {
+    if (data == null) return 0;
+    return (data['restaurantLoyaltyPoints'] as num?)?.toInt() ??
+        (data['restaurant_loyalty_points'] as num?)?.toInt() ??
+        0;
+  }
+
   Future<void> _loadCustomerData() async {
     try {
+      await LoyaltyRewardsStore.instance.ensureLoaded();
       final prefs = await SharedPreferences.getInstance();
       final customerData = prefs.getString('customer_data');
       if (customerData != null) {
@@ -72,10 +80,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
           // Initialize controllers with customer data
           _nameController.text = _customerData?['fullName'] ?? '';
           _phoneController.text = _customerData?['phone'] ?? '';
+          _currentPoints = _restaurantLoyaltyPointsFromMap(_customerData);
         });
       }
 
-      // Load saved address from profile
+      // Load saved address and loyalty points from profile
       await _loadSavedAddress();
     } catch (e) {
       debugPrint('Error loading customer data: $e');
@@ -107,19 +116,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['deliveryAddress'] != null &&
-            data['deliveryAddress'].isNotEmpty) {
-          setState(() {
-            _addressController.text = data['deliveryAddress'];
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        setState(() {
+          _currentPoints =
+              (data['restaurantLoyaltyPoints'] as num?)?.toInt() ??
+              _currentPoints;
+          if (data['deliveryAddress'] != null &&
+              (data['deliveryAddress'] as String).isNotEmpty) {
+            _addressController.text = data['deliveryAddress'] as String;
             _deliveryLat =
                 _parseCoord(data['deliveryLat']) ??
                 _parseCoord(data['delivery_lat']);
             _deliveryLng =
                 _parseCoord(data['deliveryLng']) ??
                 _parseCoord(data['delivery_lng']);
-          });
-        }
+          }
+        });
       }
     } catch (e) {
       debugPrint('Error loading saved address: $e');
@@ -1324,14 +1336,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   // Redeem/Loyalty Banner - shows points and rewards
   Widget _buildRedeemBanner() {
-    // Get values from store (with defaults)
-    final double minimumOrderForPoints = LoyaltyRewardsStore.instance
-        .minimumOrderForPoints(orderType: 'restaurant');
-    final int pointsEarned = LoyaltyRewardsStore.instance.pointsEarned(
+    final store = LoyaltyRewardsStore.instance;
+    final double minimumOrderForPoints = store.minimumOrderForPoints(
       orderType: 'restaurant',
     );
-    // Ensure store is loaded
-    LoyaltyRewardsStore.instance.ensureLoaded();
+    final int pointsRatePercent = store.pointsRatePercent(
+      orderType: 'restaurant',
+    );
+    final cartTotal = CartStore.instance.totalAmount;
+    final estimatedOrderPoints = store.getPointsForOrder(
+      cartTotal,
+      orderType: 'restaurant',
+    );
+    final earnCopy =
+        cartTotal > 0 && estimatedOrderPoints > 0
+            ? 'Earn $pointsRatePercent% on orders ≥ ₱${minimumOrderForPoints.toStringAsFixed(2)} (e.g. ~$estimatedOrderPoints pts on this order)'
+            : 'Earn $pointsRatePercent% on orders ≥ ₱${minimumOrderForPoints.toStringAsFixed(2)}';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1391,7 +1411,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    '$pointsEarned pts',
+                    estimatedOrderPoints > 0
+                        ? '~$estimatedOrderPoints pts'
+                        : '$pointsRatePercent%',
                     style: TextStyle(
                       color: Colors.red.shade400,
                       fontSize: 12,
@@ -1409,7 +1431,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Spend ₱$minimumOrderForPoints to earn $pointsEarned points',
+                  earnCopy,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.9),
                     fontSize: 11,

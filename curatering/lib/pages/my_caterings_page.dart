@@ -39,6 +39,8 @@ class _MyCateringsPageState extends State<MyCateringsPage>
   late final TabController _tabController;
   final _searchCtrl = TextEditingController();
   String _typeFilter = 'all'; // all | catering_only | event_only
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
   static const Duration _requestTimeout = Duration(seconds: 45);
 
   String get _apiBaseUrl {
@@ -118,6 +120,112 @@ class _MyCateringsPageState extends State<MyCateringsPage>
     return hay.contains(q);
   }
 
+  DateTime _dateOnly(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
+
+  String _formatDateYyyyMmDd(DateTime date) {
+    final mm = date.month.toString().padLeft(2, '0');
+    final dd = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$mm-$dd';
+  }
+
+  DateTime? _cateringFilterDate(Map<String, dynamic> catering) {
+    final slots = _parseDynamicList(
+      catering['scheduleSlots'] ?? catering['schedule_slots'],
+    );
+    if (slots.isNotEmpty) {
+      final first = slots.first;
+      if (first is Map) {
+        final dt = DateTime.tryParse((first['date'] ?? '').toString());
+        if (dt != null) return _dateOnly(dt);
+      }
+    }
+    for (final key in ['event_date', 'eventDate', 'date_of_event']) {
+      final raw = (catering[key] ?? '').toString();
+      if (raw.isEmpty) continue;
+      final dt = DateTime.tryParse(raw);
+      if (dt != null) return _dateOnly(dt);
+    }
+    final createdRaw =
+        (catering['created_at'] ?? catering['createdAt'] ?? '').toString();
+    final created = DateTime.tryParse(createdRaw);
+    if (created != null) return _dateOnly(created);
+    return null;
+  }
+
+  bool _matchesDateRange(Map<String, dynamic> catering) {
+    if (_dateFrom == null && _dateTo == null) return true;
+    final dt = _cateringFilterDate(catering);
+    if (dt == null) return false;
+    if (_dateFrom != null && dt.isBefore(_dateFrom!)) return false;
+    if (_dateTo != null && dt.isAfter(_dateTo!)) return false;
+    return true;
+  }
+
+  Future<void> _pickFilterDate({required bool isFrom}) async {
+    final initial =
+        (isFrom ? _dateFrom : _dateTo) ??
+        _dateFrom ??
+        _dateTo ??
+        DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 3650)),
+    );
+    if (selected == null || !mounted) return;
+    final picked = _dateOnly(selected);
+    setState(() {
+      if (isFrom) {
+        _dateFrom = picked;
+        if (_dateTo != null && picked.isAfter(_dateTo!)) {
+          _dateTo = picked;
+        }
+      } else {
+        _dateTo = picked;
+        if (_dateFrom != null && picked.isBefore(_dateFrom!)) {
+          _dateFrom = picked;
+        }
+      }
+    });
+  }
+
+  Widget _buildDateFilterChip({
+    required String label,
+    required DateTime? value,
+    required VoidCallback onPick,
+    required VoidCallback onClear,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        OutlinedButton(
+          onPressed: onPick,
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            visualDensity: VisualDensity.compact,
+            side: BorderSide(color: Colors.grey.shade400),
+          ),
+          child: Text(
+            value == null ? label : _formatDateYyyyMmDd(value),
+            style: TextStyle(
+              fontSize: 13,
+              color: value == null ? Colors.grey.shade600 : null,
+            ),
+          ),
+        ),
+        if (value != null)
+          IconButton(
+            onPressed: onClear,
+            icon: Icon(Icons.close, size: 16, color: Colors.grey.shade600),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            tooltip: 'Clear $label',
+          ),
+      ],
+    );
+  }
+
   bool _inPast30Days(Map<String, dynamic> catering) {
     final raw =
         (catering['updated_at'] ??
@@ -139,6 +247,7 @@ class _MyCateringsPageState extends State<MyCateringsPage>
             .map((e) => Map<String, dynamic>.from(e))
             .where(_matchesSearch)
             .where(_matchesTypeFilter)
+            .where(_matchesDateRange)
             .toList();
     switch (tabIndex) {
       case 0:
@@ -2029,38 +2138,79 @@ class _MyCateringsPageState extends State<MyCateringsPage>
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'Search by ref, type, title, status',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
-                      isDense: true,
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchCtrl,
+                        decoration: const InputDecoration(
+                          hintText: 'Search by ref, type, title, status',
+                          prefixIcon: Icon(Icons.search),
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
                     ),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                DropdownButton<String>(
-                  value: _typeFilter,
-                  items: const [
-                    DropdownMenuItem(value: 'all', child: Text('All types')),
-                    DropdownMenuItem(
-                      value: 'catering_only',
-                      child: Text('Catering'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'event_only',
-                      child: Text('Event styling'),
+                    const SizedBox(width: 8),
+                    DropdownButton<String>(
+                      value: _typeFilter,
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'all',
+                          child: Text('All types'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'catering_only',
+                          child: Text('Catering'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'event_only',
+                          child: Text('Event styling'),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setState(() => _typeFilter = v);
+                      },
                     ),
                   ],
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setState(() => _typeFilter = v);
-                  },
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _buildDateFilterChip(
+                      label: 'From',
+                      value: _dateFrom,
+                      onPick: () => _pickFilterDate(isFrom: true),
+                      onClear: () => setState(() => _dateFrom = null),
+                    ),
+                    _buildDateFilterChip(
+                      label: 'To',
+                      value: _dateTo,
+                      onPick: () => _pickFilterDate(isFrom: false),
+                      onClear: () => setState(() => _dateTo = null),
+                    ),
+                    if (_dateFrom != null || _dateTo != null)
+                      TextButton(
+                        onPressed:
+                            () => setState(() {
+                              _dateFrom = null;
+                              _dateTo = null;
+                            }),
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        child: const Text('Clear dates'),
+                      ),
+                  ],
                 ),
               ],
             ),

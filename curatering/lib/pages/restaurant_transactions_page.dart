@@ -5,6 +5,7 @@ import '../config.dart';
 import '../auth/auth_session.dart';
 import '../utils/responsive_layout.dart';
 import '../utils/order_display_utils.dart';
+import '../widgets/antd_dialog.dart';
 import '../widgets/antd_message.dart';
 
 class RestaurantTransactionsPage extends StatefulWidget {
@@ -225,8 +226,38 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         normalized['order_no'] = managerId;
       }
     }
+    final orderSource = order['order_source'] ?? order['orderSource'];
+    if (orderSource != null) {
+      normalized['order_source'] = orderSource;
+    }
     return normalized;
   }
+
+  String _orderSourceRaw(Map<String, dynamic> order) {
+    return (order['order_source'] ?? order['orderSource'] ?? '')
+        .toString()
+        .trim()
+        .toUpperCase();
+  }
+
+  String _orderTypeLabel(Map<String, dynamic> order) {
+    switch (_orderSourceRaw(order)) {
+      case 'WEB_APP':
+      case 'MOBILE_APP':
+      case 'ONLINE':
+        return 'Online';
+      case 'POS_WEB':
+      case 'POS_MOBILE':
+      case 'WALK_IN':
+      case 'POS':
+        return 'Walk-in';
+      default:
+        return '—';
+    }
+  }
+
+  bool _isWalkInOrder(Map<String, dynamic> order) =>
+      _orderTypeLabel(order) == 'Walk-in';
 
   String _responseErrorMessage(http.Response response) {
     final body = response.body.trim();
@@ -391,7 +422,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   ) {
     setState(() {
       // Remove from current list
-      _removeOrderFromAllLists(originalOrder['id']?.toString() ?? '');
+      _removeOrderFromAllLists(_managerOrderId(originalOrder));
 
       // Add to appropriate new list with updated status
       final updatedOrder = Map<String, dynamic>.from(originalOrder);
@@ -597,6 +628,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                     children: [
                       Expanded(flex: 1, child: _buildTableHeader('Order ID')),
                       Expanded(flex: 2, child: _buildTableHeader('Customer')),
+                      Expanded(flex: 1, child: _buildTableHeader('Order type')),
                       Expanded(flex: 1, child: _buildTableHeader('Phone')),
                       Expanded(flex: 1, child: _buildTableHeader('Items')),
                       Expanded(flex: 1, child: _buildTableHeader('Total')),
@@ -695,6 +727,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                     children: [
                       Expanded(flex: 1, child: _buildTableHeader('Order ID')),
                       Expanded(flex: 2, child: _buildTableHeader('Customer')),
+                      Expanded(flex: 1, child: _buildTableHeader('Order type')),
                       Expanded(flex: 1, child: _buildTableHeader('Status')),
                       Expanded(flex: 1, child: _buildTableHeader('Items')),
                       Expanded(flex: 1, child: _buildTableHeader('Total')),
@@ -804,6 +837,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                     children: [
                       Expanded(flex: 1, child: _buildTableHeader('Order ID')),
                       Expanded(flex: 2, child: _buildTableHeader('Customer')),
+                      Expanded(flex: 1, child: _buildTableHeader('Order type')),
                       Expanded(flex: 1, child: _buildTableHeader('Status')),
                       Expanded(flex: 1, child: _buildTableHeader('Items')),
                       Expanded(flex: 1, child: _buildTableHeader('Total')),
@@ -1113,6 +1147,10 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               ),
               Expanded(
                 flex: 1,
+                child: _buildTableCell(_orderTypeLabel(order)),
+              ),
+              Expanded(
+                flex: 1,
                 child: _buildTableCell(order['phone'] ?? 'N/A'),
               ),
               Expanded(flex: 1, child: _buildTableCell('${items.length}')),
@@ -1248,6 +1286,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     final items = (order['items'] as List<dynamic>?) ?? [];
     final status = order['status'] as String? ?? 'processing';
     final normalizedStatus = _normalizedStatus(status);
+    final isWalkIn = _isWalkInOrder(order);
     final isEven = index % 2 == 0;
 
     return InkWell(
@@ -1272,6 +1311,10 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               Expanded(
                 flex: 2,
                 child: _buildTableCell(order['full_name'] ?? 'N/A'),
+              ),
+              Expanded(
+                flex: 1,
+                child: _buildTableCell(_orderTypeLabel(order)),
               ),
               Expanded(flex: 1, child: _buildStatusBadge(status, null)),
               Expanded(flex: 1, child: _buildTableCell('${items.length}')),
@@ -1299,11 +1342,49 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                       order['payment_status'] as String? ?? 'pending',
                     ),
                     const SizedBox(width: 8),
-                    if (normalizedStatus == 'in_preparation') ...[
+                    if (isWalkIn) ...[
                       GestureDetector(
-                        onTap:
-                            () =>
-                                _showDeliveryUrlDialog(_managerOrderId(order)),
+                        onTap: () => _claimWalkInOrder(order),
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.check_circle,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Claim',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      if (normalizedStatus == 'in_preparation') ...[
+                        GestureDetector(
+                          onTap:
+                              () => _showDeliveryUrlDialog(
+                                _managerOrderId(order),
+                              ),
                         child: MouseRegion(
                           cursor: SystemMouseCursors.click,
                           child: Container(
@@ -1375,6 +1456,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                         ),
                       ),
                     ],
+                    ],
                   ],
                 ),
               ),
@@ -1414,6 +1496,10 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                 flex: 2,
                 child: _buildTableCell(order['full_name'] ?? 'N/A'),
               ),
+              Expanded(
+                flex: 1,
+                child: _buildTableCell(_orderTypeLabel(order)),
+              ),
               Expanded(flex: 1, child: _buildStatusBadge(status, null)),
               Expanded(flex: 1, child: _buildTableCell('${items.length}')),
               Expanded(
@@ -1443,6 +1529,56 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         ),
       ),
     );
+  }
+
+  Future<void> _claimWalkInOrder(Map<String, dynamic> order) async {
+    await DialogOpenGuard.runOnce(
+      () => _claimWalkInOrderBody(order),
+      key: 'restaurant-claim:${_managerOrderId(order)}',
+    );
+  }
+
+  Future<void> _claimWalkInOrderBody(Map<String, dynamic> order) async {
+    final orderId = _managerOrderId(order);
+    if (orderId.isEmpty) {
+      showAntdMessage(
+        context,
+        'Cannot claim order: order id is missing.',
+        type: AntdMessageType.error,
+      );
+      return;
+    }
+
+    try {
+      final token = await _getAuthToken();
+      final response = await http.patch(
+        Uri.parse(
+          '$apiBaseUrl/api/cashier/pos/walkin-orders/${Uri.encodeComponent(orderId)}/claim',
+        ),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({}),
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        await _loadOrders(forceRefresh: true);
+        if (mounted) {
+          showAntdMessage(context, 'Order claimed');
+        }
+      } else {
+        throw Exception(_responseErrorMessage(response));
+      }
+    } catch (e) {
+      if (mounted) {
+        showAntdMessage(
+          context,
+          'Claim failed: $e',
+          type: AntdMessageType.error,
+        );
+      }
+    }
   }
 
   Widget _buildPaymentStatusBadge(String paymentStatus) {
@@ -1556,6 +1692,13 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   Future<void> _showConfirmPaymentDialog(Map<String, dynamic> order) async {
+    await DialogOpenGuard.runOnce(
+      () => _showConfirmPaymentDialogBody(order),
+      key: 'restaurant-confirm:${_managerOrderId(order)}',
+    );
+  }
+
+  Future<void> _showConfirmPaymentDialogBody(Map<String, dynamic> order) async {
     final orderId = _managerOrderId(order);
     if (orderId.isEmpty) {
       showAntdMessage(
@@ -1964,6 +2107,13 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   Future<void> _showDeliveryUrlDialog(String orderId) async {
+    await DialogOpenGuard.runOnce(
+      () => _showDeliveryUrlDialogBody(orderId),
+      key: 'restaurant-delivery:$orderId',
+    );
+  }
+
+  Future<void> _showDeliveryUrlDialogBody(String orderId) async {
     final urlController = TextEditingController();
     String? errorMessage;
 
@@ -2106,6 +2256,13 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   Future<void> _markDelivered(String orderId) async {
+    await DialogOpenGuard.runOnce(
+      () => _markDeliveredBody(orderId),
+      key: 'restaurant-delivered:$orderId',
+    );
+  }
+
+  Future<void> _markDeliveredBody(String orderId) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder:

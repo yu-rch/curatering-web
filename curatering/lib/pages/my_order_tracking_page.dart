@@ -21,10 +21,12 @@ class MyOrderTrackingPage extends StatefulWidget {
 }
 
 class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
-  List<dynamic> _activeOrders = [];
+  List<Map<String, dynamic>> _allOrders = [];
   bool _isLoading = true;
   String? _error;
   final Set<String> _sendingFollowUps = {};
+  final _searchCtrl = TextEditingController();
+  String _statusFilter = 'all'; // all | pending_cashier | in_preparation | out_for_delivery | delivered | cancelled
   static const Duration _requestTimeout = Duration(seconds: 45);
   static const Duration _followUpCooldown = Duration(minutes: 20);
 
@@ -36,6 +38,50 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
   void initState() {
     super.initState();
     _loadActiveOrders();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  String _normalizeStatus(String status) {
+    final s = status.toLowerCase().trim();
+    switch (s) {
+      case 'pending':
+      case 'pending_cashier':
+        return 'pending_cashier';
+      case 'confirmed':
+      case 'preparing':
+      case 'in_preparation':
+      case 'order_confirmed':
+        return 'in_preparation';
+      case 'out_for_delivery':
+        return 'out_for_delivery';
+      case 'delivered':
+      case 'completed':
+        return 'delivered';
+      case 'cancelled':
+        return 'cancelled';
+      default:
+        return s.isEmpty ? 'pending_cashier' : s;
+    }
+  }
+
+  List<Map<String, dynamic>> get _filteredOrders {
+    final q = _searchCtrl.text.trim().toLowerCase();
+    return _allOrders.where((order) {
+      final status = _normalizeStatus('${order['status'] ?? ''}');
+      if (_statusFilter != 'all' && status != _statusFilter) return false;
+      if (q.isEmpty) return true;
+      final orderNo = _shortOrderId(order['id'], order['order_no']).toLowerCase();
+      final addr = '${order['delivery_address'] ?? ''}'.toLowerCase();
+      final items = _normalizeOrderItems(order['items'])
+          .map((i) => '${i['name'] ?? i['dishName'] ?? ''}'.toLowerCase())
+          .join(' ');
+      return orderNo.contains(q) || addr.contains(q) || items.contains(q) || status.contains(q);
+    }).toList();
   }
 
   Future<void> _loadActiveOrders({bool force = false}) async {
@@ -53,14 +99,12 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
       if (!force) {
         final cached = CustomerOrdersCache.instance.peekRestaurantOrders();
         if (cached != null) {
-          final activeOrders =
-              cached.where((order) {
-                final status = order['status'] ?? 'pending';
-                return status != 'delivered' && status != 'cancelled';
-              }).toList();
           if (mounted) {
             setState(() {
-              _activeOrders = activeOrders;
+              _allOrders =
+                  cached
+                      .map((e) => Map<String, dynamic>.from(e))
+                      .toList();
               _isLoading = false;
               _error = null;
             });
@@ -111,16 +155,9 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
               .toList();
       CustomerOrdersCache.instance.setRestaurantOrders(allOrders);
 
-      // Filter only active orders (not delivered or cancelled)
-      final activeOrders =
-          allOrders.where((order) {
-            final status = order['status'] ?? 'pending';
-            return status != 'delivered' && status != 'cancelled';
-          }).toList();
-
       if (mounted) {
         setState(() {
-          _activeOrders = activeOrders;
+          _allOrders = allOrders;
           _isLoading = false;
         });
       }
@@ -174,57 +211,58 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
   }
 
   String _getStatusText(String status) {
-    switch (status) {
-      case 'pending':
-        return 'Order Placed';
-      case 'confirmed':
-        return 'Order Confirmed';
-      case 'preparing':
-        return 'Preparing Your Order';
+    switch (_normalizeStatus(status)) {
+      case 'pending_cashier':
+        return 'Payment Under Review';
+      case 'in_preparation':
+        return 'Confirmed & Preparing Your Food';
       case 'out_for_delivery':
         return 'Out for Delivery';
+      case 'delivered':
+        return 'Delivered';
+      case 'cancelled':
+        return 'Cancelled';
       default:
         return status.replaceAll('_', ' ').toUpperCase();
     }
   }
 
-  String _getPaymentStatusText(String paymentStatus) {
-    switch (paymentStatus) {
-      case 'pending':
-        return 'Awaiting Payment Confirmation';
-      case 'paid':
-        return 'Payment Confirmed - Order Received';
-      case 'failed':
-        return 'Payment Failed';
-      default:
-        return 'Awaiting Payment Confirmation';
-    }
+  String _getPaymentStatusText(String paymentStatus, String orderStatus) {
+    final paid =
+        paymentStatus == 'paid' ||
+        paymentStatus == 'confirmed' ||
+        _normalizeStatus(orderStatus) != 'pending_cashier';
+    if (paymentStatus == 'failed') return 'Payment Failed';
+    if (paid) return 'Payment Confirmed — Order In Preparation';
+    return 'Awaiting Payment Confirmation';
   }
 
   Color _getStatusColor(String status) {
-    switch (status) {
-      case 'pending':
+    switch (_normalizeStatus(status)) {
+      case 'pending_cashier':
         return Colors.orange;
-      case 'confirmed':
+      case 'in_preparation':
         return Colors.blue;
-      case 'preparing':
-        return Colors.amber;
       case 'out_for_delivery':
         return Colors.purple;
+      case 'delivered':
+        return Colors.green;
+      case 'cancelled':
+        return Colors.red;
       default:
         return Colors.grey;
     }
   }
 
   int _getStatusStep(String status) {
-    switch (status) {
-      case 'pending':
+    switch (_normalizeStatus(status)) {
+      case 'pending_cashier':
         return 0;
-      case 'confirmed':
+      case 'in_preparation':
         return 1;
-      case 'preparing':
-        return 2;
       case 'out_for_delivery':
+        return 2;
+      case 'delivered':
         return 3;
       default:
         return 0;
@@ -311,54 +349,82 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                         ],
                       ),
                     )
-                    : _activeOrders.isEmpty
-                    ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.local_shipping_outlined,
-                            size: 64,
-                            color: Colors.grey.shade400,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No active orders',
-                            style: TextStyle(
-                              fontSize: 18,
-                              color: Colors.grey.shade600,
+                    : Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                          child: TextField(
+                            controller: _searchCtrl,
+                            decoration: InputDecoration(
+                              hintText: 'Search order no, items, address',
+                              prefixIcon: const Icon(Icons.search),
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              isDense: true,
                             ),
+                            onChanged: (_) => setState(() {}),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Your active orders will appear here for tracking',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey.shade500,
-                            ),
-                            textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(
+                            children: [
+                              for (final entry in const [
+                                ('all', 'All'),
+                                ('pending_cashier', 'Payment review'),
+                                ('in_preparation', 'Preparing'),
+                                ('out_for_delivery', 'Out for delivery'),
+                                ('delivered', 'Delivered'),
+                                ('cancelled', 'Cancelled'),
+                              ])
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: FilterChip(
+                                    label: Text(entry.$2),
+                                    selected: _statusFilter == entry.$1,
+                                    onSelected:
+                                        (_) => setState(
+                                          () => _statusFilter = entry.$1,
+                                        ),
+                                  ),
+                                ),
+                            ],
                           ),
-                          const SizedBox(height: 16),
-                          ElevatedButton.icon(
-                            onPressed: () => _loadActiveOrders(force: true),
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('Refresh'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1E1E1E),
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                    : RefreshIndicator(
-                      onRefresh: () => _loadActiveOrders(force: true),
-                      child: ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                        itemCount: _activeOrders.length,
-                        itemBuilder: (context, index) {
-                          final order = _activeOrders[index];
-                          final status = order['status'] ?? 'pending';
+                        ),
+                        Expanded(
+                          child:
+                              _filteredOrders.isEmpty
+                                  ? Center(
+                                    child: Text(
+                                      _allOrders.isEmpty
+                                          ? 'No orders to track yet'
+                                          : 'No orders match your filters',
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  )
+                                  : RefreshIndicator(
+                                    onRefresh:
+                                        () => _loadActiveOrders(force: true),
+                                    child: ListView.builder(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        16,
+                                        12,
+                                        16,
+                                        16,
+                                      ),
+                                      itemCount: _filteredOrders.length,
+                                      itemBuilder: (context, index) {
+                          final order = _filteredOrders[index];
+                          final status = _normalizeStatus(
+                            '${order['status'] ?? ''}',
+                          );
                           final paymentStatus =
                               order['payment_status'] ?? 'pending';
                           final currentStep = _getStatusStep(status);
@@ -384,7 +450,6 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // Order Header
                                   Row(
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
@@ -408,7 +473,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                                           ),
                                         ),
                                         child: Text(
-                                          status.toUpperCase(),
+                                          _getStatusText(status),
                                           style: const TextStyle(
                                             color: Colors.white,
                                             fontSize: 12,
@@ -427,12 +492,8 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                                     ),
                                   ),
                                   const Divider(height: 24),
-
-                                  // Progress Tracker
                                   _buildProgressTracker(currentStep),
                                   const SizedBox(height: 24),
-
-                                  // Current Status Message
                                   Container(
                                     width: double.infinity,
                                     padding: const EdgeInsets.all(16),
@@ -461,25 +522,39 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                                         ),
                                         const SizedBox(height: 8),
                                         Text(
-                                          'Payment Status: ${_getPaymentStatusText(paymentStatus)}',
+                                          'Payment Status: ${_getPaymentStatusText('$paymentStatus', status)}',
                                           style: TextStyle(
                                             fontSize: 14,
                                             color:
-                                                paymentStatus == 'paid'
+                                                paymentStatus == 'paid' ||
+                                                        status !=
+                                                            'pending_cashier'
                                                     ? Colors.green.shade600
                                                     : Colors.orange.shade600,
                                             fontWeight:
-                                                paymentStatus == 'paid'
+                                                paymentStatus == 'paid' ||
+                                                        status !=
+                                                            'pending_cashier'
                                                     ? FontWeight.w600
                                                     : FontWeight.normal,
                                           ),
                                         ),
+                                        if (status == 'out_for_delivery' &&
+                                            (order['delivery_tracking_url']
+                                                        ?.toString()
+                                                        .trim()
+                                                        .isNotEmpty ??
+                                                    false)) ...[
+                                          const SizedBox(height: 8),
+                                          SelectableText(
+                                            'Tracking: ${order['delivery_tracking_url']}',
+                                            style: const TextStyle(fontSize: 13),
+                                          ),
+                                        ],
                                       ],
                                     ),
                                   ),
                                   const SizedBox(height: 16),
-
-                                  // Order Items
                                   const Text(
                                     'Order Items',
                                     style: TextStyle(
@@ -511,10 +586,8 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                                         ],
                                       ),
                                     );
-                                  }).toList(),
+                                  }),
                                   const Divider(height: 24),
-
-                                  // Delivery Info
                                   if (order['delivery_address'] != null) ...[
                                     Row(
                                       children: [
@@ -537,8 +610,6 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                                     ),
                                     const SizedBox(height: 16),
                                   ],
-
-                                  // Total
                                   Row(
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
@@ -599,8 +670,11 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                               ),
                             ),
                           );
-                        },
-                      ),
+                                      },
+                                    ),
+                                  ),
+                        ),
+                      ],
                     ),
           ),
         ],
@@ -610,19 +684,17 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
 
   Widget _buildProgressTracker(int currentStep) {
     final steps = [
-      'Order Placed',
-      'Confirmed',
+      'Payment review',
       'Preparing',
-      'Out for Delivery',
+      'Out for delivery',
+      'Delivered',
     ];
 
     return Column(
       children: [
-        // Progress Line
         Row(
           children: List.generate(steps.length * 2 - 1, (index) {
             if (index.isOdd) {
-              // Line
               final lineIndex = index ~/ 2;
               final isActive = lineIndex < currentStep;
               return Expanded(
@@ -632,7 +704,6 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                 ),
               );
             } else {
-              // Dot
               final stepIndex = index ~/ 2;
               final isActive = stepIndex <= currentStep;
               final isCurrent = stepIndex == currentStep;
@@ -656,19 +727,20 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
           }),
         ),
         const SizedBox(height: 8),
-        // Step Labels
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children:
-              steps.map((step) {
-                final stepIndex = steps.indexOf(step);
-                final isActive = stepIndex <= currentStep;
-                return Text(
-                  step,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: isActive ? Colors.black87 : Colors.grey.shade500,
-                    fontWeight: isActive ? FontWeight.w500 : FontWeight.normal,
+              steps.asMap().entries.map((e) {
+                final isActive = e.key <= currentStep;
+                return Flexible(
+                  child: Text(
+                    e.value,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: isActive ? Colors.black87 : Colors.grey.shade500,
+                      fontWeight: isActive ? FontWeight.w500 : FontWeight.normal,
+                    ),
                   ),
                 );
               }).toList(),
@@ -730,9 +802,8 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
       final updated = Map<String, dynamic>.from(data['order'] as Map? ?? {});
       final updatedKey = _orderKey(updated);
       setState(() {
-        _activeOrders =
-            _activeOrders.map((entry) {
-              if (entry is! Map) return entry;
+        _allOrders =
+            _allOrders.map((entry) {
               final existing = Map<String, dynamic>.from(entry);
               return _orderKey(existing) == updatedKey ? updated : existing;
             }).toList();

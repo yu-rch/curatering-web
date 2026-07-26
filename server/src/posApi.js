@@ -74,13 +74,14 @@ function fulfillmentStageFromRow(row) {
   return normalizeRestaurantOrderStatus(row.order_status);
 }
 
+/** Persist lowercase statuses to match restaurant_orders_order_status_check. */
 function orderStatusFromFulfillmentStage(stage) {
   const s = String(stage || "").toUpperCase();
-  if (s === "PENDING_CASHIER") return "PENDING_CASHIER";
-  if (s === "IN_PREPARATION") return "IN_PREPARATION";
-  if (s === "OUT_FOR_DELIVERY") return "OUT_FOR_DELIVERY";
-  if (s === "DELIVERED") return "DELIVERED";
-  return "PENDING_CASHIER";
+  if (s === "PENDING_CASHIER") return "pending_cashier";
+  if (s === "IN_PREPARATION") return "in_preparation";
+  if (s === "OUT_FOR_DELIVERY") return "out_for_delivery";
+  if (s === "DELIVERED") return "delivered";
+  return "pending_cashier";
 }
 
 function posStatusLabel(row) {
@@ -576,7 +577,7 @@ export function registerPosRoutes(app, {
           `UPDATE restaurant_orders
            SET payment_confirmed_initial = TRUE,
                payment_confirmed_balance = CASE WHEN $3::numeric > 0 THEN TRUE ELSE payment_confirmed_balance END,
-               order_status = 'IN_PREPARATION',
+               order_status = 'in_preparation',
                cashier_amount_received_initial = $2,
                cashier_amount_received_balance = $3,
                amount_paid = $2,
@@ -588,11 +589,15 @@ export function registerPosRoutes(app, {
         );
         const email = await resolveRestaurantOrderEmail(order);
         if (email) {
-          await sendCustomerNotificationEmail({
-            to: email,
-            subject: "Curatering: Payment confirmed",
-            text: `Your payment for order ${order.order_id ?? order.order_no} was confirmed. Your order is being prepared.\n\n- Curatering Team`,
-          });
+          try {
+            await sendCustomerNotificationEmail({
+              to: email,
+              subject: "Curatering: Payment confirmed",
+              text: `Your payment for order ${order.order_id ?? order.order_no} was confirmed. Your order is being prepared.\n\n- Curatering Team`,
+            });
+          } catch (mailErr) {
+            console.error("[pos] payment confirm email failed", mailErr);
+          }
         }
         return res.json({ ok: true, status: "ORDER CONFIRMED" });
       }
@@ -614,7 +619,7 @@ export function registerPosRoutes(app, {
         await pool.query(
           `UPDATE restaurant_orders
            SET payment_confirmed_initial = TRUE,
-               order_status = 'IN_PREPARATION',
+               order_status = 'in_preparation',
                cashier_amount_received_initial = $2,
                amount_paid = $2,
                change_given = $3,
@@ -676,10 +681,14 @@ export function registerPosRoutes(app, {
         vals,
       );
 
-      if (orderStatus === "DELIVERED") {
+      if (orderStatus === "delivered") {
         const total = Number(order.total_cost || order.total_amount || 0);
+        // Match getPointsForOrder: min 100, 2% rate, .7-up rounding
         if (total >= 100) {
-          const points = Math.floor((total * 2) / 100);
+          const rawPoints = (total * 2) / 100;
+          const decimal = rawPoints % 1;
+          let points = Math.floor(rawPoints);
+          if (decimal >= 0.7) points += 1;
           await pool.query(
             `UPDATE restaurant_orders
              SET loyalty_points_restaurant_obtained = $2
@@ -699,14 +708,18 @@ export function registerPosRoutes(app, {
         }
         const email = await resolveRestaurantOrderEmail(order);
         if (email) {
-          await sendCustomerNotificationEmail({
-            to: email,
-            subject: "Curatering: Order delivered",
-            text:
-              `Your order ${order.order_id ?? order.order_no} has been delivered.\n\n` +
-              `Share your feedback: ${restaurantFeedbackLink(order)}\n\n` +
-              `- Curatering Team`,
-          });
+          try {
+            await sendCustomerNotificationEmail({
+              to: email,
+              subject: "Curatering: Order delivered",
+              text:
+                `Your order ${order.order_id ?? order.order_no} has been delivered.\n\n` +
+                `Share your feedback: ${restaurantFeedbackLink(order)}\n\n` +
+                `- Curatering Team`,
+            });
+          } catch (mailErr) {
+            console.error("[pos] delivered email failed", mailErr);
+          }
         }
       }
 
@@ -753,7 +766,7 @@ export function registerPosRoutes(app, {
          ) VALUES (
            $1, $2, '', ${itemsSql}, $4,
            'Walk-in', NULL, NULL,
-           'IN_PREPARATION', $5,
+           'in_preparation', $5,
            'POS_WEB', $6, $7, $8,
            $11, $9, $9, $10, now(), $12
          )
@@ -792,11 +805,11 @@ export function registerPosRoutes(app, {
       let where = `COALESCE(order_source, '') = 'POS'`;
       where = `COALESCE(order_source, '') IN ('POS_MOBILE', 'POS_WEB')`;
       if (filter === "preparing") {
-        where += ` AND order_status = 'IN_PREPARATION' AND pos_claimed = FALSE`;
+        where += ` AND lower(order_status) = 'in_preparation' AND pos_claimed = FALSE`;
       } else if (filter === "claimed") {
-        where += ` AND pos_claimed = TRUE AND order_status <> 'CANCELLED'`;
+        where += ` AND pos_claimed = TRUE AND lower(order_status) <> 'cancelled'`;
       } else if (filter === "cancelled") {
-        where += ` AND order_status = 'CANCELLED'`;
+        where += ` AND lower(order_status) = 'cancelled'`;
       }
 
       const selectSql = await restaurantOrderSelectSql();
@@ -822,7 +835,7 @@ export function registerPosRoutes(app, {
         `UPDATE restaurant_orders
          SET pos_claimed_at = COALESCE(pos_claimed_at, now()),
              pos_claimed = TRUE,
-             order_status = 'DELIVERED',
+             order_status = 'delivered',
              updated_at = now()
          WHERE id = $1`,
         [order.id],
@@ -840,7 +853,7 @@ export function registerPosRoutes(app, {
       if (!order) return res.status(404).json({ error: "Order not found" });
       await pool.query(
         `UPDATE restaurant_orders
-         SET order_status = 'CANCELLED', updated_at = now()
+         SET order_status = 'cancelled', updated_at = now()
          WHERE id = $1`,
         [order.id],
       );
@@ -857,7 +870,7 @@ export function registerPosRoutes(app, {
       const r = await pool.query(
         `SELECT ${selectSql}
          FROM restaurant_orders
-         WHERE order_status = 'DELIVERED'
+         WHERE lower(order_status) = 'delivered'
             OR (COALESCE(order_source, '') IN ('POS_MOBILE', 'POS_WEB') AND pos_claimed = TRUE)
          ORDER BY updated_at DESC
          LIMIT 250`,

@@ -85,7 +85,12 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
         });
       } else {
         setState(
-          () => _errorMessage = data['error'] ?? 'Failed to send reset code',
+          () =>
+              _errorMessage =
+                  data['error']?.toString() ??
+                  data['message']?.toString() ??
+                  data['detail']?.toString() ??
+                  'Failed to send reset code (${response.statusCode})',
         );
       }
     } catch (e) {
@@ -122,7 +127,11 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
           )
           .timeout(_requestTimeout);
 
-      final data = jsonDecode(response.body);
+      Map<String, dynamic> data = {};
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) data = decoded;
+      } catch (_) {}
 
       if (response.statusCode == 200) {
         setState(() {
@@ -133,9 +142,19 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
           _passwordController.clear();
           _errorMessage = null;
         });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Password reset successful. Please log in.')),
+          );
+        }
       } else {
         setState(
-          () => _errorMessage = data['error'] ?? 'Failed to reset password',
+          () =>
+              _errorMessage =
+                  data['error']?.toString() ??
+                  data['message']?.toString() ??
+                  data['detail']?.toString() ??
+                  'Failed to reset password (${response.statusCode})',
         );
       }
     } catch (e) {

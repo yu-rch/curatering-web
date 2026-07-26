@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:printing/printing.dart';
 import '../auth/action_permissions.dart';
 import '../auth/auth_session.dart';
 import '../config/api_config.dart';
@@ -15,6 +15,7 @@ import '../services/api_client.dart';
 import '../services/events_api.dart';
 import '../services/menu_store.dart';
 import '../services/order_summary_pdf_service.dart';
+import '../services/checklist_pdf_service.dart';
 import '../services/set_menu_store.dart';
 import '../widgets/allergen_selector_field.dart';
 import '../widgets/antd_buttons.dart';
@@ -1620,18 +1621,48 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Widget _buildOnlineInquiryEventDesign(EventOrderDto order) {
-    final generatedUrl = order.themeDesign.generatedImageUrl?.trim() ?? '';
+    final td = order.themeDesign;
+    final generatedUrl = td.generatedImageUrl?.trim() ?? '';
     final designPrompt =
-        (order.themeDesign.customInstructions ??
-                order.themeDesign.colorPrompt ??
-                order.themeDesign.customerThemeRequest ??
+        (td.customInstructions ??
+                td.colorPrompt ??
+                td.customerThemeRequest ??
                 '')
             .trim();
     final previewSources =
-        order.themeDesign.picksBase64
+        td.picksBase64
             .where((s) => s.trim().isNotEmpty)
             .map((s) => s.trim())
             .toList();
+    Widget? detailRow(String label, String? value) {
+      final text = (value ?? '').trim();
+      if (text.isEmpty) return null;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: RichText(
+          text: TextSpan(
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
+            children: [
+              TextSpan(
+                text: '$label: ',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              TextSpan(text: text),
+            ],
+          ),
+        ),
+      );
+    }
+
+    String eventDesignSourceLabel() {
+      final src = (td.eventDesignSource ?? '').trim();
+      if (src == 'customer_ai') return 'Customer AI event design';
+      if (src == 'macrina') return 'Macrina will design the event';
+      if (td.wantsCustomDesign) return 'Custom event design';
+      if (src.isNotEmpty) return src;
+      return '';
+    }
+
     Widget previewWidget(String source, {BoxFit fit = BoxFit.cover}) {
       if (source.startsWith('http://') || source.startsWith('https://')) {
         return Image.network(
@@ -1662,18 +1693,21 @@ class _ManageEventsState extends State<ManageEvents>
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
           ),
           const SizedBox(height: 12),
-          if (designPrompt.isNotEmpty) ...[
-            const Text(
-              'Customer design prompt',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              designPrompt,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
-            ),
-            const SizedBox(height: 12),
-          ],
+          ...[
+            if (eventDesignSourceLabel().isNotEmpty)
+              detailRow('Design source', eventDesignSourceLabel()),
+            detailRow('Style', td.style),
+            detailRow('Mood', td.mood),
+            if (td.colorPalette.isNotEmpty)
+              detailRow('Color palette', td.colorPalette.join(', ')),
+            if (td.decorElements.isNotEmpty)
+              detailRow('Decor elements', td.decorElements.join(', ')),
+            detailRow('Customer note', td.customerNote),
+            if (designPrompt.isNotEmpty)
+              detailRow('Design prompt', designPrompt),
+            if (generatedUrl.isNotEmpty)
+              detailRow('Generated image URL', generatedUrl),
+          ].whereType<Widget>(),
           if (generatedUrl.isNotEmpty) ...[
             const Text(
               'AI-generated design image',
@@ -1710,7 +1744,7 @@ class _ManageEventsState extends State<ManageEvents>
             ),
           if (previewSources.isEmpty && generatedUrl.isEmpty)
             Text(
-              order.themeDesign.wantsCustomDesign
+              td.wantsCustomDesign
                   ? 'Customer asked Macrinas to create the event design.'
                   : 'No event design image submitted.',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
@@ -3995,6 +4029,13 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Future<void> _showChecklistDialog(EventOrderDto order) async {
+    await DialogOpenGuard.runOnce(
+      () => _showChecklistDialogBody(order),
+      key: 'checklist:${order.id}',
+    );
+  }
+
+  Future<void> _showChecklistDialogBody(EventOrderDto order) async {
     final List<ChecklistItem> editableItems =
         order.checklist.isEmpty
             ? _buildChecklistFromMenuWithIngredients(order.menu)
@@ -4003,7 +4044,7 @@ class _ManageEventsState extends State<ManageEvents>
                   (item) => ChecklistItem(
                     item: item.title,
                     description: item.description,
-                    quantity: 1,
+                    quantity: item.quantity,
                     cost: item.price,
                     isCompleted: item.isCompleted,
                   ),
@@ -4037,17 +4078,22 @@ class _ManageEventsState extends State<ManageEvents>
               title: Text('Checklist for ${order.eventTitle}'),
               content: SizedBox(
                 width: 1000,
-                height: 600,
+                height: 580,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Expanded(
-                      child: PagedDataTable(
-                        title: 'Event Checklist',
-                        key: ValueKey(editableItems.length),
-                        headingRowColor: WidgetStateProperty.all(
-                          Colors.grey.shade200,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: PagedDataTable(
+                              title: 'Event Checklist',
+                              key: ValueKey(editableItems.length),
+                              enablePrint: false,
+                              headingRowColor: WidgetStateProperty.all(
+                                Colors.grey.shade200,
+                              ),
                         columns: [
                           DataColumn(label: Text('Item')),
                           DataColumn(label: Text('Description')),
@@ -4320,144 +4366,158 @@ class _ManageEventsState extends State<ManageEvents>
                                 ],
                               );
                             }).toList(),
+                            ),
+                          ),
+                          if (canEditChecklist) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 28,
+                                  height: 28,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade200,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: Colors.grey.shade400,
+                                    ),
+                                  ),
+                                  child: IconButton(
+                                    padding: EdgeInsets.zero,
+                                    icon: const Icon(
+                                      Icons.add,
+                                      color: Colors.black54,
+                                      size: 18,
+                                    ),
+                                    onPressed:
+                                        () => _addNewChecklistItem(
+                                          dialogSetState,
+                                          editableItems,
+                                        ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (showInventoryPicker &&
+                                inventoryOptions.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              DropdownButtonFormField<String>(
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Add from inventory',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                                hint: const Text('Select inventory item'),
+                                items:
+                                    inventoryOptions
+                                        .map(
+                                          (row) => DropdownMenuItem<String>(
+                                            value: row['id']?.toString(),
+                                            child: Text(
+                                              '${row['name']} (${row['quantity']} ${row['unit']})',
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        )
+                                        .toList(),
+                                onChanged: (id) {
+                                  if (id == null) return;
+                                  final row = inventoryOptions.firstWhere(
+                                    (r) => r['id']?.toString() == id,
+                                  );
+                                  final unitCost =
+                                      row['unitCost'] is num
+                                          ? (row['unitCost'] as num)
+                                              .toDouble()
+                                          : double.tryParse(
+                                                '${row['unitCost']}',
+                                              ) ??
+                                              0;
+                                  dialogSetState(() {
+                                    editableItems.add(
+                                      ChecklistItem(
+                                        item: '${row['name']}',
+                                        description:
+                                            (row['category'] ?? 'Inventory')
+                                                .toString(),
+                                        quantity: 1,
+                                        cost: unitCost,
+                                        inventoryId: id,
+                                      ),
+                                    );
+                                  });
+                                },
+                              ),
+                            ],
+                          ],
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    if (canEditChecklist) ...[
-                      Row(
+                    Container(
+                      padding: const EdgeInsets.only(top: 10),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          top: BorderSide(color: Colors.grey.shade300),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: Colors.grey.shade400),
-                            ),
-                            child: IconButton(
-                              padding: EdgeInsets.zero,
-                              icon: const Icon(
-                                Icons.add,
-                                color: Colors.black54,
-                                size: 18,
+                          OutlinedButton(
+                            onPressed:
+                                () => _exportChecklistToPDF(
+                                  order,
+                                  editableItems,
+                                ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.black87,
+                              side: BorderSide(color: Colors.grey.shade400),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
                               ),
-                              onPressed:
-                                  () => _addNewChecklistItem(
-                                    dialogSetState,
-                                    editableItems,
-                                  ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
                             ),
+                            child: const Text('Generate PDF'),
+                          ),
+                          const SizedBox(width: 12),
+                          OutlinedButton(
+                            onPressed:
+                                () => _saveChecklist(order, editableItems),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.green,
+                              side: const BorderSide(color: Colors.green),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                            ),
+                            child: const Text('Save'),
+                          ),
+                          const SizedBox(width: 12),
+                          OutlinedButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              side: const BorderSide(color: Colors.red),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                            ),
+                            child: const Text('Cancel'),
                           ),
                         ],
                       ),
-                      if (showInventoryPicker &&
-                          inventoryOptions.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Add from inventory',
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                          hint: const Text('Select inventory item'),
-                          items:
-                              inventoryOptions
-                                  .map(
-                                    (row) => DropdownMenuItem<String>(
-                                      value: row['id']?.toString(),
-                                      child: Text(
-                                        '${row['name']} (${row['quantity']} ${row['unit']})',
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                          onChanged: (id) {
-                            if (id == null) return;
-                            final row = inventoryOptions.firstWhere(
-                              (r) => r['id']?.toString() == id,
-                            );
-                            final unitCost =
-                                row['unitCost'] is num
-                                    ? (row['unitCost'] as num).toDouble()
-                                    : double.tryParse('${row['unitCost']}') ??
-                                        0;
-                            dialogSetState(() {
-                              editableItems.add(
-                                ChecklistItem(
-                                  item: '${row['name']}',
-                                  description:
-                                      (row['category'] ?? 'Inventory')
-                                          .toString(),
-                                  quantity: 1,
-                                  cost: unitCost,
-                                  inventoryId: id,
-                                ),
-                              );
-                            });
-                          },
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                    ],
-                    const Spacer(),
-                    // Bottom action buttons
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        // Generate PDF button (outline style)
-                        OutlinedButton(
-                          onPressed:
-                              () => _exportChecklistToPDF(order, editableItems),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.black87,
-                            side: BorderSide(color: Colors.grey.shade400),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                          ),
-                          child: const Text('generate PDF'),
-                        ),
-                        const SizedBox(width: 12),
-                        // Save button (green outline)
-                        OutlinedButton(
-                          onPressed: () => _saveChecklist(order, editableItems),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.green,
-                            side: const BorderSide(color: Colors.green),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                          ),
-                          child: const Text('save'),
-                        ),
-                        const SizedBox(width: 12),
-                        // Cancel button (red outline)
-                        OutlinedButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red,
-                            side: const BorderSide(color: Colors.red),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                          ),
-                          child: const Text('cancel'),
-                        ),
-                      ],
                     ),
                   ],
                 ),
@@ -4676,27 +4736,6 @@ class _ManageEventsState extends State<ManageEvents>
             : _selectedProcessingOrderDto;
     final isForProcessingReadOnly = selectedOrder?.status == 'for_processing';
     if (isForProcessingReadOnly && selectedOrder != null) {
-      final previewSources =
-          selectedOrder.themeDesign.picksBase64
-              .where((s) => s.trim().isNotEmpty)
-              .map((s) => s.trim())
-              .toList();
-      Widget previewWidget(String source, {BoxFit fit = BoxFit.cover}) {
-        if (source.startsWith('http://') || source.startsWith('https://')) {
-          return Image.network(
-            source,
-            fit: fit,
-            errorBuilder:
-                (_, __, ___) => const Center(child: Icon(Icons.broken_image)),
-          );
-        }
-        try {
-          return Image.memory(base64Decode(source), fit: fit);
-        } catch (_) {
-          return const Center(child: Icon(Icons.broken_image));
-        }
-      }
-
       await showDialog<void>(
         context: context,
         builder: (context) {
@@ -4709,33 +4748,9 @@ class _ManageEventsState extends State<ManageEvents>
             content: SizedBox(
               width: 760,
               height: 520,
-              child:
-                  previewSources.isEmpty
-                      ? Center(
-                        child: Text(
-                          'No event theme design image available.',
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
-                      )
-                      : GridView.builder(
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
-                              childAspectRatio: 1.1,
-                            ),
-                        itemCount: previewSources.length,
-                        itemBuilder: (context, index) {
-                          return ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: previewWidget(
-                              previewSources[index],
-                              fit: BoxFit.cover,
-                            ),
-                          );
-                        },
-                      ),
+              child: SingleChildScrollView(
+                child: _buildEventDesignDetailSection(selectedOrder),
+              ),
             ),
             actions: [
               TextButton(
@@ -7442,18 +7457,28 @@ class _ManageEventsState extends State<ManageEvents>
     List<ChecklistItem> editableItems,
   ) async {
     try {
-      // Generate PDF content (simplified for demo)
-      _generatePDFContent(order, editableItems);
-
-      // Create download link (in a real implementation, this would generate and serve the PDF)
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('PDF generated successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
+      final lines =
+          editableItems
+              .map(
+                (item) => ChecklistPdfLine(
+                  item: item.item,
+                  description: item.description,
+                  quantity: item.quantity,
+                  cost: item.cost,
+                  isCompleted: item.isCompleted,
+                ),
+              )
+              .toList();
+      final bytes = await buildChecklistPdfBytes(order: order, items: lines);
+      final safeTitle =
+          order.eventTitle
+              .replaceAll(RegExp(r'[^\w\s-]'), '')
+              .trim()
+              .replaceAll(RegExp(r'\s+'), '-');
+      await Printing.layoutPdf(
+        onLayout: (_) async => bytes,
+        name: '${safeTitle.isEmpty ? 'event' : safeTitle}-checklist.pdf',
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -7464,45 +7489,5 @@ class _ManageEventsState extends State<ManageEvents>
         );
       }
     }
-  }
-
-  String _generatePDFContent(
-    EventOrderDto order,
-    List<ChecklistItem> editableItems,
-  ) {
-    final buffer = StringBuffer();
-    buffer.writeln('EVENT CHECKLIST');
-    buffer.writeln('================');
-    buffer.writeln('Event: ${order.eventTitle}');
-    buffer.writeln('Customer: ${order.customerName}');
-    buffer.writeln(
-      'Date: ${order.scheduleSlots.isNotEmpty ? order.scheduleSlots.first.date : "TBD"}',
-    );
-    buffer.writeln('');
-
-    buffer.writeln('CHECKLIST ITEMS:');
-    buffer.writeln('----------------');
-
-    for (final item in editableItems) {
-      buffer.writeln('');
-      buffer.writeln('Item: ${item.item}');
-      buffer.writeln('Description: ${item.description}');
-      buffer.writeln('Quantity: ${item.quantity}');
-      buffer.writeln('Price per item: PHP ${item.cost.toStringAsFixed(2)}');
-      buffer.writeln(
-        'Total Price: PHP ${(item.cost * item.quantity).toStringAsFixed(2)}',
-      );
-      buffer.writeln('Status: ${item.isCompleted ? "Completed" : "Pending"}');
-      buffer.writeln('----------------');
-    }
-
-    final totalCost = editableItems.fold(
-      0.0,
-      (sum, item) => sum + (item.cost * item.quantity),
-    );
-    buffer.writeln('');
-    buffer.writeln('TOTAL COST: PHP ${totalCost.toStringAsFixed(2)}');
-
-    return buffer.toString();
   }
 }

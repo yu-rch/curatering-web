@@ -38,6 +38,11 @@ class EventThemeDesignDto {
   final String? generatedImageUrl;
   final String? customInstructions;
   final String? eventDesignSource;
+  final String? style;
+  final String? mood;
+  final List<String> colorPalette;
+  final List<String> decorElements;
+  final String? customerNote;
   final String? macrinaColorPalette;
   final String? macrinaTheme;
   final double? dishCost;
@@ -54,6 +59,11 @@ class EventThemeDesignDto {
     this.generatedImageUrl,
     this.customInstructions,
     this.eventDesignSource,
+    this.style,
+    this.mood,
+    this.colorPalette = const [],
+    this.decorElements = const [],
+    this.customerNote,
     this.macrinaColorPalette,
     this.macrinaTheme,
     this.dishCost,
@@ -160,6 +170,7 @@ class ChecklistItemDto {
   final String title;
   final String description;
   final double price;
+  final int quantity;
   final bool isCompleted;
   final String assignedTo;
 
@@ -168,6 +179,7 @@ class ChecklistItemDto {
     required this.title,
     required this.description,
     required this.price,
+    this.quantity = 1,
     this.isCompleted = false,
     this.assignedTo = '',
   });

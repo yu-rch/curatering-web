@@ -325,7 +325,8 @@ class LoyaltyRewardsStore extends ChangeNotifier {
     return filtered.map((p) => p.minimumCost).reduce((a, b) => a < b ? a : b);
   }
 
-  int pointsEarned({String orderType = 'restaurant'}) {
+  /// Percentage rate applied to qualifying order totals (not absolute points).
+  int pointsRatePercent({String orderType = 'restaurant'}) {
     final filtered =
         _pointsConditions
             .where((p) => p.isActive && p.orderType == orderType)
@@ -333,4 +334,8 @@ class LoyaltyRewardsStore extends ChangeNotifier {
     if (filtered.isEmpty) return orderType == 'restaurant' ? 2 : 8;
     return filtered.first.pointsApplication;
   }
+
+  /// @deprecated Use [pointsRatePercent] — this returns the earn rate %, not points.
+  int pointsEarned({String orderType = 'restaurant'}) =>
+      pointsRatePercent(orderType: orderType);
 }

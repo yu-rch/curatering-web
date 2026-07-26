@@ -902,6 +902,21 @@ class _MyProfilePageState extends State<MyProfilePage> {
                             trailing: const Icon(Icons.chevron_right),
                             onTap: _showChangePasswordDialog,
                           ),
+                          ListTile(
+                            leading: const Icon(
+                              Icons.delete_forever,
+                              color: Colors.red,
+                            ),
+                            title: const Text(
+                              'Delete Account',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                            subtitle: const Text(
+                              'Permanently deactivate your login (order history is kept)',
+                            ),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: _showDeleteAccountDialog,
+                          ),
                           const SizedBox(height: 32),
 
                           // Account Info
@@ -932,6 +947,86 @@ class _MyProfilePageState extends State<MyProfilePage> {
         ],
       ),
     );
+  }
+
+  Future<void> _showDeleteAccountDialog() async {
+    final confirmCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Delete account?'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'This deactivates your login. Past orders are kept for records. Type DELETE to confirm.',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: confirmCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Type DELETE',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+    );
+    final typed = confirmCtrl.text.trim();
+    confirmCtrl.dispose();
+    if (ok != true) return;
+    if (typed.toUpperCase() != 'DELETE') {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Confirmation text must be DELETE')),
+      );
+      return;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('customer_token');
+      final response = await http.post(
+        Uri.parse('$_apiBaseUrl/api/customer/account/delete'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'confirm': 'DELETE'}),
+      );
+      if (response.statusCode != 200) {
+        final data = jsonDecode(response.body);
+        throw Exception(data['error'] ?? 'Failed to delete account');
+      }
+      await prefs.remove('customer_token');
+      await prefs.remove('customer_data');
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const CustomerWebsiteScreen()),
+        (_) => false,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Your account has been deleted')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   void _navigateFromTopBar(CustomerPageTab tab) {

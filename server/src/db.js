@@ -167,6 +167,22 @@ export async function ensureCustomerAccountsColumns() {
   } catch (err) {
     console.warn('customer_accounts timestamp columns:', err.message);
   }
+  try {
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS otp_code VARCHAR(6)`,
+    );
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS otp_expiry TIMESTAMPTZ`,
+    );
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS reset_code VARCHAR(6)`,
+    );
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS reset_code_expires TIMESTAMPTZ`,
+    );
+  } catch (err) {
+    console.warn('customer_accounts otp/reset columns:', err.message);
+  }
 }
 
 /** Minimal tables for login/signup — runs in seconds so the API can accept auth before full initDb. */
@@ -1017,6 +1033,24 @@ export async function initDb() {
     console.log('Migration: Added archived column to customer_accounts');
   } catch (err) {
     console.log('Migration check for customer_accounts archived:', err.message);
+  }
+
+  try {
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS otp_code VARCHAR(6)`,
+    );
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS otp_expiry TIMESTAMPTZ`,
+    );
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS reset_code VARCHAR(6)`,
+    );
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS reset_code_expires TIMESTAMPTZ`,
+    );
+    console.log('Migration: Ensured customer_accounts otp/reset columns');
+  } catch (err) {
+    console.log('Migration check for customer_accounts otp/reset columns:', err.message);
   }
 
   try {

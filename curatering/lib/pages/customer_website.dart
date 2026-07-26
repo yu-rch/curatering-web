@@ -4238,13 +4238,24 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   // Loyalty Points Banner - shows points earned and reward selection
   Widget _buildLoyaltyBanner() {
     // Get values from LoyaltyRewardsStore (persisted from management page)
-    final double minimumOrderForPoints = LoyaltyRewardsStore.instance
-        .minimumOrderForPoints(orderType: 'restaurant');
-    final int pointsEarned = LoyaltyRewardsStore.instance.pointsEarned(
+    final store = LoyaltyRewardsStore.instance;
+    final double minimumOrderForPoints = store.minimumOrderForPoints(
       orderType: 'restaurant',
     );
+    final int pointsRatePercent = store.pointsRatePercent(
+      orderType: 'restaurant',
+    );
+    final cartTotal = CartStore.instance.totalAmount;
+    final estimatedCartPoints = store.getPointsForOrder(
+      cartTotal,
+      orderType: 'restaurant',
+    );
+    final earnCopy =
+        cartTotal > 0 && estimatedCartPoints > 0
+            ? 'Earn $pointsRatePercent% on orders ≥ ₱${minimumOrderForPoints.toStringAsFixed(2)} (e.g. ~$estimatedCartPoints pts on your tray)'
+            : 'Earn $pointsRatePercent% on orders ≥ ₱${minimumOrderForPoints.toStringAsFixed(2)}';
     final int currentPoints = _restaurantLoyaltyPoints;
-    final availableRewards = LoyaltyRewardsStore.instance.rewardsConditions;
+    final availableRewards = store.rewardsConditions;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -4286,7 +4297,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     Text(
                       'Restaurant: $currentPoints pts'
                       '${_cateringLoyaltyPoints > 0 ? ' · Catering: $_cateringLoyaltyPoints pts' : ''}'
-                      ' · Earn $pointsEarned pts on orders ≥ ₱${minimumOrderForPoints.toStringAsFixed(2)}',
+                      ' · $earnCopy',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.9),
                         fontSize: 13,

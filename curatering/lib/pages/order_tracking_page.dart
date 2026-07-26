@@ -349,8 +349,14 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
   }
 
   Widget _buildPaymentConfirmedColumn({required String paymentReference}) {
-    final paymentStatus = widget.orderData['payment_status'] ?? 'pending';
-    final isPaymentConfirmed = paymentStatus == 'paid';
+    final paymentStatus = '${widget.orderData['payment_status'] ?? 'pending'}'.toLowerCase();
+    final orderStatus = _normalizeStatus('${widget.orderData['status'] ?? widget.orderData['order_status'] ?? ''}');
+    final isPaymentConfirmed =
+        paymentStatus == 'paid' ||
+        paymentStatus == 'confirmed' ||
+        orderStatus == 'in_preparation' ||
+        orderStatus == 'out_for_delivery' ||
+        orderStatus == 'delivered';
     
     return Container(
       padding: const EdgeInsets.all(20),
@@ -379,7 +385,11 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
           // Message
           Text(
             isPaymentConfirmed 
-                ? 'PLEASE WAIT FOR YOUR ORDER CONFIRMATION VIA TEXT.'
+                ? (orderStatus == 'in_preparation' ||
+                        orderStatus == 'out_for_delivery' ||
+                        orderStatus == 'delivered'
+                    ? 'YOUR ORDER IS CONFIRMED AND IN PREPARATION / FULFILLMENT.'
+                    : 'PLEASE WAIT FOR YOUR ORDER CONFIRMATION VIA TEXT.')
                 : 'AWAITING PAYMENT CONFIRMATION FROM MANAGER.',
             style: TextStyle(
               fontSize: 9,
@@ -460,7 +470,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
   Widget _buildOrderStatusColumn(String status) {
     final statuses = [
       {'label': 'PAYMENT UNDER REVIEW', 'value': 'pending_cashier'},
-      {'label': 'PREPARING YOUR FOOD', 'value': 'in_preparation'},
+      {'label': 'CONFIRMED & PREPARING', 'value': 'in_preparation'},
       {'label': 'OUT FOR DELIVERY', 'value': 'out_for_delivery'},
       {'label': 'DELIVERED', 'value': 'delivered'},
     ];

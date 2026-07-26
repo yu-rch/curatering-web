@@ -27,6 +27,8 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   String? _error;
   bool _gridView = false;
   final Set<String> _sendingFollowUps = {};
+  final _searchCtrl = TextEditingController();
+  String _statusFilter = 'all';
   static const Duration _requestTimeout = Duration(seconds: 45);
   static const Duration _followUpCooldown = Duration(minutes: 20);
 
@@ -38,6 +40,53 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   void initState() {
     super.initState();
     _loadOrders();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  String _normalizeStatus(String status) {
+    final s = status.toLowerCase().trim();
+    switch (s) {
+      case 'pending':
+      case 'pending_cashier':
+        return 'pending_cashier';
+      case 'confirmed':
+      case 'preparing':
+      case 'in_preparation':
+      case 'order_confirmed':
+        return 'in_preparation';
+      case 'out_for_delivery':
+        return 'out_for_delivery';
+      case 'delivered':
+      case 'completed':
+        return 'delivered';
+      case 'cancelled':
+        return 'cancelled';
+      default:
+        return s.isEmpty ? 'pending_cashier' : s;
+    }
+  }
+
+  List<Map<String, dynamic>> get _filteredOrders {
+    final q = _searchCtrl.text.trim().toLowerCase();
+    return _orders.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).where((
+      order,
+    ) {
+      final status = _normalizeStatus('${order['status'] ?? ''}');
+      if (_statusFilter != 'all' && status != _statusFilter) return false;
+      if (q.isEmpty) return true;
+      final orderNo =
+          _shortOrderId(order['id'], order['order_no']).toLowerCase();
+      final items =
+          _normalizeOrderItems(order['items'])
+              .map((i) => '${i['name'] ?? i['dishName'] ?? ''}'.toLowerCase())
+              .join(' ');
+      return orderNo.contains(q) || items.contains(q);
+    }).toList();
   }
 
   Future<void> _loadOrders({bool force = false}) async {
@@ -143,13 +192,11 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   static const Duration _historyAfterClose = Duration(hours: 24);
 
   ({List<Map<String, dynamic>> active, List<Map<String, dynamic>> history})
-  _splitOrders() {
+  _splitOrders(List<Map<String, dynamic>> orders) {
     final active = <Map<String, dynamic>>[];
     final history = <Map<String, dynamic>>[];
     final now = DateTime.now();
-    for (final raw in _orders) {
-      if (raw is! Map) continue;
-      final o = Map<String, dynamic>.from(raw);
+    for (final o in orders) {
       final st = o['status']?.toString() ?? '';
       final closed = st == 'delivered' || st == 'cancelled';
       final t =
@@ -829,85 +876,165 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                         ],
                       ),
                     )
-                    : LayoutBuilder(
-                      builder: (context, c) {
-                        final parts = _splitOrders();
-                        final grid = _gridView;
-                        final cardW =
-                            grid ? (c.maxWidth - 44) / 2 : c.maxWidth - 32;
-                        final segs = <Widget>[];
-
-                        Widget header(String t) => Padding(
-                          padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
-                          child: Text(
-                            t,
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
+                    : Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                          child: TextField(
+                            controller: _searchCtrl,
+                            decoration: InputDecoration(
+                              hintText: 'Search order no, items',
+                              prefixIcon: const Icon(Icons.search),
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              isDense: true,
                             ),
+                            onChanged: (_) => setState(() {}),
                           ),
-                        );
-
-                        if (parts.active.isNotEmpty) {
-                          segs.add(header('Active orders'));
-                          if (grid) {
-                            segs.add(
-                              Wrap(
-                                spacing: 12,
-                                runSpacing: 12,
-                                children:
-                                    parts.active.map((o) {
-                                      return SizedBox(
-                                        width: cardW,
-                                        child: _buildOrderCard(o),
-                                      );
-                                    }).toList(),
-                              ),
-                            );
-                          } else {
-                            for (final o in parts.active) {
-                              segs.add(_buildOrderCard(o));
-                            }
-                          }
-                        }
-                        if (parts.history.isNotEmpty) {
-                          segs.add(
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
-                              child: Text(
-                                'Order history',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
+                        ),
+                        const SizedBox(height: 8),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(
+                            children: [
+                              for (final entry in const [
+                                ('all', 'All'),
+                                ('pending_cashier', 'Payment review'),
+                                ('in_preparation', 'Preparing'),
+                                ('out_for_delivery', 'Out for delivery'),
+                                ('delivered', 'Delivered'),
+                                ('cancelled', 'Cancelled'),
+                              ])
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: FilterChip(
+                                    label: Text(entry.$2),
+                                    selected: _statusFilter == entry.$1,
+                                    onSelected:
+                                        (_) => setState(
+                                          () => _statusFilter = entry.$1,
+                                        ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                          );
-                          if (grid) {
-                            segs.add(
-                              Wrap(
-                                spacing: 12,
-                                runSpacing: 12,
-                                children:
-                                    parts.history.map((o) {
-                                      return SizedBox(
-                                        width: cardW,
-                                        child: _buildOrderCard(o),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child:
+                              _filteredOrders.isEmpty
+                                  ? Center(
+                                    child: Text(
+                                      'No orders match your filters',
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  )
+                                  : LayoutBuilder(
+                                    builder: (context, c) {
+                                      final parts = _splitOrders(
+                                        _filteredOrders,
                                       );
-                                    }).toList(),
-                              ),
-                            );
-                          } else {
-                            for (final o in parts.history) {
-                              segs.add(_buildOrderCard(o));
-                            }
-                          }
-                        }
-                        return ListView(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                          children: segs,
-                        );
-                      },
+                                      final grid = _gridView;
+                                      final cardW =
+                                          grid
+                                              ? (c.maxWidth - 44) / 2
+                                              : c.maxWidth - 32;
+                                      final segs = <Widget>[];
+
+                                      Widget header(String t) => Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          4,
+                                          4,
+                                          4,
+                                          8,
+                                        ),
+                                        child: Text(
+                                          t,
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      );
+
+                                      if (parts.active.isNotEmpty) {
+                                        segs.add(header('Active orders'));
+                                        if (grid) {
+                                          segs.add(
+                                            Wrap(
+                                              spacing: 12,
+                                              runSpacing: 12,
+                                              children:
+                                                  parts.active.map((o) {
+                                                    return SizedBox(
+                                                      width: cardW,
+                                                      child: _buildOrderCard(o),
+                                                    );
+                                                  }).toList(),
+                                            ),
+                                          );
+                                        } else {
+                                          for (final o in parts.active) {
+                                            segs.add(_buildOrderCard(o));
+                                          }
+                                        }
+                                      }
+                                      if (parts.history.isNotEmpty) {
+                                        segs.add(
+                                          Padding(
+                                            padding: const EdgeInsets.fromLTRB(
+                                              4,
+                                              16,
+                                              4,
+                                              8,
+                                            ),
+                                            child: Text(
+                                              'Order history',
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                        if (grid) {
+                                          segs.add(
+                                            Wrap(
+                                              spacing: 12,
+                                              runSpacing: 12,
+                                              children:
+                                                  parts.history.map((o) {
+                                                    return SizedBox(
+                                                      width: cardW,
+                                                      child: _buildOrderCard(o),
+                                                    );
+                                                  }).toList(),
+                                            ),
+                                          );
+                                        } else {
+                                          for (final o in parts.history) {
+                                            segs.add(_buildOrderCard(o));
+                                          }
+                                        }
+                                      }
+                                      return ListView(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          16,
+                                          12,
+                                          16,
+                                          24,
+                                        ),
+                                        children: segs,
+                                      );
+                                    },
+                                  ),
+                        ),
+                      ],
                     ),
           ),
         ],

@@ -20,7 +20,21 @@ extension _ManageEventsTableExt on _ManageEventsState {
     if (!_canEventAction(permissionKey)) return const SizedBox.shrink();
     return IconButton(
       tooltip: tooltip,
-      onPressed: onPressed,
+      onPressed: () {
+        final key = 'event-action:$tooltip';
+        if (!DialogOpenGuard.tryAcquire(key)) return;
+        try {
+          onPressed();
+        } catch (_) {
+          DialogOpenGuard.release(key);
+          rethrow;
+        }
+        // Release after a short delay so sync openers that kick off showDialog
+        // have time to register; dialog methods should also use DialogOpenGuard.
+        Future<void>.delayed(const Duration(milliseconds: 400), () {
+          DialogOpenGuard.release(key);
+        });
+      },
       icon: Icon(icon, size: 20, color: color),
       visualDensity: VisualDensity.compact,
     );
@@ -85,13 +99,36 @@ extension _ManageEventsTableExt on _ManageEventsState {
     return lines.join('\n');
   }
 
+  String _eventDesignSourceLabel(EventThemeDesignDto td) {
+    final src = (td.eventDesignSource ?? '').trim();
+    if (src == 'customer_ai') return 'Customer AI event design';
+    if (src == 'macrina') return 'Macrina will design the event';
+    if (td.wantsCustomDesign) return 'Custom event design';
+    if (src.isNotEmpty) return src;
+    return '—';
+  }
+
   String _themeExtrasLine(EventOrderDto dto) {
     final td = dto.themeDesign;
     final parts = <String>[];
-    if (td.eventDesignSource == 'customer_ai') {
-      parts.add('Customer AI event design');
-    } else if (td.eventDesignSource == 'macrina') {
-      parts.add('Macrina will design the event');
+    if ((td.eventDesignSource ?? '').trim().isNotEmpty ||
+        td.wantsCustomDesign) {
+      parts.add(_eventDesignSourceLabel(td));
+    }
+    if (td.style != null && td.style!.trim().isNotEmpty) {
+      parts.add('Style: ${td.style!.trim()}');
+    }
+    if (td.mood != null && td.mood!.trim().isNotEmpty) {
+      parts.add('Mood: ${td.mood!.trim()}');
+    }
+    if (td.colorPalette.isNotEmpty) {
+      parts.add('Colors: ${td.colorPalette.join(', ')}');
+    }
+    if (td.decorElements.isNotEmpty) {
+      parts.add('Decor: ${td.decorElements.join(', ')}');
+    }
+    if (td.customerNote != null && td.customerNote!.trim().isNotEmpty) {
+      parts.add('Customer note: ${td.customerNote!.trim()}');
     }
     if (td.wantsCustomDesign) parts.add('Custom design requested');
     final prompt = (td.customInstructions ?? td.colorPrompt ?? '').trim();
@@ -109,7 +146,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
     }
     if (td.generatedImageUrl != null &&
         td.generatedImageUrl!.trim().isNotEmpty) {
-      parts.add('AI design image submitted');
+      parts.add('Generated image: ${td.generatedImageUrl!.trim()}');
     }
     if (td.picksBase64.isNotEmpty) {
       parts.add('${td.picksBase64.length} reference photo(s)');
@@ -124,6 +161,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
         (td.customInstructions?.trim().isNotEmpty ?? false) ||
         (td.colorPrompt?.trim().isNotEmpty ?? false) ||
         (td.customerThemeRequest?.trim().isNotEmpty ?? false) ||
+        (td.eventDesignSource?.trim().isNotEmpty ?? false) ||
+        (td.style?.trim().isNotEmpty ?? false) ||
+        (td.mood?.trim().isNotEmpty ?? false) ||
+        td.colorPalette.isNotEmpty ||
+        td.decorElements.isNotEmpty ||
+        (td.customerNote?.trim().isNotEmpty ?? false) ||
         td.wantsCustomDesign;
   }
 
@@ -135,6 +178,26 @@ extension _ManageEventsTableExt on _ManageEventsState {
             .where((s) => s.trim().isNotEmpty)
             .map((s) => s.trim())
             .toList();
+
+    Widget? detailRow(String label, String? value) {
+      final text = (value ?? '').trim();
+      if (text.isEmpty) return null;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: RichText(
+          text: TextSpan(
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+            children: [
+              TextSpan(
+                text: '$label: ',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              TextSpan(text: text),
+            ],
+          ),
+        ),
+      );
+    }
 
     Widget imageFromSource(String source, {BoxFit fit = BoxFit.cover}) {
       if (source.startsWith('http://') || source.startsWith('https://')) {
@@ -168,10 +231,27 @@ extension _ManageEventsTableExt on _ManageEventsState {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
           ),
           const SizedBox(height: 10),
-          Text(
-            _themeExtrasLine(dto),
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
-          ),
+          ...[
+            if ((td.eventDesignSource ?? '').trim().isNotEmpty ||
+                td.wantsCustomDesign)
+              detailRow('Design source', _eventDesignSourceLabel(td)),
+            detailRow('Style', td.style),
+            detailRow('Mood', td.mood),
+            if (td.colorPalette.isNotEmpty)
+              detailRow('Color palette', td.colorPalette.join(', ')),
+            if (td.decorElements.isNotEmpty)
+              detailRow('Decor elements', td.decorElements.join(', ')),
+            detailRow('Customer note', td.customerNote),
+            detailRow(
+              'Design prompt',
+              (td.customInstructions ?? td.colorPrompt ?? '').trim(),
+            ),
+            detailRow('Macrina request', td.customerThemeRequest),
+            detailRow('Macrina palette', td.macrinaColorPalette),
+            detailRow('Macrina theme', td.macrinaTheme),
+            if (imageUrl.isNotEmpty)
+              detailRow('Generated image URL', imageUrl),
+          ].whereType<Widget>(),
           if (imageUrl.isNotEmpty) ...[
             const SizedBox(height: 12),
             const Text(

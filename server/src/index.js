@@ -21,6 +21,7 @@ import {
   ensureOrderCateringIdColumns,
   ensureCustomerTrayDraftsSchema,
   ensureRestaurantOrderWorkflowColumns,
+  ensureCustomerAccountsColumns,
   getTableColumnNames,
   getColumnSqlType,
   ensureCustomerAccountsUuidCompat,
@@ -3661,6 +3662,7 @@ function registerCustomerAuthRoutes(app, dbGate) {
 
   app.post("/api/customer/forgot-password", gate, async (req, res) => {
     try {
+      await ensureCustomerAccountsColumns();
       const { email } = req.body || {};
 
       if (!email) {
@@ -3669,12 +3671,13 @@ function registerCustomerAuthRoutes(app, dbGate) {
 
       const emailNorm = String(email).trim().toLowerCase();
       const customerResult = await pool.query(
-        `SELECT id, email, full_name FROM customer_accounts
+        `SELECT id, email, full_name, archived FROM customer_accounts
          WHERE lower(trim(email::text)) = $1`,
         [emailNorm],
       );
 
-      if (customerResult.rows.length === 0) {
+      // Always return a generic success to avoid email enumeration.
+      if (customerResult.rows.length === 0 || customerResult.rows[0].archived === true) {
         return res.json({ message: "If an account exists, a reset code will be sent" });
       }
 
@@ -3683,7 +3686,9 @@ function registerCustomerAuthRoutes(app, dbGate) {
 
       await pool.query(
         `UPDATE customer_accounts
-         SET reset_code = $1, reset_code_expires = NOW() + INTERVAL '30 minutes'
+         SET reset_code = $1,
+             reset_code_expires = NOW() + INTERVAL '30 minutes',
+             updated_at = NOW()
          WHERE id = $2`,
         [resetCode, customer.id],
       );
@@ -3697,29 +3702,35 @@ function registerCustomerAuthRoutes(app, dbGate) {
       res.json({ message: "Reset code sent to your email" });
     } catch (error) {
       console.error("Error in forgot password:", error);
-      res.status(500).json({ error: "Failed to process request" });
+      res.status(500).json({
+        error: "Failed to process request",
+        detail: error?.message || String(error),
+      });
     }
   });
 
   app.post("/api/customer/reset-password", gate, async (req, res) => {
     try {
+      await ensureCustomerAccountsColumns();
       const { email, resetCode, newPassword } = req.body || {};
 
       if (!email || !resetCode || !newPassword) {
         return res.status(400).json({ error: "Email, reset code, and new password are required" });
       }
 
-      if (newPassword.length < 6) {
+      if (String(newPassword).length < 6) {
         return res.status(400).json({ error: "Password must be at least 6 characters" });
       }
 
       const emailNorm = String(email).trim().toLowerCase();
+      const codeNorm = String(resetCode).trim();
       const customerResult = await pool.query(
         `SELECT id, email, full_name FROM customer_accounts
          WHERE lower(trim(email::text)) = $1
-           AND reset_code = $2
+           AND trim(COALESCE(reset_code::text, '')) = $2
+           AND reset_code_expires IS NOT NULL
            AND reset_code_expires > NOW()`,
-        [emailNorm, resetCode],
+        [emailNorm, codeNorm],
       );
 
       if (customerResult.rows.length === 0) {
@@ -3727,11 +3738,14 @@ function registerCustomerAuthRoutes(app, dbGate) {
       }
 
       const customer = customerResult.rows[0];
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      const hashedPassword = await bcrypt.hash(String(newPassword), 10);
 
       await pool.query(
         `UPDATE customer_accounts
-         SET password_hash = $1, reset_code = NULL, reset_code_expires = NULL
+         SET password_hash = $1,
+             reset_code = NULL,
+             reset_code_expires = NULL,
+             updated_at = NOW()
          WHERE id = $2`,
         [hashedPassword, customer.id],
       );
@@ -3745,7 +3759,10 @@ function registerCustomerAuthRoutes(app, dbGate) {
       res.json({ message: "Password reset successful" });
     } catch (error) {
       console.error("Error resetting password:", error);
-      res.status(500).json({ error: "Failed to reset password" });
+      res.status(500).json({
+        error: "Failed to reset password",
+        detail: error?.message || String(error),
+      });
     }
   });
 }
@@ -10455,12 +10472,12 @@ async function registerRoutesAfterDbInit() {
         let params = [limit];
 
         if (status) {
-          const statusValues = status.split(',');
+          const statusValues = status.split(',').map((s) => String(s).trim().toLowerCase()).filter(Boolean);
           if (statusValues.length === 1) {
             query = `
               SELECT ${selectSql}
               FROM restaurant_orders
-              WHERE ${statusCol} = $1
+              WHERE lower(${statusCol}::text) = $1
               ORDER BY created_at DESC NULLS LAST
               LIMIT $2
             `;
@@ -10469,7 +10486,7 @@ async function registerRoutesAfterDbInit() {
             query = `
               SELECT ${selectSql}
               FROM restaurant_orders
-              WHERE ${statusCol} IN (${statusValues.map((_, i) => `$${i + 1}`).join(', ')})
+              WHERE lower(${statusCol}::text) IN (${statusValues.map((_, i) => `$${i + 1}`).join(', ')})
               ORDER BY created_at DESC NULLS LAST
               LIMIT $${statusValues.length + 1}
             `;
@@ -10536,13 +10553,13 @@ async function registerRoutesAfterDbInit() {
         let nextStatus = null;
 
         if (status) {
-          const normalizedStatus = String(status).trim().toUpperCase();
+          const normalizedStatus = String(status).trim().toLowerCase();
           const allowedStatuses = [
-            'PENDING_CASHIER',
-            'IN_PREPARATION',
-            'OUT_FOR_DELIVERY',
-            'DELIVERED',
-            'CANCELLED',
+            'pending_cashier',
+            'in_preparation',
+            'out_for_delivery',
+            'delivered',
+            'cancelled',
           ];
           if (!allowedStatuses.includes(normalizedStatus)) {
             return res.status(400).json({
@@ -10555,7 +10572,7 @@ async function registerRoutesAfterDbInit() {
         if (hasDeliveryUrl) {
           updateFields.push(`delivery_tracking_url = $${paramIndex++}`);
           updateValues.push(deliveryUrl);
-          nextStatus = 'OUT_FOR_DELIVERY';
+          nextStatus = 'out_for_delivery';
         }
 
         if (nextStatus) {
@@ -10591,17 +10608,16 @@ async function registerRoutesAfterDbInit() {
         const effectiveStatus = nextStatus;
 
         // Auto-calculate loyalty points when order is delivered
-        if (effectiveStatus === 'DELIVERED') {
+        if (effectiveStatus === 'delivered') {
           const order = result.rows[0];
           const customerId = order.customer_id;
           const totalAmount = parseFloat(order.total_cost || 0);
           
-          // Default restaurant loyalty points: 100 min order to earn 2 points (2% rate)
+          // Match client getPointsForOrder defaults: 100 min, 2% rate, .7-up rounding
           const minimumCost = 100.0;
-          const pointsApplication = 2; // 2% of total cost
+          const pointsApplication = 2;
           
           if (totalAmount >= minimumCost) {
-            // Calculate points with rounding rule: .2-.6 down, .7-.9 up
             const rawPoints = (totalAmount * pointsApplication) / 100;
             const decimal = rawPoints % 1;
             let points = Math.floor(rawPoints);
@@ -10610,7 +10626,6 @@ async function registerRoutesAfterDbInit() {
               points += 1;
             }
             
-            // Update order with calculated points
             const pointsLookup = await restaurantOrderWhereClause(orderId, 2);
             if (pointsLookup) {
               await pool.query(
@@ -10635,24 +10650,28 @@ async function registerRoutesAfterDbInit() {
         }
 
         const updatedOrder = result.rows[0];
-        const notifyEmail = await resolveRestaurantOrderEmail(updatedOrder);
-        if (notifyEmail) {
-          const feedbackText = effectiveStatus === 'DELIVERED'
-            ? `\nYour order is complete. Share quick feedback here: ${restaurantFeedbackLink(updatedOrder)}\n` +
-              `Registered customers can also open My Orders to review the order and feedback form.\n`
-            : '';
-          await sendCustomerNotificationEmail({
-            to: notifyEmail,
-            subject: "Curatering: Restaurant order status updated",
-            text:
-              `Hello ${updatedOrder.full_name || "Customer"},\n\n` +
-              `Your restaurant order (${orderId}) has a status update.\n` +
-              `${effectiveStatus ? `New status: ${effectiveStatus}\n` : ""}` +
-              `${payment_status ? `Payment review: ${payment_status}\n` : ""}` +
-              feedbackText +
-              `\n` +
-              `- Curatering Team`,
-          });
+        try {
+          const notifyEmail = await resolveRestaurantOrderEmail(updatedOrder);
+          if (notifyEmail) {
+            const feedbackText = effectiveStatus === 'delivered'
+              ? `\nYour order is complete. Share quick feedback here: ${restaurantFeedbackLink(updatedOrder)}\n` +
+                `Registered customers can also open My Orders to review the order and feedback form.\n`
+              : '';
+            await sendCustomerNotificationEmail({
+              to: notifyEmail,
+              subject: "Curatering: Restaurant order status updated",
+              text:
+                `Hello ${updatedOrder.full_name || "Customer"},\n\n` +
+                `Your restaurant order (${orderId}) has a status update.\n` +
+                `${effectiveStatus ? `New status: ${effectiveStatus}\n` : ""}` +
+                `${payment_status ? `Payment review: ${payment_status}\n` : ""}` +
+                feedbackText +
+                `\n` +
+                `- Curatering Team`,
+            });
+          }
+        } catch (mailErr) {
+          console.error('Restaurant order status email failed:', mailErr);
         }
 
         const out = result.rows[0];
@@ -11623,6 +11642,33 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
+    // Soft-delete (archive) own customer account
+    app.post('/api/customer/account/delete', customerAuthRequired, async (req, res) => {
+      try {
+        const customerId = req.customer.id;
+        const confirm = String(req.body?.confirm || '').trim().toUpperCase();
+        if (confirm !== 'DELETE') {
+          return res.status(400).json({
+            error: 'Type DELETE to confirm account deletion',
+          });
+        }
+        const result = await pool.query(
+          `UPDATE customer_accounts
+           SET archived = TRUE, updated_at = now()
+           WHERE id = $1 AND COALESCE(archived, FALSE) = FALSE
+           RETURNING id`,
+          [customerId],
+        );
+        if (result.rowCount === 0) {
+          return res.status(404).json({ error: 'Customer not found or already deleted' });
+        }
+        res.json({ success: true, message: 'Account deleted' });
+      } catch (error) {
+        console.error('Error deleting customer account:', error);
+        res.status(500).json({ error: 'Failed to delete account' });
+      }
+    });
+
     // Loyalty: customer points (manager + super admin)
     app.get('/api/loyalty/customers', authRequired, async (req, res) => {
       try {
@@ -11670,13 +11716,36 @@ async function registerRoutesAfterDbInit() {
         const roCols = await ensureRestaurantOrdersCanonicalColumns();
         await ensureOrderCateringIdColumns();
         await ensureCateringEventOrdersCanonicalColumns();
+        const eventCols = await getTableColumnNames('event_orders');
+        const cateringCols = await getTableColumnNames('catering_orders');
+        const buildCateringLoyaltyPointsSelect = (cols) => {
+          const parts = [];
+          if (cols.has('loyalty_points_catering_obtained')) {
+            parts.push('loyalty_points_catering_obtained');
+          }
+          if (cols.has('points_earned')) {
+            parts.push('points_earned');
+          }
+          if (parts.length === 0) return '0 AS loyalty_points_obtained';
+          return `COALESCE(${parts.join(', ')}, 0) AS loyalty_points_obtained`;
+        };
+        const eventLoyaltySelect = buildCateringLoyaltyPointsSelect(eventCols);
+        const cateringLoyaltySelect = buildCateringLoyaltyPointsSelect(cateringCols);
         const restaurantSelect = buildRestaurantOrderSelectSql(roCols);
+        const restaurantEmailCol = roCols.has('user_email')
+          ? 'user_email'
+          : roCols.has('guest_contact_email')
+            ? 'guest_contact_email'
+            : null;
+        const restaurantWhere = restaurantEmailCol
+          ? `customer_id::text = $1 OR ($2 <> '' AND lower(COALESCE(${restaurantEmailCol}, '')) = $2)`
+          : 'customer_id::text = $1';
         const restaurantResult = await pool.query(
           `SELECT ${restaurantSelect}
            FROM restaurant_orders
-           WHERE customer_id::text = $1
+           WHERE ${restaurantWhere}
            ORDER BY created_at DESC NULLS LAST`,
-          [customerId],
+          restaurantEmailCol ? [customerId, customerEmail] : [customerId],
         );
         const restaurantOrders = restaurantResult.rows.map((order) => {
           const normalized = normalizeRestaurantOrderRow(order, parseRestaurantOrderTrayItems(order), {
@@ -11697,7 +11766,7 @@ async function registerRoutesAfterDbInit() {
 
         const eventResult = await pool.query(
           `SELECT id, catering_id AS order_no, event_title, created_at, total_cost AS total_amount,
-                  status, order_type, 0 AS loyalty_points_obtained
+                  status, order_type, ${eventLoyaltySelect}
            FROM event_orders
            WHERE customer_id::text = $1
               OR ($2 <> '' AND lower(email_address) = $2)
@@ -11707,7 +11776,7 @@ async function registerRoutesAfterDbInit() {
 
         const cateringResult = await pool.query(
           `SELECT id, catering_id AS order_no, 'Catering order' AS event_title, created_at,
-                  total_cost AS total_amount, status, order_type, 0 AS loyalty_points_obtained
+                  total_cost AS total_amount, status, order_type, ${cateringLoyaltySelect}
            FROM catering_orders
            WHERE customer_id::text = $1
               OR ($2 <> '' AND lower(email_address) = $2)
