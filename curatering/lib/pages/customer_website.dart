@@ -916,6 +916,153 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     notesController.dispose();
   }
 
+  /// Resolve tray dish photo from the cart line, falling back to MenuStore.
+  String? _trayDishImageBase64(CartItem cartItem) {
+    final fromLine = cartItem.dish.imageBase64?.trim();
+    if (fromLine != null && fromLine.isNotEmpty) return fromLine;
+    for (final d in MenuStore.instance.activeDishes) {
+      if (d.id == cartItem.dish.id) {
+        final fromMenu = d.imageBase64?.trim();
+        if (fromMenu != null && fromMenu.isNotEmpty) return fromMenu;
+        break;
+      }
+    }
+    return null;
+  }
+
+  Widget _trayDishCapsule(CartItem cartItem) {
+    final unitPrice = double.tryParse(cartItem.dish.price) ?? 0;
+    final mealRaw = cartItem.dish.effectiveMealType.trim();
+    final mealLabel =
+        mealRaw.isEmpty
+            ? 'Item'
+            : mealTypeDisplayLabel(mealRaw);
+    final imageB64 = _trayDishImageBase64(cartItem);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child:
+                      imageB64 != null
+                          ? CachedBase64Image(
+                            base64String: imageB64,
+                            width: 64,
+                            height: 64,
+                            fit: BoxFit.cover,
+                            placeholder: Container(
+                              width: 64,
+                              height: 64,
+                              color: Colors.grey.shade200,
+                              child: Icon(
+                                Icons.restaurant,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                          )
+                          : Container(
+                            width: 64,
+                            height: 64,
+                            color: Colors.grey.shade200,
+                            child: Icon(
+                              Icons.restaurant,
+                              color: Colors.grey.shade500,
+                            ),
+                          ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        cartItem.dish.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: Colors.black,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$mealLabel ×${cartItem.quantity} @ ₱${unitPrice.toStringAsFixed(2)} · ₱${cartItem.lineSubtotal.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                          height: 1.3,
+                        ),
+                      ),
+                      _cartItemAddonDetails(cartItem, fontSize: 11),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: Colors.grey.shade200),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$mealLabel qty',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.remove_circle_outline, size: 22),
+                  onPressed: () {
+                    CartStore.instance.updateCartItemQuantity(
+                      cartItem,
+                      cartItem.quantity - 1,
+                    );
+                  },
+                ),
+                Text(
+                  '${cartItem.quantity}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.add_circle_outline, size: 22),
+                  onPressed: () {
+                    CartStore.instance.updateCartItemQuantity(
+                      cartItem,
+                      cartItem.quantity + 1,
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Shared tray line details for sidebar / drawer (sauces, extras, notes, fees).
   Widget _cartItemAddonDetails(
     CartItem cartItem, {
@@ -1407,6 +1554,26 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       );
     }
 
+    if (index == 2 && label == 'Catering Menu') {
+      return InkWell(
+        onTap:
+            () => Navigator.pushReplacementNamed(
+              context,
+              customerRoute('/catering-menu'),
+            ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.normal,
+            ),
+          ),
+        ),
+      );
+    }
+
     if (index == 3 && label == 'Restaurant') {
       return InkWell(
         onTap:
@@ -1503,11 +1670,51 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     });
   }
 
-  Widget _footerPageLink(String label, int index) {
+  void _goFooterRoute(String route) {
+    final target = customerRoute(route);
+    final current = ModalRoute.of(context)?.settings.name ?? '';
+    if (current == target) {
+      if (_pageScrollController.hasClients) {
+        _pageScrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+      return;
+    }
+    Navigator.pushReplacementNamed(context, target);
+  }
+
+  Widget _footerPageLink(String label, VoidCallback onPressed) {
     return TextButton(
-      onPressed: () => _showCustomerSiteTab(index),
+      onPressed: onPressed,
       child: Text(label, style: const TextStyle(color: Color(0xFFF5F7F9))),
     );
+  }
+
+  Future<void> _launchFooterEmail(String email) async {
+    final trimmed = email.trim();
+    if (trimmed.isEmpty) return;
+    final uri = Uri(scheme: 'mailto', path: trimmed);
+    try {
+      await launchUrl(uri);
+    } catch (e) {
+      debugPrint('Failed to open mailto: $e');
+    }
+  }
+
+  Future<void> _launchFooterFacebook(String facebook) async {
+    final trimmed = facebook.trim();
+    final uri =
+        trimmed.startsWith('http://') || trimmed.startsWith('https://')
+            ? Uri.parse(trimmed)
+            : Uri.parse('https://www.facebook.com/3tavs');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('Failed to open Facebook: $e');
+    }
   }
 
   Widget _footer(WebsiteContentStore w) {
@@ -1556,16 +1763,31 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _footerPageLink('GALLERY', 1),
-                _footerPageLink('MENU', 2),
-                _footerPageLink('RESTAURANT', 3),
+                _footerPageLink(
+                  'GALLERY',
+                  () => _goFooterRoute('/gallery'),
+                ),
+                _footerPageLink(
+                  'CATERING MENU',
+                  () => _goFooterRoute('/catering-menu'),
+                ),
+                _footerPageLink(
+                  'RESTAURANT',
+                  () => _goFooterRoute('/restaurant'),
+                ),
               ],
             ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _footerPageLink('INQUIRE NOW', 4),
-                _footerPageLink('CONTACT US', 5),
+                _footerPageLink(
+                  'INQUIRE NOW',
+                  () => _goFooterRoute('/inquire'),
+                ),
+                _footerPageLink(
+                  'CONTACT US',
+                  () => _goFooterRoute('/contact-us'),
+                ),
                 TextButton(
                   onPressed:
                       () => showCustomerFooterFeedback(
@@ -1575,12 +1797,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       ),
                   child: const Text(
                     'FEEDBACK',
-                    style: TextStyle(color: const Color(0xFFF5F7F9)),
+                    style: TextStyle(color: Color(0xFFF5F7F9)),
                   ),
                 ),
               ],
             ),
-            _footerCol(Icons.facebook, w.contactFacebook),
+            _footerCol(
+              Icons.facebook,
+              w.contactFacebook,
+              onTap: () => _launchFooterFacebook(w.contactFacebook),
+            ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1592,7 +1818,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _footerRow(Icons.phone, w.contactPhone),
-                _footerRow(Icons.email, w.contactEmail),
+                _footerRow(
+                  Icons.email,
+                  w.contactEmail,
+                  onTap: () => _launchFooterEmail(w.contactEmail),
+                ),
               ],
             ),
           ];
@@ -1624,41 +1854,67 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
-  Widget _footerCol(IconData icon, String text) {
-    return SizedBox(
-      width: 200,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: Colors.white),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(fontSize: 12, color: Colors.white),
+  Widget _footerCol(IconData icon, String text, {VoidCallback? onTap}) {
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: Colors.white),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white,
+              decoration:
+                  onTap != null ? TextDecoration.underline : TextDecoration.none,
+              decorationColor: Colors.white70,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
+    );
+    return SizedBox(
+      width: 200,
+      child:
+          onTap == null
+              ? row
+              : InkWell(
+                onTap: onTap,
+                child: row,
+              ),
     );
   }
 
-  Widget _footerRow(IconData icon, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: Colors.white),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(fontSize: 12, color: Colors.white),
+  Widget _footerRow(IconData icon, String text, {VoidCallback? onTap}) {
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: Colors.white),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white,
+              decoration:
+                  onTap != null ? TextDecoration.underline : TextDecoration.none,
+              decorationColor: Colors.white70,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child:
+          onTap == null
+              ? row
+              : InkWell(
+                onTap: onTap,
+                child: row,
+              ),
     );
   }
 
@@ -3565,7 +3821,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       ),
                     ),
                     child: const Text(
-                      'YOUR TRAY',
+                      'MY TRAY',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
@@ -3601,86 +3857,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                               padding: const EdgeInsets.all(12),
                               itemCount: cartItems.length,
                               itemBuilder: (context, index) {
-                                final cartItem = cartItems[index];
                                 return Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: Row(
-                                    children: [
-                                      if (cartItem.dish.imageBase64 != null &&
-                                          cartItem.dish.imageBase64!
-                                              .isNotEmpty)
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                          child: CachedBase64Image(
-                                            base64String:
-                                                cartItem.dish.imageBase64,
-                                            width: 50,
-                                            height: 50,
-                                            fit: BoxFit.cover,
-                                          ),
-                                        )
-                                      else
-                                        Container(
-                                          width: 50,
-                                          height: 50,
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey.shade200,
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                          ),
-                                          child: const Icon(
-                                            Icons.fastfood,
-                                            size: 20,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              cartItem.dish.name.toUpperCase(),
-                                              style: const TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            _cartItemAddonDetails(
-                                              cartItem,
-                                              fontSize: 8,
-                                              compact: true,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.end,
-                                        children: [
-                                          Text(
-                                            'x${cartItem.quantity}',
-                                            style: const TextStyle(
-                                              fontSize: 10,
-                                            ),
-                                          ),
-                                          Text(
-                                            '₱${cartItem.lineSubtotal.toStringAsFixed(2)}',
-                                            style: const TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: _trayDishCapsule(cartItems[index]),
                                 );
                               },
                             ),
@@ -3923,7 +4102,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   const Text(
-                                    'Your tray',
+                                    'My Tray',
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 18,
@@ -4021,129 +4200,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                 ),
                                 itemCount: cartItems.length,
                                 separatorBuilder:
-                                    (_, __) => const SizedBox(height: 8),
+                                    (_, __) => const SizedBox(height: 10),
                                 itemBuilder: (context, index) {
-                                  final cartItem = cartItems[index];
-                                  return Card(
-                                    elevation: 0,
-                                    color: Colors.grey.shade50,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      side: BorderSide(
-                                        color: Colors.grey.shade200,
-                                      ),
-                                    ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(12),
-                                      child: Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          if (cartItem.dish.imageBase64 !=
-                                                  null &&
-                                              cartItem.dish.imageBase64!
-                                                  .isNotEmpty)
-                                            ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              child: CachedBase64Image(
-                                                base64String:
-                                                    cartItem.dish.imageBase64,
-                                                width: 56,
-                                                height: 56,
-                                                fit: BoxFit.cover,
-                                              ),
-                                            )
-                                          else
-                                            Container(
-                                              width: 56,
-                                              height: 56,
-                                              decoration: BoxDecoration(
-                                                color: Colors.grey.shade200,
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                              ),
-                                              child: Icon(
-                                                Icons.restaurant,
-                                                size: 24,
-                                                color: Colors.grey.shade500,
-                                              ),
-                                            ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  cartItem.dish.name,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w600,
-                                                    fontSize: 14,
-                                                  ),
-                                                ),
-                                                _cartItemAddonDetails(
-                                                  cartItem,
-                                                  fontSize: 12,
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  '₱${cartItem.lineSubtotal.toStringAsFixed(2)}',
-                                                  style: TextStyle(
-                                                    color:
-                                                        Colors.amber.shade900,
-                                                    fontWeight: FontWeight.w600,
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          Column(
-                                            children: [
-                                              IconButton(
-                                                visualDensity:
-                                                    VisualDensity.compact,
-                                                icon: const Icon(
-                                                  Icons.remove_circle_outline,
-                                                  size: 22,
-                                                ),
-                                                onPressed: () {
-                                                  CartStore.instance
-                                                      .updateCartItemQuantity(
-                                                        cartItem,
-                                                        cartItem.quantity - 1,
-                                                      );
-                                                },
-                                              ),
-                                              Text(
-                                                '${cartItem.quantity}',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 16,
-                                                ),
-                                              ),
-                                              IconButton(
-                                                visualDensity:
-                                                    VisualDensity.compact,
-                                                icon: const Icon(
-                                                  Icons.add_circle_outline,
-                                                  size: 22,
-                                                ),
-                                                onPressed: () {
-                                                  CartStore.instance
-                                                      .updateCartItemQuantity(
-                                                        cartItem,
-                                                        cartItem.quantity + 1,
-                                                      );
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
+                                  return _trayDishCapsule(cartItems[index]);
                                 },
                               ),
                     ),

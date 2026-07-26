@@ -1098,7 +1098,7 @@ export async function initDb() {
       payment_uploaded_balance BOOLEAN NOT NULL DEFAULT FALSE,
       payment_confirmed_initial BOOLEAN NOT NULL DEFAULT FALSE,
       payment_confirmed_balance BOOLEAN NOT NULL DEFAULT FALSE,
-      order_status TEXT NOT NULL DEFAULT 'PENDING_CASHIER',
+      order_status TEXT NOT NULL DEFAULT 'pending_cashier',
       contact_number TEXT NOT NULL DEFAULT '',
       cashier_amount_received_initial DECIMAL(12,2),
       cashier_amount_received_balance DECIMAL(12,2),
@@ -1203,7 +1203,7 @@ export async function initDb() {
         console.log('Migration: renamed restaurant_orders.status → order_status');
       } else {
         await pool.query(
-          `ALTER TABLE restaurant_orders ADD COLUMN order_status TEXT NOT NULL DEFAULT 'PENDING_CASHIER'`,
+          `ALTER TABLE restaurant_orders ADD COLUMN order_status TEXT NOT NULL DEFAULT 'pending_cashier'`,
         );
         console.log('Migration: added restaurant_orders.order_status');
       }
@@ -1424,6 +1424,38 @@ export async function getLoyaltyProgramConfig() {
   }
 }
 
+/**
+ * Calculate loyalty points using the same configured condition and rounding
+ * rule as the Flutter client. Falls back to the legacy defaults only when no
+ * active condition exists for the requested order type.
+ */
+export async function calculateLoyaltyPointsForOrder(
+  orderTotal,
+  orderType = 'restaurant',
+) {
+  const total = Number(orderTotal) || 0;
+  const normalizedType = String(orderType || 'restaurant').toLowerCase();
+  const config = await getLoyaltyProgramConfig();
+  const condition = config.pointsConditions.find(
+    (row) =>
+      row?.isActive !== false &&
+      String(row?.orderType || 'restaurant').toLowerCase() === normalizedType,
+  );
+  const minimumCost = condition
+    ? Number(condition.minimumCost) || 0
+    : normalizedType === 'restaurant'
+      ? 100
+      : 500;
+  const rate = condition
+    ? Number(condition.pointsApplication) || 0
+    : normalizedType === 'restaurant'
+      ? 2
+      : 8;
+  if (total < minimumCost || rate <= 0) return 0;
+  const rawPoints = (total * rate) / 100;
+  return Math.floor(rawPoints) + (rawPoints % 1 >= 0.7 ? 1 : 0);
+}
+
 export async function setLoyaltyProgramConfig(config) {
   await pool.query(
     `INSERT INTO system_settings (key, value, updated_at)
@@ -1459,7 +1491,7 @@ async function ensureRestaurantOrderWorkflowColumnsOnce() {
       console.log('[db] renamed restaurant_orders.status → order_status');
     } else {
       await pool.query(
-        `ALTER TABLE restaurant_orders ADD COLUMN order_status TEXT NOT NULL DEFAULT 'PENDING_CASHIER'`,
+        `ALTER TABLE restaurant_orders ADD COLUMN order_status TEXT NOT NULL DEFAULT 'pending_cashier'`,
       );
       console.log('[db] added restaurant_orders.order_status');
     }

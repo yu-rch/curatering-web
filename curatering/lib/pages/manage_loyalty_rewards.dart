@@ -186,18 +186,6 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
     return 'restaurant';
   }
 
-  static const _completedLikeStatuses = {
-    'completed',
-    'delivered',
-    'for_post_analysis',
-    'on_going',
-  };
-
-  bool _shouldIncludeLoyaltyOrder(String status, int storedPoints) {
-    if (storedPoints > 0) return true;
-    return _completedLikeStatuses.contains(status.toLowerCase());
-  }
-
   Future<void> _loadCustomerOrders(String customerId) async {
     setState(() {
       _isLoadingOrders = true;
@@ -217,22 +205,19 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
         final transactions = <CustomerTransaction>[];
 
         for (final order in ordersData) {
-          final status =
-              (order['status'] ?? order['order_status'] ?? '').toString();
           final totalCost = _toDouble(
             order['total_amount'] ?? order['total_cost'],
           );
           final orderType = _determineOrderType(order);
+          final rawStoredPoints = order['loyalty_points_obtained'];
           final storedPoints =
-              (order['loyalty_points_obtained'] as num?)?.toInt() ?? 0;
-          if (!_shouldIncludeLoyaltyOrder(status, storedPoints)) continue;
-          final pointsEarned =
-              storedPoints > 0
-                  ? storedPoints
-                  : LoyaltyRewardsStore.instance.getPointsForOrder(
-                    totalCost,
-                    orderType: orderType,
-                  );
+              rawStoredPoints is num
+                  ? rawStoredPoints.toInt()
+                  : int.tryParse('$rawStoredPoints') ?? 0;
+          // This page reports points actually awarded to the order. Do not
+          // estimate from today's program configuration: rates may have
+          // changed since an older order was completed.
+          final pointsEarned = storedPoints;
           final createdAt =
               order['created_at'] ?? order['createdAt'] ?? order['dateTime'];
           final occurredAt = _parseDate(createdAt?.toString());

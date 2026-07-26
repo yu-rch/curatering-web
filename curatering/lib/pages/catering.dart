@@ -4,11 +4,13 @@ import 'dart:typed_data';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:printing/printing.dart';
 import '../auth/action_permissions.dart';
 import '../auth/auth_session.dart';
-import '../config/api_config.dart';
+import '../config.dart';
 import '../auth/roles.dart';
+import '../features/event_design/event_theme_design_screen.dart';
 import '../models/event_order.dart';
 import '../models/menu_dish.dart';
 import '../services/api_client.dart';
@@ -29,7 +31,6 @@ import '../widgets/processing_seating_section.dart';
 import '../utils/order_calculations.dart';
 import '../utils/order_type_utils.dart';
 import '../utils/web_html.dart' as html;
-import 'customer_website.dart';
 
 part 'catering_manage_events_part.dart';
 // import 'package:segment_anything/segment_anything.dart';
@@ -527,6 +528,8 @@ class _ManageEventsState extends State<ManageEvents>
   final Set<int> _themePickHashes = <int>{};
   int _focusedPickIndex = 0;
   List<Uint8List> _collageOrder = const [];
+  /// AI / customer-parity theme design payload from EventThemeDesignScreen.
+  Map<String, dynamic>? _aiThemeDesignPayload;
   bool _themeTintEnabled = false;
   Color _themeTintColor = const Color(0xFFF4511E);
   bool _isAiProcessingTheme = false;
@@ -609,6 +612,7 @@ class _ManageEventsState extends State<ManageEvents>
       _themePicks.clear();
       _themePickHashes.clear();
       _collageOrder = const [];
+      _aiThemeDesignPayload = null;
       _themeTintEnabled = false;
       _themeTintColor = const Color(0xFFF4511E);
       _selectedStatus = EventStatus.newEvent;
@@ -1117,10 +1121,12 @@ class _ManageEventsState extends State<ManageEvents>
             };
           }).toList(),
       'themeDesign': {
+        if (_aiThemeDesignPayload != null) ..._aiThemeDesignPayload!,
         'picksBase64': _themePicks.map((b) => base64Encode(b)).toList(),
         'tintEnabled': _themeTintEnabled,
         'tintColorHex':
             _themeTintEnabled ? _themeTintColorHex(_themeTintColor) : null,
+        if (_aiThemeDesignPayload != null) 'wantsCustomDesign': true,
       },
     };
   }
@@ -4074,333 +4080,309 @@ class _ManageEventsState extends State<ManageEvents>
       builder: (context) {
         return StatefulBuilder(
           builder: (context, dialogSetState) {
-            return AlertDialog(
-              title: Text('Checklist for ${order.eventTitle}'),
-              content: SizedBox(
-                width: 1000,
-                height: 580,
+            InputDecoration fieldDecoration(String label) => InputDecoration(
+              labelText: label,
+              border: const OutlineInputBorder(),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 10,
+              ),
+            );
+
+            Widget buildChecklistRow(int index, ChecklistItem item) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: PagedDataTable(
-                              title: 'Event Checklist',
-                              key: ValueKey(editableItems.length),
-                              enablePrint: false,
-                              headingRowColor: WidgetStateProperty.all(
-                                Colors.grey.shade200,
-                              ),
-                        columns: [
-                          DataColumn(label: Text('Item')),
-                          DataColumn(label: Text('Description')),
-                          DataColumn(label: Text('Quantity')),
-                          if (_isManager) ...[
-                            DataColumn(label: Text('Price/1')),
-                            DataColumn(label: Text('Total Price')),
-                          ] else ...[
-                            DataColumn(label: Text('Cost')),
-                          ],
-                          DataColumn(label: Text('Status')),
-                          if (canEditChecklist) ...[
-                            DataColumn(label: Text('Actions')),
-                          ],
-                        ],
-                        rows:
-                            editableItems.asMap().entries.map((entry) {
-                              final index = entry.key;
-                              final item = entry.value;
-                              return DataRow(
-                                cells: [
-                                  DataCell(
-                                    canEditChecklist
-                                        ? TextFormField(
-                                          initialValue: item.item,
-                                          decoration: const InputDecoration(
-                                            border: OutlineInputBorder(),
-                                            contentPadding: EdgeInsets.all(8),
-                                          ),
-                                          onChanged: (value) {
-                                            dialogSetState(() {
-                                              editableItems[index] =
-                                                  ChecklistItem(
-                                                    item: value,
-                                                    description:
-                                                        item.description,
-                                                    quantity: item.quantity,
-                                                    cost: item.cost,
-                                                    isCompleted:
-                                                        item.isCompleted,
-                                                  );
-                                            });
-                                          },
-                                        )
-                                        : Text(item.item),
-                                  ),
-                                  DataCell(
-                                    canEditChecklist
-                                        ? TextFormField(
-                                          initialValue: item.description,
-                                          decoration: const InputDecoration(
-                                            border: OutlineInputBorder(),
-                                            contentPadding: EdgeInsets.all(8),
-                                          ),
-                                          onChanged: (value) {
-                                            dialogSetState(() {
-                                              editableItems[index] =
-                                                  ChecklistItem(
-                                                    item: item.item,
-                                                    description: value,
-                                                    quantity: item.quantity,
-                                                    cost: item.cost,
-                                                    isCompleted:
-                                                        item.isCompleted,
-                                                  );
-                                            });
-                                          },
-                                        )
-                                        : Text(item.description),
-                                  ),
-                                  DataCell(
-                                    canEditChecklist
-                                        ? TextFormField(
-                                          initialValue:
-                                              item.quantity.toString(),
-                                          decoration: const InputDecoration(
-                                            border: OutlineInputBorder(),
-                                            contentPadding: EdgeInsets.all(8),
-                                          ),
-                                          keyboardType: TextInputType.number,
-                                          onChanged: (value) {
-                                            final newQuantity =
-                                                int.tryParse(value) ??
-                                                item.quantity;
-                                            dialogSetState(() {
-                                              editableItems[index] =
-                                                  ChecklistItem(
-                                                    item: item.item,
-                                                    description:
-                                                        item.description,
-                                                    quantity: newQuantity,
-                                                    cost: item.cost,
-                                                    isCompleted:
-                                                        item.isCompleted,
-                                                  );
-                                            });
-                                          },
-                                        )
-                                        : Text('${item.quantity}'),
-                                  ),
-                                  if (_isManager) ...[
-                                    DataCell(
-                                      TextFormField(
-                                        initialValue: item.cost.toStringAsFixed(
-                                          2,
-                                        ),
-                                        decoration: const InputDecoration(
-                                          border: OutlineInputBorder(),
-                                          contentPadding: EdgeInsets.all(8),
-                                          prefixText: 'PHP ',
-                                        ),
-                                        keyboardType: TextInputType.number,
-                                        onChanged: (value) {
-                                          final newCost =
-                                              double.tryParse(value) ??
-                                              item.cost;
-                                          dialogSetState(() {
-                                            editableItems[index] =
-                                                ChecklistItem(
-                                                  item: item.item,
-                                                  description: item.description,
-                                                  quantity: item.quantity,
-                                                  cost: newCost,
-                                                  isCompleted: item.isCompleted,
-                                                );
-                                          });
-                                        },
-                                      ),
-                                    ),
-                                    DataCell(
-                                      Text(
-                                        'PHP ${(item.cost * item.quantity).toStringAsFixed(2)}',
-                                      ),
-                                      // style: const TextStyle(fontWeight: FontWeight.w600),
-                                    ),
-                                  ] else ...[
-                                    DataCell(Text(formatPesos(item.cost))),
-                                  ],
-                                  DataCell(
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color:
-                                            item.isCompleted
-                                                ? Colors.green.shade50
-                                                : Colors.red.shade50,
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(
-                                          color:
-                                              item.isCompleted
-                                                  ? Colors.green
-                                                  : Colors.red,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      child: DropdownButtonHideUnderline(
-                                        child: DropdownButton<bool>(
-                                          value: item.isCompleted,
-                                          isDense: true,
-                                          icon: const Icon(
-                                            Icons.keyboard_arrow_down,
-                                            size: 18,
-                                          ),
-                                          style: TextStyle(
-                                            color:
-                                                item.isCompleted
-                                                    ? Colors.green
-                                                    : Colors.red,
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 12,
-                                          ),
-                                          items: [
-                                            DropdownMenuItem(
-                                              value: true,
-                                              child: Text(
-                                                'completed',
-                                                style: TextStyle(
-                                                  color: Colors.green,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ),
-                                            DropdownMenuItem(
-                                              value: false,
-                                              child: Text(
-                                                'not done',
-                                                style: TextStyle(
-                                                  color: Colors.red,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                          onChanged: (value) {
-                                            if (value != null) {
-                                              dialogSetState(() {
-                                                editableItems[index] =
-                                                    ChecklistItem(
-                                                      item: item.item,
-                                                      description:
-                                                          item.description,
-                                                      quantity: item.quantity,
-                                                      cost: item.cost,
-                                                      isCompleted: value,
-                                                    );
-                                              });
-                                            }
-                                          },
-                                        ),
-                                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child:
+                              canEditChecklist
+                                  ? TextFormField(
+                                    key: ValueKey('item-$index-${item.item}'),
+                                    initialValue: item.item,
+                                    decoration: fieldDecoration('Item'),
+                                    onChanged: (value) {
+                                      dialogSetState(() {
+                                        editableItems[index] = ChecklistItem(
+                                          item: value,
+                                          description: item.description,
+                                          quantity: item.quantity,
+                                          cost: item.cost,
+                                          isCompleted: item.isCompleted,
+                                          inventoryId: item.inventoryId,
+                                        );
+                                      });
+                                    },
+                                  )
+                                  : Text(
+                                    item.item,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  if (canEditChecklist) ...[
-                                    DataCell(
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          // Edit button
-                                          Container(
-                                            width: 28,
-                                            height: 28,
-                                            margin: const EdgeInsets.only(
-                                              right: 4,
-                                            ),
-                                            decoration: const BoxDecoration(
-                                              color: Colors.red,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: IconButton(
-                                              padding: EdgeInsets.zero,
-                                              icon: const Icon(
-                                                Icons.edit,
-                                                color: Colors.white,
-                                                size: 16,
-                                              ),
-                                              onPressed: () {
-                                                // Edit is handled inline via TextFormField
-                                              },
-                                            ),
-                                          ),
-                                          // Delete button
-                                          Container(
-                                            width: 28,
-                                            height: 28,
-                                            decoration: const BoxDecoration(
-                                              color: Colors.red,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: IconButton(
-                                              padding: EdgeInsets.zero,
-                                              icon: const Icon(
-                                                Icons.remove,
-                                                color: Colors.white,
-                                                size: 16,
-                                              ),
-                                              onPressed: () {
-                                                dialogSetState(() {
-                                                  editableItems.removeAt(index);
-                                                });
-                                              },
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 3,
+                          child:
+                              canEditChecklist
+                                  ? TextFormField(
+                                    key: ValueKey(
+                                      'desc-$index-${item.description}',
                                     ),
-                                  ],
-                                ],
-                              );
-                            }).toList(),
+                                    initialValue: item.description,
+                                    decoration: fieldDecoration('Description'),
+                                    onChanged: (value) {
+                                      dialogSetState(() {
+                                        editableItems[index] = ChecklistItem(
+                                          item: item.item,
+                                          description: value,
+                                          quantity: item.quantity,
+                                          cost: item.cost,
+                                          isCompleted: item.isCompleted,
+                                          inventoryId: item.inventoryId,
+                                        );
+                                      });
+                                    },
+                                  )
+                                  : Text(item.description),
+                        ),
+                        if (canEditChecklist) ...[
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: 'Remove item',
+                            onPressed: () {
+                              dialogSetState(() {
+                                editableItems.removeAt(index);
+                              });
+                            },
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              color: Colors.red,
                             ),
                           ),
-                          if (canEditChecklist) ...[
-                            const SizedBox(height: 6),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 100,
+                          child:
+                              canEditChecklist
+                                  ? TextFormField(
+                                    key: ValueKey(
+                                      'qty-$index-${item.quantity}',
+                                    ),
+                                    initialValue: item.quantity.toString(),
+                                    decoration: fieldDecoration('Qty'),
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                    ],
+                                    onChanged: (value) {
+                                      final newQuantity =
+                                          int.tryParse(value) ?? item.quantity;
+                                      dialogSetState(() {
+                                        editableItems[index] = ChecklistItem(
+                                          item: item.item,
+                                          description: item.description,
+                                          quantity: newQuantity,
+                                          cost: item.cost,
+                                          isCompleted: item.isCompleted,
+                                          inventoryId: item.inventoryId,
+                                        );
+                                      });
+                                    },
+                                  )
+                                  : Text('Qty: ${item.quantity}'),
+                        ),
+                        const SizedBox(width: 8),
+                        if (_isManager) ...[
+                          SizedBox(
+                            width: 140,
+                            child: TextFormField(
+                              key: ValueKey('cost-$index-${item.cost}'),
+                              initialValue: item.cost.toStringAsFixed(2),
+                              decoration: fieldDecoration('Price/1').copyWith(
+                                prefixText: '₱ ',
+                              ),
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              onChanged: (value) {
+                                final newCost =
+                                    double.tryParse(value) ?? item.cost;
+                                dialogSetState(() {
+                                  editableItems[index] = ChecklistItem(
+                                    item: item.item,
+                                    description: item.description,
+                                    quantity: item.quantity,
+                                    cost: newCost,
+                                    isCompleted: item.isCompleted,
+                                    inventoryId: item.inventoryId,
+                                  );
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Total ₱${(item.cost * item.quantity).toStringAsFixed(2)}',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ] else ...[
+                          Text(formatPesos(item.cost)),
+                        ],
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          decoration: BoxDecoration(
+                            color:
+                                item.isCompleted
+                                    ? Colors.green.shade50
+                                    : Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color:
+                                  item.isCompleted ? Colors.green : Colors.red,
+                            ),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<bool>(
+                              value: item.isCompleted,
+                              isDense: true,
+                              items: const [
+                                DropdownMenuItem(
+                                  value: true,
+                                  child: Text('completed'),
+                                ),
+                                DropdownMenuItem(
+                                  value: false,
+                                  child: Text('not done'),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                if (value == null) return;
+                                dialogSetState(() {
+                                  editableItems[index] = ChecklistItem(
+                                    item: item.item,
+                                    description: item.description,
+                                    quantity: item.quantity,
+                                    cost: item.cost,
+                                    isCompleted: value,
+                                    inventoryId: item.inventoryId,
+                                  );
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return AlertDialog(
+              backgroundColor: const Color(0xFFF7F8FA),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Text('Checklist for ${order.eventTitle}'),
+              content: SizedBox(
+                width: 920,
+                height: 560,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Event Checklist',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed:
+                              () => _exportChecklistToPDF(
+                                order,
+                                editableItems,
+                              ),
+                          icon: const Icon(Icons.picture_as_pdf, size: 18),
+                          label: const Text('Print PDF'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child:
+                          editableItems.isEmpty
+                              ? Center(
+                                child: Text(
+                                  'No checklist items yet.',
+                                  style: TextStyle(color: Colors.grey.shade600),
+                                ),
+                              )
+                              : ListView.builder(
+                                itemCount: editableItems.length,
+                                itemBuilder: (context, index) {
+                                  return buildChecklistRow(
+                                    index,
+                                    editableItems[index],
+                                  );
+                                },
+                              ),
+                    ),
+                    if (canEditChecklist) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
                             Row(
                               children: [
-                                Container(
-                                  width: 28,
-                                  height: 28,
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade200,
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(
-                                      color: Colors.grey.shade400,
-                                    ),
-                                  ),
-                                  child: IconButton(
-                                    padding: EdgeInsets.zero,
-                                    icon: const Icon(
-                                      Icons.add,
-                                      color: Colors.black54,
-                                      size: 18,
-                                    ),
+                                Expanded(
+                                  child: OutlinedButton.icon(
                                     onPressed:
                                         () => _addNewChecklistItem(
                                           dialogSetState,
                                           editableItems,
                                         ),
+                                    icon: const Icon(Icons.add),
+                                    label: const Text('Add non-inventory item'),
                                   ),
                                 ),
                               ],
                             ),
                             if (showInventoryPicker &&
                                 inventoryOptions.isNotEmpty) ...[
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 10),
                               DropdownButtonFormField<String>(
                                 isExpanded: true,
                                 decoration: const InputDecoration(
@@ -4428,8 +4410,7 @@ class _ManageEventsState extends State<ManageEvents>
                                   );
                                   final unitCost =
                                       row['unitCost'] is num
-                                          ? (row['unitCost'] as num)
-                                              .toDouble()
+                                          ? (row['unitCost'] as num).toDouble()
                                           : double.tryParse(
                                                 '${row['unitCost']}',
                                               ) ??
@@ -4451,78 +4432,30 @@ class _ManageEventsState extends State<ManageEvents>
                               ),
                             ],
                           ],
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.only(top: 10),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          top: BorderSide(color: Colors.grey.shade300),
                         ),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          OutlinedButton(
-                            onPressed:
-                                () => _exportChecklistToPDF(
-                                  order,
-                                  editableItems,
-                                ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.black87,
-                              side: BorderSide(color: Colors.grey.shade400),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                            ),
-                            child: const Text('Generate PDF'),
-                          ),
-                          const SizedBox(width: 12),
-                          OutlinedButton(
-                            onPressed:
-                                () => _saveChecklist(order, editableItems),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.green,
-                              side: const BorderSide(color: Colors.green),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                            ),
-                            child: const Text('Save'),
-                          ),
-                          const SizedBox(width: 12),
-                          OutlinedButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.red,
-                              side: const BorderSide(color: Colors.red),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                            ),
-                            child: const Text('Cancel'),
-                          ),
-                        ],
-                      ),
-                    ),
+                    ],
                   ],
                 ),
               ),
-              actions: [],
+              actions: [
+                OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.red),
+                  ),
+                  child: const Text('Cancel'),
+                ),
+                OutlinedButton(
+                  onPressed: () => _saveChecklist(order, editableItems),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.green,
+                    side: const BorderSide(color: Colors.green),
+                  ),
+                  child: const Text('Save'),
+                ),
+              ],
             );
           },
         );
@@ -4763,47 +4696,60 @@ class _ManageEventsState extends State<ManageEvents>
       );
       return;
     }
+
+    // Same AI theme design experience as the customer inquire flow.
+    final userEmail =
+        AuthSession.instance.currentUser.value?.email.trim() ??
+        'staff@curatering.com';
     final result = await Navigator.of(context).push<Map<String, dynamic>>(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder:
-            (_) => const CustomerWebsiteScreen(
-              showStaffChrome: false,
-              staffThemeStudioMode: true,
+            (_) => EventThemeDesignScreen(
+              apiBase: apiBaseUrl,
+              userEmail: userEmail,
+              initialEventType: _eventType ?? 'Birthday',
+              eventTitle: _eventTitleController.text.trim().isEmpty
+                  ? null
+                  : _eventTitleController.text.trim(),
+              formalityLevel:
+                  _formalityLevel == null ? null : _formalityLevel!.displayName,
+              initialThemeDesign: _aiThemeDesignPayload,
+              persistToOrder: false,
             ),
       ),
     );
     if (result == null || !mounted) return;
 
     setState(() {
-      _themePicks.clear();
-      _themePickHashes.clear();
-      final composite = result['confirmedCompositeBase64']?.toString().trim();
-      if (composite != null && composite.isNotEmpty) {
-        try {
-          final bytes = base64Decode(composite);
-          _themePicks.add(bytes);
-          _themePickHashes.add(_themeImageKey(bytes));
-        } catch (_) {}
-      }
-      final picks = result['picksBase64'];
-      if (picks is List) {
-        for (final item in picks) {
-          final s = item.toString().trim();
-          if (s.isEmpty) continue;
-          try {
-            final bytes = base64Decode(s);
-            final key = _themeImageKey(bytes);
-            if (!_themePickHashes.contains(key)) {
-              _themePicks.add(bytes);
-              _themePickHashes.add(key);
-            }
-          } catch (_) {}
-        }
-      }
-      _collageOrder = _themePicks.toList();
-      _focusedPickIndex = 0;
+      _aiThemeDesignPayload = Map<String, dynamic>.from(result);
     });
+
+    final imageUrl =
+        '${result['generatedImageUrl'] ?? result['imageUrl'] ?? ''}'.trim();
+    if (imageUrl.isNotEmpty) {
+      try {
+        final res = await http.get(Uri.parse(imageUrl));
+        if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+          final bytes = Uint8List.fromList(res.bodyBytes);
+          final key = _themeImageKey(bytes);
+          if (mounted) {
+            setState(() {
+              _themePicks
+                ..clear()
+                ..add(bytes);
+              _themePickHashes
+                ..clear()
+                ..add(key);
+              _collageOrder = _themePicks.toList();
+              _focusedPickIndex = 0;
+            });
+          }
+        }
+      } catch (_) {
+        /* preview download optional */
+      }
+    }
   }
 
   Widget _buildPostAnalysisView(bool isNarrow) {

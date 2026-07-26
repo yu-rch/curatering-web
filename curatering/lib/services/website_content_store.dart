@@ -116,7 +116,7 @@ class WebsiteContentStore extends ChangeNotifier {
   WebsiteContentStore._();
   static final WebsiteContentStore instance = WebsiteContentStore._();
 
-  static const _prefsKey = 'website_content_v1';
+  static const _prefsKey = 'website_content_v2_meta';
 
   String homeHeroImageBase64 = '';
   String latestEventTitle = 'Maria Shiloh @ 1';
@@ -243,18 +243,53 @@ class WebsiteContentStore extends ChangeNotifier {
   Future<void> _writeLocalCacheBestEffort(Map<String, dynamic> map) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_prefsKey, jsonEncode(map));
+      // Browser localStorage is ~5MB. Never cache large base64 image payloads.
+      final slim = _toLocalCacheMap(map);
+      await prefs.setString(_prefsKey, jsonEncode(slim));
     } catch (error) {
       debugPrint(
         '[website-content] local cache skipped, likely browser quota: $error',
       );
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_prefsKey);
+        // Drop any legacy bloated keys that still occupy quota.
+        await prefs.remove('website_content_v1');
+        await prefs.remove('flutter.website_content_v1');
+      } catch (_) {
+        /* ignore */
+      }
     }
+  }
+
+  /// Text/metadata only — images are always loaded from the API.
+  Map<String, dynamic> _toLocalCacheMap(Map<String, dynamic> full) {
+    final slim = Map<String, dynamic>.from(full);
+    slim['homeHeroImageBase64'] = '';
+    slim['latestEventCollageBase64'] = <String>[];
+    slim['popularDishImageBase64'] = <String>[];
+    slim['eventDesignImageBase64'] = <String>[];
+    slim.remove('imageAlignments');
+    final cats = slim['galleryCategories'];
+    if (cats is List) {
+      slim['galleryCategories'] =
+          cats.map((raw) {
+            if (raw is! Map) return raw;
+            final m = Map<String, dynamic>.from(raw);
+            m['images'] = <dynamic>[];
+            m.remove('imageBase64List');
+            return m;
+          }).toList();
+    }
+    return slim;
   }
 
   void touch() => notifyListeners();
 
   Future<void> _loadFromLocalCache() async {
     final prefs = await SharedPreferences.getInstance();
+    // Free quota from the old full-content cache if it still exists.
+    await prefs.remove('website_content_v1');
     final raw = prefs.getString(_prefsKey);
     if (raw == null || raw.isEmpty) return;
     try {

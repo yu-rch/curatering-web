@@ -259,6 +259,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   bool _isWalkInOrder(Map<String, dynamic> order) =>
       _orderTypeLabel(order) == 'Walk-in';
 
+  bool _isOnlineOrder(Map<String, dynamic> order) =>
+      _orderTypeLabel(order) == 'Online';
+
   String _responseErrorMessage(http.Response response) {
     final body = response.body.trim();
     if (body.startsWith('<!DOCTYPE') || body.startsWith('<html')) {
@@ -946,9 +949,17 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     return names;
   }
 
-  void _showOrderItemsDialog(Map<String, dynamic> order) {
+  Future<void> _showOrderItemsDialog(Map<String, dynamic> order) async {
+    final orderId = _managerOrderId(order);
+    await DialogOpenGuard.runOnce(
+      () => _showOrderItemsDialogBody(order),
+      key: 'restaurant-items:$orderId',
+    );
+  }
+
+  Future<void> _showOrderItemsDialogBody(Map<String, dynamic> order) async {
     final items = _itemsForDialog(order);
-    showDialog(
+    await showDialog<void>(
       context: context,
       builder:
           (context) => AlertDialog(
@@ -1145,10 +1156,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                 flex: 2,
                 child: _buildTableCell(order['full_name'] ?? 'N/A'),
               ),
-              Expanded(
-                flex: 1,
-                child: _buildTableCell(_orderTypeLabel(order)),
-              ),
+              Expanded(flex: 1, child: _buildTableCell(_orderTypeLabel(order))),
               Expanded(
                 flex: 1,
                 child: _buildTableCell(order['phone'] ?? 'N/A'),
@@ -1287,6 +1295,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     final status = order['status'] as String? ?? 'processing';
     final normalizedStatus = _normalizedStatus(status);
     final isWalkIn = _isWalkInOrder(order);
+    final isOnline = _isOnlineOrder(order);
     final isEven = index % 2 == 0;
 
     return InkWell(
@@ -1312,10 +1321,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                 flex: 2,
                 child: _buildTableCell(order['full_name'] ?? 'N/A'),
               ),
-              Expanded(
-                flex: 1,
-                child: _buildTableCell(_orderTypeLabel(order)),
-              ),
+              Expanded(flex: 1, child: _buildTableCell(_orderTypeLabel(order))),
               Expanded(flex: 1, child: _buildStatusBadge(status, null)),
               Expanded(flex: 1, child: _buildTableCell('${items.length}')),
               Expanded(
@@ -1378,84 +1384,84 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                           ),
                         ),
                       ),
-                    ] else ...[
+                    ] else if (isOnline) ...[
                       if (normalizedStatus == 'in_preparation') ...[
                         GestureDetector(
                           onTap:
                               () => _showDeliveryUrlDialog(
                                 _managerOrderId(order),
                               ),
-                        child: MouseRegion(
-                          cursor: SystemMouseCursors.click,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.orange,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.local_shipping,
-                                  color: Colors.white,
-                                  size: 16,
-                                ),
-                                SizedBox(width: 4),
-                                Text(
-                                  'For Delivery',
-                                  style: TextStyle(
+                          child: MouseRegion(
+                            cursor: SystemMouseCursors.click,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.orange,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.local_shipping,
                                     color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
+                                    size: 16,
                                   ),
-                                ),
-                              ],
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'For Delivery',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                    if (normalizedStatus == 'out_for_delivery') ...[
-                      GestureDetector(
-                        onTap: () => _markDelivered(_managerOrderId(order)),
-                        child: MouseRegion(
-                          cursor: SystemMouseCursors.click,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.green,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.check_circle,
-                                  color: Colors.white,
-                                  size: 16,
-                                ),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Delivered',
-                                  style: TextStyle(
+                      ],
+                      if (normalizedStatus == 'out_for_delivery') ...[
+                        GestureDetector(
+                          onTap: () => _markDelivered(_managerOrderId(order)),
+                          child: MouseRegion(
+                            cursor: SystemMouseCursors.click,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.green,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.check_circle,
                                     color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
+                                    size: 16,
                                   ),
-                                ),
-                              ],
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'Delivered',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
                     ],
                   ],
                 ),
@@ -1496,10 +1502,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                 flex: 2,
                 child: _buildTableCell(order['full_name'] ?? 'N/A'),
               ),
-              Expanded(
-                flex: 1,
-                child: _buildTableCell(_orderTypeLabel(order)),
-              ),
+              Expanded(flex: 1, child: _buildTableCell(_orderTypeLabel(order))),
               Expanded(flex: 1, child: _buildStatusBadge(status, null)),
               Expanded(flex: 1, child: _buildTableCell('${items.length}')),
               Expanded(
@@ -1982,6 +1985,13 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       return;
     }
 
+    await DialogOpenGuard.runOnce(
+      () => _cancelOrderBody(orderId),
+      key: 'restaurant-cancel:$orderId',
+    );
+  }
+
+  Future<void> _cancelOrderBody(String orderId) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder:

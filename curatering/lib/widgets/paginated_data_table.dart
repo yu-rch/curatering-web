@@ -120,6 +120,7 @@ class PagedDataTable extends StatefulWidget {
     this.title = 'Table export',
     this.enableSearch = true,
     this.enablePrint = true,
+    this.enableCsv = true,
     this.filters = const [],
     this.maxTableHeight = 560,
     this.pdfExcludedColumnIndexes = const {},
@@ -139,6 +140,7 @@ class PagedDataTable extends StatefulWidget {
   final String title;
   final bool enableSearch;
   final bool enablePrint;
+  final bool enableCsv;
   final List<Widget> filters;
   final double maxTableHeight;
   final Set<int> pdfExcludedColumnIndexes;
@@ -278,12 +280,14 @@ class _PagedDataTableState extends State<PagedDataTable> {
           ),
           if (widget.enableSearch ||
               widget.enablePrint ||
+              widget.enableCsv ||
               widget.filters.isNotEmpty)
             _TableToolbar(
               tableTitle: widget.title,
               search: _search,
               enableSearch: widget.enableSearch,
               enablePrint: widget.enablePrint,
+              enableCsv: widget.enableCsv,
               filters: widget.filters,
               filteredRows: filteredRows.length,
               totalRows: widget.rows.length,
@@ -453,6 +457,7 @@ class _TableToolbar extends StatelessWidget {
     required this.search,
     required this.enableSearch,
     required this.enablePrint,
+    required this.enableCsv,
     required this.filters,
     required this.filteredRows,
     required this.totalRows,
@@ -465,6 +470,7 @@ class _TableToolbar extends StatelessWidget {
   final TextEditingController search;
   final bool enableSearch;
   final bool enablePrint;
+  final bool enableCsv;
   final List<Widget> filters;
   final int filteredRows;
   final int totalRows;
@@ -513,11 +519,12 @@ class _TableToolbar extends StatelessWidget {
               icon: Icons.picture_as_pdf,
               label: 'Print PDF',
             ),
-          AntdSecondaryButton(
-            onPressed: onCsv,
-            icon: Icons.table_view,
-            label: 'Export CSV',
-          ),
+          if (enableCsv)
+            AntdSecondaryButton(
+              onPressed: onCsv,
+              icon: Icons.table_view,
+              label: 'Export CSV',
+            ),
           AntdStatusTag(
             label: '$filteredRows of $totalRows rows',
             color: AntdTokens.textSecondary,
@@ -596,6 +603,39 @@ String _widgetText(Widget widget) {
     return widget.data ?? widget.textSpan?.toPlainText() ?? '';
   }
   if (widget is RichText) return widget.text.toPlainText();
+  if (widget is EditableText) return widget.controller.text;
+
+  final typeName = widget.runtimeType.toString();
+  if (typeName.startsWith('TextField') || typeName.startsWith('TextFormField')) {
+    final dynamic field = widget;
+    final controllerText = field.controller?.text;
+    if (controllerText is String && controllerText.isNotEmpty) {
+      return controllerText;
+    }
+    final initial = field.initialValue;
+    if (initial is String) return initial;
+    final hint = field.decoration?.hintText;
+    if (hint is String && hint.isNotEmpty) return hint;
+    final label = field.decoration?.labelText;
+    if (label is String) return label;
+    return '';
+  }
+  if (typeName.startsWith('DropdownButton')) {
+    final dynamic dropdown = widget;
+    final value = dropdown.value;
+    final items = dropdown.items;
+    if (items is List) {
+      for (final item in items) {
+        if (item is DropdownMenuItem && item.value == value) {
+          return _widgetText(item.child);
+        }
+      }
+    }
+    return value == null ? '' : '$value';
+  }
+  if (widget is DropdownButtonHideUnderline) {
+    return _widgetText(widget.child);
+  }
   if (widget is Tooltip)
     return widget.message ?? _widgetText(widget.child ?? const SizedBox());
   if (widget is Padding) return _widgetText(widget.child ?? const SizedBox());
@@ -618,5 +658,7 @@ String _widgetText(Widget widget) {
     return _widgetText(widget.child ?? const SizedBox());
   if (widget is ElevatedButton)
     return _widgetText(widget.child ?? const SizedBox());
-  return widget.toStringShort();
+  // Never export Widget.toStringShort() — in release builds it is the literal
+  // string "Widget", which leaked into CSV/PDF exports for form cells.
+  return '';
 }

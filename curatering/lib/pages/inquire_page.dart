@@ -1376,8 +1376,16 @@ class _InquirePageState extends State<InquirePage> {
           final base64String = await _encodeVenueForRunpod(file.bytes!);
           if (mounted && base64String != null) {
             setState(() {
+              final referenceChanged = _venuePhotoBase64 != base64String;
               _venuePhotoBase64 = base64String;
               _venueFieldError = null;
+              if (referenceChanged) {
+                _generatedImageUrl = null;
+                _generatedImageHistory.clear();
+                _aiThemeDesignPayload = null;
+                _wantsCustomDesign = false;
+                _genAiError = null;
+              }
             });
           }
         }
@@ -3532,9 +3540,17 @@ class _InquirePageState extends State<InquirePage> {
   // ===========================================================================
 
   Widget _buildAiDesignForm(BuildContext context) {
+    final inputsEnabled = !_generatingDesign;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        AbsorbPointer(
+          absorbing: !inputsEnabled,
+          child: Opacity(
+            opacity: inputsEnabled ? 1 : 0.55,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
         _responsiveTwoCol(
           context,
           Column(
@@ -3578,7 +3594,9 @@ class _InquirePageState extends State<InquirePage> {
               _buildDropdown(
                 _styles,
                 _selectedStyle,
-                (val) => setState(() => _selectedStyle = val),
+                inputsEnabled
+                    ? (val) => setState(() => _selectedStyle = val)
+                    : null,
               ),
               if (_selectedStyle == 'Other') ...[
                 const SizedBox(height: 8),
@@ -3595,7 +3613,9 @@ class _InquirePageState extends State<InquirePage> {
         _buildDropdown(
           _moods,
           _selectedMood,
-          (val) => setState(() => _selectedMood = val),
+          inputsEnabled
+              ? (val) => setState(() => _selectedMood = val)
+              : null,
         ),
         if (_selectedMood == 'Other') ...[
           const SizedBox(height: 8),
@@ -3611,7 +3631,11 @@ class _InquirePageState extends State<InquirePage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildFormSectionTitle('Color Palette'),
-              _buildMultiSelect(_colorPalettes, _selectedColors),
+              _buildMultiSelect(
+                _colorPalettes,
+                _selectedColors,
+                enabled: inputsEnabled,
+              ),
               if (_selectedColors.contains('Other')) ...[
                 const SizedBox(height: 8),
                 AntdOutlineInput(
@@ -3625,7 +3649,11 @@ class _InquirePageState extends State<InquirePage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildFormSectionTitle('Decor Elements'),
-              _buildMultiSelect(_decorOptions, _selectedDecor),
+              _buildMultiSelect(
+                _decorOptions,
+                _selectedDecor,
+                enabled: inputsEnabled,
+              ),
               if (_selectedDecor.contains('Other')) ...[
                 const SizedBox(height: 8),
                 AntdOutlineInput(
@@ -3649,7 +3677,7 @@ class _InquirePageState extends State<InquirePage> {
         const SizedBox(height: 16),
         _buildFormSectionTitle('Venue Photo'),
         OutlinedButton.icon(
-          onPressed: _pickVenuePhoto,
+          onPressed: inputsEnabled ? _pickVenuePhoto : null,
           icon: const Icon(Icons.upload_file),
           label: Text(
             _venuePhotoBase64 != null
@@ -3690,6 +3718,10 @@ class _InquirePageState extends State<InquirePage> {
             ),
           ),
         ],
+              ],
+            ),
+          ),
+        ),
         const SizedBox(height: 16),
         if (_genAiError != null && _genAiError!.isNotEmpty) ...[
           Text(
@@ -3728,6 +3760,13 @@ class _InquirePageState extends State<InquirePage> {
             ),
           ),
         ),
+        if (_generatingDesign) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Please wait — inputs stay locked until the design finishes.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+        ],
         if (_generatedImageHistory.length > 1) ...[
           const SizedBox(height: 12),
           const Text(
@@ -3745,14 +3784,16 @@ class _InquirePageState extends State<InquirePage> {
                 final url = _generatedImageHistory[i];
                 final selected = url == _generatedImageUrl;
                 return GestureDetector(
-                  onTap: () => setState(() {
-                    _generatedImageUrl = url;
-                    _aiThemeDesignPayload = {
-                      'eventDesignSource': 'customer_ai',
-                      'generatedImageUrl': url,
-                      ..._eventDesignConfig(),
-                    };
-                  }),
+                  onTap: inputsEnabled
+                      ? () => setState(() {
+                            _generatedImageUrl = url;
+                            _aiThemeDesignPayload = {
+                              'eventDesignSource': 'customer_ai',
+                              'generatedImageUrl': url,
+                              ..._eventDesignConfig(),
+                            };
+                          })
+                      : null,
                   child: Container(
                     width: 72,
                     decoration: BoxDecoration(
@@ -3798,7 +3839,7 @@ class _InquirePageState extends State<InquirePage> {
   Widget _buildDropdown(
     List<String> items,
     String? value,
-    Function(String?) onChanged,
+    Function(String?)? onChanged,
   ) {
     return DropdownButtonFormField<String>(
       value: value != null && items.contains(value) ? value : null,
@@ -3806,15 +3847,21 @@ class _InquirePageState extends State<InquirePage> {
           .map((item) => DropdownMenuItem(value: item, child: Text(item)))
           .toList(),
       onChanged: onChanged,
-      decoration: const InputDecoration(
-        border: OutlineInputBorder(),
-        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: InputDecoration(
+        border: const OutlineInputBorder(),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        filled: onChanged == null,
+        fillColor: onChanged == null ? Colors.grey.shade100 : null,
       ),
       hint: const Text('Select an option'),
     );
   }
 
-  Widget _buildMultiSelect(List<String> items, List<String> selectedList) {
+  Widget _buildMultiSelect(
+    List<String> items,
+    List<String> selectedList, {
+    bool enabled = true,
+  }) {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -3823,15 +3870,17 @@ class _InquirePageState extends State<InquirePage> {
         return FilterChip(
           label: Text(item),
           selected: isSelected,
-          onSelected: (val) {
-            setState(() {
-              if (val) {
-                selectedList.add(item);
-              } else {
-                selectedList.remove(item);
-              }
-            });
-          },
+          onSelected: enabled
+              ? (val) {
+                  setState(() {
+                    if (val) {
+                      selectedList.add(item);
+                    } else {
+                      selectedList.remove(item);
+                    }
+                  });
+                }
+              : null,
           selectedColor: _accentYellow,
           backgroundColor: Colors.grey.shade200,
           labelStyle: TextStyle(

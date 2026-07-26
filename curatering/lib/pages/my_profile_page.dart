@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import '../widgets/customer_pages_top_bar.dart';
 import '../widgets/map_picker.dart';
+import '../widgets/antd_dialog.dart';
 import 'customer_website.dart';
 import 'my_caterings_page.dart';
 import 'my_order_tracking_page.dart';
@@ -808,10 +810,15 @@ class _MyProfilePageState extends State<MyProfilePage> {
                           TextField(
                             controller: _phoneController,
                             keyboardType: TextInputType.phone,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(13),
+                            ],
                             decoration: const InputDecoration(
                               labelText: 'Contact Number',
                               border: OutlineInputBorder(),
                               prefixIcon: Icon(Icons.phone),
+                              hintText: 'Up to 13 digits',
                             ),
                           ),
                           const SizedBox(height: 24),
@@ -950,6 +957,13 @@ class _MyProfilePageState extends State<MyProfilePage> {
   }
 
   Future<void> _showDeleteAccountDialog() async {
+    await DialogOpenGuard.runOnce(
+      _showDeleteAccountDialogBody,
+      key: 'customer-delete-account',
+    );
+  }
+
+  Future<void> _showDeleteAccountDialogBody() async {
     final confirmCtrl = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,

@@ -73,20 +73,21 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
 
   List<Map<String, dynamic>> get _filteredOrders {
     final q = _searchCtrl.text.trim().toLowerCase();
-    return _orders.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).where((
-      order,
-    ) {
-      final status = _normalizeStatus('${order['status'] ?? ''}');
-      if (_statusFilter != 'all' && status != _statusFilter) return false;
-      if (q.isEmpty) return true;
-      final orderNo =
-          _shortOrderId(order['id'], order['order_no']).toLowerCase();
-      final items =
-          _normalizeOrderItems(order['items'])
+    return _orders
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((order) {
+          final status = _normalizeStatus('${order['status'] ?? ''}');
+          if (_statusFilter != 'all' && status != _statusFilter) return false;
+          if (q.isEmpty) return true;
+          final orderNo =
+              _shortOrderId(order['id'], order['order_no']).toLowerCase();
+          final items = _normalizeOrderItems(order['items'])
               .map((i) => '${i['name'] ?? i['dishName'] ?? ''}'.toLowerCase())
               .join(' ');
-      return orderNo.contains(q) || items.contains(q);
-    }).toList();
+          return orderNo.contains(q) || items.contains(q);
+        })
+        .toList();
   }
 
   Future<void> _loadOrders({bool force = false}) async {
@@ -538,13 +539,11 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   }
 
   Color _getStatusColor(String status) {
-    switch (status) {
-      case 'pending':
+    switch (_normalizeStatus(status)) {
+      case 'pending_cashier':
         return Colors.orange;
-      case 'confirmed':
+      case 'in_preparation':
         return Colors.blue;
-      case 'preparing':
-        return Colors.amber;
       case 'out_for_delivery':
         return Colors.purple;
       case 'delivered':

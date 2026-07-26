@@ -149,7 +149,7 @@ async function ensureRestaurantOrdersCanonicalColumnsOnce() {
     ['payment_uploaded_balance', 'BOOLEAN NOT NULL DEFAULT FALSE'],
     ['payment_confirmed_initial', 'BOOLEAN NOT NULL DEFAULT FALSE'],
     ['payment_confirmed_balance', 'BOOLEAN NOT NULL DEFAULT FALSE'],
-    ['order_status', "TEXT NOT NULL DEFAULT 'PENDING_CASHIER'"],
+    ['order_status', "TEXT NOT NULL DEFAULT 'pending_cashier'"],
     ['contact_number', "TEXT NOT NULL DEFAULT ''"],
     ['cashier_amount_received_initial', 'DECIMAL(12,2)'],
     ['cashier_amount_received_balance', 'DECIMAL(12,2)'],
@@ -224,11 +224,11 @@ async function ensureRestaurantOrdersCanonicalColumnsOnce() {
       await pool.query(
         `UPDATE restaurant_orders
          SET order_status = CASE
-           WHEN upper(COALESCE(order_status::text, '')) IN ('PENDING', 'WAITING FOR ORDER CONFIRMATION') THEN 'PENDING_CASHIER'
-           WHEN upper(COALESCE(order_status::text, '')) IN ('CONFIRMED', 'PREPARING') THEN 'IN_PREPARATION'
+           WHEN upper(COALESCE(order_status::text, '')) IN ('PENDING', 'WAITING FOR ORDER CONFIRMATION') THEN 'pending_cashier'
+           WHEN upper(COALESCE(order_status::text, '')) IN ('CONFIRMED', 'PREPARING') THEN 'in_preparation'
            WHEN upper(COALESCE(order_status::text, '')) IN ('PENDING_CASHIER', 'IN_PREPARATION', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED')
-             THEN upper(order_status::text)
-           ELSE 'PENDING_CASHIER'
+             THEN lower(order_status::text)
+           ELSE 'pending_cashier'
          END`,
       );
     } catch (err) {
@@ -544,7 +544,7 @@ export function buildRestaurantOrderPaymentUpdateSets(cols) {
     sets.push('payment_uploaded_initial = TRUE');
   }
   if (cols.has('order_status')) {
-    sets.push("order_status = 'PENDING_CASHIER'");
+    sets.push("order_status = 'pending_cashier'");
   }
   return sets.join(', ');
 }

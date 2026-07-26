@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,6 +6,7 @@ import '../services/menu_store.dart';
 import '../services/cart_store.dart';
 import '../services/website_content_store.dart';
 import '../models/menu_dish.dart';
+import '../utils/image_cache.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/customer_website_topbar.dart';
 import 'checkout_page.dart';
@@ -476,9 +476,14 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                 clipBehavior: Clip.antiAlias,
                 child:
                     dish.imageBase64?.isNotEmpty == true
-                        ? Image.memory(
-                          base64Decode(dish.imageBase64!),
+                        ? CachedBase64Image(
+                          base64String: dish.imageBase64,
                           fit: BoxFit.cover,
+                          placeholder: Icon(
+                            Icons.restaurant,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
                         )
                         : Icon(
                           Icons.restaurant,
@@ -566,8 +571,8 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                       child: InteractiveViewer(
                         minScale: 1,
                         maxScale: 4,
-                        child: Image.memory(
-                          base64Decode(dish.imageBase64!),
+                        child: CachedBase64Image(
+                          base64String: dish.imageBase64,
                           fit: BoxFit.contain,
                         ),
                       ),

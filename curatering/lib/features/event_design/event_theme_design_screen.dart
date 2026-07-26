@@ -176,17 +176,16 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
     setState(() {
       final previousPrimary =
           _venuePhotosB64.isNotEmpty ? _venuePhotosB64.first : null;
-      final replacingReference = previousPrimary != null;
-      if (replacingReference) {
-        // Replacing the venue reference starts a fresh generation set.
-        _venuePhotosB64
-          ..clear()
-          ..addAll(picked);
+      final hadGenerated =
+          _generatedUrl != null || _previousUrls.isNotEmpty;
+      // Any venue reference change invalidates prior generated designs.
+      _venuePhotosB64
+        ..clear()
+        ..addAll(picked);
+      final primaryChanged =
+          previousPrimary == null || previousPrimary != _venuePhotosB64.first;
+      if (primaryChanged || hadGenerated) {
         _clearGeneratedDesignOutputs();
-      } else {
-        for (final image in picked) {
-          if (!_venuePhotosB64.contains(image)) _venuePhotosB64.add(image);
-        }
       }
     });
   }
@@ -347,8 +346,9 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
     String title,
     List<String> options,
     Set<String> selected,
-    ValueChanged<String> onToggle,
-  ) {
+    ValueChanged<String> onToggle, {
+    bool enabled = true,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -362,7 +362,7 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
               FilterChip(
                 label: Text(option),
                 selected: selected.contains(option),
-                onSelected: (_) => onToggle(option),
+                onSelected: enabled ? (_) => onToggle(option) : null,
               ),
           ],
         ),
@@ -374,25 +374,29 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
     String title,
     List<String> options,
     String? value,
-    ValueChanged<String?> onChanged,
-  ) {
+    ValueChanged<String?> onChanged, {
+    bool enabled = true,
+  }) {
     return DropdownButtonFormField<String>(
       value: value != null && options.contains(value) ? value : null,
       decoration: InputDecoration(
         labelText: title,
         border: const OutlineInputBorder(),
+        filled: !enabled,
+        fillColor: enabled ? null : Colors.grey.shade100,
       ),
       items: [
         for (final option in options)
           DropdownMenuItem(value: option, child: Text(option)),
       ],
-      onChanged: onChanged,
+      onChanged: enabled ? onChanged : null,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = _themeDesign();
+    final inputsEnabled = !_generating;
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -401,7 +405,7 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
               : 'Event theme design',
         ),
         actions: [
-          if (_saving)
+          if (_saving || _generating)
             const Padding(
               padding: EdgeInsets.all(16),
               child: SizedBox(
@@ -417,108 +421,133 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _singleChoice(
-            'Style',
-            _categories.styles,
-            _style,
-            (v) => setState(() => _style = v),
-          ),
-          const SizedBox(height: 12),
-          _singleChoice(
-            'Mood / lighting',
-            _categories.moods,
-            _mood,
-            (v) => setState(() => _mood = v),
-          ),
-          const SizedBox(height: 16),
-          _choiceChips('Color palette', _categories.palettes, _palettes, (
-            value,
-          ) {
-            setState(
-              () =>
-                  _palettes.contains(value)
-                      ? _palettes.remove(value)
-                      : _palettes.add(value),
-            );
-          }),
-          const SizedBox(height: 16),
-          _choiceChips('Decor elements', _categories.decor, _decor, (value) {
-            setState(
-              () =>
-                  _decor.contains(value)
-                      ? _decor.remove(value)
-                      : _decor.add(value),
-            );
-          }),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _notes,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Custom notes',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: _pickVenuePhotos,
-            icon: const Icon(Icons.photo_library_outlined),
-            label: Text(
-              _venuePhotosB64.isEmpty
-                  ? 'Upload venue photo'
-                  : 'Change venue photo(s)',
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (_venuePhotosB64.isNotEmpty)
-            SizedBox(
-              height: 92,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: _venuePhotosB64.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder:
-                    (context, index) => Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.memory(
-                            base64Decode(_venuePhotosB64[index]),
-                            width: 92,
-                            height: 92,
-                            fit: BoxFit.cover,
-                            gaplessPlayback: true,
-                          ),
-                        ),
-                        Positioned(
-                          top: 2,
-                          right: 2,
-                          child: Material(
-                            color: Colors.black54,
-                            shape: const CircleBorder(),
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: () {
-                                setState(() {
-                                  _venuePhotosB64.removeAt(index);
-                                  _clearGeneratedDesignOutputs();
-                                });
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.all(4),
-                                child: Icon(
-                                  Icons.close,
-                                  size: 14,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+          AbsorbPointer(
+            absorbing: !inputsEnabled,
+            child: Opacity(
+              opacity: inputsEnabled ? 1 : 0.55,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _singleChoice(
+                    'Style',
+                    _categories.styles,
+                    _style,
+                    (v) => setState(() => _style = v),
+                    enabled: inputsEnabled,
+                  ),
+                  const SizedBox(height: 12),
+                  _singleChoice(
+                    'Mood / lighting',
+                    _categories.moods,
+                    _mood,
+                    (v) => setState(() => _mood = v),
+                    enabled: inputsEnabled,
+                  ),
+                  const SizedBox(height: 16),
+                  _choiceChips(
+                    'Color palette',
+                    _categories.palettes,
+                    _palettes,
+                    (value) {
+                      setState(
+                        () =>
+                            _palettes.contains(value)
+                                ? _palettes.remove(value)
+                                : _palettes.add(value),
+                      );
+                    },
+                    enabled: inputsEnabled,
+                  ),
+                  const SizedBox(height: 16),
+                  _choiceChips(
+                    'Decor elements',
+                    _categories.decor,
+                    _decor,
+                    (value) {
+                      setState(
+                        () =>
+                            _decor.contains(value)
+                                ? _decor.remove(value)
+                                : _decor.add(value),
+                      );
+                    },
+                    enabled: inputsEnabled,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _notes,
+                    enabled: inputsEnabled,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Custom notes',
+                      border: OutlineInputBorder(),
                     ),
+                  ),
+                  const SizedBox(height: 16),
+                  OutlinedButton.icon(
+                    onPressed: inputsEnabled ? _pickVenuePhotos : null,
+                    icon: const Icon(Icons.photo_library_outlined),
+                    label: Text(
+                      _venuePhotosB64.isEmpty
+                          ? 'Upload venue photo'
+                          : 'Change venue photo(s)',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_venuePhotosB64.isNotEmpty)
+                    SizedBox(
+                      height: 92,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _venuePhotosB64.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder:
+                            (context, index) => Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.memory(
+                                    base64Decode(_venuePhotosB64[index]),
+                                    width: 92,
+                                    height: 92,
+                                    fit: BoxFit.cover,
+                                    gaplessPlayback: true,
+                                  ),
+                                ),
+                                if (inputsEnabled)
+                                  Positioned(
+                                    top: 2,
+                                    right: 2,
+                                    child: Material(
+                                      color: Colors.black54,
+                                      shape: const CircleBorder(),
+                                      child: InkWell(
+                                        customBorder: const CircleBorder(),
+                                        onTap: () {
+                                          setState(() {
+                                            _venuePhotosB64.removeAt(index);
+                                            _clearGeneratedDesignOutputs();
+                                          });
+                                        },
+                                        child: const Padding(
+                                          padding: EdgeInsets.all(4),
+                                          child: Icon(
+                                            Icons.close,
+                                            size: 14,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                      ),
+                    ),
+                ],
               ),
             ),
+          ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _generating ? null : _generate,
@@ -534,6 +563,13 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
               _generating ? 'Generating...' : 'Generate event design',
             ),
           ),
+          if (_generating) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Please wait — inputs stay locked until the design finishes.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+          ],
           if (_generateError != null) ...[
             const SizedBox(height: 8),
             Container(
@@ -573,19 +609,23 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
               children: [
                 OutlinedButton.icon(
                   onPressed:
-                      () => previewThemeDesignPdf(
-                        context: context,
-                        themeDesign: theme,
-                      ),
+                      _generating
+                          ? null
+                          : () => previewThemeDesignPdf(
+                            context: context,
+                            themeDesign: theme,
+                          ),
                   icon: const Icon(Icons.picture_as_pdf_outlined),
                   label: const Text('Preview PDF'),
                 ),
                 OutlinedButton.icon(
                   onPressed:
-                      () => saveThemeDesignImageToGallery(
-                        context: context,
-                        themeDesign: theme,
-                      ),
+                      _generating
+                          ? null
+                          : () => saveThemeDesignImageToGallery(
+                            context: context,
+                            themeDesign: theme,
+                          ),
                   icon: const Icon(Icons.download),
                   label: const Text('Download image'),
                 ),
@@ -598,7 +638,7 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: FilledButton(
-            onPressed: _saving ? null : _save,
+            onPressed: (_saving || _generating) ? null : _save,
             child: const Text('Save design'),
           ),
         ),

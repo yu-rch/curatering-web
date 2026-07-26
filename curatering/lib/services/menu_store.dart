@@ -85,7 +85,10 @@ class MenuStore extends ChangeNotifier {
 
   /// Ensures dish photos are present (for restaurant/catering grids).
   Future<void> ensureImagesLoaded() async {
-    if (_imagesLoaded && _items.isNotEmpty) return;
+    final missingPhotos = _items.any(
+      (d) => d.imageBase64 == null || d.imageBase64!.trim().isEmpty,
+    );
+    if (_imagesLoaded && _items.isNotEmpty && !missingPhotos) return;
     if (_items.isEmpty) {
       await loadDishesWithImages();
       return;

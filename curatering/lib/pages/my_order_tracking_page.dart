@@ -26,7 +26,8 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
   String? _error;
   final Set<String> _sendingFollowUps = {};
   final _searchCtrl = TextEditingController();
-  String _statusFilter = 'all'; // all | pending_cashier | in_preparation | out_for_delivery | delivered | cancelled
+  String _statusFilter =
+      'all'; // all | pending_cashier | in_preparation | out_for_delivery | delivered | cancelled
   static const Duration _requestTimeout = Duration(seconds: 45);
   static const Duration _followUpCooldown = Duration(minutes: 20);
 
@@ -75,12 +76,16 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
       final status = _normalizeStatus('${order['status'] ?? ''}');
       if (_statusFilter != 'all' && status != _statusFilter) return false;
       if (q.isEmpty) return true;
-      final orderNo = _shortOrderId(order['id'], order['order_no']).toLowerCase();
+      final orderNo =
+          _shortOrderId(order['id'], order['order_no']).toLowerCase();
       final addr = '${order['delivery_address'] ?? ''}'.toLowerCase();
       final items = _normalizeOrderItems(order['items'])
           .map((i) => '${i['name'] ?? i['dishName'] ?? ''}'.toLowerCase())
           .join(' ');
-      return orderNo.contains(q) || addr.contains(q) || items.contains(q) || status.contains(q);
+      return orderNo.contains(q) ||
+          addr.contains(q) ||
+          items.contains(q) ||
+          status.contains(q);
     }).toList();
   }
 
@@ -102,9 +107,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
           if (mounted) {
             setState(() {
               _allOrders =
-                  cached
-                      .map((e) => Map<String, dynamic>.from(e))
-                      .toList();
+                  cached.map((e) => Map<String, dynamic>.from(e)).toList();
               _isLoading = false;
               _error = null;
             });
@@ -421,255 +424,332 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                                       ),
                                       itemCount: _filteredOrders.length,
                                       itemBuilder: (context, index) {
-                          final order = _filteredOrders[index];
-                          final status = _normalizeStatus(
-                            '${order['status'] ?? ''}',
-                          );
-                          final paymentStatus =
-                              order['payment_status'] ?? 'pending';
-                          final currentStep = _getStatusStep(status);
-                          final items = _normalizeOrderItems(order['items']);
-                          final orderKey = _orderKey(order);
-                          final cooldownUntil = _followUpCooldownUntil(order);
-                          final canFollowUp =
-                              orderKey.isNotEmpty &&
-                              (cooldownUntil == null ||
-                                  !cooldownUntil.isAfter(DateTime.now()));
-
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 16),
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              side: BorderSide(
-                                color: Colors.black.withValues(alpha: 0.08),
-                              ),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Order #${_shortOrderId(order['id'], order['order_no'])}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 18,
-                                        ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: _getStatusColor(status),
-                                          borderRadius: BorderRadius.circular(
-                                            20,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          _getStatusText(status),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Ordered on ${_formatDate(order['created_at'])}',
-                                    style: TextStyle(
-                                      color: Colors.grey.shade600,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  const Divider(height: 24),
-                                  _buildProgressTracker(currentStep),
-                                  const SizedBox(height: 24),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: _getStatusColor(
-                                        status,
-                                      ).withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: _getStatusColor(
+                                        final order = _filteredOrders[index];
+                                        final status = _normalizeStatus(
+                                          '${order['status'] ?? ''}',
+                                        );
+                                        final paymentStatus =
+                                            order['payment_status'] ??
+                                            'pending';
+                                        final currentStep = _getStatusStep(
                                           status,
-                                        ).withValues(alpha: 0.3),
-                                      ),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          _getStatusText(status),
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                            color: _getStatusColor(status),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          'Payment Status: ${_getPaymentStatusText('$paymentStatus', status)}',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            color:
-                                                paymentStatus == 'paid' ||
-                                                        status !=
-                                                            'pending_cashier'
-                                                    ? Colors.green.shade600
-                                                    : Colors.orange.shade600,
-                                            fontWeight:
-                                                paymentStatus == 'paid' ||
-                                                        status !=
-                                                            'pending_cashier'
-                                                    ? FontWeight.w600
-                                                    : FontWeight.normal,
-                                          ),
-                                        ),
-                                        if (status == 'out_for_delivery' &&
-                                            (order['delivery_tracking_url']
-                                                        ?.toString()
-                                                        .trim()
-                                                        .isNotEmpty ??
-                                                    false)) ...[
-                                          const SizedBox(height: 8),
-                                          SelectableText(
-                                            'Tracking: ${order['delivery_tracking_url']}',
-                                            style: const TextStyle(fontSize: 13),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  const Text(
-                                    'Order Items',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  ...items.map((item) {
-                                    return Padding(
-                                      padding: const EdgeInsets.only(bottom: 4),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              '• ${item['name'] ?? item['dishName'] ?? 'Unknown Item'}',
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                              ),
-                                            ),
-                                          ),
-                                          Text(
-                                            '₱${item['price'] ?? '0'}',
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  }),
-                                  const Divider(height: 24),
-                                  if (order['delivery_address'] != null) ...[
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.location_on,
-                                          size: 18,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            order['delivery_address'],
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              color: Colors.grey.shade700,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 16),
-                                  ],
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      const Text(
-                                        'Total Amount',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      Text(
-                                        '₱${order['total_amount'] ?? '0.00'}',
-                                        style: const TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          color: Color(0xFFF4511E),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: OutlinedButton.icon(
-                                      onPressed:
-                                          canFollowUp &&
-                                                  !_sendingFollowUps.contains(
-                                                    orderKey,
-                                                  )
-                                              ? () => _sendFollowUp(order)
-                                              : null,
-                                      icon:
-                                          _sendingFollowUps.contains(orderKey)
-                                              ? const SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                    ),
-                                              )
-                                              : const Icon(
-                                                Icons
-                                                    .notifications_active_outlined,
-                                              ),
-                                      label: Text(
-                                        cooldownUntil != null &&
-                                                cooldownUntil.isAfter(
+                                        );
+                                        final items = _normalizeOrderItems(
+                                          order['items'],
+                                        );
+                                        final orderKey = _orderKey(order);
+                                        final cooldownUntil =
+                                            _followUpCooldownUntil(order);
+                                        final canFollowUp =
+                                            orderKey.isNotEmpty &&
+                                            (cooldownUntil == null ||
+                                                !cooldownUntil.isAfter(
                                                   DateTime.now(),
-                                                )
-                                            ? 'Follow up available ${_formatCooldown(cooldownUntil)}'
-                                            : 'Follow up order',
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
+                                                ));
+
+                                        return Card(
+                                          margin: const EdgeInsets.only(
+                                            bottom: 16,
+                                          ),
+                                          elevation: 0,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              14,
+                                            ),
+                                            side: BorderSide(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.08,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(16),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment
+                                                          .spaceBetween,
+                                                  children: [
+                                                    Text(
+                                                      'Order #${_shortOrderId(order['id'], order['order_no'])}',
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 18,
+                                                      ),
+                                                    ),
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 12,
+                                                            vertical: 6,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color: _getStatusColor(
+                                                          status,
+                                                        ),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              20,
+                                                            ),
+                                                      ),
+                                                      child: Text(
+                                                        _getStatusText(status),
+                                                        style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Text(
+                                                  'Ordered on ${_formatDate(order['created_at'])}',
+                                                  style: TextStyle(
+                                                    color: Colors.grey.shade600,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                                const Divider(height: 24),
+                                                _buildProgressTracker(
+                                                  currentStep,
+                                                ),
+                                                const SizedBox(height: 24),
+                                                Container(
+                                                  width: double.infinity,
+                                                  padding: const EdgeInsets.all(
+                                                    16,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: _getStatusColor(
+                                                      status,
+                                                    ).withValues(alpha: 0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: _getStatusColor(
+                                                        status,
+                                                      ).withValues(alpha: 0.3),
+                                                    ),
+                                                  ),
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        _getStatusText(status),
+                                                        style: TextStyle(
+                                                          fontSize: 16,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color:
+                                                              _getStatusColor(
+                                                                status,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 8),
+                                                      Text(
+                                                        'Payment Status: ${_getPaymentStatusText('$paymentStatus', status)}',
+                                                        style: TextStyle(
+                                                          fontSize: 14,
+                                                          color:
+                                                              paymentStatus ==
+                                                                          'paid' ||
+                                                                      status !=
+                                                                          'pending_cashier'
+                                                                  ? Colors
+                                                                      .green
+                                                                      .shade600
+                                                                  : Colors
+                                                                      .orange
+                                                                      .shade600,
+                                                          fontWeight:
+                                                              paymentStatus ==
+                                                                          'paid' ||
+                                                                      status !=
+                                                                          'pending_cashier'
+                                                                  ? FontWeight
+                                                                      .w600
+                                                                  : FontWeight
+                                                                      .normal,
+                                                        ),
+                                                      ),
+                                                      if (status ==
+                                                              'out_for_delivery' &&
+                                                          (order['delivery_tracking_url']
+                                                                  ?.toString()
+                                                                  .trim()
+                                                                  .isNotEmpty ??
+                                                              false)) ...[
+                                                        const SizedBox(
+                                                          height: 8,
+                                                        ),
+                                                        SelectableText(
+                                                          'Tracking: ${order['delivery_tracking_url']}',
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 13,
+                                                              ),
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 16),
+                                                const Text(
+                                                  'Order Items',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                ...items.map((item) {
+                                                  return Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          bottom: 4,
+                                                        ),
+                                                    child: Row(
+                                                      children: [
+                                                        Expanded(
+                                                          child: Text(
+                                                            '• ${item['name'] ?? item['dishName'] ?? 'Unknown Item'}',
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontSize: 13,
+                                                                ),
+                                                          ),
+                                                        ),
+                                                        Text(
+                                                          '₱${item['price'] ?? '0'}',
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 13,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500,
+                                                              ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                }),
+                                                const Divider(height: 24),
+                                                if (order['delivery_address'] !=
+                                                    null) ...[
+                                                  Row(
+                                                    children: [
+                                                      Icon(
+                                                        Icons.location_on,
+                                                        size: 18,
+                                                        color:
+                                                            Colors
+                                                                .grey
+                                                                .shade600,
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      Expanded(
+                                                        child: Text(
+                                                          order['delivery_address'],
+                                                          style: TextStyle(
+                                                            fontSize: 13,
+                                                            color:
+                                                                Colors
+                                                                    .grey
+                                                                    .shade700,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 16),
+                                                ],
+                                                Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment
+                                                          .spaceBetween,
+                                                  children: [
+                                                    const Text(
+                                                      'Total Amount',
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        fontWeight:
+                                                            FontWeight.w500,
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      '₱${order['total_amount'] ?? '0.00'}',
+                                                      style: const TextStyle(
+                                                        fontSize: 20,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: Color(
+                                                          0xFFF4511E,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 16),
+                                                Align(
+                                                  alignment:
+                                                      Alignment.centerRight,
+                                                  child: OutlinedButton.icon(
+                                                    onPressed:
+                                                        canFollowUp &&
+                                                                !_sendingFollowUps
+                                                                    .contains(
+                                                                      orderKey,
+                                                                    )
+                                                            ? () =>
+                                                                _sendFollowUp(
+                                                                  order,
+                                                                )
+                                                            : null,
+                                                    icon:
+                                                        _sendingFollowUps
+                                                                .contains(
+                                                                  orderKey,
+                                                                )
+                                                            ? const SizedBox(
+                                                              width: 16,
+                                                              height: 16,
+                                                              child:
+                                                                  CircularProgressIndicator(
+                                                                    strokeWidth:
+                                                                        2,
+                                                                  ),
+                                                            )
+                                                            : const Icon(
+                                                              Icons
+                                                                  .notifications_active_outlined,
+                                                            ),
+                                                    label: Text(
+                                                      cooldownUntil != null &&
+                                                              cooldownUntil
+                                                                  .isAfter(
+                                                                    DateTime.now(),
+                                                                  )
+                                                          ? 'Follow up available ${_formatCooldown(cooldownUntil)}'
+                                                          : 'Follow up order',
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
                                       },
                                     ),
                                   ),
@@ -684,8 +764,8 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
 
   Widget _buildProgressTracker(int currentStep) {
     final steps = [
-      'Payment review',
-      'Preparing',
+      currentStep > 0 ? 'Payment confirmed' : 'Payment review',
+      'In preparation',
       'Out for delivery',
       'Delivered',
     ];
@@ -739,7 +819,8 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                     style: TextStyle(
                       fontSize: 9,
                       color: isActive ? Colors.black87 : Colors.grey.shade500,
-                      fontWeight: isActive ? FontWeight.w500 : FontWeight.normal,
+                      fontWeight:
+                          isActive ? FontWeight.w500 : FontWeight.normal,
                     ),
                   ),
                 );

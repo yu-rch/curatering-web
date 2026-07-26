@@ -385,13 +385,14 @@ class CartSyncService {
           final deduped = <Map<String, dynamic>>[];
           for (final item in cartItems) {
             final json = trayLineToJson(item);
+            final sauce = (json['dip'] ?? '').toString();
             final key =
-                '${json['id']}_${json['dip'] ?? ''}_${json['notes'] ?? ''}_${json['dip_qty'] ?? 1}';
-            final existing = deduped.indexWhere(
-              (d) =>
-                  '${d['id']}_${d['dip'] ?? ''}_${d['notes'] ?? ''}_${d['dip_qty'] ?? 1}' ==
-                  key,
-            );
+                '${json['id']}_${sauce}_${json['notes'] ?? ''}_${sauce.isEmpty ? 1 : (json['dip_qty'] ?? 1)}';
+            final existing = deduped.indexWhere((d) {
+              final dSauce = (d['dip'] ?? '').toString();
+              return '${d['id']}_${dSauce}_${d['notes'] ?? ''}_${dSauce.isEmpty ? 1 : (d['dip_qty'] ?? 1)}' ==
+                  key;
+            });
             if (existing >= 0) {
               deduped[existing]['quantity'] =
                   (deduped[existing]['quantity'] as int) +
@@ -403,7 +404,7 @@ class CartSyncService {
           }
           final response = await ApiClient.instance.putJson(
             '/api/tray-draft',
-            body: {'tray_items': deduped, 'merge': true},
+            body: {'tray_items': deduped, 'replace': true},
           );
           _lastServerUpdatedAt = response['updatedAt']?.toString();
 

@@ -29,7 +29,11 @@ class ImageCacheManager {
 
     // Decode and cache
     try {
-      final bytes = base64Decode(base64String);
+      final normalized = base64String
+          .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
+          .replaceAll('\n', '')
+          .trim();
+      final bytes = base64Decode(normalized);
       _addToCache(base64String, bytes);
       return bytes;
     } catch (e) {

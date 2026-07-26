@@ -43,7 +43,7 @@ export function normalizeTrayLineItem(raw) {
 
   const qty = Math.max(
     1,
-    Number(m.quantity ?? m.qty ?? m.dip_qty ?? 1) || 1,
+    Number(m.quantity ?? m.qty ?? 1) || 1,
   );
   const sauceRaw =
     m.selected_sauce ??
@@ -59,10 +59,12 @@ export function normalizeTrayLineItem(raw) {
   );
   const dishType = String(m.dish_type ?? m.dishType ?? dish.type ?? mealType);
 
-  const addOnQty = Math.max(
-    1,
-    Number(m.addOnQuantity ?? m.add_on_quantity ?? m.dip_qty ?? 1) || 1,
-  );
+  const addOnQty = sauceStr
+    ? Math.max(
+        1,
+        Number(m.addOnQuantity ?? m.add_on_quantity ?? m.dip_qty ?? 1) || 1,
+      )
+    : 1;
   const addOns = Array.isArray(m.addOns)
     ? m.addOns.map((e) => String(e)).filter(Boolean)
     : Array.isArray(m.add_ons)
@@ -150,11 +152,19 @@ function itemsFromRequestBody(body) {
 }
 
 function trayItemKey(item) {
+  const sauce = String(
+    item.dip ?? item.selected_sauce ?? item.selectedSauce ?? '',
+  ).trim();
+  // Only include dip qty in identity when a sauce/add-on is present so
+  // web/mobile don't create duplicate lines from default dip_qty mismatches.
+  const dipQty = sauce
+    ? String(item.dip_qty ?? item.addOnQuantity ?? 1)
+    : '1';
   return [
     String(item.id ?? item.dish_id ?? item.dishId ?? '').trim(),
-    String(item.dip ?? item.selected_sauce ?? item.selectedSauce ?? '').trim(),
+    sauce,
     String(item.notes ?? item.special_instructions ?? item.specialInstructions ?? '').trim(),
-    String(item.dip_qty ?? item.addOnQuantity ?? 1),
+    dipQty,
   ].join('|');
 }
 
@@ -321,7 +331,11 @@ export async function saveTrayDraft(req, res) {
         error: 'items or tray_items array is required',
       });
     }
-    const replace = req.body?.replace === true || req.body?.mode === 'replace';
+    const replace =
+      req.body?.replace === true ||
+      req.body?.mode === 'replace' ||
+      // Full-cart PUTs must replace. Only explicit merge:true adds quantities.
+      req.body?.merge !== true;
     await upsertTrayDraftItems(customerId, items, { replace });
     const saved = await pool.query(
       `SELECT tray_items, updated_at FROM customer_tray_drafts WHERE customer_id = $1`,

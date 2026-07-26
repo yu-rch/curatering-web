@@ -219,23 +219,36 @@ class CartStore extends ChangeNotifier {
     late final CartItem addedLine;
     if (existingIndex >= 0) {
       _items[existingIndex].quantity++;
-      addedLine = CartItem(
+      // Send the updated absolute line via PATCH so merge does not rely on
+      // a qty=1 delta that can race with a full-cart sync.
+      final previousItem = CartItem(
         dish: dish,
+        quantity: _items[existingIndex].quantity - 1,
         selectedSauce: selectedSauce,
         addOnQuantity: normalizedAddOnQuantity,
         addOns: addOns,
         specialInstructions: specialInstructions,
       );
-    } else {
-      addedLine = CartItem(
-        dish: dish,
-        selectedSauce: selectedSauce,
-        addOnQuantity: normalizedAddOnQuantity,
-        addOns: addOns,
-        specialInstructions: specialInstructions,
+      addedLine = _items[existingIndex].snapshot();
+      _saveCart();
+      notifyListeners();
+      unawaited(
+        CartSyncService.instance.updateItemOnServer(
+          previousItem: previousItem,
+          updatedItem: addedLine,
+        ),
       );
-      _items.add(addedLine);
+      return;
     }
+
+    addedLine = CartItem(
+      dish: dish,
+      selectedSauce: selectedSauce,
+      addOnQuantity: normalizedAddOnQuantity,
+      addOns: addOns,
+      specialInstructions: specialInstructions,
+    );
+    _items.add(addedLine);
 
     _saveCart();
     notifyListeners();

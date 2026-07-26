@@ -14,6 +14,7 @@ import {
 } from "./order_schema.js";
 import {
   allocateCateringTransactionId,
+  calculateLoyaltyPointsForOrder,
   ensureOrderCateringIdColumns,
   getTableColumnNames,
 } from "./db.js";
@@ -683,28 +684,30 @@ export function registerPosRoutes(app, {
 
       if (orderStatus === "delivered") {
         const total = Number(order.total_cost || order.total_amount || 0);
-        // Match getPointsForOrder: min 100, 2% rate, .7-up rounding
-        if (total >= 100) {
-          const rawPoints = (total * 2) / 100;
-          const decimal = rawPoints % 1;
-          let points = Math.floor(rawPoints);
-          if (decimal >= 0.7) points += 1;
+        const points = await calculateLoyaltyPointsForOrder(
+          total,
+          "restaurant",
+        );
+        const previousPoints = Number(
+          order.loyalty_points_restaurant_obtained ?? order.points_earned ?? 0,
+        );
+        const pointsDelta = points - previousPoints;
+        await pool.query(
+          `UPDATE restaurant_orders
+           SET loyalty_points_restaurant_obtained = $2
+           WHERE id = $1`,
+          [order.id, points],
+        );
+        if (order.customer_id && pointsDelta !== 0) {
+          const customerWhereSql = await customerAccountIdentityWhereSql("$1");
           await pool.query(
-            `UPDATE restaurant_orders
-             SET loyalty_points_restaurant_obtained = $2
-             WHERE id = $1`,
-            [order.id, points],
+            `UPDATE customer_accounts
+             SET restaurant_loyalty_points =
+                   GREATEST(0, COALESCE(restaurant_loyalty_points, 0) + $2),
+                 updated_at = now()
+             WHERE ${customerWhereSql}`,
+            [order.customer_id, pointsDelta],
           );
-          if (order.customer_id) {
-            const customerWhereSql = await customerAccountIdentityWhereSql("$1");
-            await pool.query(
-              `UPDATE customer_accounts
-               SET restaurant_loyalty_points = COALESCE(restaurant_loyalty_points, 0) + $2,
-                   updated_at = now()
-               WHERE ${customerWhereSql}`,
-              [order.customer_id, points],
-            );
-          }
         }
         const email = await resolveRestaurantOrderEmail(order);
         if (email) {

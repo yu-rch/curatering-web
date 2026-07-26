@@ -36,6 +36,7 @@ import {
   getRoleAccountLimits,
   setRoleAccountLimits,
   getLoyaltyProgramConfig,
+  calculateLoyaltyPointsForOrder,
   setLoyaltyProgramConfig,
   getCustomAllergenPresets,
   getMenuAllergenCatalog,
@@ -3585,7 +3586,9 @@ function registerCustomerAuthRoutes(app, dbGate) {
 
       const result = await pool.query(
         `SELECT id, email, password_hash, full_name, contact_number, is_verified,
-                COALESCE(archived, FALSE) AS archived
+                COALESCE(archived, FALSE) AS archived,
+                COALESCE(restaurant_loyalty_points, 0) AS restaurant_loyalty_points,
+                COALESCE(catering_loyalty_points, 0) AS catering_loyalty_points
          FROM customer_accounts
          WHERE lower(trim(email::text)) = $1
          LIMIT 1`,
@@ -3645,6 +3648,13 @@ function registerCustomerAuthRoutes(app, dbGate) {
         });
       }
 
+      const restaurantLoyaltyPoints = Number(
+        customer.restaurant_loyalty_points ?? 0,
+      );
+      const cateringLoyaltyPoints = Number(
+        customer.catering_loyalty_points ?? 0,
+      );
+
       res.json({
         token,
         customer: {
@@ -3652,6 +3662,12 @@ function registerCustomerAuthRoutes(app, dbGate) {
           email: customer.email,
           fullName: customer.full_name,
           phone: customerPhoneFromRow(customer),
+          restaurantLoyaltyPoints,
+          cateringLoyaltyPoints,
+          loyaltyPoints: restaurantLoyaltyPoints + cateringLoyaltyPoints,
+          restaurant_loyalty_points: restaurantLoyaltyPoints,
+          catering_loyalty_points: cateringLoyaltyPoints,
+          loyalty_points: restaurantLoyaltyPoints + cateringLoyaltyPoints,
         },
       });
     } catch (error) {
@@ -4044,37 +4060,37 @@ app.post(
       const order = result.rows[0];
       const customerId = order.customer_id;
       
-      // Auto-calculate loyalty points when order is completed
+      // Auto-calculate loyalty points from the configured catering rule.
       if (customerId) {
         const totalAmount = parseFloat(order.total_cost || 0);
-        
-        // Default catering loyalty points: 500 min order to earn 8 points (2% rate)
-        const minimumCost = 500.0;
-        const pointsApplication = 8; // 2% of total cost
-        
-        if (totalAmount >= minimumCost) {
-          // Calculate points with rounding rule: .2-.6 down, .7-.9 up
-          const rawPoints = (totalAmount * pointsApplication) / 100;
-          const decimal = rawPoints % 1;
-          let points = Math.floor(rawPoints);
-          
-          if (decimal >= 0.7) {
-            points += 1;
-          }
-          
-          // Update order with calculated points
+        const points = await calculateLoyaltyPointsForOrder(
+          totalAmount,
+          'catering',
+        );
+        const previousPoints = Number(
+          order.loyalty_points_catering_obtained ?? order.points_earned ?? 0,
+        );
+        const pointsDelta = points - previousPoints;
+        await pool.query(
+          `UPDATE catering_orders
+           SET points_earned = $1,
+               loyalty_points_catering_obtained = $1
+           WHERE id = $2`,
+          [points, orderId],
+        ).catch(async () => {
           await pool.query(
             `UPDATE catering_orders SET points_earned = $1 WHERE id = $2`,
-            [points, orderId]
+            [points, orderId],
           );
-          
-          // Update customer's total loyalty points
+        });
+        if (pointsDelta !== 0) {
           await pool.query(
             `UPDATE customer_accounts 
-             SET catering_loyalty_points = catering_loyalty_points + $1,
+             SET catering_loyalty_points =
+                   GREATEST(0, COALESCE(catering_loyalty_points, 0) + $1),
                  updated_at = now()
              WHERE id = $2`,
-            [points, customerId]
+            [pointsDelta, customerId],
           );
         }
       }
@@ -7226,7 +7242,7 @@ app.post(
            updated_at = now()
          WHERE id = $3
            AND status IN ('for_full_payment', 'for_post_analysis')
-         RETURNING id;`,
+         RETURNING *;`,
         [JSON.stringify(postAnalysis), req.user.id, orderId],
       );
 
@@ -7236,6 +7252,29 @@ app.post(
           .json({
             message: "Post-analysis order not found or already completed",
           });
+      }
+
+      const completedOrder = result.rows[0];
+      const eventPoints = await calculateLoyaltyPointsForOrder(
+        Number(completedOrder.total_cost || 0),
+        'catering',
+      );
+      const previousEventPoints = Number(completedOrder.points_earned || 0);
+      const eventPointsDelta = eventPoints - previousEventPoints;
+      await pool.query(
+        `UPDATE event_orders SET points_earned = $1 WHERE id = $2`,
+        [eventPoints, orderId],
+      );
+      if (completedOrder.customer_id && eventPointsDelta !== 0) {
+        const customerWhereSql = await customerAccountIdentityWhereSql('$2');
+        await pool.query(
+          `UPDATE customer_accounts
+           SET catering_loyalty_points =
+                 GREATEST(0, COALESCE(catering_loyalty_points, 0) + $1),
+               updated_at = now()
+           WHERE ${customerWhereSql}`,
+          [eventPointsDelta, completedOrder.customer_id],
+        );
       }
 
       await logAction({
@@ -8143,8 +8182,8 @@ async function autoCancelStalePendingCashierOrders() {
     await ensureRestaurantOrderWorkflowColumns();
     const result = await pool.query(
       `UPDATE restaurant_orders
-       SET order_status = 'CANCELLED', updated_at = now()
-       WHERE order_status = 'PENDING_CASHIER'
+       SET order_status = 'cancelled', updated_at = now()
+       WHERE lower(order_status) = 'pending_cashier'
          AND COALESCE(updated_at, created_at) < now() - interval '1 hour'
        RETURNING *`,
     );
@@ -9980,9 +10019,9 @@ async function registerRoutesAfterDbInit() {
 
         const restToday = await pool.query(
           `SELECT
-             COUNT(*) FILTER (WHERE order_status = 'PENDING_CASHIER')::int AS pending_confirmations,
-             COUNT(*) FILTER (WHERE order_status = 'DELIVERED')::int AS delivered,
-             COUNT(*) FILTER (WHERE order_status = 'CANCELLED')::int AS cancelled,
+             COUNT(*) FILTER (WHERE lower(order_status) = 'pending_cashier')::int AS pending_confirmations,
+             COUNT(*) FILTER (WHERE lower(order_status) = 'delivered')::int AS delivered,
+             COUNT(*) FILTER (WHERE lower(order_status) = 'cancelled')::int AS cancelled,
              COALESCE(SUM(total_cost) FILTER (
                WHERE order_status NOT IN ('CANCELLED')
              ), 0)::float AS sales_today,
@@ -10607,45 +10646,38 @@ async function registerRoutesAfterDbInit() {
 
         const effectiveStatus = nextStatus;
 
-        // Auto-calculate loyalty points when order is delivered
+        // Auto-calculate loyalty points from the configured restaurant rule.
         if (effectiveStatus === 'delivered') {
           const order = result.rows[0];
           const customerId = order.customer_id;
           const totalAmount = parseFloat(order.total_cost || 0);
-          
-          // Match client getPointsForOrder defaults: 100 min, 2% rate, .7-up rounding
-          const minimumCost = 100.0;
-          const pointsApplication = 2;
-          
-          if (totalAmount >= minimumCost) {
-            const rawPoints = (totalAmount * pointsApplication) / 100;
-            const decimal = rawPoints % 1;
-            let points = Math.floor(rawPoints);
-            
-            if (decimal >= 0.7) {
-              points += 1;
-            }
-            
-            const pointsLookup = await restaurantOrderWhereClause(orderId, 2);
-            if (pointsLookup) {
-              await pool.query(
-                `UPDATE restaurant_orders
-                 SET loyalty_points_restaurant_obtained = $1
-                 WHERE ${pointsLookup.sql}`,
-                [points, pointsLookup.value],
-              );
-            }
-            
-            if (customerId) {
-              const customerWhereSql = await customerAccountIdentityWhereSql('$2');
-              await pool.query(
-                `UPDATE customer_accounts
-                 SET restaurant_loyalty_points = COALESCE(restaurant_loyalty_points, 0) + $1,
-                     updated_at = now()
-                 WHERE ${customerWhereSql}`,
-                [points, customerId],
-              );
-            }
+          const points = await calculateLoyaltyPointsForOrder(
+            totalAmount,
+            'restaurant',
+          );
+          const previousPoints = Number(
+            order.loyalty_points_restaurant_obtained ?? order.points_earned ?? 0,
+          );
+          const pointsDelta = points - previousPoints;
+          const pointsLookup = await restaurantOrderWhereClause(orderId, 2);
+          if (pointsLookup) {
+            await pool.query(
+              `UPDATE restaurant_orders
+               SET loyalty_points_restaurant_obtained = $1
+               WHERE ${pointsLookup.sql}`,
+              [points, pointsLookup.value],
+            );
+          }
+          if (customerId && pointsDelta !== 0) {
+            const customerWhereSql = await customerAccountIdentityWhereSql('$2');
+            await pool.query(
+              `UPDATE customer_accounts
+               SET restaurant_loyalty_points =
+                     GREATEST(0, COALESCE(restaurant_loyalty_points, 0) + $1),
+                   updated_at = now()
+               WHERE ${customerWhereSql}`,
+              [pointsDelta, customerId],
+            );
           }
         }
 
@@ -10747,7 +10779,7 @@ async function registerRoutesAfterDbInit() {
            SET amount_paid = $1,
                change_given = $2,
                payment_confirmed_initial = TRUE,
-               order_status = 'IN_PREPARATION',
+               order_status = 'in_preparation',
                cashier_amount_received_initial = $1,
                updated_at = now()
            WHERE ${confirmLookup.sql}
@@ -10758,14 +10790,18 @@ async function registerRoutesAfterDbInit() {
         const updated = result.rows[0];
         const email = await resolveRestaurantOrderEmail(updated);
         if (email) {
-          await sendCustomerNotificationEmail({
-            to: email,
-            subject: 'Curatering: Payment confirmed',
-            text:
-              `Your payment for order ${updated.order_id} was confirmed.\n` +
-              `Your order is now being prepared.\n\n` +
-              `- Curatering Team`,
-          });
+          try {
+            await sendCustomerNotificationEmail({
+              to: email,
+              subject: 'Curatering: Payment confirmed',
+              text:
+                `Your payment for order ${updated.order_id} was confirmed.\n` +
+                `Your order is now being prepared.\n\n` +
+                `- Curatering Team`,
+            });
+          } catch (mailError) {
+            console.error('Payment confirmation email failed:', mailError);
+          }
         }
 
         if (updated?.order_status != null) updated.status = updated.order_status;
@@ -10861,7 +10897,7 @@ async function registerRoutesAfterDbInit() {
           const lookup = await restaurantOrderWhereClause(orderId, 1);
           const result = await pool.query(
             `UPDATE restaurant_orders
-             SET order_status = 'CANCELLED', updated_at = now()
+             SET order_status = 'cancelled', updated_at = now()
              WHERE ${lookup.sql}
              RETURNING *`,
             [lookup.value],
@@ -10873,13 +10909,17 @@ async function registerRoutesAfterDbInit() {
           if (order.order_status != null) order.status = order.order_status;
           const email = await resolveRestaurantOrderEmail(order);
           if (email) {
-            await sendCustomerNotificationEmail({
-              to: email,
-              subject: 'Curatering: Order cancelled',
-              text:
-                `Your order ${order.order_id} has been cancelled.\n\n` +
-                `- Curatering Team`,
-            });
+            try {
+              await sendCustomerNotificationEmail({
+                to: email,
+                subject: 'Curatering: Order cancelled',
+                text:
+                  `Your order ${order.order_id} has been cancelled.\n\n` +
+                  `- Curatering Team`,
+              });
+            } catch (mailError) {
+              console.error('Cancellation email failed:', mailError);
+            }
           }
           res.json({ order });
         } catch (error) {
@@ -11843,7 +11883,7 @@ async function registerRoutesAfterDbInit() {
           const restaurantPoints = await pool.query(
             `SELECT COALESCE(SUM(COALESCE(loyalty_points_restaurant_obtained, 0)), 0) as total
              FROM restaurant_orders
-             WHERE customer_id::text = $1 AND order_status = 'DELIVERED'`,
+             WHERE customer_id::text = $1 AND lower(order_status) = 'delivered'`,
             [customerId]
           );
 
@@ -11860,7 +11900,9 @@ async function registerRoutesAfterDbInit() {
           );
 
           const restaurantTotal = restaurantPoints.rows[0].total || 0;
-          const cateringTotal = cateringPoints.rows[0].total || 0;
+          const cateringTotal =
+            Number(cateringPoints.rows[0].total || 0) +
+            Number(eventPoints.rows[0].total || 0);
 
           // Update loyalty points directly in customer_accounts
           await pool.query(

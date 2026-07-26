@@ -62,11 +62,23 @@ class _CheckoutPageState extends State<CheckoutPage> {
     super.dispose();
   }
 
+  int _loyaltyPointsFromValue(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString().trim()) ?? 0;
+  }
+
   int _restaurantLoyaltyPointsFromMap(Map<String, dynamic>? data) {
     if (data == null) return 0;
-    return (data['restaurantLoyaltyPoints'] as num?)?.toInt() ??
-        (data['restaurant_loyalty_points'] as num?)?.toInt() ??
-        0;
+    final restaurant = _loyaltyPointsFromValue(
+      data['restaurantLoyaltyPoints'] ?? data['restaurant_loyalty_points'],
+    );
+    if (restaurant > 0) return restaurant;
+    // Fallback if older payloads only stored a combined total.
+    return _loyaltyPointsFromValue(
+      data['loyaltyPoints'] ?? data['loyalty_points'],
+    );
   }
 
   Future<void> _loadCustomerData() async {
@@ -75,13 +87,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
       final prefs = await SharedPreferences.getInstance();
       final customerData = prefs.getString('customer_data');
       if (customerData != null) {
-        setState(() {
-          _customerData = jsonDecode(customerData);
-          // Initialize controllers with customer data
-          _nameController.text = _customerData?['fullName'] ?? '';
-          _phoneController.text = _customerData?['phone'] ?? '';
-          _currentPoints = _restaurantLoyaltyPointsFromMap(_customerData);
-        });
+        final decoded = jsonDecode(customerData);
+        if (decoded is Map) {
+          setState(() {
+            _customerData = Map<String, dynamic>.from(decoded);
+            _nameController.text = _customerData?['fullName']?.toString() ?? '';
+            _phoneController.text = _customerData?['phone']?.toString() ?? '';
+            _currentPoints = _restaurantLoyaltyPointsFromMap(_customerData);
+          });
+        }
       }
 
       // Load saved address and loyalty points from profile
@@ -117,10 +131,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final points = _restaurantLoyaltyPointsFromMap(data);
         setState(() {
-          _currentPoints =
-              (data['restaurantLoyaltyPoints'] as num?)?.toInt() ??
-              _currentPoints;
+          _currentPoints = points;
           if (data['deliveryAddress'] != null &&
               (data['deliveryAddress'] as String).isNotEmpty) {
             _addressController.text = data['deliveryAddress'] as String;
@@ -132,6 +145,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 _parseCoord(data['delivery_lng']);
           }
         });
+        // Keep local customer_data in sync so checkout banner stays accurate.
+        final existing = prefs.getString('customer_data');
+        Map<String, dynamic> merged = {};
+        if (existing != null && existing.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(existing);
+            if (decoded is Map) {
+              merged = Map<String, dynamic>.from(decoded);
+            }
+          } catch (_) {}
+        }
+        merged['restaurantLoyaltyPoints'] = points;
+        merged['restaurant_loyalty_points'] = points;
+        merged['loyaltyPoints'] =
+            _loyaltyPointsFromValue(data['loyaltyPoints'] ?? data['loyalty_points']);
+        merged['cateringLoyaltyPoints'] = _loyaltyPointsFromValue(
+          data['cateringLoyaltyPoints'] ?? data['catering_loyalty_points'],
+        );
+        await prefs.setString('customer_data', jsonEncode(merged));
       }
     } catch (e) {
       debugPrint('Error loading saved address: $e');
