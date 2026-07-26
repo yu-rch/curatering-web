@@ -12319,9 +12319,19 @@ async function registerRoutesAfterDbInit() {
     const webBuildPath = resolveWebBuildPath();
     if (webBuildPath) {
       console.log("Serving static web files from:", webBuildPath);
-      app.use(express.static(webBuildPath));
+      app.use(
+        express.static(webBuildPath, {
+          // Never fall through to HTML for missing assets — that causes
+          // "Unexpected token '<'" when the browser parses index.html as JS/JSON.
+          fallthrough: true,
+        }),
+      );
       app.get("*", (req, res, next) => {
         if (req.path.startsWith("/api")) return next();
+        // Asset-like paths must 404 (not SPA HTML) if the file is missing.
+        if (/\.[a-zA-Z0-9]+$/.test(req.path)) {
+          return res.status(404).type("text/plain").send("Not found");
+        }
         res.sendFile(path.join(webBuildPath, "index.html"));
       });
     } else {

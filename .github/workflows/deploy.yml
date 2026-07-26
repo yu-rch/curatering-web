@@ -35,6 +35,11 @@ jobs:
       - name: Install Vercel CLI
         run: npm i -g vercel
 
+      # Deploy directory is build/web — copy routing config so SPA fallback
+      # never rewrites real .js/.json/.wasm assets to index.html.
+      - name: Copy Vercel config into web build
+        run: cp curatering/vercel.json curatering/build/web/vercel.json
+
       - name: Deploy to Vercel
         working-directory: curatering/build/web
         run: npx vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }} --yes --scope urichs-projects-360c4d2f
