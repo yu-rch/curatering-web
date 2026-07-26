@@ -93,7 +93,10 @@ class _MyProfilePageState extends State<MyProfilePage> {
         setState(() {
           _profileData = data;
           _fullNameController.text = data['fullName'] ?? '';
-          _phoneController.text = data['phone'] ?? '';
+          final phoneDigits =
+              (data['phone'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
+          _phoneController.text =
+              phoneDigits.length > 11 ? phoneDigits.substring(0, 11) : phoneDigits;
           _addressController.text = data['deliveryAddress'] ?? '';
           _deliveryLat = data['deliveryLat']?.toDouble();
           _deliveryLng = data['deliveryLng']?.toDouble();
@@ -810,15 +813,17 @@ class _MyProfilePageState extends State<MyProfilePage> {
                           TextField(
                             controller: _phoneController,
                             keyboardType: TextInputType.phone,
+                            maxLength: 11,
                             inputFormatters: [
                               FilteringTextInputFormatter.digitsOnly,
-                              LengthLimitingTextInputFormatter(13),
+                              LengthLimitingTextInputFormatter(11),
                             ],
                             decoration: const InputDecoration(
                               labelText: 'Contact Number',
                               border: OutlineInputBorder(),
                               prefixIcon: Icon(Icons.phone),
-                              hintText: 'Up to 13 digits',
+                              hintText: 'Up to 11 digits',
+                              counterText: '',
                             ),
                           ),
                           const SizedBox(height: 24),

@@ -7,6 +7,7 @@ import '../utils/responsive_layout.dart';
 import '../utils/order_display_utils.dart';
 import '../widgets/antd_dialog.dart';
 import '../widgets/antd_message.dart';
+import '../widgets/antd_buttons.dart';
 
 class RestaurantTransactionsPage extends StatefulWidget {
   const RestaurantTransactionsPage({super.key});
@@ -24,6 +25,12 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   List<Map<String, dynamic>> _processingOrders = [];
   List<Map<String, dynamic>> _completedOrders = [];
 
+  final _searchCtrl = TextEditingController();
+  String _searchQuery = '';
+  String _orderTypeFilter = 'all'; // all | dine_in | delivery | pickup
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
+
   // Performance optimization: Cache last fetch time
   DateTime? _lastFetchTime;
   static const Duration _cacheValidity = Duration(minutes: 2);
@@ -38,6 +45,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   @override
   void dispose() {
     _tabController.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -261,6 +269,100 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
   bool _isOnlineOrder(Map<String, dynamic> order) =>
       _orderTypeLabel(order) == 'Online';
+
+  DateTime? _orderDate(Map<String, dynamic> order) {
+    final raw =
+        (order['created_at'] ??
+                order['createdAt'] ??
+                order['updated_at'] ??
+                order['updatedAt'] ??
+                '')
+            .toString();
+    return DateTime.tryParse(raw);
+  }
+
+  bool _matchesManagerFilters(Map<String, dynamic> order) {
+    if (_orderTypeFilter == 'online' && !_isOnlineOrder(order)) return false;
+    if (_orderTypeFilter == 'walk_in' && !_isWalkInOrder(order)) return false;
+
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      final hay = [
+        order['order_no'],
+        order['id'],
+        order['customer_name'],
+        order['customerName'],
+        order['phone'],
+        order['contact_number'],
+        order['status'],
+        _orderTypeLabel(order),
+      ].map((e) => (e ?? '').toString().toLowerCase()).join(' ');
+      if (!hay.contains(q)) return false;
+    }
+
+    final dt = _orderDate(order);
+    if (_dateFrom != null && dt != null) {
+      final from = DateTime(_dateFrom!.year, _dateFrom!.month, _dateFrom!.day);
+      if (dt.isBefore(from)) return false;
+    }
+    if (_dateTo != null && dt != null) {
+      final to = DateTime(
+        _dateTo!.year,
+        _dateTo!.month,
+        _dateTo!.day,
+        23,
+        59,
+        59,
+      );
+      if (dt.isAfter(to)) return false;
+    }
+    return true;
+  }
+
+  List<Map<String, dynamic>> get _filteredConfirmationOrders =>
+      _confirmationOrders.where(_matchesManagerFilters).toList();
+
+  List<Map<String, dynamic>> get _filteredProcessingOrders =>
+      _processingOrders.where(_matchesManagerFilters).toList();
+
+  List<Map<String, dynamic>> get _filteredCompletedOrders =>
+      _completedOrders.where(_matchesManagerFilters).toList();
+
+  Future<void> _pickManagerDate({required bool isFrom}) async {
+    final initial = isFrom ? (_dateFrom ?? DateTime.now()) : (_dateTo ?? DateTime.now());
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked == null) return;
+    setState(() {
+      if (isFrom) {
+        _dateFrom = picked;
+      } else {
+        _dateTo = picked;
+      }
+    });
+  }
+
+  Widget _managerDateChip({
+    required String label,
+    required DateTime? value,
+    required VoidCallback onPick,
+    required VoidCallback onClear,
+  }) {
+    final text = value == null
+        ? label
+        : '$label ${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+    return FilterChip(
+      label: Text(text),
+      selected: value != null,
+      onSelected: (_) => onPick(),
+      onDeleted: value == null ? null : onClear,
+      selectedColor: const Color(0xFFFFC024).withValues(alpha: 0.4),
+    );
+  }
 
   String _responseErrorMessage(http.Response response) {
     final body = response.body.trim();
@@ -532,9 +634,88 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
-            child: Text(
-              'Track confirmations, delivery progress, and completed orders.',
-              style: TextStyle(color: Colors.grey.shade700),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Track confirmations, delivery progress, and completed orders.',
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchCtrl,
+                        decoration: InputDecoration(
+                          hintText: 'Search order no, customer, phone, status',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _searchQuery.isEmpty
+                              ? null
+                              : IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: () => setState(() {
+                                  _searchCtrl.clear();
+                                  _searchQuery = '';
+                                }),
+                              ),
+                          border: const OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        onChanged: (v) =>
+                            setState(() => _searchQuery = v.trim().toLowerCase()),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    DropdownButton<String>(
+                      value: _orderTypeFilter,
+                      items: const [
+                        DropdownMenuItem(value: 'all', child: Text('All types')),
+                        DropdownMenuItem(value: 'online', child: Text('Online')),
+                        DropdownMenuItem(value: 'walk_in', child: Text('Walk-in')),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setState(() => _orderTypeFilter = v);
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _managerDateChip(
+                      label: 'From',
+                      value: _dateFrom,
+                      onPick: () => _pickManagerDate(isFrom: true),
+                      onClear: () => setState(() => _dateFrom = null),
+                    ),
+                    _managerDateChip(
+                      label: 'To',
+                      value: _dateTo,
+                      onPick: () => _pickManagerDate(isFrom: false),
+                      onClear: () => setState(() => _dateTo = null),
+                    ),
+                    if (_dateFrom != null ||
+                        _dateTo != null ||
+                        _searchQuery.isNotEmpty ||
+                        _orderTypeFilter != 'all')
+                      TextButton(
+                        onPressed: () => setState(() {
+                          _dateFrom = null;
+                          _dateTo = null;
+                          _searchCtrl.clear();
+                          _searchQuery = '';
+                          _orderTypeFilter = 'all';
+                        }),
+                        child: const Text('Clear filters'),
+                      ),
+                  ],
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -557,7 +738,8 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   Widget _buildConfirmationTab() {
-    if (_confirmationOrders.isEmpty) {
+    final orders = _filteredConfirmationOrders;
+    if (orders.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -565,7 +747,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             Icon(Icons.inbox, size: 64, color: Colors.grey.shade400),
             const SizedBox(height: 16),
             Text(
-              'No orders awaiting payment confirmation',
+              _confirmationOrders.isEmpty
+                  ? 'No orders awaiting payment confirmation'
+                  : 'No pending orders match your filters',
               style: TextStyle(
                 color: Colors.grey.shade600,
                 fontSize: 16,
@@ -587,14 +771,14 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             children: [
               _buildSummaryCard(
                 'Total Orders',
-                '${_confirmationOrders.length}',
+                '${orders.length}',
                 Icons.receipt_long,
                 Colors.blue,
               ),
               const SizedBox(width: 16),
               _buildSummaryCard(
                 'Pending Revenue',
-                '$_currencySymbol${_confirmationOrders.fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
+                '$_currencySymbol${orders.fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
                 Icons.attach_money,
                 Colors.green,
               ),
@@ -641,11 +825,11 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                   ),
                 ),
                 // Table Rows
-                ..._confirmationOrders.asMap().entries.map((entry) {
+                ...orders.asMap().entries.map((entry) {
                   final index = entry.key;
                   final order = entry.value;
                   return _buildOrderTableRow(order, index);
-                }).toList(),
+                }),
               ],
             ),
           ),
@@ -656,7 +840,8 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   Widget _buildProcessingTab() {
-    if (_processingOrders.isEmpty) {
+    final orders = _filteredProcessingOrders;
+    if (orders.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -664,7 +849,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             Icon(Icons.local_shipping, size: 64, color: Colors.grey.shade400),
             const SizedBox(height: 16),
             Text(
-              'No orders in processing',
+              _processingOrders.isEmpty
+                  ? 'No orders in processing'
+                  : 'No processing orders match your filters',
               style: TextStyle(
                 color: Colors.grey.shade600,
                 fontSize: 16,
@@ -686,14 +873,14 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             children: [
               _buildSummaryCard(
                 'Processing Orders',
-                '${_processingOrders.length}',
+                '${orders.length}',
                 Icons.local_shipping,
                 Colors.orange,
               ),
               const SizedBox(width: 16),
               _buildSummaryCard(
                 'Processing Revenue',
-                '$_currencySymbol${_processingOrders.fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
+                '$_currencySymbol${orders.fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
                 Icons.attach_money,
                 Colors.green,
               ),
@@ -740,11 +927,11 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                   ),
                 ),
                 // Table Rows
-                ..._processingOrders.asMap().entries.map((entry) {
+                ...orders.asMap().entries.map((entry) {
                   final index = entry.key;
                   final order = entry.value;
                   return _buildProcessingOrderTableRow(order, index);
-                }).toList(),
+                }),
               ],
             ),
           ),
@@ -755,7 +942,8 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   Widget _buildCompletedTab() {
-    if (_completedOrders.isEmpty) {
+    final orders = _filteredCompletedOrders;
+    if (orders.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -767,7 +955,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             ),
             const SizedBox(height: 16),
             Text(
-              'No completed orders yet',
+              _completedOrders.isEmpty
+                  ? 'No completed orders yet'
+                  : 'No completed orders match your filters',
               style: TextStyle(
                 color: Colors.grey.shade600,
                 fontSize: 16,
@@ -789,21 +979,21 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             children: [
               _buildSummaryCard(
                 'Completed Orders',
-                '${_completedOrders.where((o) => _isCompletedStatus(_normalizedStatus(o['status']))).length}',
+                '${orders.where((o) => _isCompletedStatus(_normalizedStatus(o['status']))).length}',
                 Icons.check_circle,
                 Colors.green,
               ),
               const SizedBox(width: 16),
               _buildSummaryCard(
                 'Cancelled Orders',
-                '${_completedOrders.where((o) => _isCancelledStatus(_normalizedStatus(o['status']))).length}',
+                '${orders.where((o) => _isCancelledStatus(_normalizedStatus(o['status']))).length}',
                 Icons.cancel,
                 Colors.red,
               ),
               const SizedBox(width: 16),
               _buildSummaryCard(
                 'Total Revenue',
-                '$_currencySymbol${_completedOrders.where((o) => _isCompletedStatus(_normalizedStatus(o['status']))).fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
+                '$_currencySymbol${orders.where((o) => _isCompletedStatus(_normalizedStatus(o['status']))).fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
                 Icons.attach_money,
                 Colors.green,
               ),
@@ -853,11 +1043,11 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                   ),
                 ),
                 // Table Rows
-                ..._completedOrders.asMap().entries.map((entry) {
+                ...orders.asMap().entries.map((entry) {
                   final index = entry.key;
                   final order = entry.value;
                   return _buildCompletedOrderTableRow(order, index);
-                }).toList(),
+                }),
               ],
             ),
           ),
@@ -959,80 +1149,123 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
   Future<void> _showOrderItemsDialogBody(Map<String, dynamic> order) async {
     final items = _itemsForDialog(order);
-    await showDialog<void>(
+    final orderLabel =
+        order['order_no'] ??
+        order['id']?.toString().substring(0, 8).toUpperCase() ??
+        'N/A';
+    await showAntdModal<void>(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text(
-              'Order #${order['order_no'] ?? order['id']?.toString().substring(0, 8).toUpperCase() ?? 'N/A'}',
+      title: 'Order #$orderLabel',
+      maxWidth: 560,
+      body: items.isEmpty
+          ? const Text('No dishes found for this order.')
+          : Table(
+            columnWidths: const {
+              0: FlexColumnWidth(3),
+              1: FlexColumnWidth(1),
+              2: FlexColumnWidth(1.2),
+            },
+            border: TableBorder(
+              horizontalInside: BorderSide(color: Colors.grey.shade200),
             ),
-            content: SizedBox(
-              width: 420,
-              child:
-                  items.isEmpty
-                      ? const Text('No dishes found for this order.')
-                      : ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: items.length,
-                        separatorBuilder: (_, __) => const Divider(height: 12),
-                        itemBuilder: (context, i) {
-                          final item = items[i];
-                          final name =
-                              item['name'] ??
-                              item['dishName'] ??
-                              item['dish_name'] ??
-                              item['itemName'] ??
-                              item['item_name'] ??
-                              'Unknown dish';
-                          final desc =
-                              (item['description'] ??
-                                      item['public_description'] ??
-                                      item['publicDescription'] ??
-                                      item['category'] ??
-                                      '')
-                                  .toString()
-                                  .trim();
-                          final qty = item['quantity'] ?? 1;
-                          final price = item['price'] ?? '0';
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      '$name x$qty',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                  Text('$_currencySymbol$price'),
-                                ],
-                              ),
-                              if (desc.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Text(
-                                    desc,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey.shade700,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          );
-                        },
+            children: [
+              TableRow(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Dish',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade700,
                       ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Qty',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Price',
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
+                ],
               ),
+              ...items.map((item) {
+                final name =
+                    item['name'] ??
+                    item['dishName'] ??
+                    item['dish_name'] ??
+                    item['itemName'] ??
+                    item['item_name'] ??
+                    'Unknown dish';
+                final desc =
+                    (item['description'] ??
+                            item['public_description'] ??
+                            item['publicDescription'] ??
+                            item['category'] ??
+                            '')
+                        .toString()
+                        .trim();
+                final qty = item['quantity'] ?? 1;
+                final price = item['price'] ?? '0';
+                return TableRow(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$name',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          if (desc.isNotEmpty)
+                            Text(
+                              desc,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text('$qty'),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        '$_currencySymbol$price',
+                        textAlign: TextAlign.end,
+                      ),
+                    ),
+                  ],
+                );
+              }),
             ],
           ),
+      actions: [
+        AntdPrimaryButton(
+          label: 'Close',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
     );
   }
 
@@ -1992,96 +2225,20 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   Future<void> _cancelOrderBody(String orderId) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAntdModal<bool>(
       context: context,
-      builder:
-          (context) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 420),
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Close button
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: IconButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      icon: const Icon(Icons.close, color: Colors.black),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Title
-                  const Text(
-                    'CANCEL ORDER',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Are you sure you want to cancel this order?',
-                    style: TextStyle(fontSize: 13),
-                  ),
-                  const SizedBox(height: 24),
-                  // Buttons
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.of(context).pop(true),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text(
-                            'YES, CANCEL',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.of(context).pop(false),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey.shade300,
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text(
-                            'NO',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
+      title: 'Cancel order',
+      body: const Text('Are you sure you want to cancel this order?'),
+      actions: [
+        AntdCancelButton(
+          label: 'No',
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+        AntdPrimaryButton(
+          label: 'Yes, cancel',
+          onPressed: () => Navigator.of(context).pop(true),
+        ),
+      ],
     );
 
     if (confirmed == true) {
@@ -2273,96 +2430,20 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   }
 
   Future<void> _markDeliveredBody(String orderId) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAntdModal<bool>(
       context: context,
-      builder:
-          (context) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 420),
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Close button
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: IconButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      icon: const Icon(Icons.close, color: Colors.black),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Title
-                  const Text(
-                    'MARK AS DELIVERED',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Confirm that this order has been delivered?',
-                    style: TextStyle(fontSize: 13),
-                  ),
-                  const SizedBox(height: 24),
-                  // Buttons
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.of(context).pop(true),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFC024),
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text(
-                            'YES, DELIVERED',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.of(context).pop(false),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey.shade300,
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text(
-                            'CANCEL',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
+      title: 'Mark as delivered',
+      body: const Text('Confirm that this order has been delivered?'),
+      actions: [
+        AntdCancelButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+        AntdPrimaryButton(
+          label: 'Yes, delivered',
+          onPressed: () => Navigator.of(context).pop(true),
+        ),
+      ],
     );
 
     if (confirmed == true) {

@@ -1146,6 +1146,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   void _openCartSidebar() {
+    unawaited(MenuStore.instance.ensureImagesLoaded());
     _scaffoldKey.currentState?.openEndDrawer();
   }
 
@@ -4074,7 +4075,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         borderRadius: BorderRadius.horizontal(left: Radius.circular(16)),
       ),
       child: ListenableBuilder(
-        listenable: CartStore.instance,
+        listenable: Listenable.merge([
+          CartStore.instance,
+          MenuStore.instance,
+        ]),
         builder: (context, _) {
           final cartItems = CartStore.instance.items;
           final totalAmount = CartStore.instance.totalAmount;

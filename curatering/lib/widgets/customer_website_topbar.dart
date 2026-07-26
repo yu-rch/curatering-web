@@ -40,12 +40,14 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
   void initState() {
     super.initState();
     CartStore.instance.addListener(_onCartChanged);
+    MenuStore.instance.addListener(_onCartChanged);
     _refreshCustomerAuth();
   }
 
   @override
   void dispose() {
     CartStore.instance.removeListener(_onCartChanged);
+    MenuStore.instance.removeListener(_onCartChanged);
     super.dispose();
   }
 
@@ -234,6 +236,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
   }
 
   void _openCart() {
+    MenuStore.instance.ensureImagesLoaded();
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -251,7 +254,10 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
             maxChildSize: 0.92,
             builder: (context, scrollController) {
               return AnimatedBuilder(
-                animation: CartStore.instance,
+                animation: Listenable.merge([
+                  CartStore.instance,
+                  MenuStore.instance,
+                ]),
                 builder: (context, _) {
                   final cartItems = CartStore.instance.items;
                   final totalAmount = CartStore.instance.totalAmount;

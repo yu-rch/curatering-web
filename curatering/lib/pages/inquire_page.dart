@@ -411,8 +411,27 @@ class _InquirePageState extends State<InquirePage> {
     return int.tryParse(raw);
   }
 
+  void _selectPackage(int index) {
+    if (index < 0 || index >= _locationPackages.length) return;
+    final pkg = _locationPackages[index];
+    setState(() {
+      _selectedPackageIndex = index;
+      _inquiryType = (pkg['type'] as String?) ?? kInquiryTypeCatering;
+      _serviceType = (pkg['service'] as String?) ?? 'catering';
+      _currentStep = _InquiryStep.guestCount;
+    });
+  }
+
   void _proceedFromPackages() {
-    setState(() => _currentStep = _InquiryStep.guestCount);
+    final pkg = _locationPackages[_selectedPackageIndex.clamp(
+      0,
+      _locationPackages.length - 1,
+    )];
+    setState(() {
+      _inquiryType = (pkg['type'] as String?) ?? kInquiryTypeCatering;
+      _serviceType = (pkg['service'] as String?) ?? 'catering';
+      _currentStep = _InquiryStep.guestCount;
+    });
   }
 
   void _proceedFromGuestCount() {
@@ -1790,34 +1809,62 @@ class _InquirePageState extends State<InquirePage> {
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
                     childAspectRatio: 1.1,
-                    children: _locationPackages.map((pkg) {
-                      return Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
+                    children: List.generate(_locationPackages.length, (index) {
+                      final pkg = _locationPackages[index];
+                      final selected = _selectedPackageIndex == index;
+                      return Material(
+                        color: selected
+                            ? _accentYellow.withValues(alpha: 0.25)
+                            : Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        child: InkWell(
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(pkg['icon'] as IconData, size: 28, color: _darkHeader),
-                            const SizedBox(height: 8),
-                            Text(
-                              pkg['title'] as String,
-                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: _darkHeader),
-                            ),
-                            const SizedBox(height: 6),
-                            Expanded(
-                              child: Text(
-                                pkg['description'] as String,
-                                style: TextStyle(fontSize: 11, color: Colors.grey.shade700, height: 1.4),
+                          onTap: () => _selectPackage(index),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: selected
+                                    ? _darkHeader
+                                    : Colors.grey.shade300,
+                                width: selected ? 2 : 1,
                               ),
                             ),
-                          ],
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(
+                                  pkg['icon'] as IconData,
+                                  size: 28,
+                                  color: _darkHeader,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  pkg['title'] as String,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                    color: _darkHeader,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Expanded(
+                                  child: Text(
+                                    pkg['description'] as String,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey.shade700,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       );
-                    }).toList(),
+                    }),
                   ),
                   const SizedBox(height: 28),
                   SizedBox(
@@ -2604,21 +2651,32 @@ class _InquirePageState extends State<InquirePage> {
             // Event type ABOVE event title (requirement #4)
             _buildEventTypePicker(),
             const SizedBox(height: 12),
-            TextField(
-              controller: _eventTitle,
-              decoration: _requiredDecoration(
-                label: 'Event title',
-                invalid: isEvent && _eventTitle.text.trim().isEmpty,
+            AntdFieldShell(
+              label: 'Event title',
+              required: isEvent,
+              errorText: _attemptedSubmit &&
+                      isEvent &&
+                      _eventTitle.text.trim().isEmpty
+                  ? 'Required'
+                  : null,
+              child: AntdOutlineInput(
+                controller: _eventTitle,
+                hintText: 'Event title',
+                onChanged: (_) => setState(() {}),
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _customerName,
-              decoration: _requiredDecoration(
-                label: 'Customer',
-                invalid: _customerName.text.trim().isEmpty,
+            AntdFieldShell(
+              label: 'Customer',
+              required: true,
+              errorText: _attemptedSubmit && _customerName.text.trim().isEmpty
+                  ? 'Required'
+                  : null,
+              child: AntdOutlineInput(
+                controller: _customerName,
+                hintText: 'Customer name',
+                onChanged: (_) => setState(() {}),
               ),
-              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 2),
             CheckboxListTile(
@@ -2637,52 +2695,62 @@ class _InquirePageState extends State<InquirePage> {
               controlAffinity: ListTileControlAffinity.leading,
             ),
             const SizedBox(height: 8),
-            Text(
-              'Formality level',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'casual', label: Text('Casual')),
-                ButtonSegment(value: 'semiformal', label: Text('Semiformal')),
-                ButtonSegment(value: 'formal', label: Text('Formal')),
-              ],
-              selected: {_formalityLevel},
-              onSelectionChanged: (s) =>
-                  setState(() => _formalityLevel = s.first),
+            AntdFieldShell(
+              label: 'Formality level',
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'casual', label: Text('Casual')),
+                  ButtonSegment(value: 'semiformal', label: Text('Semiformal')),
+                  ButtonSegment(value: 'formal', label: Text('Formal')),
+                ],
+                selected: {_formalityLevel},
+                onSelectionChanged: (s) =>
+                    setState(() => _formalityLevel = s.first),
+              ),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _contactPerson,
-              decoration: _requiredDecoration(
-                label: 'Contact person',
-                invalid: _contactPerson.text.trim().isEmpty,
+            AntdFieldShell(
+              label: 'Contact person',
+              required: true,
+              errorText:
+                  _attemptedSubmit && _contactPerson.text.trim().isEmpty
+                      ? 'Required'
+                      : null,
+              child: AntdOutlineInput(
+                controller: _contactPerson,
+                hintText: 'Contact person',
+                onChanged: (_) => setState(() {}),
               ),
             ),
             const SizedBox(height: 8),
-            TextField(
-              controller: _contactNumber,
-              keyboardType: TextInputType.phone,
-              maxLength: 11,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(11),
-              ],
-              decoration: _requiredDecoration(
-                label: 'Contact number',
-                invalid: _contactNumberInvalid,
-              ).copyWith(counterText: ''),
+            AntdFieldShell(
+              label: 'Contact number',
+              required: true,
+              errorText: _attemptedSubmit && _contactNumberInvalid
+                  ? 'Required'
+                  : null,
+              child: AntdOutlineInput(
+                controller: _contactNumber,
+                hintText: '09XXXXXXXXX',
+                keyboardType: TextInputType.phone,
+                maxLength: 11,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(11),
+                ],
+                onChanged: (_) => setState(() {}),
+              ),
             ),
             const SizedBox(height: 8),
-            TextField(
-              controller: _inquiryEmail,
-              decoration: _requiredDecoration(
-                label: 'Email address',
-                invalid: _emailInvalid,
+            AntdFieldShell(
+              label: 'Email address',
+              required: true,
+              errorText: _attemptedSubmit && _emailInvalid ? 'Required' : null,
+              child: AntdOutlineInput(
+                controller: _inquiryEmail,
+                hintText: 'name@example.com',
+                keyboardType: TextInputType.emailAddress,
+                onChanged: (_) => setState(() {}),
               ),
             ),
 
@@ -2798,40 +2866,43 @@ class _InquirePageState extends State<InquirePage> {
 
             // Venue with map picker
             const SizedBox(height: 12),
-            Text(
-              'Event Venue',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _eventCity,
-              decoration: _requiredDecoration(
-                label: 'Event venue',
-                invalid: _eventCity.text.trim().isEmpty,
-                suffixIcon: IconButton(
-                  tooltip: 'Pick on map',
-                  onPressed: () async {
-                    final res = await showMapPicker(
-                      context: context,
-                      initialLatitude: _addressLat,
-                      initialLongitude: _addressLng,
-                      initialAddress: _eventCity.text.isNotEmpty
-                          ? _eventCity.text
-                          : null,
-                    );
-                    if (res == null || !mounted) return;
-                    setState(() {
-                      _eventCity.text = res.address;
-                      _addressLat = res.latitude;
-                      _addressLng = res.longitude;
-                      _venueSuggestions.clear();
-                    });
-                  },
-                  icon: const Icon(Icons.place_outlined),
-                ),
+            AntdFieldShell(
+              label: 'Event venue',
+              required: true,
+              errorText: _attemptedSubmit && _eventCity.text.trim().isEmpty
+                  ? 'Required'
+                  : null,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: AntdOutlineInput(
+                      controller: _eventCity,
+                      hintText: 'Venue address',
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Pick on map',
+                    onPressed: () async {
+                      final res = await showMapPicker(
+                        context: context,
+                        initialLatitude: _addressLat,
+                        initialLongitude: _addressLng,
+                        initialAddress: _eventCity.text.isNotEmpty
+                            ? _eventCity.text
+                            : null,
+                      );
+                      if (res == null || !mounted) return;
+                      setState(() {
+                        _eventCity.text = res.address;
+                        _addressLat = res.latitude;
+                        _addressLng = res.longitude;
+                        _venueSuggestions.clear();
+                      });
+                    },
+                    icon: const Icon(Icons.place_outlined),
+                  ),
+                ],
               ),
             ),
             if (_venueSuggestions.isNotEmpty)
@@ -3061,51 +3132,59 @@ class _InquirePageState extends State<InquirePage> {
               const SizedBox(height: 6),
               _responsiveTwoCol(
                 context,
-                TextField(
-                  controller: _foodTastingDate,
-                  readOnly: true,
-                  decoration: _requiredDecoration(
-                    label: 'Food tasting date',
-                    invalid: _foodTastingRequested &&
-                        _foodTastingDate.text.trim().isEmpty,
-                    hint: 'date',
+                AntdFieldShell(
+                  label: 'Food tasting date',
+                  required: true,
+                  errorText: _attemptedSubmit &&
+                          _foodTastingRequested &&
+                          _foodTastingDate.text.trim().isEmpty
+                      ? 'Required'
+                      : null,
+                  child: AntdPickerInput(
+                    value: _foodTastingDate.text,
+                    hintText: 'Pick date',
+                    icon: Icons.calendar_today_outlined,
+                    onTap: () async {
+                      final d = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate:
+                            DateTime.now().subtract(const Duration(days: 1)),
+                        lastDate:
+                            DateTime.now().add(const Duration(days: 365 * 2)),
+                      );
+                      if (d == null) return;
+                      setState(() {
+                        _foodTastingDate.text =
+                            '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+                      });
+                    },
                   ),
-                  onTap: () async {
-                    final d = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now(),
-                      firstDate:
-                          DateTime.now().subtract(const Duration(days: 1)),
-                      lastDate:
-                          DateTime.now().add(const Duration(days: 365 * 2)),
-                    );
-                    if (d == null) return;
-                    setState(() {
-                      _foodTastingDate.text =
-                          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-                    });
-                  },
                 ),
-                TextField(
-                  controller: _foodTastingTime,
-                  readOnly: true,
-                  decoration: _requiredDecoration(
-                    label: 'Food tasting time',
-                    invalid: _foodTastingRequested &&
-                        _foodTastingTime.text.trim().isEmpty,
-                    hint: 'time',
+                AntdFieldShell(
+                  label: 'Food tasting time',
+                  required: true,
+                  errorText: _attemptedSubmit &&
+                          _foodTastingRequested &&
+                          _foodTastingTime.text.trim().isEmpty
+                      ? 'Required'
+                      : null,
+                  child: AntdPickerInput(
+                    value: _foodTastingTime.text,
+                    hintText: 'Pick time',
+                    icon: Icons.schedule_outlined,
+                    onTap: () async {
+                      final t = await showTimePicker(
+                        context: context,
+                        initialTime: const TimeOfDay(hour: 13, minute: 0),
+                      );
+                      if (t == null) return;
+                      setState(() {
+                        _foodTastingTime.text =
+                            '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+                      });
+                    },
                   ),
-                  onTap: () async {
-                    final t = await showTimePicker(
-                      context: context,
-                      initialTime: const TimeOfDay(hour: 13, minute: 0),
-                    );
-                    if (t == null) return;
-                    setState(() {
-                      _foodTastingTime.text =
-                          '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-                    });
-                  },
                 ),
               ),
             ],
@@ -3119,26 +3198,37 @@ class _InquirePageState extends State<InquirePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DropdownButtonFormField<String>(
-          value: kEventTypeChoices.contains(_eventTypeChoice)
-              ? _eventTypeChoice
-              : 'Other',
-          decoration:
-              _requiredDecoration(label: 'Event type', invalid: false),
-          items: kEventTypeChoices
-              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-              .toList(),
-          onChanged: (v) => setState(() => _eventTypeChoice = v ?? 'Other'),
+        AntdFieldShell(
+          label: 'Event type',
+          required: true,
+          child: DropdownButtonFormField<String>(
+            value: kEventTypeChoices.contains(_eventTypeChoice)
+                ? _eventTypeChoice
+                : 'Other',
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            ),
+            items: kEventTypeChoices
+                .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                .toList(),
+            onChanged: (v) => setState(() => _eventTypeChoice = v ?? 'Other'),
+          ),
         ),
         if (_eventTypeChoice == 'Other') ...[
           const SizedBox(height: 8),
-          TextField(
-            controller: _eventTypeOther,
-            decoration: _requiredDecoration(
-              label: 'Describe event type',
-              invalid: _eventTypeOtherInvalid,
+          AntdFieldShell(
+            label: 'Describe event type',
+            required: true,
+            errorText: _attemptedSubmit && _eventTypeOtherInvalid
+                ? 'Required'
+                : null,
+            child: AntdOutlineInput(
+              controller: _eventTypeOther,
+              hintText: 'Describe event type',
+              onChanged: (_) => setState(() {}),
             ),
-            onChanged: (_) => setState(() {}),
           ),
         ],
       ],

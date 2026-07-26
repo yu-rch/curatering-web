@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../services/cashier_pos_api.dart';
 import '../utils/cashier_pos_filters.dart';
+import '../widgets/antd_buttons.dart';
+import '../widgets/antd_dialog.dart';
+import '../widgets/antd_form_field.dart';
 import '../widgets/antd_tokens.dart';
 
 /// Cashier POS shell: online orders, walk-in queue, new walk-in order, history.
@@ -29,8 +32,11 @@ class _CashierPosShellState extends State<CashierPosShell>
   String _preparingFilter = 'payment_confirmed';
   final _walkInLabelCtrl = TextEditingController();
   final _amountCtrl = TextEditingController();
+  final _menuSearchCtrl = TextEditingController();
   String _paymentMethod = 'CASH';
   bool _showWalkInValidation = false;
+  String _menuTypeFilter = 'ALL';
+  String _menuSearchQuery = '';
 
   @override
   void initState() {
@@ -44,6 +50,7 @@ class _CashierPosShellState extends State<CashierPosShell>
     _tabs.dispose();
     _walkInLabelCtrl.dispose();
     _amountCtrl.dispose();
+    _menuSearchCtrl.dispose();
     super.dispose();
   }
 
@@ -98,33 +105,110 @@ class _CashierPosShellState extends State<CashierPosShell>
           )
           .toList();
 
+  List<Map<String, dynamic>> get _restaurantMenu {
+    return _menu.where((d) {
+      final category = (d['category'] ?? '').toString().trim().toLowerCase();
+      return category == 'restaurant';
+    }).toList();
+  }
+
+  String _dishMealType(Map<String, dynamic> d) {
+    final meal = (d['meal_type'] ?? d['type'] ?? '').toString().trim();
+    if (meal.isNotEmpty) return meal.toUpperCase();
+    final category = (d['category'] ?? '').toString().trim().toLowerCase();
+    switch (category) {
+      case 'main_course':
+      case 'rice':
+        return 'RICE MEALS';
+      case 'noodles':
+        return 'PASTA';
+      case 'appetizer':
+        return 'SANDWICHES';
+      case 'dessert':
+        return 'OTHERS';
+      case 'drink':
+      case 'drinks':
+        return 'DRINKS';
+      default:
+        return 'OTHERS';
+    }
+  }
+
+  List<Map<String, dynamic>> get _filteredRestaurantMenu {
+    final selected = _menuTypeFilter.trim().toLowerCase();
+    final search = _menuSearchQuery.trim().toLowerCase();
+    return _restaurantMenu.where((d) {
+      final type = _dishMealType(d).toLowerCase();
+      if (selected != 'all' && type != selected) return false;
+      if (search.isEmpty) return true;
+      final name = (d['name'] ?? '').toString().toLowerCase();
+      return name.contains(search);
+    }).toList();
+  }
+
+  List<String> get _menuTypeChips {
+    final types = <String>{};
+    for (final d in _restaurantMenu) {
+      types.add(_dishMealType(d));
+    }
+    final list = types.toList()..sort();
+    return ['ALL', ...list];
+  }
+
+  void _addDishToTray(Map<String, dynamic> d) {
+    final name = (d['name'] ?? 'Dish').toString();
+    final price = _toMoney(d['price']);
+    setState(() {
+      final idx = _tray.indexWhere(
+        (it) =>
+            (it['item_name']?.toString() ?? '') == name &&
+            (it['dip']?.toString() ?? '') == '',
+      );
+      if (idx >= 0) {
+        final existing = _tray[idx];
+        final qty =
+            (existing['qty'] is num)
+                ? (existing['qty'] as num).toInt()
+                : int.tryParse('${existing['qty']}') ?? 1;
+        existing['qty'] = qty + 1;
+      } else {
+        _tray.add({
+          'item_name': name,
+          'dip': '',
+          'dip_qty': 0,
+          'qty': 1,
+          'price': price,
+        });
+      }
+    });
+  }
+
   Future<void> _confirmPayment(PosOrderView order) async {
     final paidCtrl = TextEditingController(
       text: order.total.toStringAsFixed(2),
     );
-    final ok = await showDialog<bool>(
+    final ok = await showAntdModal<bool>(
       context: context,
-      builder:
-          (ctx) => AlertDialog(
-            title: Text('Confirm · ${order.orderNo}'),
-            content: TextField(
-              controller: paidCtrl,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(labelText: 'Amount received'),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Confirm'),
-              ),
-            ],
-          ),
+      title: 'Confirm · ${order.orderNo}',
+      body: AntdFieldShell(
+        label: 'Amount received',
+        required: true,
+        child: AntdOutlineInput(
+          controller: paidCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          hintText: order.total.toStringAsFixed(2),
+        ),
+      ),
+      actions: [
+        AntdCancelButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.pop(context, false),
+        ),
+        AntdPrimaryButton(
+          label: 'Confirm',
+          onPressed: () => Navigator.pop(context, true),
+        ),
+      ],
     );
     final paid = double.tryParse(paidCtrl.text) ?? order.total;
     paidCtrl.dispose();
@@ -201,28 +285,27 @@ class _CashierPosShellState extends State<CashierPosShell>
       String? paymentRef;
       if (_paymentMethod.toUpperCase() == 'GCASH') {
         final refCtrl = TextEditingController();
-        final okRef = await showDialog<bool>(
+        final okRef = await showAntdModal<bool>(
           context: context,
-          builder:
-              (ctx) => AlertDialog(
-                title: const Text('GCash reference'),
-                content: TextField(
-                  controller: refCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Payment reference',
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text('Cancel'),
-                  ),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('Confirm'),
-                  ),
-                ],
-              ),
+          title: 'GCash reference',
+          body: AntdFieldShell(
+            label: 'Payment reference',
+            required: true,
+            child: AntdOutlineInput(
+              controller: refCtrl,
+              hintText: 'Enter GCash reference',
+            ),
+          ),
+          actions: [
+            AntdCancelButton(
+              label: 'Cancel',
+              onPressed: () => Navigator.pop(context, false),
+            ),
+            AntdPrimaryButton(
+              label: 'Confirm',
+              onPressed: () => Navigator.pop(context, true),
+            ),
+          ],
         );
         if (okRef != true || refCtrl.text.trim().isEmpty) {
           refCtrl.dispose();
@@ -478,36 +561,95 @@ class _CashierPosShellState extends State<CashierPosShell>
   }
 
   Widget _buildNewOrderTab() {
+    final dishes = _filteredRestaurantMenu;
+    final types = _menuTypeChips;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           flex: 3,
-          child: ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: _menu.length,
-            itemBuilder: (_, i) {
-              final d = _menu[i];
-              final price = _toMoney(d['price']);
-              return ListTile(
-                title: Text(d['name']?.toString() ?? 'Dish'),
-                subtitle: Text('₱${price.toStringAsFixed(2)}'),
-                trailing: IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: () {
-                    setState(() {
-                      _tray.add({
-                        'item_name': d['name'],
-                        'dip': '',
-                        'dip_qty': 0,
-                        'qty': 1,
-                        'price': price,
-                      });
-                    });
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                child: TextField(
+                  controller: _menuSearchCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'Search restaurant menu',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _menuSearchQuery.isEmpty
+                        ? null
+                        : IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => setState(() {
+                            _menuSearchCtrl.clear();
+                            _menuSearchQuery = '';
+                          }),
+                        ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    isDense: true,
+                  ),
+                  onChanged: (v) => setState(
+                    () => _menuSearchQuery = v.trim().toLowerCase(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 44,
+                child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  scrollDirection: Axis.horizontal,
+                  itemCount: types.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final type = types[index];
+                    final selected =
+                        type.toLowerCase() == _menuTypeFilter.toLowerCase();
+                    return FilterChip(
+                      label: Text(type),
+                      selected: selected,
+                      onSelected: (_) =>
+                          setState(() => _menuTypeFilter = type),
+                      selectedColor: AntdTokens.brandPrimary.withValues(
+                        alpha: 0.35,
+                      ),
+                      checkmarkColor: AntdTokens.brandOnPrimary,
+                    );
                   },
                 ),
-              );
-            },
+              ),
+              Expanded(
+                child: dishes.isEmpty
+                    ? Center(
+                      child: Text(
+                        'No restaurant dishes match your filters',
+                        style: TextStyle(color: Colors.grey.shade600),
+                      ),
+                    )
+                    : ListView.builder(
+                      padding: const EdgeInsets.all(12),
+                      itemCount: dishes.length,
+                      itemBuilder: (_, i) {
+                        final d = dishes[i];
+                        final price = _toMoney(d['price']);
+                        return ListTile(
+                          title: Text(d['name']?.toString() ?? 'Dish'),
+                          subtitle: Text(
+                            '${_dishMealType(d)} · ₱${price.toStringAsFixed(2)}',
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.add),
+                            onPressed: () => _addDishToTray(d),
+                          ),
+                        );
+                      },
+                    ),
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -562,24 +704,45 @@ class _CashierPosShellState extends State<CashierPosShell>
                   ),
                   Expanded(
                     child: ListView(
-                      children:
-                          _tray
-                              .map(
-                                (it) => ListTile(
-                                  dense: true,
-                                  title: Text(
-                                    '${it['item_name']} × ${it['qty']}',
-                                  ),
-                                  trailing: IconButton(
+                      children: _tray
+                          .map(
+                            (it) => ListTile(
+                              dense: true,
+                              title: Text(
+                                '${it['item_name']} × ${it['qty']}',
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
                                     icon: const Icon(
                                       Icons.remove_circle_outline,
                                     ),
-                                    onPressed:
-                                        () => setState(() => _tray.remove(it)),
+                                    onPressed: () => setState(() {
+                                      final qty = (it['qty'] is num)
+                                          ? (it['qty'] as num).toInt()
+                                          : int.tryParse('${it['qty']}') ?? 1;
+                                      if (qty <= 1) {
+                                        _tray.remove(it);
+                                      } else {
+                                        it['qty'] = qty - 1;
+                                      }
+                                    }),
                                   ),
-                                ),
-                              )
-                              .toList(),
+                                  IconButton(
+                                    icon: const Icon(Icons.add_circle_outline),
+                                    onPressed: () => setState(() {
+                                      final qty = (it['qty'] is num)
+                                          ? (it['qty'] as num).toInt()
+                                          : int.tryParse('${it['qty']}') ?? 1;
+                                      it['qty'] = qty + 1;
+                                    }),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                          .toList(),
                     ),
                   ),
                   FilledButton(

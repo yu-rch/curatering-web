@@ -30,13 +30,13 @@ class MyCateringsPage extends StatefulWidget {
   State<MyCateringsPage> createState() => _MyCateringsPageState();
 }
 
-class _MyCateringsPageState extends State<MyCateringsPage>
-    with SingleTickerProviderStateMixin {
+class _MyCateringsPageState extends State<MyCateringsPage> {
   List<dynamic> _caterings = [];
   bool _isLoading = true;
   String? _error;
   bool _gridView = false;
-  late final TabController _tabController;
+  /// 0 waiting · 1 responded · 2 completed · 3 cancelled
+  int _statusChipIndex = 0;
   final _searchCtrl = TextEditingController();
   String _typeFilter = 'all'; // all | catering_only | event_only
   DateTime? _dateFrom;
@@ -50,13 +50,11 @@ class _MyCateringsPageState extends State<MyCateringsPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
     _loadCaterings();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -267,30 +265,27 @@ class _MyCateringsPageState extends State<MyCateringsPage>
 
   Future<void> _submitFollowUp(Map<String, dynamic> catering) async {
     final noteCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    final ok = await showAntdModal<bool>(
       context: context,
-      builder:
-          (ctx) => AlertDialog(
-            title: const Text('Follow up'),
-            content: TextField(
-              controller: noteCtrl,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                hintText: 'Tell us how we can help with this inquiry',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Send'),
-              ),
-            ],
-          ),
+      title: 'Follow up',
+      body: TextField(
+        controller: noteCtrl,
+        maxLines: 4,
+        decoration: const InputDecoration(
+          hintText: 'Tell us how we can help with this inquiry',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        AntdCancelButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.pop(context, false),
+        ),
+        AntdPrimaryButton(
+          label: 'Send',
+          onPressed: () => Navigator.pop(context, true),
+        ),
+      ],
     );
     final note = noteCtrl.text.trim();
     noteCtrl.dispose();
@@ -2116,19 +2111,6 @@ class _MyCateringsPageState extends State<MyCateringsPage>
             tooltip: 'Refresh caterings',
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          indicatorColor: const Color(0xFFFFC024),
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          tabs: const [
-            Tab(text: 'WAITING'),
-            Tab(text: 'RESPONDED'),
-            Tab(text: 'COMPLETED'),
-            Tab(text: 'CANCELLED'),
-          ],
-        ),
       ),
       body: Column(
         children: [
@@ -2141,6 +2123,33 @@ class _MyCateringsPageState extends State<MyCateringsPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final entry in const [
+                      (0, 'WAITING'),
+                      (1, 'RESPONDED'),
+                      (2, 'COMPLETED'),
+                      (3, 'CANCELLED'),
+                    ])
+                      FilterChip(
+                        label: Text(entry.$2),
+                        selected: _statusChipIndex == entry.$1,
+                        onSelected: (_) =>
+                            setState(() => _statusChipIndex = entry.$1),
+                        selectedColor: const Color(0xFFFFC024),
+                        checkmarkColor: const Color(0xFF1E1E1E),
+                        labelStyle: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: _statusChipIndex == entry.$1
+                              ? const Color(0xFF1E1E1E)
+                              : Colors.grey.shade800,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
@@ -2240,16 +2249,15 @@ class _MyCateringsPageState extends State<MyCateringsPage>
                         ],
                       ),
                     )
-                    : TabBarView(
-                      controller: _tabController,
-                      children: List.generate(4, (tabIndex) {
-                        final items = _filteredForTab(tabIndex);
+                    : Builder(
+                      builder: (context) {
+                        final items = _filteredForTab(_statusChipIndex);
                         if (items.isEmpty) {
                           return Center(
                             child: Text(
-                              tabIndex == 2
+                              _statusChipIndex == 2
                                   ? 'No completed caterings in the past 30 days'
-                                  : 'No caterings in this tab',
+                                  : 'No caterings for this status',
                               style: TextStyle(color: Colors.grey.shade600),
                             ),
                           );
@@ -2293,7 +2301,7 @@ class _MyCateringsPageState extends State<MyCateringsPage>
                             return _buildInquiryListTile(items[index]);
                           },
                         );
-                      }),
+                      },
                     ),
           ),
         ],

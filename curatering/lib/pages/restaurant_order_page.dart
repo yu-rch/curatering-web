@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../constants/catering_meal_types.dart';
 import '../services/menu_store.dart';
 import '../services/cart_store.dart';
 import '../services/website_content_store.dart';
@@ -63,7 +64,12 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   @override
   void initState() {
     super.initState();
+    MenuStore.instance.addListener(_onMenuChanged);
     unawaited(_initializeStores());
+  }
+
+  void _onMenuChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _initializeStores() async {
@@ -78,6 +84,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
 
   @override
   void dispose() {
+    MenuStore.instance.removeListener(_onMenuChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -635,7 +642,10 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
 
   Widget _buildCartSidebar({VoidCallback? closeOverlay}) {
     return ListenableBuilder(
-      listenable: CartStore.instance,
+      listenable: Listenable.merge([
+        CartStore.instance,
+        MenuStore.instance,
+      ]),
       builder: (context, _) {
         final cartItems = CartStore.instance.items;
         final totalAmount = CartStore.instance.totalAmount;
@@ -655,7 +665,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
-                      'Your Tray',
+                      'My Tray',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 18,
@@ -778,92 +788,176 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     );
   }
 
+  String? _trayDishImageBase64(CartItem cartItem) {
+    final fromLine = cartItem.dish.imageBase64?.trim();
+    if (fromLine != null && fromLine.isNotEmpty) return fromLine;
+    for (final d in MenuStore.instance.activeDishes) {
+      if (d.id == cartItem.dish.id) {
+        final fromMenu = d.imageBase64?.trim();
+        if (fromMenu != null && fromMenu.isNotEmpty) return fromMenu;
+        break;
+      }
+    }
+    return null;
+  }
+
   Widget _buildCartItem(CartItem item) {
+    final unitPrice = double.tryParse(item.dish.price) ?? 0;
+    final mealRaw = item.dish.effectiveMealType.trim();
+    final mealLabel =
+        mealRaw.isEmpty ? 'Item' : mealTypeDisplayLabel(mealRaw);
+    final imageB64 = _trayDishImageBase64(item);
+
     return InkWell(
       onTap: () => _showCustomizeCartItem(item),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(12),
+        margin: const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: Colors.grey.shade200),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Item info
-            Expanded(
-              child: Column(
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    item.dish.name,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: imageB64 != null
+                        ? CachedBase64Image(
+                          base64String: imageB64,
+                          width: 64,
+                          height: 64,
+                          fit: BoxFit.cover,
+                          placeholder: Container(
+                            width: 64,
+                            height: 64,
+                            color: Colors.grey.shade200,
+                            child: Icon(
+                              Icons.restaurant,
+                              color: Colors.grey.shade500,
+                            ),
+                          ),
+                        )
+                        : Container(
+                          width: 64,
+                          height: 64,
+                          color: Colors.grey.shade200,
+                          child: Icon(
+                            Icons.restaurant,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '₱${item.lineSubtotal.toStringAsFixed(2)}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                  if (item.selectedSauce?.trim().isNotEmpty == true ||
-                      item.addOns.isNotEmpty ||
-                      item.specialInstructions?.trim().isNotEmpty == true) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      [
-                        if (item.selectedSauce?.trim().isNotEmpty == true)
-                          'Sauce: ${item.selectedSauce} × ${item.addOnQuantity}',
-                        if (item.addonExtraSubtotal > 0)
-                          'Extra add-on fee: ₱${item.addonExtraSubtotal.toStringAsFixed(2)}',
-                        if (item.addOns.isNotEmpty)
-                          'Add-ons: ${item.addOns.join(', ')}',
-                        if (item.specialInstructions?.trim().isNotEmpty == true)
-                          'Note: ${item.specialInstructions}',
-                      ].join('\n'),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey.shade700,
-                      ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.dish.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$mealLabel ×${item.quantity} @ ₱${unitPrice.toStringAsFixed(2)} · ₱${item.lineSubtotal.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                            height: 1.3,
+                          ),
+                        ),
+                        if (item.selectedSauce?.trim().isNotEmpty == true ||
+                            item.addOns.isNotEmpty ||
+                            item.specialInstructions?.trim().isNotEmpty ==
+                                true) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            [
+                              if (item.selectedSauce?.trim().isNotEmpty == true)
+                                'Sauce: ${item.selectedSauce} × ${item.addOnQuantity}',
+                              if (item.addonExtraSubtotal > 0)
+                                'Extra add-on fee: ₱${item.addonExtraSubtotal.toStringAsFixed(2)}',
+                              if (item.addOns.isNotEmpty)
+                                'Add-ons: ${item.addOns.join(', ')}',
+                              if (item.specialInstructions?.trim().isNotEmpty ==
+                                  true)
+                                'Note: ${item.specialInstructions}',
+                            ].join('\n'),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
-            // Quantity controls
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.remove, size: 16),
-                  onPressed: () => _updateQuantity(item, item.quantity - 1),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
+            Divider(height: 1, color: Colors.grey.shade200),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '$mealLabel qty',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
                   ),
-                ),
-                Text(
-                  '${item.quantity}',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+                  IconButton(
+                    icon: Icon(
+                      Icons.remove_circle_outline,
+                      size: 22,
+                      color: Colors.grey.shade800,
+                    ),
+                    onPressed: () => _updateQuantity(item, item.quantity - 1),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add, size: 16),
-                  onPressed: () => _updateQuantity(item, item.quantity + 1),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Text(
+                      '${item.quantity}',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                  IconButton(
+                    icon: Icon(
+                      Icons.add_circle_outline,
+                      size: 22,
+                      color: Colors.grey.shade800,
+                    ),
+                    onPressed: () => _updateQuantity(item, item.quantity + 1),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
