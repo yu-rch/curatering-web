@@ -8,23 +8,20 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
+import '../features/event_design/event_theme_design_screen.dart';
 import '../models/menu_dish.dart';
 import '../services/menu_store.dart';
 import '../services/public_events_api.dart';
 import '../services/runpod_service.dart';
 import '../services/set_menu_store.dart';
-import '../services/website_content_store.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_form_field.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_tokens.dart';
-import '../widgets/centered_viewport_scroll.dart';
-import '../widgets/customer_website_topbar.dart';
 import '../widgets/allergen_selector_field.dart';
 import '../widgets/inquiry_menu_selection_dialog.dart';
 import '../widgets/map_picker.dart';
@@ -36,7 +33,17 @@ import '../utils/image_download.dart';
 import 'customer_login.dart';
 import 'my_caterings_page.dart';
 
-const String _primaryFont = 'Inter';
+/// Mobile handoff visual tokens (InquiryScreen).
+const Color _kInquiryBrand = Color(0xFFFFC233);
+const Color _kInquiryBrandAppBar = Color(0xFFFFC024);
+const Color _kInquiryInk = Color(0xFF201B16);
+const Color _kInquiryAppBarBg = Color(0xFF242424);
+const Color _kInquiryCanvas = Color(0xFFF1F1F1);
+const Color _kInquiryProgressBg = Color(0xFFF5F4F0);
+const Color _kInquiryAccent = Color(0xFFEE4B3C);
+const Color _kInquiryFooterRule = Color(0xFF8ADFC1);
+const Color _kInquiryBorder = Color(0xFF9B8F82);
+const double _kInquiryMaxWidth = 720;
 
 const _kInquiryWizardStepLabels = <String>[
   'Catering Packages',
@@ -51,24 +58,44 @@ const _kInquiryWizardStepIcons = <IconData>[
   Icons.edit_note_outlined,
   Icons.check_circle_outline,
 ];
+
+Widget inquiryWizardTile({required Widget child}) {
+  return Card(
+    color: _kInquiryCanvas,
+    elevation: 1,
+    margin: const EdgeInsets.only(bottom: 10),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    child: Padding(padding: const EdgeInsets.all(14), child: child),
+  );
+}
+
+Widget inquirySectionHeader(String title) {
+  return Container(
+    width: double.infinity,
+    margin: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    decoration: BoxDecoration(
+      color: _kInquiryBrand,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: _kInquiryBorder),
+    ),
+    child: Text(
+      title,
+      textAlign: TextAlign.center,
+      style: const TextStyle(
+        fontWeight: FontWeight.w800,
+        color: _kInquiryInk,
+        fontSize: 14,
+      ),
+    ),
+  );
+}
+
 bool isMobile(BuildContext context) => MediaQuery.of(context).size.width < 700;
 
 bool isTablet(BuildContext context) =>
     MediaQuery.of(context).size.width >= 700 &&
     MediaQuery.of(context).size.width < 1100;
-
-bool isDesktop(BuildContext context) =>
-    MediaQuery.of(context).size.width >= 1100;
-
-EdgeInsets websitePagePadding(BuildContext context, {double vertical = 24}) {
-  final horizontal =
-      isDesktop(context)
-          ? 40.0
-          : isTablet(context)
-          ? 24.0
-          : 16.0;
-  return EdgeInsets.symmetric(horizontal: horizontal, vertical: vertical);
-}
 
 class InquirePage extends StatefulWidget {
   const InquirePage({
@@ -136,19 +163,20 @@ class _InquirePageState extends State<InquirePage> {
   final List<Map<String, dynamic>> _menuSelections = [];
   String _allergensSerialized = '';
 
-  /// Wizard: 0 packages, 1 guests landing, 2 form (+ design substeps), 3 completed.
+  /// Wizard: 0 packages, 1 guests landing, 2 form, 3 completed.
   int _wizardStep = 0;
-  /// Within wizard step 2: 0 = main form, 1 = design path, 2 = design fields.
-  int _formPhase = 0;
-  String? _eventDesignMode; // 'macrina' | 'customer'
+  /// Suggest = macrina (default); Create my own = customer (theme studio).
+  String _eventDesignMode = 'macrina';
+  Map<String, dynamic>? _customThemeDesign;
   final _macrinaPalette = TextEditingController();
   final _macrinaTheme = TextEditingController();
   final Map<String, String?> _fieldErrors = {};
   String? _venueFieldError;
   String? _genAiError;
 
-  // Event Design - Prompt Based GenAI
+  // Event Design - retained for legacy studio merge / unused AI fields
   bool _wantsCustomDesign = false;
+  int _formPhase = 0; // kept for clearForm compat; unused in mobile shell
   String? _selectedEventType;
   String? _selectedStyle;
   String? _selectedMood;
@@ -226,9 +254,6 @@ class _InquirePageState extends State<InquirePage> {
     }
     MenuStore.instance.loadDishes();
     SetMenuStore.instance.loadSetMenus();
-    WebsiteContentStore.instance.ensureLoaded().then((_) {
-      if (mounted) setState(() {});
-    });
     _prefillFromCustomerProfile();
   }
 
@@ -658,7 +683,6 @@ class _InquirePageState extends State<InquirePage> {
         final submittedId =
             (submitted['cateringId'] ?? submitted['catering_id'] ?? '')
                 .toString();
-        _clearForm();
         setState(() {
           _submittedCateringId = submittedId.isEmpty ? null : submittedId;
           _wizardStep = 3;
@@ -776,116 +800,86 @@ class _InquirePageState extends State<InquirePage> {
     return !_fieldErrors.values.any((e) => e != null && e.trim().isNotEmpty);
   }
 
-  bool _validateMacrinaStep() {
-    setState(() {
-      _fieldErrors.remove('macrinaPalette');
-      _fieldErrors.remove('macrinaTheme');
-    });
-    var ok = true;
-    if (_macrinaPalette.text.trim().isEmpty) {
-      _fieldErrors['macrinaPalette'] = 'Describe your color palette';
-      ok = false;
-    }
-    if (_macrinaTheme.text.trim().isEmpty) {
-      _fieldErrors['macrinaTheme'] = 'Describe your theme';
-      ok = false;
-    }
-    setState(() {});
-    return ok;
-  }
-
   bool _validateAllForSubmit() {
     if (!_validatePhase0MainForm()) return false;
     if (!_isCateringWithEventStyling) return true;
-    if (_eventDesignMode == 'macrina') {
-      return _validateMacrinaStep();
+    if (_eventDesignMode == 'customer' && _customThemeDesign == null) {
+      setState(
+        () =>
+            _fieldErrors['eventDesignMode'] =
+                'Open the theme design studio and save a design',
+      );
+      return false;
     }
     return true;
   }
 
-  void _goNextFromMainForm() {
-    if (!_validatePhase0MainForm()) return;
-    if (_isCateringWithEventStyling) {
-      setState(() => _formPhase = 1);
-    } else {
-      _showOrderSummaryAndConfirm();
+  Future<void> _openThemeDesignStudio() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('customer_data');
+    var email = _email.text.trim();
+    if (raw != null) {
+      try {
+        final data = jsonDecode(raw) as Map<String, dynamic>;
+        final profileEmail = (data['email'] ?? '').toString().trim();
+        if (profileEmail.isNotEmpty) email = profileEmail;
+      } catch (_) {}
+    }
+    if (email.isEmpty) email = 'guest@curatering.internal';
+    if (!mounted) return;
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(
+        builder:
+            (_) => EventThemeDesignScreen(
+              apiBase: apiBaseUrl,
+              userEmail: email,
+              initialEventType: _mapInquiryEventTypeToDesign(_eventType),
+              initialThemeDesign: _customThemeDesign,
+              eventTitle: _eventTitle.text.trim(),
+              formalityLevel: _formality,
+              eventSetting: _eventSetting,
+              persistToOrder: false,
+            ),
+      ),
+    );
+    if (!mounted) return;
+    if (result != null) {
+      setState(() {
+        _customThemeDesign = result;
+        _eventDesignMode = 'customer';
+        _wantsCustomDesign = true;
+        _fieldErrors.remove('eventDesignMode');
+      });
     }
   }
 
   void _goNextFromDesignChoice() {
-    if (_eventDesignMode == null) {
-      setState(
-        () =>
-            _fieldErrors['eventDesignMode'] =
-                'Please choose who will design your event',
-      );
-      return;
-    }
-    setState(() {
-      _fieldErrors.remove('eventDesignMode');
-      _formPhase = 2;
-      if (_eventDesignMode == 'customer') {
-        _wantsCustomDesign = true;
-        _selectedEventType =
-            _selectedEventType ?? _mapInquiryEventTypeToDesign(_eventType);
-      } else {
-        _wantsCustomDesign = false;
-        _clearGeneratedDesignOutputs();
-      }
-    });
+    // Legacy no-op; design is Suggest | Create on the form step.
   }
 
-  /// Event design payload for staff "view details" (AI image vs Macrina text inspiration).
+  /// Event design payload for staff "view details".
   Map<String, dynamic>? _buildThemeDesignForApi() {
     final note = _notesController.text.trim();
     Map<String, dynamic>? base;
     if (_isCateringWithEventStyling) {
-      if (_eventDesignMode == 'macrina') {
+      if (_eventDesignMode == 'customer' && _customThemeDesign != null) {
         base = {
-          'eventDesignSource': 'macrina',
-          'macrinaColorPalette': _macrinaPalette.text.trim(),
-          'macrinaTheme': _macrinaTheme.text.trim(),
-          'serviceType':
-              _isCateringWithEventStyling ? 'catering+event' : _serviceType,
+          ..._customThemeDesign!,
+          'eventDesignSource':
+              (_customThemeDesign!['eventDesignSource'] ?? 'customer_ai')
+                  .toString(),
+          'wantsCustomDesign': true,
+          'serviceType': 'catering+event',
           'eventSetting': _eventSetting,
           'event_setting': _eventSetting,
         };
-      } else if (_eventDesignMode == 'customer') {
-        final style =
-            _resolvedCategory(_selectedStyle, _styleOtherController) ?? '';
-        final mood =
-            _resolvedCategory(_selectedMood, _moodOtherController) ?? '';
-        final eventType =
-            _resolvedCategory(_selectedEventType, _eventTypeOtherController) ??
-            '';
-        final colors = _resolvedMultiSelectWithOther(
-          _selectedColors,
-          _colorOtherController,
-        );
-        final decor = _resolvedMultiSelectWithOther(
-          _selectedDecor,
-          _decorOtherController,
-        );
+      } else {
         base = {
-          'eventDesignSource': 'customer_ai',
-          'wantsCustomDesign': _wantsCustomDesign,
-          'serviceType':
-              _isCateringWithEventStyling ? 'catering+event' : _serviceType,
+          'eventDesignSource': 'macrina',
+          'serviceType': 'catering+event',
           'eventSetting': _eventSetting,
           'event_setting': _eventSetting,
-          if (_generatedImageUrl != null &&
-              _generatedImageUrl!.trim().isNotEmpty)
-            'generatedImageUrl': _generatedImageDisplayUrl(_generatedImageUrl!),
-          if (_generatedDesignPrompt != null &&
-              _generatedDesignPrompt!.trim().isNotEmpty)
-            'generatedPrompt': _generatedDesignPrompt!.trim(),
-          if (eventType.isNotEmpty) 'eventDesignEventType': eventType,
-          if (style.isNotEmpty) 'style': style,
-          if (mood.isNotEmpty) 'mood': mood,
-          if (colors.isNotEmpty) 'colorPalette': colors,
-          if (decor.isNotEmpty) 'decorElements': decor,
-          if (_designPromptController.text.trim().isNotEmpty)
-            'customInstructions': _designPromptController.text.trim(),
+          if (note.isNotEmpty) 'theme_suggestion_note': note,
         };
       }
     }
@@ -953,7 +947,8 @@ class _InquirePageState extends State<InquirePage> {
       _serviceIncluded = 'no';
       _wizardStep = 0;
       _formPhase = 0;
-      _eventDesignMode = null;
+      _eventDesignMode = 'macrina';
+      _customThemeDesign = null;
       _macrinaPalette.clear();
       _macrinaTheme.clear();
       _fieldErrors.clear();
@@ -1098,20 +1093,7 @@ class _InquirePageState extends State<InquirePage> {
     "Other",
   ];
 
-  Widget _inquirySectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8, top: 4),
-      child: Text(
-        title,
-        style: GoogleFonts.getFont(
-          _primaryFont,
-          fontSize: 24,
-          fontWeight: FontWeight.bold,
-          color: const Color(0xFF1E1E1E),
-        ),
-      ),
-    );
-  }
+  Widget _inquirySectionTitle(String title) => inquirySectionHeader(title);
 
   Widget _responsiveTwoCol(BuildContext context, Widget left, Widget right) {
     if (isMobile(context)) {
@@ -1212,225 +1194,182 @@ class _InquirePageState extends State<InquirePage> {
             ? _eventType
             : _inquiryEventTypes.first;
     final isEventStyling = _isCateringWithEventStyling;
-    final guestsNow = int.tryParse(_guests.text.trim()) ?? 0;
-    final canPickEventPackage =
-        guestsNow >= kInquiryLandingEventStylingMinPax;
 
     return [
-      _inquirySectionTitle('Event Information'),
-      const SizedBox(height: 12),
-      const Text(
-        'Service type',
-        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-      ),
-      const SizedBox(height: 8),
-      Row(
-        children: [
-          Expanded(
-            child: RadioListTile<String>(
-              title: const Text(
-                'Catering Only',
-                style: TextStyle(fontSize: 14),
-              ),
-              value: 'catering',
-              groupValue: _serviceType,
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() {
-                    _serviceType = value;
-                    _formPhase = 0;
-                    _eventDesignMode = null;
-                    _fieldErrors.remove('eventTitle');
-                  });
-                }
-              },
-              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-            ),
+      inquiryWizardTile(
+        child: ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
+            'Package type',
+            style: TextStyle(fontWeight: FontWeight.w700),
           ),
-          Expanded(
-            child: RadioListTile<String>(
-              title: Text(
-                canPickEventPackage
-                    ? 'Catering + Event Design'
-                    : 'Event Design (50+ guests)',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: canPickEventPackage ? null : Colors.grey.shade500,
+          subtitle: Text(
+            isEventStyling
+                ? '${inquiryTypeDisplayLabel(_inquiryTypeLabel)}\nMinimum $kInquiryLandingEventStylingMinPax guests.'
+                : '${inquiryTypeDisplayLabel(_inquiryTypeLabel)}\nMaximum ${kInquiryLandingEventStylingMinPax - 1} guests. Event styling below $kInquiryLandingEventStylingMinPax adds ₱${kEventStylingSurchargePerPaxBelow50.toStringAsFixed(0)} per guest.',
+          ),
+        ),
+      ),
+      inquirySectionHeader('EVENT INFORMATION'),
+      inquiryWizardTile(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AntdFieldShell(
+              label: 'Event Title',
+              required: isEventStyling,
+              errorText: _fieldErrors['eventTitle'],
+              child: AntdOutlineInput(
+                controller: _eventTitle,
+                hintText:
+                    !isEventStyling
+                        ? 'Not required for catering only'
+                        : 'Enter event title',
+                readOnly: !isEventStyling,
+                onChanged: (_) => onFieldChanged('eventTitle'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            AntdFieldShell(
+              label: 'Event Type',
+              required: true,
+              child: DropdownButtonFormField<String>(
+                initialValue: eventTypeValue,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items:
+                    _inquiryEventTypes
+                        .map(
+                          (t) => DropdownMenuItem(value: t, child: Text(t)),
+                        )
+                        .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _eventType = value;
+                    _fieldErrors.remove('eventTypeOther');
+                    if (isEventStyling) {
+                      _selectedEventType = _mapInquiryEventTypeToDesign(value);
+                    }
+                  });
+                },
+              ),
+            ),
+            if (_eventType == 'Other') ...[
+              const SizedBox(height: 8),
+              AntdFieldShell(
+                label: 'Custom Event Type',
+                required: true,
+                errorText: _fieldErrors['eventTypeOther'],
+                child: AntdOutlineInput(
+                  controller: _inquiryEventTypeOtherController,
+                  hintText: 'Enter custom event type',
+                  onChanged: (_) => onFieldChanged('eventTypeOther'),
                 ),
               ),
-              value: 'catering+event',
-              groupValue: _serviceType,
-              onChanged:
-                  canPickEventPackage
-                      ? (value) {
-                        if (value != null) {
-                          setState(() {
-                            _serviceType = value;
-                            _selectedEventType = _mapInquiryEventTypeToDesign(
-                              _eventType,
-                            );
-                          });
-                        }
-                      }
-                      : null,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-            ),
-          ),
-        ],
-      ),
-      if (!canPickEventPackage && guestsNow > 0) ...[
-        const SizedBox(height: 4),
-        Text(
-          'Below $kInquiryLandingEventStylingMinPax guests, use Event styling (with surcharge) instead of the full event package.',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-        ),
-      ],
-      const SizedBox(height: 20),
-      _responsiveThreeCol(
-        context,
-        AntdFieldShell(
-          label: 'Event Title',
-          required: _serviceType != 'catering',
-          errorText: _fieldErrors['eventTitle'],
-          child: AntdOutlineInput(
-            controller: _eventTitle,
-            hintText:
-                !isEventStyling
-                    ? 'Not required for catering only'
-                    : 'Enter event title',
-            readOnly: !isEventStyling,
-            onChanged: (_) => onFieldChanged('eventTitle'),
-          ),
-        ),
-        AntdFieldShell(
-          label: 'Event Type',
-          required: true,
-          child: DropdownButtonFormField<String>(
-            value: eventTypeValue,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              border: InputBorder.none,
-              isDense: true,
-              contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-            ),
-            items:
-                _inquiryEventTypes
-                    .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                    .toList(),
-            onChanged: (value) {
-              if (value == null) return;
-              setState(() {
-                _eventType = value;
-                _fieldErrors.remove('eventTypeOther');
-                if (_serviceType == 'catering+event') {
-                  _selectedEventType = _mapInquiryEventTypeToDesign(value);
-                }
-              });
-            },
-          ),
-        ),
-        AntdFieldShell(
-          label: 'Formality',
-          required: true,
-          child: DropdownButtonFormField<String>(
-            value: _formality,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              border: InputBorder.none,
-              isDense: true,
-              contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-            ),
-            items:
-                ['casual', 'semi-formal', 'formal']
-                    .map(
-                      (l) => DropdownMenuItem(
-                        value: l,
-                        child: Text(l.toUpperCase()),
-                      ),
-                    )
-                    .toList(),
-            onChanged: (v) {
-              if (v != null) setState(() => _formality = v);
-            },
-          ),
-        ),
-      ),
-      if (_eventType == 'Other') ...[
-        const SizedBox(height: 16),
-        AntdFieldShell(
-          label: 'Custom Event Type',
-          required: true,
-          errorText: _fieldErrors['eventTypeOther'],
-          child: AntdOutlineInput(
-            controller: _inquiryEventTypeOtherController,
-            hintText: 'Enter custom event type',
-            onChanged: (_) => onFieldChanged('eventTypeOther'),
-          ),
-        ),
-      ],
-      const SizedBox(height: 32),
-      _inquirySectionTitle('Contact Information'),
-      const SizedBox(height: 8),
-      CheckboxListTile(
-        contentPadding: EdgeInsets.zero,
-        value: _customerSameAsContact,
-        title: const Text('Customer same as contact person'),
-        onChanged: (value) {
-          setState(() {
-            _customerSameAsContact = value == true;
-            if (_customerSameAsContact) {
-              _customer.text = _contactPerson.text;
-              _fieldErrors.remove('customer');
-            }
-          });
-        },
-      ),
-      const SizedBox(height: 8),
-      _responsiveThreeCol(
-        context,
-        AntdFieldShell(
-          label: 'Customer Name',
-          required: true,
-          errorText: _fieldErrors['customer'],
-          child: AntdOutlineInput(
-            controller: _customer,
-            hintText: 'Enter your name',
-            readOnly: _customerSameAsContact,
-            onChanged: (_) => onFieldChanged('customer'),
-          ),
-        ),
-        AntdFieldShell(
-          label: 'Contact Person',
-          required: true,
-          errorText: _fieldErrors['contactPerson'],
-          child: AntdOutlineInput(
-            controller: _contactPerson,
-            hintText: 'Contact person name',
-            onChanged: (v) {
-              onFieldChanged('contactPerson');
-              if (_customerSameAsContact) {
-                setState(() => _customer.text = v);
-              }
-            },
-          ),
-        ),
-        AntdFieldShell(
-          label: 'Phone Number',
-          required: true,
-          errorText: _fieldErrors['phone'],
-          child: AntdOutlineInput(
-            controller: _phone,
-            hintText: '09123456789',
-            keyboardType: TextInputType.phone,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(11),
             ],
-            onChanged: (_) => onFieldChanged('phone'),
-          ),
+            const SizedBox(height: 8),
+            AntdFieldShell(
+              label: 'Customer',
+              required: true,
+              errorText: _fieldErrors['customer'],
+              child: AntdOutlineInput(
+                controller: _customer,
+                hintText: 'Enter your name',
+                onChanged: (_) => onFieldChanged('customer'),
+              ),
+            ),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              value: _customerSameAsContact,
+              title: const Text('Same as contact person'),
+              onChanged: (value) {
+                setState(() {
+                  _customerSameAsContact = value == true;
+                  if (_customerSameAsContact) {
+                    _customer.text = _contactPerson.text;
+                    _fieldErrors.remove('customer');
+                  }
+                });
+              },
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Formality',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            const SizedBox(height: 6),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'casual', label: Text('Casual')),
+                ButtonSegment(value: 'semiformal', label: Text('Semiformal')),
+                ButtonSegment(value: 'formal', label: Text('Formal')),
+              ],
+              selected: {
+                _formality == 'semi-formal' ? 'semiformal' : _formality,
+              },
+              onSelectionChanged: (s) {
+                if (s.isEmpty) return;
+                final v = s.first;
+                setState(
+                  () =>
+                      _formality =
+                          v == 'semiformal' ? 'semi-formal' : v,
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            AntdFieldShell(
+              label: 'Contact person',
+              required: true,
+              errorText: _fieldErrors['contactPerson'],
+              child: AntdOutlineInput(
+                controller: _contactPerson,
+                hintText: 'Contact person',
+                onChanged: (v) {
+                  onFieldChanged('contactPerson');
+                  if (_customerSameAsContact) {
+                    _customer.text = v;
+                  }
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+            AntdFieldShell(
+              label: 'Contact number',
+              required: true,
+              errorText: _fieldErrors['phone'],
+              child: AntdOutlineInput(
+                controller: _phone,
+                hintText: 'Phone number',
+                keyboardType: TextInputType.phone,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(11),
+                ],
+                onChanged: (_) => onFieldChanged('phone'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            AntdFieldShell(
+              label: 'Email address',
+              required: true,
+              errorText: _fieldErrors['email'],
+              child: AntdOutlineInput(
+                controller: _email,
+                hintText: 'Email',
+                keyboardType: TextInputType.emailAddress,
+                onChanged: (_) => onFieldChanged('email'),
+              ),
+            ),
+          ],
         ),
       ),
-      const SizedBox(height: 16),
+      // Venue / guests / schedule / theme / menu
       _responsiveThreeCol(
         context,
         AntdFieldShell(
@@ -1488,7 +1427,7 @@ class _InquirePageState extends State<InquirePage> {
         EventVenueMapPreview(address: _address.text.trim()),
       ],
       const SizedBox(height: 32),
-      _inquirySectionTitle('Event Details'),
+      inquirySectionHeader('EVENT SCHEDULE & VENUE'),
       const SizedBox(height: 16),
       _responsiveThreeCol(
         context,
@@ -1788,7 +1727,7 @@ class _InquirePageState extends State<InquirePage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                _inquirySectionTitle('Event styling'),
+                inquirySectionHeader('EVENT STYLING'),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -1856,13 +1795,65 @@ class _InquirePageState extends State<InquirePage> {
         ),
       ],
       const SizedBox(height: 32),
+
+      if (_isCateringWithEventStyling) ...[
+        inquirySectionHeader('EVENT THEME DESIGN'),
+        inquiryWizardTile(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'This inquiry includes event styling (50+ guests). Choose how you want the theme handled.',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 10),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'macrina', label: Text('Suggest')),
+                  ButtonSegment(value: 'customer', label: Text('Create my own')),
+                ],
+                selected: {_eventDesignMode},
+                onSelectionChanged: (s) {
+                  if (s.isEmpty) return;
+                  setState(() {
+                    _eventDesignMode = s.first;
+                    _fieldErrors.remove('eventDesignMode');
+                    if (_eventDesignMode == 'macrina') {
+                      _wantsCustomDesign = false;
+                    }
+                  });
+                },
+              ),
+              if (_eventDesignMode == 'customer') ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _openThemeDesignStudio,
+                  icon: const Icon(Icons.palette_outlined),
+                  label: Text(
+                    _customThemeDesign == null
+                        ? 'Open theme design studio'
+                        : 'Edit saved theme design',
+                  ),
+                ),
+              ],
+              if (_fieldErrors['eventDesignMode'] != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _fieldErrors['eventDesignMode']!,
+                  style: const TextStyle(color: Color(0xFFFF4D4F), fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
       LayoutBuilder(
         builder: (context, constraints) {
           final useTwoColumns = constraints.maxWidth >= 820;
           final menuSelection = Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _inquirySectionTitle('Menu preferences'),
+              inquirySectionHeader('MENU'),
               const SizedBox(height: 8),
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
@@ -1979,7 +1970,7 @@ class _InquirePageState extends State<InquirePage> {
           final allergenSelection = Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _inquirySectionTitle('Allergens'),
+              inquirySectionHeader('ALLERGENS'),
               const SizedBox(height: 8),
               AntdFieldShell(
                 label: 'Food allergens to avoid',
@@ -2018,21 +2009,7 @@ class _InquirePageState extends State<InquirePage> {
           );
         },
       ),
-      const SizedBox(height: 24),
-      ..._buildPhase0Footer(),
-    ];
-  }
 
-  List<Widget> _buildPhase0Footer() {
-    return [
-      SizedBox(
-        width: double.infinity,
-        child: AntdPrimaryButton(
-          label: _serviceType == 'catering+event' ? 'NEXT' : 'SUBMIT INQUIRY',
-          loading: _submitting && _serviceType == 'catering',
-          onPressed: _submitting ? null : _goNextFromMainForm,
-        ),
-      ),
     ];
   }
 
@@ -2845,58 +2822,111 @@ class _InquirePageState extends State<InquirePage> {
     ];
   }
 
+  List<Widget> _buildCompletedSummaryLines() {
+    final guests = int.tryParse(_guests.text.trim()) ?? 0;
+    final when = [
+      if (_dateController.text.trim().isNotEmpty) _dateController.text.trim(),
+      if (_timeController.text.trim().isNotEmpty &&
+          _endTimeController.text.trim().isNotEmpty)
+        '${_timeController.text.trim()} – ${_endTimeController.text.trim()}'
+      else if (_timeController.text.trim().isNotEmpty)
+        _timeController.text.trim(),
+    ].join(' · ');
+    return [
+      Text('Type: ${inquiryTypeDisplayLabel(_inquiryTypeLabel)}'),
+      Text(
+        'Event styling: ${inquiryEventStylingChoiceLabel(inquiryType: _inquiryTypeLabel, serviceIncluded: _serviceIncluded)}',
+      ),
+      if (_eventTitle.text.trim().isNotEmpty)
+        Text('Event: ${_eventTitle.text.trim()}'),
+      Text('Event type: $_resolvedInquiryEventType'),
+      Text('Guests: $guests'),
+      if (_paxBufferValue > 0) Text('Pax buffer: $_paxBufferValue'),
+      if (_address.text.trim().isNotEmpty)
+        Text('Venue: ${_address.text.trim()}'),
+      if (when.isNotEmpty) Text('When: $when'),
+      if (_contactPerson.text.trim().isNotEmpty)
+        Text('Contact: ${_contactPerson.text.trim()}'),
+      if (_email.text.trim().isNotEmpty) Text('Email: ${_email.text.trim()}'),
+      Text(
+        'Estimated Cost: ₱${_estimateMenuCost().toStringAsFixed(2)}',
+        style: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+    ];
+  }
+
   List<Widget> _buildCompletedContent() {
     return [
       Center(
         child: Icon(
           Icons.check_circle_outline,
           size: 56,
-          color: Colors.green.shade600,
+          color: Colors.green.shade700,
         ),
       ),
       const SizedBox(height: 16),
-      Center(
-        child: Text(
-          'Inquiry submitted',
-          style: GoogleFonts.getFont(
-            _primaryFont,
-            fontSize: 28,
-            fontWeight: FontWeight.bold,
-            color: const Color(0xFF1E1E1E),
+      const Text(
+        'Inquiry Submitted! Please stay tuned for an email or contact number response from Macrina\'s Team. Thank you!',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w800,
+          height: 1.35,
+        ),
+      ),
+      if (_submittedCateringId != null) ...[
+        const SizedBox(height: 8),
+        Center(
+          child: Text(
+            'Reference: $_submittedCateringId',
+            style: TextStyle(color: Colors.grey.shade700),
           ),
         ),
-      ),
-      const SizedBox(height: 8),
-      Center(
-        child: Text(
-          _submittedCateringId == null
-              ? 'Our team will review your inquiry and contact you soon.'
-              : 'Reference: $_submittedCateringId',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.grey.shade700),
+      ],
+      const SizedBox(height: 16),
+      inquiryWizardTile(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Inquiry details',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+            ),
+            const SizedBox(height: 8),
+            ..._buildCompletedSummaryLines(),
+          ],
         ),
       ),
-      const SizedBox(height: 24),
-      Center(
-        child: Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          alignment: WrapAlignment.center,
-          children: [
-            FilledButton(
-              onPressed: () => _openMyCaterings(),
-              child: const Text('View My Caterings'),
-            ),
-            OutlinedButton(
-              onPressed:
-                  () => setState(() {
-                    _submittedCateringId = null;
-                    _wizardStep = 0;
-                    _formPhase = 0;
-                  }),
-              child: const Text('Submit another inquiry'),
-            ),
-          ],
+      const SizedBox(height: 16),
+      SizedBox(
+        width: double.infinity,
+        child: FilledButton(
+          onPressed: _openMyCaterings,
+          style: FilledButton.styleFrom(
+            backgroundColor: _kInquiryBrand,
+            foregroundColor: _kInquiryInk,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: const RoundedRectangleBorder(),
+          ),
+          child: const Text('View My Catering Inquiries'),
+        ),
+      ),
+      const SizedBox(height: 10),
+      SizedBox(
+        width: double.infinity,
+        child: OutlinedButton(
+          onPressed: () {
+            _clearForm();
+            setState(() {
+              _submittedCateringId = null;
+              _wizardStep = 0;
+            });
+          },
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: const RoundedRectangleBorder(),
+          ),
+          child: const Text('Submit another inquiry'),
         ),
       ),
     ];
@@ -2911,7 +2941,8 @@ class _InquirePageState extends State<InquirePage> {
         MaterialPageRoute(builder: (_) => const CustomerLoginPage()),
       );
       if (!mounted) return;
-      token = (await SharedPreferences.getInstance()).getString('customer_token');
+      token =
+          (await SharedPreferences.getInstance()).getString('customer_token');
       if (token == null || token.isEmpty) return;
     }
     if (!mounted) return;
@@ -2921,43 +2952,46 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   Widget _buildWizardProgressBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 10, 8, 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: List.generate(_kInquiryWizardStepLabels.length, (i) {
-          final done = i < _wizardStep;
-          final active = i == _wizardStep;
-          final reached = i <= _wizardStep;
-          return Expanded(
-            child: Column(
-              children: [
-                CircleAvatar(
-                  radius: active ? 16 : 14,
-                  backgroundColor:
-                      reached ? const Color(0xFFFFC024) : Colors.grey.shade300,
-                  child: Icon(
-                    done ? Icons.check : _kInquiryWizardStepIcons[i],
-                    size: active ? 18 : 16,
-                    color: reached ? const Color(0xFF1E1E1E) : Colors.grey.shade600,
+    return Material(
+      color: _kInquiryProgressBg,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 10, 8, 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: List.generate(_kInquiryWizardStepLabels.length, (i) {
+            final done = i < _wizardStep;
+            final active = i == _wizardStep;
+            final reached = i <= _wizardStep;
+            return Expanded(
+              child: Column(
+                children: [
+                  CircleAvatar(
+                    radius: active ? 16 : 14,
+                    backgroundColor:
+                        reached ? _kInquiryBrand : Colors.grey.shade300,
+                    child: Icon(
+                      done ? Icons.check : _kInquiryWizardStepIcons[i],
+                      size: active ? 18 : 16,
+                      color: reached ? _kInquiryInk : Colors.grey.shade600,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _kInquiryWizardStepLabels[i],
-                  textAlign: TextAlign.center,
-                  maxLines: 3,
-                  style: TextStyle(
-                    fontSize: 10,
-                    height: 1.2,
-                    fontWeight: active ? FontWeight.w800 : FontWeight.w600,
-                    color: reached ? Colors.black87 : Colors.grey.shade600,
+                  const SizedBox(height: 6),
+                  Text(
+                    _kInquiryWizardStepLabels[i],
+                    textAlign: TextAlign.center,
+                    maxLines: 3,
+                    style: TextStyle(
+                      fontSize: 10,
+                      height: 1.2,
+                      fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+                      color: reached ? Colors.black87 : Colors.grey.shade600,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          );
-        }),
+                ],
+              ),
+            );
+          }),
+        ),
       ),
     );
   }
@@ -2987,80 +3021,87 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   List<Widget> _buildPackagesStep() {
+    const noteCommon =
+        'For requests such as event styling, menu modifications, tables and chairs, etc., please include in your notes upon inquiry submission.';
+    const noteStyling =
+        'For extensive event styling and other requests, please include in your notes upon inquiry submission.';
     return [
-      const Text(
-        'Catering Packages',
-        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-      ),
-      const SizedBox(height: 12),
-      DefaultTabController(
-        length: 2,
+      inquiryWizardTile(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const TabBar(
-              labelColor: Color(0xFF1E1E1E),
-              tabs: [
-                Tab(text: 'Within Taguig'),
-                Tab(text: 'Outside Taguig'),
-              ],
+            const Text(
+              'Review our catering packages',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
             ),
-            SizedBox(
-              height: 320,
-              child: TabBarView(
+            const SizedBox(height: 12),
+            DefaultTabController(
+              length: 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SingleChildScrollView(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _packageCopyBlock(
-                          title: 'Catering',
-                          bullets: const [
-                            '1) Php 500 per pax',
-                            '2) Setup: staff and buffet service',
-                          ],
-                          note:
-                              'For requests such as event styling, menu modifications, tables and chairs, etc., please include in your notes upon inquiry submission.',
-                        ),
-                        const SizedBox(height: 16),
-                        _packageCopyBlock(
-                          title: 'Catering with Event Styling',
-                          bullets: const [
-                            '1) Php 500 per pax',
-                            '2) Minimal Design: tables and chairs with linen and centerpiece',
-                            '3) Setup: staff and buffet service',
-                          ],
-                          note:
-                              'For extensive event styling and other requests, please include in your notes upon inquiry submission.',
-                        ),
-                      ],
-                    ),
+                  const TabBar(
+                    labelColor: _kInquiryInk,
+                    indicatorColor: _kInquiryBrand,
+                    tabs: [
+                      Tab(text: 'Within Taguig'),
+                      Tab(text: 'Outside Taguig'),
+                    ],
                   ),
-                  SingleChildScrollView(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                  SizedBox(
+                    height: 420,
+                    child: TabBarView(
                       children: [
-                        _packageCopyBlock(
-                          title: 'Catering',
-                          bullets: const [
-                            '1) Php 500 per pax',
-                            '2) Setup: staff and buffet service',
-                          ],
-                          note:
-                              'Travel / logistics may apply outside Taguig. Include details in your notes.',
+                        SingleChildScrollView(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _packageCopyBlock(
+                                title: 'Catering',
+                                bullets: const [
+                                  '1) Php 500 per pax',
+                                  '2) Setup: staff and buffet service',
+                                ],
+                                note: noteCommon,
+                              ),
+                              const SizedBox(height: 16),
+                              _packageCopyBlock(
+                                title: 'Catering with Event Styling',
+                                bullets: const [
+                                  '1) Php 500 per pax',
+                                  '2) Minimal Design: tables and chairs with linen and centerpiece',
+                                  '3) Setup: staff and buffet service',
+                                ],
+                                note: noteStyling,
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 16),
-                        _packageCopyBlock(
-                          title: 'Catering with Event Styling',
-                          bullets: const [
-                            '1) Php 500 per pax',
-                            '2) Minimal Design: tables and chairs with linen and centerpiece',
-                            '3) Setup: staff and buffet service',
-                          ],
-                          note:
-                              'Travel / logistics may apply outside Taguig. Include details in your notes.',
+                        SingleChildScrollView(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _packageCopyBlock(
+                                title: 'Catering',
+                                bullets: const [
+                                  '1) Php 500 per pax',
+                                  '2) Setup: staff and buffet service',
+                                ],
+                                note: noteCommon,
+                              ),
+                              const SizedBox(height: 16),
+                              _packageCopyBlock(
+                                title: 'Catering with Event Styling',
+                                bullets: const [
+                                  '1) Php 500 per pax',
+                                  '2) Setup: staff and buffet service',
+                                ],
+                                note: noteCommon,
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -3068,18 +3109,21 @@ class _InquirePageState extends State<InquirePage> {
                 ],
               ),
             ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => setState(() => _wizardStep = 1),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _kInquiryBrand,
+                  foregroundColor: _kInquiryInk,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: const RoundedRectangleBorder(),
+                ),
+                child: const Text('NEXT'),
+              ),
+            ),
           ],
-        ),
-      ),
-      const SizedBox(height: 20),
-      Align(
-        alignment: Alignment.centerRight,
-        child: FilledButton(
-          onPressed: () => setState(() => _wizardStep = 1),
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF1E1E1E),
-          ),
-          child: const Text('NEXT'),
         ),
       ),
     ];
@@ -3087,72 +3131,115 @@ class _InquirePageState extends State<InquirePage> {
 
   List<Widget> _buildGuestsLandingStep() {
     final pax = int.tryParse(_landingPax.text.trim());
-    final estimate =
-        pax != null && pax > 0 ? estimateInquiryCateringTotal(pax) : 0.0;
-    final packageLabel =
-        (pax ?? 0) >= kInquiryLandingEventStylingMinPax
-            ? 'Catering with Event Styling'
-            : 'Catering';
     return [
-      const Text(
-        'How many guests?',
-        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-      ),
-      const SizedBox(height: 8),
-      Text(
-        'Enter your guest count. At $kInquiryLandingEventStylingMinPax or more guests, we use Catering with Event Styling.',
-        style: TextStyle(color: Colors.grey.shade700),
+      const SizedBox(height: 24),
+      const Center(
+        child: Text(
+          'How many guests will you have?',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        ),
       ),
       const SizedBox(height: 20),
       Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 280),
-          child: AntdOutlineInput(
+          constraints: const BoxConstraints(maxWidth: 200),
+          child: TextField(
             controller: _landingPax,
-            hintText: 'Number of guests',
             keyboardType: TextInputType.number,
+            textAlign: TextAlign.center,
+            maxLength: 4,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: const InputDecoration(
+              hintText: 'Number of guests',
+              counterText: '',
+              border: OutlineInputBorder(),
+              filled: true,
+              fillColor: Colors.white,
+            ),
             onChanged: (_) => setState(() {}),
           ),
         ),
       ),
-      const SizedBox(height: 16),
-      if (pax != null && pax > 0) ...[
-        Center(
-          child: Text(
-            'Package: $packageLabel',
-            style: const TextStyle(fontWeight: FontWeight.w700),
+      if (pax != null && pax >= kInquiryLandingEventStylingMinPax) ...[
+        const SizedBox(height: 12),
+        Text(
+          '50+ guests: your inquiry will use Catering with Event Styling.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.deepOrange.shade800,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
           ),
         ),
-        const SizedBox(height: 6),
-        Center(
-          child: Text(
-            'Base estimate: ₱${estimate.toStringAsFixed(0)}',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: Colors.amber.shade900,
-            ),
-          ),
+      ],
+      if (pax != null && pax > 0) ...[
+        const SizedBox(height: 10),
+        Text(
+          'Estimated base cost for $pax guests is Php ${(pax * kPesosPerPax).toStringAsFixed(0)}. Additional charges apply for event styling (below 50 guests), menu modifications, and other requests.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
         ),
       ],
       const SizedBox(height: 24),
       Row(
         children: [
-          OutlinedButton(
-            onPressed: () => setState(() => _wizardStep = 0),
-            child: const Text('BACK'),
-          ),
-          const Spacer(),
-          FilledButton(
-            onPressed: _proceedFromLanding,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF1E1E1E),
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => setState(() => _wizardStep = 0),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: const RoundedRectangleBorder(),
+              ),
+              child: const Text('BACK'),
             ),
-            child: const Text('NEXT'),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: FilledButton(
+              onPressed: _proceedFromLanding,
+              style: FilledButton.styleFrom(
+                backgroundColor: _kInquiryBrand,
+                foregroundColor: _kInquiryInk,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: const RoundedRectangleBorder(),
+              ),
+              child: const Text('NEXT'),
+            ),
           ),
         ],
       ),
     ];
+  }
+
+  Future<void> _confirmCancelInquiry() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Discard this inquiry?'),
+            content: const Text(
+              'Your entered details will be cleared and you will return to the start.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Keep editing'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _kInquiryAccent,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Discard'),
+              ),
+            ],
+          ),
+    );
+    if (ok == true) {
+      _clearForm();
+    }
   }
 
   void _proceedFromLanding() {
@@ -3169,6 +3256,7 @@ class _InquirePageState extends State<InquirePage> {
     if (pax >= kInquiryLandingEventStylingMinPax) {
       _serviceType = 'catering+event';
       _serviceIncluded = 'yes';
+      _eventDesignMode = 'macrina';
     } else {
       _serviceType = 'catering';
       _serviceIncluded = 'no';
@@ -3179,90 +3267,135 @@ class _InquirePageState extends State<InquirePage> {
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final content = WebsiteContentStore.instance;
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          CustomerWebsiteTopBar(
-            showCartAndCustomerAuth: !widget.contentEditable,
-          ),
-          Expanded(
-            child: CenteredViewportScroll(
-              padding: websitePagePadding(context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildStickySummaryFooter() {
+    final estimated = _estimateMenuCost();
+    return Material(
+      color: Colors.white,
+      elevation: 8,
+      child: Container(
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: _kInquiryFooterRule, width: 2)),
+        ),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
                 children: [
-                  const SizedBox(height: 24),
+                  const Text(
+                    'Estimated Cost',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const Spacer(),
                   Text(
-                    content.inquiryPageTitle,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.getFont(
-                      _primaryFont,
-                      fontSize: 42,
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF1E1E1E),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFC024),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        content.inquiryPageSubtitle,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E1E1E),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-
-                  Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildWizardProgressBar(),
-                          if (_wizardStep == 0) ..._buildPackagesStep(),
-                          if (_wizardStep == 1) ..._buildGuestsLandingStep(),
-                          if (_wizardStep == 2 && _formPhase == 0)
-                            ..._buildPhase0Content(context),
-                          if (_wizardStep == 2 &&
-                              _formPhase == 1 &&
-                              _isCateringWithEventStyling)
-                            ..._buildPhase1Content(),
-                          if (_wizardStep == 2 &&
-                              _formPhase == 2 &&
-                              _isCateringWithEventStyling)
-                            ..._buildPhase2Content(context),
-                          if (_wizardStep == 3) ..._buildCompletedContent(),
-                        ],
-                      ),
+                    '₱${estimated.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
               ),
-            ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: _submitting ? null : _confirmCancelInquiry,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _kInquiryAccent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: const RoundedRectangleBorder(),
+                      ),
+                      child: const Text('CANCEL'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed:
+                          _submitting ? null : _showOrderSummaryAndConfirm,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _kInquiryBrand,
+                        foregroundColor: _kInquiryInk,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: const RoundedRectangleBorder(),
+                      ),
+                      child:
+                          _submitting
+                              ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: _kInquiryInk,
+                                ),
+                              )
+                              : const Text('SUBMIT'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: _kInquiryAppBarBg,
+        foregroundColor: _kInquiryBrandAppBar,
+        elevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              Navigator.of(context).pushReplacementNamed('/');
+            }
+          },
+        ),
+        title: const Text(
+          'INQUIRE CATERING SERVICE',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: _kInquiryBrandAppBar,
+            fontSize: 16,
+          ),
+        ),
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: _kInquiryMaxWidth),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildWizardProgressBar(),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                  children: [
+                    if (_wizardStep == 0) ..._buildPackagesStep(),
+                    if (_wizardStep == 1) ..._buildGuestsLandingStep(),
+                    if (_wizardStep == 2) ..._buildPhase0Content(context),
+                    if (_wizardStep == 3) ..._buildCompletedContent(),
+                  ],
+                ),
+              ),
+              if (_wizardStep == 2) _buildStickySummaryFooter(),
+            ],
+          ),
+        ),
       ),
     );
   }
