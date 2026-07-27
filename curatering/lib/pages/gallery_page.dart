@@ -57,8 +57,15 @@ class _GalleryPageState extends State<GalleryPage> {
   @override
   void initState() {
     super.initState();
-    WebsiteContentStore.instance.ensureLoaded().then((_) {
+    final load = widget.contentEditable
+        ? WebsiteContentStore.instance.loadDraft()
+        : WebsiteContentStore.instance.ensureLoaded();
+    load.then((_) {
       if (mounted) setState(() {});
+    }).catchError((_) {
+      return WebsiteContentStore.instance.ensureLoaded().then((_) {
+        if (mounted) setState(() {});
+      });
     });
   }
 
@@ -467,7 +474,7 @@ class _GalleryPageState extends State<GalleryPage> {
                   final b64s = await pickMultipleWebsiteImagesBase64();
                   if (b64s.isEmpty) return;
                   cat.addImagesFromBase64(b64s);
-                  await w.save();
+                  await w.saveDraft();
                   setState(() {});
                 },
                 icon: const Icon(Icons.add),
@@ -595,7 +602,7 @@ class _GalleryPageState extends State<GalleryPage> {
                           icon: const Icon(Icons.delete, size: 18),
                           onPressed: () async {
                             if (fullIndex >= 0) cat.images.removeAt(fullIndex);
-                            await w.save();
+                            await w.saveDraft();
                             setState(() {});
                           },
                         ),

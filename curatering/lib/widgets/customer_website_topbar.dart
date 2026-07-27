@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -16,6 +17,7 @@ import '../pages/my_orders_page.dart';
 import '../pages/my_profile_page.dart';
 import '../services/cart_store.dart';
 import '../services/menu_store.dart';
+import '../services/website_content_store.dart';
 import '../utils/image_cache.dart';
 import 'antd_message.dart';
 import 'antd_profile_menu.dart';
@@ -41,6 +43,8 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
     super.initState();
     CartStore.instance.addListener(_onCartChanged);
     MenuStore.instance.addListener(_onCartChanged);
+    WebsiteContentStore.instance.addListener(_onCartChanged);
+    unawaited(WebsiteContentStore.instance.ensureLoaded());
     _refreshCustomerAuth();
   }
 
@@ -48,6 +52,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
   void dispose() {
     CartStore.instance.removeListener(_onCartChanged);
     MenuStore.instance.removeListener(_onCartChanged);
+    WebsiteContentStore.instance.removeListener(_onCartChanged);
     super.dispose();
   }
 
@@ -459,10 +464,25 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
             children: [
               InkWell(
                 onTap: () => _goHome(context),
-                child: Image.asset(
-                  'lib/assets/main-2.png',
-                  height: 34,
-                  fit: BoxFit.contain,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset(
+                      'lib/assets/main-2.png',
+                      height: 34,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      WebsiteContentStore.instance.navBrandLabel,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 16),

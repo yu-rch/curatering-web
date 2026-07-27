@@ -1300,6 +1300,14 @@ export async function initDb() {
     )
   `);
 
+  try {
+    const { ensureWebsiteCmsSchema } = await import("./websiteCms.js");
+    await ensureWebsiteCmsSchema(pool);
+    console.log("Migration: website CMS draft/revisions/media schema ready");
+  } catch (err) {
+    console.log("Migration check for website CMS schema:", err.message);
+  }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS system_settings (
       key TEXT PRIMARY KEY,

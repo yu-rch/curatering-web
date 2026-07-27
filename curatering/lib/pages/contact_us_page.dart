@@ -387,7 +387,12 @@ class _ContactUsPageState extends State<ContactUsPage> {
           icon: Icons.facebook,
           title: 'Facebook',
           subtitle: w.contactFacebook,
-          onTap: () => launchUrl(Uri.parse('https://www.facebook.com/3tavs')),
+          onTap: () {
+            final url = w.contactFacebookUrl.trim().isNotEmpty
+                ? w.contactFacebookUrl.trim()
+                : 'https://www.facebook.com/3tavs';
+            launchUrl(Uri.parse(url));
+          },
         ),
       ],
     );

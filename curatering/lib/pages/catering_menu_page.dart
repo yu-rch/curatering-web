@@ -8,6 +8,7 @@ import '../models/menu_dish.dart';
 import '../constants/catering_meal_types.dart';
 import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
+import '../services/website_content_store.dart';
 import '../widgets/catering_dish_info_dialog.dart';
 import '../widgets/customer_website_topbar.dart';
 
@@ -57,6 +58,8 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
     super.initState();
     MenuStore.instance.addListener(_onMenuChanged);
     SetMenuStore.instance.addListener(_onMenuChanged);
+    WebsiteContentStore.instance.addListener(_onMenuChanged);
+    unawaited(WebsiteContentStore.instance.ensureLoaded());
     unawaited(MenuStore.instance.ensureImagesLoaded());
     SetMenuStore.instance.loadSetMenus();
   }
@@ -65,6 +68,7 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
   void dispose() {
     MenuStore.instance.removeListener(_onMenuChanged);
     SetMenuStore.instance.removeListener(_onMenuChanged);
+    WebsiteContentStore.instance.removeListener(_onMenuChanged);
     super.dispose();
   }
 
@@ -310,7 +314,7 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
               children: [
                 const SizedBox(height: 24),
                 Text(
-                  'CATERING MENU',
+                  WebsiteContentStore.instance.cateringPageTitle,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.getFont(
                     _primaryFont,
@@ -329,10 +333,10 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                     color: Color(0xFFFFC024),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Text(
-                    'Explore Our Catering Offerings',
+                  child: Text(
+                    WebsiteContentStore.instance.cateringPageSubtitle,
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF1E1E1E),
                     ),

@@ -27,6 +27,8 @@ import '../widgets/contact_address_map.dart';
 import '../widgets/event_venue_map_preview.dart';
 import '../widgets/venue_autocomplete_field.dart';
 import '../widgets/app_snackbar.dart';
+import '../widgets/antd_buttons.dart';
+import '../widgets/antd_dialog.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_profile_menu.dart';
 import '../widgets/pexels_attribution_badge.dart';
@@ -329,8 +331,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     MenuStore.instance.addListener(_onMenuChanged);
     CartStore.instance.addListener(_onCartChanged);
 
-    // CMS first (local-cache hydrated) so home can paint without waiting on menu/cart.
-    await WebsiteContentStore.instance.ensureLoaded();
+    // Staff live editor loads draft; customers load published content only.
+    if (widget.contentEditable) {
+      try {
+        await WebsiteContentStore.instance.loadDraft();
+      } catch (_) {
+        await WebsiteContentStore.instance.ensureLoaded();
+      }
+    } else {
+      await WebsiteContentStore.instance.ensureLoaded();
+    }
     if (mounted) setState(() {});
 
     // Menu metadata, cart sync, and auth continue in the background.
@@ -1386,7 +1396,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
     if (next == null) return;
     w.imageAlignments[key] = {'x': next.x, 'y': next.y};
-    await w.save();
+    await w.saveDraft();
     if (mounted) setState(() {});
   }
 
@@ -1706,11 +1716,18 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Future<void> _launchFooterFacebook(String facebook) async {
-    final trimmed = facebook.trim();
+    final store = WebsiteContentStore.instance;
+    final trimmed = store.contactFacebookUrl.trim().isNotEmpty
+        ? store.contactFacebookUrl.trim()
+        : facebook.trim();
     final uri =
         trimmed.startsWith('http://') || trimmed.startsWith('https://')
             ? Uri.parse(trimmed)
-            : Uri.parse('https://www.facebook.com/3tavs');
+            : Uri.parse(
+              store.contactFacebookUrl.trim().isNotEmpty
+                  ? store.contactFacebookUrl.trim()
+                  : 'https://www.facebook.com/3tavs',
+            );
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (e) {
@@ -1732,7 +1749,22 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   TextButton(
-                    onPressed: () {},
+                    onPressed: () {
+                      showAntdModal<void>(
+                        context: context,
+                        title: w.footerPrivacyLabel,
+                        body: WebsiteRichText(
+                          value: w.footerPrivacyBody,
+                          style: const TextStyle(fontSize: 14, height: 1.5),
+                        ),
+                        actions: [
+                          AntdPrimaryButton(
+                            label: 'Close',
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
+                      );
+                    },
                     child: Text(
                       w.footerPrivacyLabel,
                       style: const TextStyle(color: Colors.black),
@@ -1752,7 +1784,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         );
                         if (value == null || value.isEmpty) return;
                         w.footerCopyright = value;
-                        await w.save();
+                        await w.saveDraft();
                         setState(() {});
                       },
                       icon: const Icon(Icons.edit, size: 14),
@@ -2075,7 +2107,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           final b64 = await _pickImageB64();
           if (b64 == null) return;
           w.homeHeroImageBase64 = b64;
-          await w.save();
+          await w.saveDraft();
           setState(() {});
         }),
         if (widget.contentEditable && w.homeHeroImageBase64.isNotEmpty)
@@ -2236,7 +2268,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     );
                     if (value == null || value.isEmpty) return;
                     w.redBannerText = value;
-                    await w.save();
+                    await w.saveDraft();
                     setState(() {});
                   },
                   icon: const Icon(Icons.edit, size: 16),
@@ -2365,7 +2397,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                               1] =
                           b64;
                     }
-                    await w.save();
+                    await w.saveDraft();
                     setState(() {});
                   }),
                 ],
@@ -2395,7 +2427,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           w.latestEventTitle = nextTitle;
           w.latestEventSubtitle = nextSubtitle;
           w.latestEventBody = nextBody;
-          await w.save();
+          await w.saveDraft();
           setState(() {});
         }),
       ],
@@ -2531,7 +2563,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 final b64 = await _pickImageB64();
                 if (b64 == null) return;
                 w.eventDesignImageBase64.add(b64);
-                await w.save();
+                await w.saveDraft();
                 setState(() {});
               },
               icon: const Icon(Icons.add_photo_alternate),
@@ -2612,7 +2644,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                               final b64s = await _pickMultipleImageB64();
                               if (b64s.isEmpty) return;
                               cat.addImagesFromBase64(b64s);
-                              await w.save();
+                              await w.saveDraft();
                               setState(() {});
                             },
                             icon: const Icon(Icons.add_photo_alternate),
@@ -2826,7 +2858,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                                 } else {
                                                   return;
                                                 }
-                                                await w.save();
+                                                await w.saveDraft();
                                                 setState(() {});
                                               },
                                               itemBuilder:
@@ -3080,7 +3112,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                               TextButton(
                                                 onPressed: () {
                                                   c.label = ctrl.text;
-                                                  w.save();
+                                                  w.saveDraft();
                                                   Navigator.pop(ctx);
                                                   setState(() {});
                                                 },
@@ -4876,7 +4908,7 @@ class _ContactSectionState extends State<_ContactSection> {
                                       TextButton(
                                         onPressed: () {
                                           widget.store.contactFacebook = t.text;
-                                          widget.store.save();
+                                          widget.store.saveDraft();
                                           Navigator.pop(dctx);
                                         },
                                         child: const Text('Save'),
@@ -4911,7 +4943,7 @@ class _ContactSectionState extends State<_ContactSection> {
                                       TextButton(
                                         onPressed: () {
                                           widget.store.contactAddress = t.text;
-                                          widget.store.save();
+                                          widget.store.saveDraft();
                                           Navigator.pop(dctx);
                                         },
                                         child: const Text('Save'),
@@ -4950,7 +4982,7 @@ class _ContactSectionState extends State<_ContactSection> {
                                       TextButton(
                                         onPressed: () {
                                           widget.store.contactHours = t.text;
-                                          widget.store.save();
+                                          widget.store.saveDraft();
                                           Navigator.pop(dctx);
                                         },
                                         child: const Text('Save'),
@@ -4983,7 +5015,7 @@ class _ContactSectionState extends State<_ContactSection> {
                                       TextButton(
                                         onPressed: () {
                                           widget.store.contactPhone = t.text;
-                                          widget.store.save();
+                                          widget.store.saveDraft();
                                           Navigator.pop(dctx);
                                         },
                                         child: const Text('Save'),
@@ -5016,7 +5048,7 @@ class _ContactSectionState extends State<_ContactSection> {
                                       TextButton(
                                         onPressed: () {
                                           widget.store.contactEmail = t.text;
-                                          widget.store.save();
+                                          widget.store.saveDraft();
                                           Navigator.pop(dctx);
                                         },
                                         child: const Text('Save'),

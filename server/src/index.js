@@ -44,6 +44,7 @@ import {
   getMenuMealTypeCatalog,
   upsertMenuMealType,
 } from "./db.js";
+import { createWebsiteCmsHandlers } from "./websiteCms.js";
 import {
   ensureRestaurantOrdersCanonicalColumns,
   ensureCateringEventOrdersCanonicalColumns,
@@ -5518,172 +5519,13 @@ app.post(
   },
 );
 
-// Manager: create/list/finalize event orders
-const WEBSITE_CONTENT_ROW_ID = "00000000-0000-0000-0000-000000000001";
-
-function isNonEmptyWebsiteContent(content) {
-  return (
-    content &&
-    typeof content === "object" &&
-    !Array.isArray(content) &&
-    Object.keys(content).length > 0
-  );
-}
-
-/** One-time / lazy migration: legacy rows and website-content.json → canonical row. */
-async function migrateWebsiteContentIfNeeded() {
-  try {
-    const canonical = await pool.query(
-      `SELECT content, updated_at FROM website_content WHERE id = $1::uuid LIMIT 1`,
-      [WEBSITE_CONTENT_ROW_ID],
-    );
-    const canonicalRow = canonical.rows[0] || null;
-    const canonicalHasContent = isNonEmptyWebsiteContent(canonicalRow?.content);
-
-    const latestLegacy = await pool.query(
-      `
-      SELECT content, updated_at FROM website_content
-      WHERE id <> $1::uuid
-        AND content IS NOT NULL
-        AND content::text NOT IN ('{}', 'null')
-      ORDER BY updated_at DESC NULLS LAST, created_at DESC
-      LIMIT 1
-    `,
-      [WEBSITE_CONTENT_ROW_ID],
-    );
-
-    const legacyRow = latestLegacy.rows[0] || null;
-    if (legacyRow && isNonEmptyWebsiteContent(legacyRow.content)) {
-      const canonicalUpdated = canonicalRow?.updated_at
-        ? new Date(canonicalRow.updated_at).getTime()
-        : 0;
-      const legacyUpdated = legacyRow.updated_at
-        ? new Date(legacyRow.updated_at).getTime()
-        : 0;
-      if (!canonicalHasContent || legacyUpdated > canonicalUpdated) {
-        await writeWebsiteContent(legacyRow.content);
-        console.log("[website-content] Migrated latest legacy DB row → canonical id");
-        return;
-      }
-    }
-
-    if (canonicalHasContent) {
-      return;
-    }
-
-    try {
-      const raw = await fs.readFile(websiteContentPath, "utf8");
-      const parsed = JSON.parse(raw);
-      if (isNonEmptyWebsiteContent(parsed)) {
-        await writeWebsiteContent(parsed);
-        console.log("[website-content] Seeded canonical row from website-content.json");
-      }
-    } catch {
-      /* optional seed file */
-    }
-  } catch (error) {
-    console.warn("[website-content] migration skipped:", error.message);
-  }
-}
-
-async function readWebsiteContent() {
-  try {
-    await migrateWebsiteContentIfNeeded();
-
-    const result = await pool.query(
-      `SELECT content FROM website_content WHERE id = $1::uuid LIMIT 1`,
-      [WEBSITE_CONTENT_ROW_ID],
-    );
-
-    if (result.rows.length > 0 && isNonEmptyWebsiteContent(result.rows[0].content)) {
-      return result.rows[0].content;
-    }
-
-    return {};
-  } catch (error) {
-    console.error("Error reading website content from database:", error);
-    return {};
-  }
-}
-
-async function writeWebsiteContent(content) {
-  if (!isNonEmptyWebsiteContent(content)) {
-    throw new Error("website content must be a non-empty object");
-  }
-  try {
-    await pool.query(
-      `
-      INSERT INTO website_content (id, content, created_at, updated_at)
-      VALUES ($1::uuid, $2::jsonb, NOW(), NOW())
-      ON CONFLICT (id)
-      DO UPDATE SET
-        content = EXCLUDED.content,
-        updated_at = NOW()
-    `,
-      [WEBSITE_CONTENT_ROW_ID, content],
-    );
-    try {
-      await fs.writeFile(
-        websiteContentPath,
-        JSON.stringify(content, null, 2),
-        "utf8",
-      );
-    } catch (fileErr) {
-      console.warn("[website-content] could not update JSON backup:", fileErr.message);
-    }
-  } catch (error) {
-    console.error("Error writing website content to database:", error);
-    throw error;
-  }
-}
-
-app.get("/api/website-content", async (req, res) => {
-  try {
-    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    const content = await readWebsiteContent();
-    return res.json({ content, updatedAt: Date.now() });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ message: "Failed to load website content" });
-  }
+// Website CMS: published content, drafts, revisions, media library
+const websiteCms = createWebsiteCmsHandlers({
+  pool,
+  websiteContentPath,
+  logAction,
 });
-
-app.put(
-  "/api/website-content",
-  authRequired,
-  (req, res, next) =>
-    requireRoles(req, res, next, new Set(["manager", "admin", "super_admin"])),
-  async (req, res) => {
-    try {
-      const { content } = req.body || {};
-      if (!content || typeof content !== "object" || Array.isArray(content)) {
-        return res.status(400).json({ message: "content object is required" });
-      }
-
-      await writeWebsiteContent(content);
-      try {
-        await logAction({
-          userId: req.user.id,
-          feature: "Website Content",
-          action: "updated website content",
-        });
-      } catch (logError) {
-        console.warn("[website-content] content saved, but audit log failed:", logError.message);
-      }
-      return res.json({ ok: true, content });
-    } catch (e) {
-      console.error(e);
-      if (/quota|too large|payload/i.test(String(e?.message || e))) {
-        return res.status(507).json({
-          message:
-            "Website content save exceeded storage quota. Try replacing large CMS images with compressed versions or remove unused gallery images.",
-          code: "website_content_quota_exceeded",
-        });
-      }
-      return res.status(500).json({ message: "Failed to save website content" });
-    }
-  },
-);
+websiteCms.register(app, { authRequired, requireRoles });
 
 app.post(
   "/api/manager/events/orders",
