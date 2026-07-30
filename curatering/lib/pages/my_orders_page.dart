@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import '../utils/order_display_utils.dart';
+import '../utils/payment_proof_image.dart';
 import '../services/customer_orders_cache.dart';
 import '../widgets/customer_order_feedback_dialog.dart';
 import '../widgets/customer_pages_top_bar.dart';
@@ -29,6 +32,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   final Set<String> _sendingFollowUps = {};
   final _searchCtrl = TextEditingController();
   String _statusFilter = 'all';
+  bool _submittingPayment = false;
   static const Duration _requestTimeout = Duration(seconds: 45);
   static const Duration _followUpCooldown = Duration(minutes: 20);
 
@@ -77,7 +81,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .where((order) {
-          final status = _normalizeStatus('${order['status'] ?? ''}');
+          final status = _filterStatusFor(order);
           if (_statusFilter != 'all' && status != _statusFilter) return false;
           if (q.isEmpty) return true;
           final orderNo =
@@ -212,6 +216,230 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
     return (active: active, history: history);
   }
 
+  double _parseDouble(dynamic v) {
+    if (v == null) return 0;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString()) ?? 0;
+  }
+
+  String _statusUpper(Map<String, dynamic> order) =>
+      (order['order_status'] ?? order['status'] ?? '').toString().toUpperCase();
+
+  double _effectiveAmountPaid(Map<String, dynamic> order) {
+    final cashierInitial = _parseDouble(order['cashier_amount_received_initial']);
+    final cashierBalance = _parseDouble(order['cashier_amount_received_balance']);
+    final cashierCombined = _parseDouble(order['cashier_amount_received']);
+    if (cashierInitial > 0 || cashierBalance > 0) {
+      return cashierInitial + cashierBalance;
+    }
+    if (cashierCombined > 0) return cashierCombined;
+    return _parseDouble(
+      order['amount_paid'] ??
+          order['amount_received'] ??
+          order['amountReceived'],
+    );
+  }
+
+  double _balanceDueFor(Map<String, dynamic> order) {
+    var balanceDue = _parseDouble(
+      order['balance_due'] ??
+          order['balance_amount'] ??
+          order['remaining_balance'] ??
+          order['remainingBalance'] ??
+          order['short_amount'] ??
+          order['shortAmount'] ??
+          order['unpaid_balance'] ??
+          order['unpaidBalance'],
+    );
+    final total = _parseDouble(order['total_amount'] ?? order['total_cost']);
+    final paid = _effectiveAmountPaid(order);
+    if (balanceDue <= 0 && total > 0 && paid + 0.009 < total) {
+      balanceDue = (total - paid).clamp(0, double.infinity);
+    }
+    return balanceDue;
+  }
+
+  bool _isInsufficientPayment(Map<String, dynamic> order) {
+    final u = _statusUpper(order);
+    final stage =
+        (order['fulfillment_stage'] ?? order['fulfillmentStage'] ?? '')
+            .toString()
+            .toUpperCase();
+    final paymentStatus =
+        (order['payment_status'] ?? order['paymentStatus'] ?? '')
+            .toString()
+            .toUpperCase();
+    final paymentReview =
+        (order['balance_proof_pending_review'] ?? false) == true;
+    final balanceDue = _parseDouble(
+      order['balance_due'] ??
+          order['balance_amount'] ??
+          order['remaining_balance'] ??
+          order['remainingBalance'] ??
+          order['short_amount'] ??
+          order['shortAmount'] ??
+          order['unpaid_balance'] ??
+          order['unpaidBalance'],
+    );
+    return u.contains('INSUFFICIENT') ||
+        u.contains('PAYMENT_INSUFFICIENT') ||
+        u.contains('WAIT_BALANCE') ||
+        u.contains('BALANCE_REVIEW') ||
+        u.contains('PAYMENT INSUFFICIENT') ||
+        stage.contains('WAIT_BALANCE') ||
+        stage.contains('BALANCE_REVIEW') ||
+        paymentStatus.contains('INSUFFICIENT') ||
+        paymentStatus.contains('PAYMENT_INSUFFICIENT') ||
+        paymentStatus.contains('WAIT_BALANCE') ||
+        paymentStatus.contains('BALANCE') ||
+        paymentReview ||
+        balanceDue > 0 ||
+        _balanceDueFor(order) > 0;
+  }
+
+  String _displayStatusFor(Map<String, dynamic> order) {
+    if (_isInsufficientPayment(order)) {
+      return 'insufficient_payment';
+    }
+    final raw =
+        (order['display_status'] ??
+                order['order_status'] ??
+                order['status'] ??
+                'pending')
+            .toString();
+    final upper = raw.toUpperCase();
+    if (upper.contains('WAITING FOR BALANCE PAYMENT CONFIRMATION') ||
+        (order['balance_proof_pending_review'] == true &&
+            (order['payment_proof_balance']?.toString().trim().isNotEmpty ??
+                false))) {
+      return 'waiting_for_balance_payment_confirmation';
+    }
+    return raw.toLowerCase();
+  }
+
+  String _filterStatusFor(Map<String, dynamic> order) {
+    final display = _displayStatusFor(order);
+    if (display == 'insufficient_payment' ||
+        display == 'waiting_for_balance_payment_confirmation') {
+      return 'pending_cashier';
+    }
+    return _normalizeStatus('${order['status'] ?? ''}');
+  }
+
+  void _applyUpdatedOrder(dynamic rawUpdated) {
+    if (rawUpdated is! Map) return;
+    final updated = Map<String, dynamic>.from(rawUpdated);
+    final updatedKey = _orderKey(updated);
+    setState(() {
+      _orders =
+          _orders.map((entry) {
+            if (entry is! Map) return entry;
+            final existing = Map<String, dynamic>.from(entry);
+            return _orderKey(existing) == updatedKey ? updated : existing;
+          }).toList();
+    });
+    CustomerOrdersCache.instance.setRestaurantOrders(
+      _orders
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList(),
+    );
+  }
+
+  Widget _buildProofImage(String proof) {
+    final bytes = decodePaymentProofBytes(proof);
+    if (bytes != null && bytes.isNotEmpty) {
+      return buildPaymentProofPreview(proof, height: 160);
+    }
+    final uri = Uri.tryParse(proof);
+    if (uri != null && uri.hasScheme) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          proof,
+          height: 160,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => buildPaymentProofPreview(null, height: 160),
+        ),
+      );
+    }
+    return buildPaymentProofPreview(null, height: 160);
+  }
+
+  Widget _buildBalancePaymentSection(
+    Map<String, dynamic> order,
+    double balanceDue,
+  ) {
+    return _BalancePaymentWidget(
+      balanceDue: balanceDue,
+      isSubmitting: _submittingPayment,
+      onSubmit:
+          (base64Img, refNumber) =>
+              _submitBalancePayment(order, base64Img, refNumber),
+    );
+  }
+
+  Future<void> _submitBalancePayment(
+    Map<String, dynamic> order,
+    String base64Img,
+    String refNumber,
+  ) async {
+    final orderKey = _orderKey(order);
+    if (orderKey.isEmpty) return;
+
+    setState(() => _submittingPayment = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('customer_token');
+      if (token == null || token.isEmpty) throw Exception('Please log in again');
+      final response = await http
+          .post(
+            Uri.parse(
+              '$_apiBaseUrl/api/restaurant/orders/${Uri.encodeComponent(orderKey)}/payment',
+            ),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'paymentProof': base64Img,
+              'paymentReference': refNumber,
+              'type': 'balance',
+            }),
+          )
+          .timeout(_requestTimeout);
+      final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        throw Exception(
+          data is Map ? data['error'] ?? 'Failed to submit payment' : 'Failed',
+        );
+      }
+      final updated = data is Map ? data['order'] : null;
+      if (updated is Map<String, dynamic>) {
+        _applyUpdatedOrder(updated);
+      } else {
+        await _loadOrders(force: true);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Balance payment submitted. Waiting for balance payment confirmation.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submittingPayment = false);
+    }
+  }
+
   String _formatHeaderDate(String? iso) {
     if (iso == null) return '—';
     final d = DateTime.tryParse(iso);
@@ -235,16 +463,29 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
 
   Widget _buildOrderCard(Map<String, dynamic> order) {
     final items = _normalizeOrderItems(order['items']);
-    final status = order['status'] ?? 'pending';
+    final displayStatus = _displayStatusFor(order);
     final paymentStatus = order['payment_status'] ?? 'pending';
     final orderKey = _orderKey(order);
     final cooldownUntil = _followUpCooldownUntil(order);
     final canFollowUp =
-        _isActiveOrder(status) &&
+        _isActiveOrder(displayStatus) &&
         orderKey.isNotEmpty &&
         (cooldownUntil == null || !cooldownUntil.isAfter(DateTime.now()));
     final canReview = _canReviewRestaurantOrder(order);
     final feedbackSubmitted = _hasFeedbackSubmitted(order);
+    final balanceDue = _balanceDueFor(order);
+    final isInsufficient = _isInsufficientPayment(order);
+    final amountPaid = _effectiveAmountPaid(order);
+    final paymentProof = order['payment_proof']?.toString();
+    final paymentProofInitial = order['payment_proof_initial']?.toString();
+    final paymentProofBalance = order['payment_proof_balance']?.toString();
+    final isActive = _isActiveOrder(displayStatus);
+    final isPending =
+        displayStatus == 'pending' ||
+        displayStatus == 'pending_cashier' ||
+        displayStatus == 'insufficient_payment' ||
+        displayStatus == 'waiting_for_balance_payment_confirmation' ||
+        isInsufficient;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -373,19 +614,19 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: _getStatusColor(
-                                    status,
+                                    displayStatus,
                                   ).withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(999),
                                   border: Border.all(
-                                    color: _getStatusColor(status),
+                                    color: _getStatusColor(displayStatus),
                                   ),
                                 ),
                                 child: Text(
-                                  _formatStatus(status),
+                                  _formatStatus(displayStatus),
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w600,
-                                    color: _getStatusColor(status),
+                                    color: _getStatusColor(displayStatus),
                                   ),
                                 ),
                               ),
@@ -404,15 +645,119 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                   );
                 }).toList(),
                 const Divider(height: 28),
+                if (isInsufficient)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Text(
+                      'Insufficient payment — please submit balance payment proof and GCash reference below.',
+                      style: TextStyle(
+                        color: Colors.red.shade800,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                if (balanceDue > 0 || amountPaid > 0) ...[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Amount paid',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      Text(
+                        '₱${amountPaid.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (balanceDue > 0) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Balance due',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange.shade800,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          '₱${balanceDue.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            color: Colors.orange.shade900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                ],
                 Chip(
                   label: Text(
-                    'Payment: ${_formatPaymentStatus(paymentStatus)}',
+                    'Payment: ${_formatPaymentStatus(paymentStatus, order)}',
                     style: const TextStyle(fontSize: 10, color: Colors.white),
                   ),
-                  backgroundColor: _getPaymentStatusColor(paymentStatus),
+                  backgroundColor: _getPaymentStatusColor(paymentStatus, order),
                   padding: EdgeInsets.zero,
                 ),
-                if (_isActiveOrder(status)) ...[
+                if (paymentProofInitial != null && paymentProofInitial.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'Initial Payment Proof',
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildProofImage(paymentProofInitial),
+                ] else if (paymentProof != null && paymentProof.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'Initial Payment Proof',
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildProofImage(paymentProof),
+                ],
+                if (paymentProofBalance != null && paymentProofBalance.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'Balance Payment Proof',
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildProofImage(paymentProofBalance),
+                ],
+                if ((isInsufficient || balanceDue > 0) && (isActive || isPending)) ...[
+                  const SizedBox(height: 16),
+                  _buildBalancePaymentSection(order, balanceDue),
+                ],
+                if (_isActiveOrder(displayStatus)) ...[
                   const SizedBox(height: 12),
                   Align(
                     alignment: Alignment.centerRight,
@@ -530,7 +875,23 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
     return status.replaceAll('_', ' ').toUpperCase();
   }
 
-  String _formatPaymentStatus(String status) {
+  String _formatPaymentStatus(String status, [Map<String, dynamic>? order]) {
+    final upper = status.toUpperCase();
+    if (order != null) {
+      if (_displayStatusFor(order) ==
+          'waiting_for_balance_payment_confirmation') {
+        return 'WAITING FOR BALANCE CONFIRMATION';
+      }
+      if (_isInsufficientPayment(order)) {
+        return 'INSUFFICIENT — BALANCE DUE';
+      }
+    }
+    if (upper.contains('WAIT_BALANCE') || upper.contains('BALANCE')) {
+      return 'WAITING FOR BALANCE CONFIRMATION';
+    }
+    if (upper.contains('INSUFFICIENT')) {
+      return 'INSUFFICIENT — BALANCE DUE';
+    }
     // Show as pending until cashier/manager confirms
     if (status == 'pending') {
       return 'PENDING CONFIRMATION';
@@ -542,6 +903,10 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
     switch (_normalizeStatus(status)) {
       case 'pending_cashier':
         return Colors.orange;
+      case 'insufficient_payment':
+        return Colors.red.shade700;
+      case 'waiting_for_balance_payment_confirmation':
+        return Colors.deepOrange;
       case 'in_preparation':
         return Colors.blue;
       case 'out_for_delivery':
@@ -551,11 +916,33 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
       case 'cancelled':
         return Colors.red;
       default:
+        if (status.toLowerCase() == 'insufficient_payment') {
+          return Colors.red.shade700;
+        }
+        if (status.toLowerCase() ==
+            'waiting_for_balance_payment_confirmation') {
+          return Colors.deepOrange;
+        }
         return Colors.grey;
     }
   }
 
-  Color _getPaymentStatusColor(String status) {
+  Color _getPaymentStatusColor(String status, [Map<String, dynamic>? order]) {
+    if (order != null) {
+      if (_displayStatusFor(order) ==
+          'waiting_for_balance_payment_confirmation') {
+        return Colors.deepOrange;
+      }
+      if (_isInsufficientPayment(order)) {
+        return Colors.red.shade700;
+      }
+    }
+    final upper = status.toUpperCase();
+    if (upper.contains('WAIT_BALANCE') ||
+        upper.contains('BALANCE') ||
+        upper.contains('INSUFFICIENT')) {
+      return Colors.red.shade700;
+    }
     switch (status) {
       case 'paid':
         return Colors.green;
@@ -643,21 +1030,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
         );
       }
       final updated = Map<String, dynamic>.from(data['order'] as Map? ?? {});
-      final updatedKey = _orderKey(updated);
-      setState(() {
-        _orders =
-            _orders.map((entry) {
-              if (entry is! Map) return entry;
-              final existing = Map<String, dynamic>.from(entry);
-              return _orderKey(existing) == updatedKey ? updated : existing;
-            }).toList();
-      });
-      CustomerOrdersCache.instance.setRestaurantOrders(
-        _orders
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList(),
-      );
+      _applyUpdatedOrder(updated);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Follow-up sent to the team.')),
@@ -715,28 +1088,30 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
       }
       final updated = Map<String, dynamic>.from(data['order'] as Map? ?? {});
       final updatedKey = _orderKey(updated);
-      setState(() {
-        _orders =
-            _orders.map((entry) {
-              if (entry is! Map) return entry;
-              final existing = Map<String, dynamic>.from(entry);
-              if (_orderKey(existing) != orderKey) return existing;
-              return updatedKey.isNotEmpty
-                  ? updated
-                  : {
-                    ...existing,
-                    'feedback_stars': result.stars,
-                    'feedback_remarks': result.remarks,
-                    'feedback_submitted': true,
-                  };
-            }).toList();
-      });
-      CustomerOrdersCache.instance.setRestaurantOrders(
-        _orders
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList(),
-      );
+      if (updatedKey.isNotEmpty) {
+        _applyUpdatedOrder(updated);
+      } else {
+        setState(() {
+          _orders =
+              _orders.map((entry) {
+                if (entry is! Map) return entry;
+                final existing = Map<String, dynamic>.from(entry);
+                if (_orderKey(existing) != orderKey) return existing;
+                return {
+                  ...existing,
+                  'feedback_stars': result.stars,
+                  'feedback_remarks': result.remarks,
+                  'feedback_submitted': true,
+                };
+              }).toList();
+        });
+        CustomerOrdersCache.instance.setRestaurantOrders(
+          _orders
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList(),
+        );
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Thank you for your feedback.')),
@@ -1035,6 +1410,188 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                         ),
                       ],
                     ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BalancePaymentWidget extends StatefulWidget {
+  const _BalancePaymentWidget({
+    required this.balanceDue,
+    required this.isSubmitting,
+    required this.onSubmit,
+  });
+
+  final double balanceDue;
+  final bool isSubmitting;
+  final Future<void> Function(String base64Img, String refNumber) onSubmit;
+
+  @override
+  State<_BalancePaymentWidget> createState() => _BalancePaymentWidgetState();
+}
+
+class _BalancePaymentWidgetState extends State<_BalancePaymentWidget> {
+  final _refController = TextEditingController();
+  String? _pickedFileName;
+  String? _pickedBase64;
+  static const _accent = Color(0xFFFFC024);
+
+  @override
+  void dispose() {
+    _refController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    if (result != null && result.files.isNotEmpty) {
+      final file = result.files.first;
+      if (file.bytes != null) {
+        setState(() {
+          _pickedFileName = file.name;
+          _pickedBase64 = base64Encode(file.bytes!);
+        });
+      }
+    }
+  }
+
+  Future<void> _handleSubmit() async {
+    if (_pickedBase64 == null || _pickedBase64!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please upload a proof of payment image.')),
+      );
+      return;
+    }
+    final ref = _refController.text.trim();
+    if (ref.length != 13 || !RegExp(r'^\d{13}$').hasMatch(ref)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Reference number must be exactly 13 digits.'),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            title: const Text('Confirm Payment'),
+            content: Text(
+              'Submit balance payment of ₱${widget.balanceDue.toStringAsFixed(2)} with reference $ref?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _accent,
+                  foregroundColor: Colors.black,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Submit'),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true) return;
+
+    await widget.onSubmit(_pickedBase64!, ref);
+    if (mounted) {
+      setState(() {
+        _pickedFileName = null;
+        _pickedBase64 = null;
+        _refController.clear();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.orange.shade700,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Balance Due: ₱${widget.balanceDue.toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.orange.shade900,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: _pickFile,
+            icon: const Icon(Icons.upload_file, size: 18),
+            label: Text(_pickedFileName ?? 'Upload Proof of Payment'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.black87,
+              side: BorderSide(color: Colors.grey.shade400),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _refController,
+            keyboardType: TextInputType.number,
+            maxLength: 13,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: InputDecoration(
+              labelText: 'GCash Reference Number',
+              hintText: '13-digit reference',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              counterText: '',
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: widget.isSubmitting ? null : _handleSubmit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _accent,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              child:
+                  widget.isSubmitting
+                      ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                      : const Text(
+                        'Submit Balance Payment',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+            ),
           ),
         ],
       ),

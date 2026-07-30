@@ -21,9 +21,126 @@ class ChecklistPdfLine {
   final bool isCompleted;
 }
 
+Future<Uint8List> buildChecklistPdf({
+  required EventOrderDto order,
+  required String stageLabel,
+  required List<Map<String, dynamic>> checklistRows,
+}) async {
+  final items = checklistRows.map((row) {
+    final status = '${row['status'] ?? ''}'.toLowerCase();
+    return ChecklistPdfLine(
+      item: '${row['item'] ?? row['title'] ?? ''}',
+      description: '${row['description'] ?? ''}',
+      quantity: () {
+        final q = row['quantity'] ?? row['qty'] ?? 1;
+        if (q is num) return q.toInt().clamp(1, 999999);
+        return (int.tryParse('$q') ?? 1).clamp(1, 999999);
+      }(),
+      cost: double.tryParse('${row['cost'] ?? row['price'] ?? 0}') ?? 0,
+      isCompleted: status.contains('done') && !status.contains('not'),
+    );
+  }).toList();
+  return buildChecklistPdfBytes(
+    order: order,
+    items: items,
+    stageLabel: stageLabel,
+  );
+}
+
+Future<Uint8List> buildTaskAssignmentPdf({
+  required EventOrderDto order,
+  required String stageLabel,
+  required List<Map<String, dynamic>> taskRows,
+}) async {
+  final eventDate = order.scheduleSlots.isNotEmpty
+      ? order.scheduleSlots.first.date
+      : 'TBD';
+  final headers = ['Task', 'Assignee', 'Notes', 'Status'];
+  final rows = taskRows.map((row) {
+    return [
+      '${row['task'] ?? row['title'] ?? row['item'] ?? ''}',
+      '${row['assignee'] ?? row['assignedTo'] ?? row['assigned_to'] ?? ''}',
+      '${row['notes'] ?? row['description'] ?? ''}',
+      '${row['status'] ?? 'pending'}',
+    ];
+  }).toList();
+
+  final doc = pw.Document();
+  doc.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4.landscape,
+      margin: const pw.EdgeInsets.all(36),
+      build: (context) {
+        return [
+          pw.Text(
+            'Task Assignment',
+            style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.Text(
+            "Macrina's Kitchen and Catering",
+            style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+          ),
+          pw.SizedBox(height: 8),
+          pw.Text(
+            'Stage: $stageLabel',
+            style: const pw.TextStyle(fontSize: 10),
+          ),
+          pw.SizedBox(height: 14),
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      'Event: ${order.eventTitle.trim().isEmpty ? order.customerName : order.eventTitle}',
+                      style: const pw.TextStyle(fontSize: 10),
+                    ),
+                    pw.Text(
+                      'Date: $eventDate',
+                      style: const pw.TextStyle(fontSize: 10),
+                    ),
+                    pw.Text(
+                      'Customer: ${order.customerName}',
+                      style: const pw.TextStyle(fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 16),
+          if (rows.isEmpty)
+            pw.Text(
+              'No task assignments recorded.',
+              style: const pw.TextStyle(fontSize: 11),
+            )
+          else
+            pw.TableHelper.fromTextArray(
+              headers: headers,
+              data: rows,
+              headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 9,
+              ),
+              cellStyle: const pw.TextStyle(fontSize: 9),
+              headerDecoration: const pw.BoxDecoration(
+                color: PdfColors.grey300,
+              ),
+              cellAlignment: pw.Alignment.centerLeft,
+            ),
+        ];
+      },
+    ),
+  );
+  return doc.save();
+}
+
 Future<Uint8List> buildChecklistPdfBytes({
   required EventOrderDto order,
   required List<ChecklistPdfLine> items,
+  String stageLabel = '',
 }) async {
   final eventDate = order.scheduleSlots.isNotEmpty
       ? order.scheduleSlots.first.date
@@ -70,6 +187,13 @@ Future<Uint8List> buildChecklistPdfBytes({
             "Macrina's Kitchen and Catering",
             style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
           ),
+          if (stageLabel.trim().isNotEmpty) ...[
+            pw.SizedBox(height: 4),
+            pw.Text(
+              'Stage: ${stageLabel.trim()}',
+              style: const pw.TextStyle(fontSize: 10),
+            ),
+          ],
           pw.SizedBox(height: 14),
           pw.Row(
             crossAxisAlignment: pw.CrossAxisAlignment.start,

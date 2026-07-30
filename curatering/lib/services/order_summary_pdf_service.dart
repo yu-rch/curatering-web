@@ -7,6 +7,13 @@ import 'package:pdf/widgets.dart' as pw;
 import '../models/event_order.dart';
 import '../utils/order_calculations.dart';
 
+enum OrderSummaryPdfVariant {
+  beforeDownPayment,
+  afterDownPayment,
+  additionalCosts,
+  fullyPaid,
+}
+
 class OrderSummaryPdfData {
   const OrderSummaryPdfData({
     required this.title,
@@ -244,4 +251,96 @@ Future<Uint8List> buildOrderSummaryPdfBytes(OrderSummaryPdfData d) async {
     ),
   );
   return doc.save();
+}
+
+Future<Uint8List> buildManagerOrderSummaryPdf({
+  required EventOrderDto order,
+  required OrderSummaryPdfVariant variant,
+  List<Map<String, dynamic>> additionalCostGroups = const [],
+}) async {
+  final isDownPayment = variant == OrderSummaryPdfVariant.beforeDownPayment;
+
+  var additionalTotal = 0.0;
+  final summaryParts = <String>[];
+  for (final group in additionalCostGroups) {
+    final items = group['items'];
+    if (items is List) {
+      for (final item in items) {
+        if (item is! Map) continue;
+        final label = '${item['label'] ?? item['name'] ?? 'Item'}'.trim();
+        final amount =
+            double.tryParse('${item['amount'] ?? item['cost'] ?? 0}') ?? 0;
+        additionalTotal += amount;
+        if (label.isNotEmpty) {
+          summaryParts.add('$label (${amount.toStringAsFixed(2)})');
+        }
+      }
+    } else if (group['total'] is num) {
+      additionalTotal += (group['total'] as num).toDouble();
+    }
+  }
+
+  final base = buildOrderSummaryPdfData(
+    order: order,
+    isDownPayment: isDownPayment,
+  );
+
+  final title = switch (variant) {
+    OrderSummaryPdfVariant.beforeDownPayment =>
+      'Order Summary before Down Payment',
+    OrderSummaryPdfVariant.afterDownPayment =>
+      'Order Summary after Down Payment',
+    OrderSummaryPdfVariant.additionalCosts =>
+      'Order Summary | Additional Costs',
+    OrderSummaryPdfVariant.fullyPaid => 'Order Summary Fully Paid',
+  };
+
+  final total = switch (variant) {
+    OrderSummaryPdfVariant.additionalCosts ||
+    OrderSummaryPdfVariant.fullyPaid =>
+      base.total + additionalTotal,
+    _ => base.total,
+  };
+
+  final amountDue = switch (variant) {
+    OrderSummaryPdfVariant.beforeDownPayment => total / 2,
+    OrderSummaryPdfVariant.afterDownPayment => total / 2,
+    OrderSummaryPdfVariant.additionalCosts => additionalTotal,
+    OrderSummaryPdfVariant.fullyPaid => 0.0,
+  };
+
+  final data = OrderSummaryPdfData(
+    title: title,
+    transactionNo: order.transactionNo.isNotEmpty
+        ? order.transactionNo
+        : base.transactionNo,
+    processedAt: base.processedAt,
+    eventTitle: base.eventTitle,
+    eventWhen: base.eventWhen,
+    customerName: base.customerName,
+    contactPerson: base.contactPerson,
+    contactNumber: base.contactNumber,
+    emailAddress: base.emailAddress,
+    cateringType: base.cateringType,
+    eventType: base.eventType,
+    address: base.address,
+    serviceIncluded: base.serviceIncluded,
+    formalityLevel: base.formalityLevel,
+    menuLines: base.menuLines,
+    guestCount: base.guestCount,
+    paxRate: base.paxRate,
+    baseFoodCost: base.baseFoodCost,
+    paxBuffer: base.paxBuffer,
+    themeCost: base.themeCost,
+    additionalCostsSummary: summaryParts.join(', '),
+    additionalCostTotal: additionalTotal,
+    laborCost: base.laborCost,
+    travelCost: base.travelCost,
+    total: total,
+    amountDue: amountDue,
+    note: base.note,
+    isDownPayment: isDownPayment,
+  );
+
+  return buildOrderSummaryPdfBytes(data);
 }

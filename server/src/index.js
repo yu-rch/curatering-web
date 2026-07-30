@@ -7136,6 +7136,168 @@ app.post(
   },
 );
 
+// Complete event order without a post-analysis form (thin wrapper for mobile parity).
+app.post(
+  "/api/events/orders/:orderId/complete",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin"])),
+  async (req, res) => {
+    try {
+      const { orderId } = req.params;
+      const result = await pool.query(
+        `UPDATE event_orders
+         SET
+           status = 'completed',
+           updated_by = $1,
+           updated_at = now()
+         WHERE id = $2
+           AND status IN ('on_going', 'for_full_payment', 'for_processing', 'for_post_analysis')
+         RETURNING *;`,
+        [req.user.id, orderId],
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          message: "Event order not found or already completed",
+        });
+      }
+
+      const completedOrder = result.rows[0];
+      const eventPoints = await calculateLoyaltyPointsForOrder(
+        Number(completedOrder.total_cost || 0),
+        "catering",
+      );
+      const previousEventPoints = Number(completedOrder.points_earned || 0);
+      const eventPointsDelta = eventPoints - previousEventPoints;
+      await pool.query(
+        `UPDATE event_orders SET points_earned = $1 WHERE id = $2`,
+        [eventPoints, orderId],
+      );
+      if (completedOrder.customer_id && eventPointsDelta !== 0) {
+        const customerWhereSql = await customerAccountIdentityWhereSql("$2");
+        await pool.query(
+          `UPDATE customer_accounts
+           SET catering_loyalty_points =
+                 GREATEST(0, COALESCE(catering_loyalty_points, 0) + $1),
+               updated_at = now()
+           WHERE ${customerWhereSql}`,
+          [eventPointsDelta, completedOrder.customer_id],
+        );
+      }
+
+      await logAction({
+        userId: req.user.id,
+        feature: "Events",
+        action: "completed event order",
+        other: { orderId },
+      });
+
+      return res.json({ ok: true, id: result.rows[0].id });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ message: "Failed to complete event order" });
+    }
+  },
+);
+
+// Merge stage metadata (additional costs / task rows) into post_analysis JSON.
+app.patch(
+  "/api/manager/events/orders/:orderId/stage-data",
+  authRequired,
+  (req, res, next) =>
+    requireRoles(
+      req,
+      res,
+      next,
+      new Set(["manager", "supervisor", "admin", "super_admin"]),
+    ),
+  async (req, res) => {
+    try {
+      const { orderId } = req.params;
+      const orderKind = String(req.body?.orderKind || req.body?.order_kind || "")
+        .trim()
+        .toLowerCase();
+      const patch =
+        req.body?.patch && typeof req.body.patch === "object"
+          ? req.body.patch
+          : req.body && typeof req.body === "object"
+            ? (() => {
+                const { orderKind: _ok, order_kind: _ok2, patch: _p, ...rest } =
+                  req.body;
+                return rest;
+              })()
+            : {};
+
+      if (!patch || Object.keys(patch).length === 0) {
+        return res.status(400).json({ message: "patch object is required" });
+      }
+
+      const tableName =
+        orderKind === "catering" ? "catering_orders" : "event_orders";
+
+      const existing = await pool.query(
+        `SELECT id, post_analysis FROM ${tableName} WHERE id = $1 LIMIT 1`,
+        [orderId],
+      );
+      if (existing.rowCount === 0) {
+        // Try the other table if kind was wrong/missing.
+        const altTable =
+          tableName === "event_orders" ? "catering_orders" : "event_orders";
+        const alt = await pool.query(
+          `SELECT id, post_analysis FROM ${altTable} WHERE id = $1 LIMIT 1`,
+          [orderId],
+        );
+        if (alt.rowCount === 0) {
+          return res.status(404).json({ message: "Order not found" });
+        }
+        const current =
+          alt.rows[0].post_analysis &&
+          typeof alt.rows[0].post_analysis === "object"
+            ? alt.rows[0].post_analysis
+            : {};
+        const merged = { ...current, ...patch };
+        await pool.query(
+          `UPDATE ${altTable}
+           SET post_analysis = $1::jsonb, updated_by = $2, updated_at = now()
+           WHERE id = $3`,
+          [JSON.stringify(merged), req.user.id, orderId],
+        );
+        await logAction({
+          userId: req.user.id,
+          feature: "Events",
+          action: "patched stage data",
+          other: { orderId, table: altTable, keys: Object.keys(patch) },
+        });
+        return res.json({ ok: true, postAnalysis: merged });
+      }
+
+      const current =
+        existing.rows[0].post_analysis &&
+        typeof existing.rows[0].post_analysis === "object"
+          ? existing.rows[0].post_analysis
+          : {};
+      const merged = { ...current, ...patch };
+      await pool.query(
+        `UPDATE ${tableName}
+         SET post_analysis = $1::jsonb, updated_by = $2, updated_at = now()
+         WHERE id = $3`,
+        [JSON.stringify(merged), req.user.id, orderId],
+      );
+      await logAction({
+        userId: req.user.id,
+        feature: "Events",
+        action: "patched stage data",
+        other: { orderId, table: tableName, keys: Object.keys(patch) },
+      });
+      return res.json({ ok: true, postAnalysis: merged });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ message: "Failed to patch stage data" });
+    }
+  },
+);
+
 app.post(
   "/api/supervisor/events/orders/:orderId",
   authRequired,
@@ -8374,6 +8536,9 @@ async function registerRoutesAfterDbInit() {
         const paymentMethodRaw = String(
           req.body?.paymentMethod ?? req.body?.payment_method ?? "",
         ).trim();
+        const paymentProofRaw = String(
+          req.body?.paymentProof ?? req.body?.payment_proof ?? "",
+        ).trim();
 
         if (!paymentType || !status) {
           return res.status(400).json({ error: 'paymentType and status are required' });
@@ -8478,6 +8643,17 @@ async function registerRoutesAfterDbInit() {
         if (Number.isFinite(amountNum) && amountNum > 0) {
           updateQuery += `, ${amountColumn} = $${queryParams.length + 1}`;
           queryParams.push(amountNum);
+        }
+
+        if (paymentProofRaw) {
+          // Persist proof into post_analysis so staff UIs can show it without a dedicated column.
+          const proofKey =
+            paymentType === "down_payment"
+              ? "down_payment_proof"
+              : "full_payment_proof";
+          updateQuery += `,
+            post_analysis = COALESCE(post_analysis, '{}'::jsonb) || jsonb_build_object($${queryParams.length + 1}::text, $${queryParams.length + 2}::text)`;
+          queryParams.push(proofKey, paymentProofRaw);
         }
 
         updateQuery += ` WHERE id = $${queryParams.length + 1} RETURNING *`;

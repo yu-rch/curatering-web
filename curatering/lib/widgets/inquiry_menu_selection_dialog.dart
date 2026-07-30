@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../models/menu_dish.dart';
@@ -307,12 +309,8 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
     final tab = _activeTab;
     if (tab == 0) {
       final n = _customIds.length;
-      if (n < widget.minCustomDishes || n > widget.maxCustomDishes) {
-        setState(
-          () =>
-              _localError =
-                  'Select between ${widget.minCustomDishes} and ${widget.maxCustomDishes} dishes.',
-        );
+      if (n <= 0) {
+        setState(() => _localError = 'Please select at least one dish.');
         return;
       }
       Navigator.of(context).pop(_buildCurrentBlocks());
@@ -352,6 +350,12 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
             _customFilter.trim().toLowerCase(),
           );
         }).toList();
+    filtered.sort((a, b) {
+      final aSel = _customIds.contains(a.id) ? 0 : 1;
+      final bSel = _customIds.contains(b.id) ? 0 : 1;
+      if (aSel != bSel) return aSel - bSel;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -359,7 +363,7 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
           child: Text(
-            'Pick ${widget.minCustomDishes}–${widget.maxCustomDishes} dishes from the catering menu (${_customIds.length} selected).',
+            'Pick dishes from the catering menu (${_customIds.length} selected).',
             style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
           ),
         ),
@@ -398,11 +402,6 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
                 onChanged: (v) {
                   setState(() {
                     if (v == true) {
-                      if (_customIds.length >= widget.maxCustomDishes) {
-                        _localError =
-                            'Maximum ${widget.maxCustomDishes} dishes.';
-                        return;
-                      }
                       _customIds.add(d.id);
                       _localError = null;
                     } else {
@@ -535,12 +534,46 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
             ),
           ],
           const SizedBox(height: 8),
-          for (final d in widget.cateringDishes)
+          for (final d in (() {
+            final sorted = [...widget.cateringDishes];
+            sorted.sort((a, b) {
+              final aSel = _selectedSetDishIds.contains(a.id) ? 0 : 1;
+              final bSel = _selectedSetDishIds.contains(b.id) ? 0 : 1;
+              if (aSel != bSel) return aSel - bSel;
+              return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+            });
+            return sorted;
+          })())
             CheckboxListTile(
               dense: true,
               secondary: _dishThumb(d),
               value: _selectedSetDishIds.contains(d.id),
               title: Text(d.name),
+              subtitle: () {
+                if (!_selectedSetDishIds.contains(d.id)) return null;
+                final originalIds = _visibleSetDishIds(selected).toSet();
+                if (originalIds.contains(d.id)) return null;
+                final slotLimit = originalIds.length;
+                final pos = _selectedSetDishIds.toList().indexOf(d.id);
+                final overSlot = pos >= slotLimit;
+                final charge =
+                    overSlot ? d.additionalChargeAmount : 0;
+                if (charge <= 0 && !overSlot) {
+                  return const Text(
+                    'Added dish — add\'l charge editable by staff',
+                    style: TextStyle(fontSize: 11),
+                  );
+                }
+                if (charge <= 0) return null;
+                return Text(
+                  'Add\'l charge: PHP ${charge.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: AntdTokens.warning,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                );
+              }(),
               onChanged: (v) {
                 setState(() {
                   if (v == true) {
@@ -553,20 +586,139 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
                 _emitSelection();
               },
             ),
+          const SizedBox(height: 10),
+          _buildSetMenuModificationsPreview(selected),
         ],
       ),
     );
   }
 
+  Widget _buildSetMenuModificationsPreview(SetMenu selected) {
+    final originalIds = _visibleSetDishIds(selected).toSet();
+    final removedIds =
+        originalIds.where((id) => !_selectedSetDishIds.contains(id)).toList()
+          ..sort();
+    final addedIds =
+        _selectedSetDishIds.where((id) => !originalIds.contains(id)).toList()
+          ..sort();
+    if (removedIds.isEmpty && addedIds.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final rows = <Map<String, String>>[];
+    final pairCount = removedIds.length < addedIds.length
+        ? removedIds.length
+        : addedIds.length;
+    for (var i = 0; i < pairCount; i++) {
+      rows.add({
+        'dish': _dishNameById[removedIds[i]] ?? removedIds[i],
+        'action': 'REPLACED',
+        'result': _dishNameById[addedIds[i]] ?? addedIds[i],
+        'charge': '—',
+      });
+    }
+    if (removedIds.length > pairCount) {
+      for (var i = pairCount; i < removedIds.length; i++) {
+        rows.add({
+          'dish': _dishNameById[removedIds[i]] ?? removedIds[i],
+          'action': 'REMOVED',
+          'result': '—',
+          'charge': '—',
+        });
+      }
+    }
+    if (addedIds.length > pairCount) {
+      final slotLimit = originalIds.length;
+      final overage =
+          (_selectedSetDishIds.length - slotLimit).clamp(0, 9999);
+      for (var i = pairCount; i < addedIds.length; i++) {
+        final id = addedIds[i];
+        MenuDish? dish;
+        for (final d in widget.cateringDishes) {
+          if (d.id == id) {
+            dish = d;
+            break;
+          }
+        }
+        final addIndex = i - pairCount;
+        final addCharge =
+            addIndex < overage ? (dish?.additionalChargeAmount ?? 0) : 0;
+        rows.add({
+          'dish': '—',
+          'action': 'ADDED',
+          'result': _dishNameById[id] ?? id,
+          'charge': addCharge > 0 ? 'PHP ${addCharge.toStringAsFixed(2)}' : '—',
+        });
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Menu modifications',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 180,
+            child: Scrollbar(
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    headingRowHeight: 34,
+                    dataRowMinHeight: 34,
+                    dataRowMaxHeight: 40,
+                    columns: const [
+                      DataColumn(label: Text('Dish')),
+                      DataColumn(label: Text('Action')),
+                      DataColumn(label: Text('Result')),
+                      DataColumn(label: Text('Add\'l charge')),
+                    ],
+                    rows: rows
+                        .map(
+                          (r) => DataRow(
+                            cells: [
+                              DataCell(Text(r['dish']!)),
+                              DataCell(Text(r['action']!)),
+                              DataCell(Text(r['result']!)),
+                              DataCell(Text(r['charge']!)),
+                            ],
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  final Map<String, Uint8List> _imageCache = {};
+
   Widget _dishThumb(MenuDish dish) {
     if (dish.imageBase64?.isNotEmpty != true) {
       return const CircleAvatar(child: Icon(Icons.restaurant, size: 18));
     }
-    return CircleAvatar(
-      backgroundImage: MemoryImage(
-        UriData.parse(
-          'data:image/png;base64,${dish.imageBase64}',
-        ).contentAsBytes(),
+    final bytes = _imageCache.putIfAbsent(
+      dish.id,
+      () => base64Decode(dish.imageBase64!),
+    );
+    return RepaintBoundary(
+      key: ValueKey('thumb_${dish.id}'),
+      child: CircleAvatar(
+        backgroundImage: MemoryImage(bytes),
       ),
     );
   }
