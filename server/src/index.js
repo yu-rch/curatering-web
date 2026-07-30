@@ -9523,7 +9523,7 @@ async function registerRoutesAfterDbInit() {
              submitted_order_dt_stamp, last_updated_order_status_dt_stamp
            )
            VALUES ($1, $2, $3, $4, $5, ${itemsSql}, $7, $8, $9, $10,
-                   COALESCE($11::text, 'NOW'), $12, 'GCASH ONLY', 'PENDING_CASHIER', $13,
+                   COALESCE($11::text, 'NOW'), $12, 'GCASH ONLY', 'pending_cashier', $13,
                    now(), now())
            RETURNING *`,
           [

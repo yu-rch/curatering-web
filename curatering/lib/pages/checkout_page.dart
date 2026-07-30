@@ -368,7 +368,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
   String? get _nameError {
     final value = _nameController.text.trim();
     if (value.isEmpty) return 'Name is required';
-    if (value.length < 2) return 'Enter at least 2 characters';
+    if (!RegExp(r'^[A-Za-z]+(?:\s+[A-Za-z]+)*$').hasMatch(value)) {
+      return 'Name should contain letters only';
+    }
     return null;
   }
 
@@ -717,6 +719,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     'NAME',
                                     '',
                                     controller: _nameController,
+                                    lettersOnly: true,
+                                    hintText: 'Letters only',
                                     errorText:
                                         _showValidation ? _nameError : null,
                                   ),
@@ -1091,6 +1095,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     TextInputType? keyboardType,
     int? maxLength,
     bool digitsOnly = false,
+    bool lettersOnly = false,
     String? hintText,
     String? errorText,
   }) {
@@ -1117,12 +1122,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     maxLines: maxLines,
                     keyboardType: keyboardType,
                     maxLength: maxLength,
+                    textCapitalization:
+                        lettersOnly
+                            ? TextCapitalization.words
+                            : TextCapitalization.none,
                     inputFormatters:
                         digitsOnly
                             ? [
                               FilteringTextInputFormatter.digitsOnly,
                               if (maxLength != null)
                                 LengthLimitingTextInputFormatter(maxLength),
+                            ]
+                            : lettersOnly
+                            ? [
+                              FilteringTextInputFormatter.allow(
+                                RegExp(r'[A-Za-z\s]'),
+                              ),
                             ]
                             : null,
                     style: const TextStyle(fontSize: 12),

@@ -32,6 +32,9 @@ class _MyProfilePageState extends State<MyProfilePage> {
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isChangingPassword = false;
+  bool _obscureCurrentPassword = true;
+  bool _obscureNewPassword = true;
+  bool _obscureConfirmPassword = true;
   String? _error;
   double? _deliveryLat;
   double? _deliveryLng;
@@ -137,10 +140,24 @@ class _MyProfilePageState extends State<MyProfilePage> {
   }
 
   Future<void> _saveProfile() async {
-    if (_fullNameController.text.isEmpty) {
+    final fullName = _fullNameController.text.trim();
+    if (fullName.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Full name is required')));
+      return;
+    }
+    if (!RegExp(r'^[A-Za-z]+(?:\s+[A-Za-z]+)*$').hasMatch(fullName)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Full name should contain letters only')),
+      );
+      return;
+    }
+    final phoneDigits = _phoneController.text.replaceAll(RegExp(r'\D'), '');
+    if (phoneDigits.isNotEmpty && phoneDigits.length > 11) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Phone number must be at most 11 digits')),
+      );
       return;
     }
 
@@ -157,8 +174,8 @@ class _MyProfilePageState extends State<MyProfilePage> {
           'Content-Type': 'application/json',
         },
         body: jsonEncode({
-          'fullName': _fullNameController.text,
-          'phone': _phoneController.text.isEmpty ? null : _phoneController.text,
+          'fullName': fullName,
+          'phone': phoneDigits.isEmpty ? null : phoneDigits,
           'deliveryAddress':
               _addressController.text.isEmpty ? null : _addressController.text,
           'deliveryLat': _deliveryLat,
@@ -403,10 +420,24 @@ class _MyProfilePageState extends State<MyProfilePage> {
                                   Expanded(
                                     child: TextField(
                                       controller: _currentPasswordController,
-                                      obscureText: true,
-                                      decoration: const InputDecoration(
+                                      obscureText: _obscureCurrentPassword,
+                                      decoration: InputDecoration(
                                         isDense: true,
-                                        border: OutlineInputBorder(),
+                                        border: const OutlineInputBorder(),
+                                        suffixIcon: IconButton(
+                                          icon: Icon(
+                                            _obscureCurrentPassword
+                                                ? Icons.visibility_off
+                                                : Icons.visibility,
+                                            size: 18,
+                                          ),
+                                          onPressed: () {
+                                            setDialogState(
+                                              () => _obscureCurrentPassword =
+                                                  !_obscureCurrentPassword,
+                                            );
+                                          },
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -425,11 +456,25 @@ class _MyProfilePageState extends State<MyProfilePage> {
                                   Expanded(
                                     child: TextField(
                                       controller: _newPasswordController,
-                                      obscureText: true,
-                                      decoration: const InputDecoration(
+                                      obscureText: _obscureNewPassword,
+                                      decoration: InputDecoration(
                                         isDense: true,
-                                        border: OutlineInputBorder(),
+                                        border: const OutlineInputBorder(),
                                         helperText: 'At least 8 characters',
+                                        suffixIcon: IconButton(
+                                          icon: Icon(
+                                            _obscureNewPassword
+                                                ? Icons.visibility_off
+                                                : Icons.visibility,
+                                            size: 18,
+                                          ),
+                                          onPressed: () {
+                                            setDialogState(
+                                              () => _obscureNewPassword =
+                                                  !_obscureNewPassword,
+                                            );
+                                          },
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -448,10 +493,24 @@ class _MyProfilePageState extends State<MyProfilePage> {
                                   Expanded(
                                     child: TextField(
                                       controller: _confirmPasswordController,
-                                      obscureText: true,
-                                      decoration: const InputDecoration(
+                                      obscureText: _obscureConfirmPassword,
+                                      decoration: InputDecoration(
                                         isDense: true,
-                                        border: OutlineInputBorder(),
+                                        border: const OutlineInputBorder(),
+                                        suffixIcon: IconButton(
+                                          icon: Icon(
+                                            _obscureConfirmPassword
+                                                ? Icons.visibility_off
+                                                : Icons.visibility,
+                                            size: 18,
+                                          ),
+                                          onPressed: () {
+                                            setDialogState(
+                                              () => _obscureConfirmPassword =
+                                                  !_obscureConfirmPassword,
+                                            );
+                                          },
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -803,10 +862,17 @@ class _MyProfilePageState extends State<MyProfilePage> {
                           const SizedBox(height: 16),
                           TextField(
                             controller: _fullNameController,
+                            textCapitalization: TextCapitalization.words,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                RegExp(r'[A-Za-z\s]'),
+                              ),
+                            ],
                             decoration: const InputDecoration(
                               labelText: 'Full Name',
                               border: OutlineInputBorder(),
                               prefixIcon: Icon(Icons.person),
+                              hintText: 'Letters only',
                             ),
                           ),
                           const SizedBox(height: 16),

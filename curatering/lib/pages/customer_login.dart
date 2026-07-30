@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,6 +16,8 @@ Uri _apiUri(String path) {
 }
 
 const _requestTimeout = Duration(seconds: 30);
+
+final _nameAlphabetPattern = RegExp(r'^[A-Za-z]+(?:\s+[A-Za-z]+)*$');
 
 class CustomerLoginPage extends StatefulWidget {
   final bool? redirectToCheckout;
@@ -40,6 +43,9 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
   bool _showOtpField = false;
   bool _showForgotPassword = false;
   bool _showResetPassword = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+  bool _obscureNewPassword = true;
   String? _pendingEmail;
   String? _resetEmail;
   String? _errorMessage;
@@ -494,7 +500,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                   Expanded(
                     child: TextFormField(
                       controller: _newPasswordController,
-                      obscureText: true,
+                      obscureText: _obscureNewPassword,
                       style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
                         isDense: true,
@@ -504,6 +510,20 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12,
                           vertical: 8,
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureNewPassword
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            size: 18,
+                          ),
+                          onPressed: () {
+                            setState(
+                              () =>
+                                  _obscureNewPassword = !_obscureNewPassword,
+                            );
+                          },
                         ),
                       ),
                     ),
@@ -627,6 +647,12 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                             child: TextFormField(
                               controller: _fullNameController,
                               style: const TextStyle(fontSize: 13),
+                              textCapitalization: TextCapitalization.words,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'[A-Za-z\s]'),
+                                ),
+                              ],
                               decoration: InputDecoration(
                                 isDense: true,
                                 border: OutlineInputBorder(
@@ -636,10 +662,15 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                                   horizontal: 12,
                                   vertical: 8,
                                 ),
+                                hintText: 'Letters only',
                               ),
                               validator: (value) {
-                                if (value == null || value.isEmpty) {
+                                final trimmed = value?.trim() ?? '';
+                                if (trimmed.isEmpty) {
                                   return 'Required';
+                                }
+                                if (!_nameAlphabetPattern.hasMatch(trimmed)) {
+                                  return 'Letters only';
                                 }
                                 return null;
                               },
@@ -661,8 +692,13 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                           Expanded(
                             child: TextFormField(
                               controller: _phoneController,
-                              keyboardType: TextInputType.phone,
+                              keyboardType: TextInputType.number,
                               style: const TextStyle(fontSize: 13),
+                              maxLength: 11,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(11),
+                              ],
                               decoration: InputDecoration(
                                 isDense: true,
                                 border: OutlineInputBorder(
@@ -672,7 +708,20 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                                   horizontal: 12,
                                   vertical: 8,
                                 ),
+                                hintText: '11 digits max',
+                                counterText: '',
                               ),
+                              validator: (value) {
+                                final digits =
+                                    (value ?? '').replaceAll(RegExp(r'\D'), '');
+                                if (digits.isEmpty) {
+                                  return 'Required';
+                                }
+                                if (digits.length > 11) {
+                                  return 'Max 11 digits';
+                                }
+                                return null;
+                              },
                             ),
                           ),
                         ],
@@ -730,7 +779,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                         Expanded(
                           child: TextFormField(
                             controller: _passwordController,
-                            obscureText: true,
+                            obscureText: _obscurePassword,
                             style: const TextStyle(fontSize: 13),
                             decoration: InputDecoration(
                               isDense: true,
@@ -740,6 +789,19 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 12,
                                 vertical: 8,
+                              ),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  size: 18,
+                                ),
+                                onPressed: () {
+                                  setState(
+                                    () => _obscurePassword = !_obscurePassword,
+                                  );
+                                },
                               ),
                             ),
                             validator: (value) {
@@ -769,7 +831,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                           Expanded(
                             child: TextFormField(
                               controller: _confirmPasswordController,
-                              obscureText: true,
+                              obscureText: _obscureConfirmPassword,
                               style: const TextStyle(fontSize: 13),
                               decoration: InputDecoration(
                                 isDense: true,
@@ -779,6 +841,20 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 12,
                                   vertical: 8,
+                                ),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscureConfirmPassword
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                    size: 18,
+                                  ),
+                                  onPressed: () {
+                                    setState(
+                                      () => _obscureConfirmPassword =
+                                          !_obscureConfirmPassword,
+                                    );
+                                  },
                                 ),
                               ),
                               validator: (value) {
