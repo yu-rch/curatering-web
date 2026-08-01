@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/website_header_font.dart';
 import '../utils/order_display_utils.dart';
 import '../utils/responsive_layout.dart';
@@ -124,6 +125,34 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
                   },
                 ),
                 const SizedBox(height: 32),
+
+                FutureBuilder<bool>(
+                  future: SharedPreferences.getInstance().then(
+                    (p) => (p.getString('customer_token') ?? '').isNotEmpty,
+                  ),
+                  builder: (context, snap) {
+                    final loggedIn = snap.data == true;
+                    if (loggedIn) return const SizedBox.shrink();
+                    return Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF8E6),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFFFC024)),
+                      ),
+                      child: const Text(
+                        'Sign up to redeem rewards.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                        ),
+                      ),
+                    );
+                  },
+                ),
 
                 // Back to Home Button
                 ElevatedButton(

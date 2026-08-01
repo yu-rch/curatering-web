@@ -2165,12 +2165,20 @@ class _ManageEventsState extends State<ManageEvents>
     String? formalityLevelOverride,
     int? guestCountOverride,
     List<Map<String, dynamic>>? menuOverride,
-    String? allergensOverride}) {
+    String? allergensOverride,
+    String? customerNameOverride,
+    String? contactPersonOverride,
+    String? contactNumberOverride,
+    String? emailAddressOverride,
+    String? endTimeOverride,
+    String? noteOverride}) {
     final effectiveGuestCount = guestCountOverride ?? order.guestCount;
     List<Map<String, dynamic>> menuItems = [];
     final schedulePayload = <Map<String, dynamic>>[];
 
-    if (menuChoice == 'yes') {
+    if (menuOverride != null && menuOverride.isNotEmpty) {
+      menuItems = List<Map<String, dynamic>>.from(menuOverride);
+    } else if (menuChoice == 'yes') {
       for (final dishId in selectedDishIds) {
         final dish = MenuStore.instance.allDishes.firstWhere(
           (d) => d.id == dishId,
@@ -2216,6 +2224,7 @@ class _ManageEventsState extends State<ManageEvents>
                   'dishName': m.dishName,
                   'paxOption': m.paxOption,
                   'price': m.price,
+                  'additionalChargeAmount': m.additionalChargeAmount,
                 },
               )
               .toList();
@@ -2223,11 +2232,17 @@ class _ManageEventsState extends State<ManageEvents>
 
     final dateValue = date.trim();
     final timeValue = time.trim();
+    final endTimeValue = (endTimeOverride ?? '').trim();
     if (dateValue.isNotEmpty || timeValue.isNotEmpty) {
+      final fallbackEnd =
+          order.scheduleSlots.isNotEmpty &&
+                  order.scheduleSlots.first.endTime.trim().isNotEmpty
+              ? order.scheduleSlots.first.endTime.trim()
+              : '14:00';
       schedulePayload.add({
         'date': dateValue,
         'startTime': timeValue,
-        'endTime': '14:00',
+        'endTime': endTimeValue.isNotEmpty ? endTimeValue : fallbackEnd,
       });
     } else if (order.scheduleSlots.isNotEmpty) {
       schedulePayload.addAll(
@@ -2241,35 +2256,40 @@ class _ManageEventsState extends State<ManageEvents>
       );
     }
 
+    final dishCost = menuItems.fold<double>(
+      0.0,
+      (sum, row) => sum + (double.tryParse('${row['price']}') ?? 0.0),
+    );
+
     return {
       'eventTitle': eventTitleOverride ?? order.eventTitle,
       'eventType': eventTypeOverride ?? order.eventType,
       'formalityLevel': formalityLevelOverride ?? order.formalityLevel,
-      'customerName': order.customerName,
-      'contactPerson': order.contactPerson,
-      'contactNumber': order.contactNumber,
-      'emailAddress': order.emailAddress,
+      'customerName': customerNameOverride ?? order.customerName,
+      'contactPerson': contactPersonOverride ?? order.contactPerson,
+      'contactNumber': contactNumberOverride ?? order.contactNumber,
+      'emailAddress': emailAddressOverride ?? order.emailAddress,
       'scheduleSlots': schedulePayload,
       'address': address,
       'guestCount': effectiveGuestCount,
       'serviceType': serviceType,
       'menu': menuItems,
       if (allergensOverride != null) 'allergens': allergensOverride,
+      if (noteOverride != null) 'note': noteOverride,
+      // Only cost fields — preserve existing theme assets server-side via merge.
       'themeDesign': {
-        'picksBase64': order.themeDesign.picksBase64,
-        'tintEnabled': order.themeDesign.tintEnabled,
-        'tintColorHex': order.themeDesign.tintColorHex,
-        'wantsCustomDesign': order.themeDesign.wantsCustomDesign,
-        'customerThemeRequest': order.themeDesign.customerThemeRequest,
         'costBreakdown': {
-          'dishCost': menuItems.fold<double>(
-            0.0,
-            (sum, row) => sum + (double.tryParse('${row['price']}') ?? 0.0),
-          ),
+          'dishCost': dishCost > 0
+              ? dishCost
+              : estimateInquiryCateringTotal(effectiveGuestCount),
           'laborCost': laborCost,
           'travelCost': travelCost,
         },
+        'laborCost': laborCost,
+        'travelCost': travelCost,
       },
+      'laborCost': laborCost,
+      'travelCost': travelCost,
       'additional_costs': additionalCosts,
       'totalCost': totalCost,
       'action': action,

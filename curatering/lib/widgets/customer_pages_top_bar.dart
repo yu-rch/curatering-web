@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../utils/responsive_layout.dart';
+
 enum CustomerPageTab { home, profile, orders, caterings, tracking }
 
 class CustomerPagesTopBar extends StatelessWidget {
@@ -14,6 +16,19 @@ class CustomerPagesTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mobile = isMobileWidth(context);
+    final tabs = <({String label, CustomerPageTab tab, IconData icon})>[
+      (label: mobile ? 'Home' : 'Home', tab: CustomerPageTab.home, icon: Icons.home_outlined),
+      (label: mobile ? 'Profile' : 'My Profile', tab: CustomerPageTab.profile, icon: Icons.person_outline),
+      (label: mobile ? 'Orders' : 'My Orders', tab: CustomerPageTab.orders, icon: Icons.receipt_long_outlined),
+      (label: mobile ? 'Caterings' : 'My Caterings', tab: CustomerPageTab.caterings, icon: Icons.event_outlined),
+      (label: mobile ? 'Tracking' : 'Order Tracking', tab: CustomerPageTab.tracking, icon: Icons.local_shipping_outlined),
+    ];
+
+    final tabButtons = tabs
+        .map((t) => _tabButton(t.label, t.tab, t.icon))
+        .toList();
+
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       padding: const EdgeInsets.all(8),
@@ -22,17 +37,16 @@ class CustomerPagesTopBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
       ),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          _tabButton('Home', CustomerPageTab.home, Icons.home_outlined),
-          _tabButton('My Profile', CustomerPageTab.profile, Icons.person_outline),
-          _tabButton('My Orders', CustomerPageTab.orders, Icons.receipt_long_outlined),
-          _tabButton('My Caterings', CustomerPageTab.caterings, Icons.event_outlined),
-          _tabButton('Order Tracking', CustomerPageTab.tracking, Icons.local_shipping_outlined),
-        ],
-      ),
+      child: mobile
+          ? SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(children: tabButtons),
+            )
+          : Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: tabButtons,
+            ),
     );
   }
 

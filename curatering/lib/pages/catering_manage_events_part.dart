@@ -565,6 +565,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
     int? guestCountOverride,
     List<Map<String, dynamic>>? menuOverride,
     String? allergensOverride,
+    String? customerNameOverride,
+    String? contactPersonOverride,
+    String? contactNumberOverride,
+    String? emailAddressOverride,
+    String? endTimeOverride,
+    String? noteOverride,
   }) {
     final serviceType =
         order.orderType == 'catering' ? 'catering' : 'catering+event';
@@ -588,6 +594,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
       additionalCosts: additionalCosts,
       menuOverride: menuOverride,
       allergensOverride: allergensOverride,
+      customerNameOverride: customerNameOverride,
+      contactPersonOverride: contactPersonOverride,
+      contactNumberOverride: contactNumberOverride,
+      emailAddressOverride: emailAddressOverride,
+      endTimeOverride: endTimeOverride,
+      noteOverride: noteOverride,
     );
   }
 
@@ -671,10 +683,17 @@ extension _ManageEventsTableExt on _ManageEventsState {
     required String successMessage,
     List<Map<String, dynamic>>? menuOverride,
     String? allergensOverride,
+    String? customerName,
+    String? contactPerson,
+    String? contactNumber,
+    String? emailAddress,
+    String? endTime,
+    String? note,
   }) async {
     final laborCost = double.tryParse(laborController.text.trim()) ?? 0.0;
     final travelCost = double.tryParse(travelController.text.trim()) ?? 0.0;
-    final dishCost = _dishCostForFinalize(order);
+    final guests = guestCount ?? order.guestCount;
+    final dishCost = estimateInquiryCateringTotal(guests);
     final additionalCostsTotal = additionalCosts.fold<double>(
       0,
       (sum, e) => sum + (double.tryParse('${e['amount'] ?? e['cost'] ?? 0}') ?? 0),
@@ -696,6 +715,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
       guestCountOverride: guestCount,
       menuOverride: menuOverride,
       allergensOverride: allergensOverride,
+      customerNameOverride: customerName,
+      contactPersonOverride: contactPerson,
+      contactNumberOverride: contactNumber,
+      emailAddressOverride: emailAddress,
+      endTimeOverride: endTime,
+      noteOverride: note,
     );
     await EventsApi.instance.managerFinalizeOnlineInquiry(
       orderId: order.id,
@@ -728,6 +753,17 @@ extension _ManageEventsTableExt on _ManageEventsState {
     final addressController = TextEditingController(text: order.address);
     final dateController = TextEditingController(text: slot?.date ?? '');
     final timeController = TextEditingController(text: slot?.startTime ?? '');
+    final endTimeController = TextEditingController(text: slot?.endTime ?? '');
+    final customerNameController = TextEditingController(text: order.customerName);
+    final contactPersonController = TextEditingController(text: order.contactPerson);
+    final contactNumberController = TextEditingController(text: order.contactNumber);
+    final emailController = TextEditingController(text: order.emailAddress);
+    final noteController = TextEditingController(
+      text: (order.themeDesign.customerNote ??
+              order.themeDesign.customInstructions ??
+              '')
+          .toString(),
+    );
     final additionalCostLabelController = TextEditingController();
     final additionalCostAmountController = TextEditingController();
     final additionalCosts = List<Map<String, dynamic>>.from(
@@ -766,7 +802,46 @@ extension _ManageEventsTableExt on _ManageEventsState {
         actions: [
           Builder(
             builder: (footerContext) {
-              final dishCost = _dishCostForFinalize(order);
+              Future<void> runFinalizeAction({
+                required String action,
+                required String successMessage,
+              }) async {
+                try {
+                  await _submitFinalizeInquiryAction(
+                    dialogContext: footerContext,
+                    order: order,
+                    laborController: laborCostController,
+                    travelController: travelCostController,
+                    address: addressController.text.trim(),
+                    date: dateController.text.trim(),
+                    time: timeController.text.trim(),
+                    endTime: endTimeController.text.trim(),
+                    eventTitle: eventTitleController.text.trim(),
+                    eventType: eventTypeController.text.trim(),
+                    formalityLevel: formalityController.text.trim(),
+                    guestCount: int.tryParse(guestCountController.text.trim()),
+                    customerName: customerNameController.text.trim(),
+                    contactPerson: contactPersonController.text.trim(),
+                    contactNumber: contactNumberController.text.trim(),
+                    emailAddress: emailController.text.trim(),
+                    note: noteController.text.trim(),
+                    additionalCosts: additionalCosts,
+                    action: action,
+                    successMessage: successMessage,
+                    menuOverride: inquiryMenuPayloadForSave(),
+                    allergensOverride: inquiryAllergens,
+                  );
+                } catch (e) {
+                  if (!footerContext.mounted) return;
+                  ScaffoldMessenger.of(footerContext).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+
               return SizedBox(
                 width: 680,
                 child: Column(
@@ -774,20 +849,34 @@ extension _ManageEventsTableExt on _ManageEventsState {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     AnimatedBuilder(
-                      animation: Listenable.merge(
-                        [laborCostController, travelCostController, additionalCostAmountController],
-                      ),
+                      animation: Listenable.merge([
+                        laborCostController,
+                        travelCostController,
+                        additionalCostAmountController,
+                        guestCountController,
+                      ]),
                       builder: (context, _) {
+                        final guests =
+                            int.tryParse(guestCountController.text.trim()) ??
+                            order.guestCount;
+                        final dishCost = estimateInquiryCateringTotal(guests);
                         final laborCost =
-                            double.tryParse(laborCostController.text.trim()) ?? 0.0;
+                            double.tryParse(laborCostController.text.trim()) ??
+                            0.0;
                         final travelCost =
-                            double.tryParse(travelCostController.text.trim()) ?? 0.0;
+                            double.tryParse(travelCostController.text.trim()) ??
+                            0.0;
                         final additionalCostsTotal = additionalCosts.fold<double>(
                           0,
-                          (sum, e) => sum + (double.tryParse('${e['amount'] ?? 0}') ?? 0),
+                          (sum, e) =>
+                              sum +
+                              (double.tryParse('${e['amount'] ?? 0}') ?? 0),
                         );
                         final totalCost =
-                            dishCost + laborCost + travelCost + additionalCostsTotal;
+                            dishCost +
+                            laborCost +
+                            travelCost +
+                            additionalCostsTotal;
                         return Align(
                           alignment: Alignment.centerRight,
                           child: Text(
@@ -812,39 +901,11 @@ extension _ManageEventsTableExt on _ManageEventsState {
                           onPressed: () => Navigator.of(footerContext).pop(),
                         ),
                         ElevatedButton(
-                          onPressed: () async {
-                            try {
-                              await _submitFinalizeInquiryAction(
-                                dialogContext: footerContext,
-                                order: order,
-                                laborController: laborCostController,
-                                travelController: travelCostController,
-                                address: addressController.text.trim(),
-                                date: dateController.text.trim(),
-                                time: timeController.text.trim(),
-                                eventTitle: eventTitleController.text.trim(),
-                                eventType: eventTypeController.text.trim(),
-                                formalityLevel: formalityController.text.trim(),
-                                guestCount: int.tryParse(
-                                  guestCountController.text.trim(),
-                                ),
-                                additionalCosts: additionalCosts,
-                                action: 'post_changes',
-                                successMessage:
-                                    'Changes saved. Customer can review updates in My Caterings.',
-                                menuOverride: inquiryMenuPayloadForSave(),
-                                allergensOverride: inquiryAllergens,
-                              );
-                            } catch (e) {
-                              if (!footerContext.mounted) return;
-                              ScaffoldMessenger.of(footerContext).showSnackBar(
-                                SnackBar(
-                                  content: Text('Failed to save: $e'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
+                          onPressed: () => runFinalizeAction(
+                            action: 'post_changes',
+                            successMessage:
+                                'Changes saved. Customer can review updates in My Caterings.',
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFF4511E),
                             foregroundColor: Colors.white,
@@ -859,39 +920,11 @@ extension _ManageEventsTableExt on _ManageEventsState {
                           ),
                         ),
                         ElevatedButton(
-                          onPressed: () async {
-                            try {
-                              await _submitFinalizeInquiryAction(
-                                dialogContext: footerContext,
-                                order: order,
-                                laborController: laborCostController,
-                                travelController: travelCostController,
-                                address: addressController.text.trim(),
-                                date: dateController.text.trim(),
-                                time: timeController.text.trim(),
-                                eventTitle: eventTitleController.text.trim(),
-                                eventType: eventTypeController.text.trim(),
-                                formalityLevel: formalityController.text.trim(),
-                                guestCount: int.tryParse(
-                                  guestCountController.text.trim(),
-                                ),
-                                additionalCosts: additionalCosts,
-                                action: 'confirm_inquiry',
-                                successMessage:
-                                    'Order accepted and moved to For down payment.',
-                                menuOverride: inquiryMenuPayloadForSave(),
-                                allergensOverride: inquiryAllergens,
-                              );
-                            } catch (e) {
-                              if (!footerContext.mounted) return;
-                              ScaffoldMessenger.of(footerContext).showSnackBar(
-                                SnackBar(
-                                  content: Text('Failed to accept order: $e'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
+                          onPressed: () => runFinalizeAction(
+                            action: 'confirm_inquiry',
+                            successMessage:
+                                'Order accepted and moved to For down payment.',
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF1DB954),
                             foregroundColor: Colors.white,
@@ -906,36 +939,10 @@ extension _ManageEventsTableExt on _ManageEventsState {
                           ),
                         ),
                         OutlinedButton(
-                          onPressed: () async {
-                            try {
-                              await _submitFinalizeInquiryAction(
-                                dialogContext: footerContext,
-                                order: order,
-                                laborController: laborCostController,
-                                travelController: travelCostController,
-                                address: addressController.text.trim(),
-                                date: dateController.text.trim(),
-                                time: timeController.text.trim(),
-                                eventTitle: eventTitleController.text.trim(),
-                                eventType: eventTypeController.text.trim(),
-                                formalityLevel: formalityController.text.trim(),
-                                guestCount: int.tryParse(
-                                  guestCountController.text.trim(),
-                                ),
-                                additionalCosts: additionalCosts,
-                                action: 'cancel_event',
-                                successMessage: 'Inquiry cancelled.',
-                              );
-                            } catch (e) {
-                              if (!footerContext.mounted) return;
-                              ScaffoldMessenger.of(footerContext).showSnackBar(
-                                SnackBar(
-                                  content: Text('Failed to cancel: $e'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
+                          onPressed: () => runFinalizeAction(
+                            action: 'cancel_event',
+                            successMessage: 'Inquiry cancelled.',
+                          ),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.black87,
                             side: const BorderSide(color: Color(0xFFFFC107)),
@@ -965,6 +972,37 @@ extension _ManageEventsTableExt on _ManageEventsState {
             if (inquiryAllergens.isEmpty && full.allergens.isNotEmpty) {
               inquiryAllergens = full.allergens;
             }
+            if (noteController.text.trim().isEmpty) {
+              final noteFromTheme =
+                  (full.themeDesign.customerNote ??
+                          full.themeDesign.customInstructions ??
+                          '')
+                      .trim();
+              if (noteFromTheme.isNotEmpty) {
+                noteController.text = noteFromTheme;
+              }
+            }
+            if (customerNameController.text.trim().isEmpty &&
+                full.customerName.trim().isNotEmpty) {
+              customerNameController.text = full.customerName;
+            }
+            if (contactPersonController.text.trim().isEmpty &&
+                full.contactPerson.trim().isNotEmpty) {
+              contactPersonController.text = full.contactPerson;
+            }
+            if (contactNumberController.text.trim().isEmpty &&
+                full.contactNumber.trim().isNotEmpty) {
+              contactNumberController.text = full.contactNumber;
+            }
+            if (emailController.text.trim().isEmpty &&
+                full.emailAddress.trim().isNotEmpty) {
+              emailController.text = full.emailAddress;
+            }
+            if (endTimeController.text.trim().isEmpty &&
+                full.scheduleSlots.isNotEmpty &&
+                full.scheduleSlots.first.endTime.trim().isNotEmpty) {
+              endTimeController.text = full.scheduleSlots.first.endTime;
+            }
             if (snap.connectionState == ConnectionState.waiting) {
               return const Padding(
                 padding: EdgeInsets.all(24),
@@ -972,10 +1010,13 @@ extension _ManageEventsTableExt on _ManageEventsState {
               );
             }
 
-            final dishCostForUi = _dishCostForFinalize(full);
-            final withinTaguig = full.address.toLowerCase().contains('taguig');
-
             Widget eventInfoTab() {
+              final guestsForUi =
+                  int.tryParse(guestCountController.text.trim()) ??
+                  full.guestCount;
+              final dishCostLive = estimateInquiryCateringTotal(guestsForUi);
+              final withinTaguigLive =
+                  addressController.text.toLowerCase().contains('taguig');
               return SingleChildScrollView(
                 child: Container(
                   padding: const EdgeInsets.all(16),
@@ -994,6 +1035,52 @@ extension _ManageEventsTableExt on _ManageEventsState {
                           fontSize: 12,
                           letterSpacing: 0.2,
                         ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: customerNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Customer name',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: contactPersonController,
+                        decoration: const InputDecoration(
+                          labelText: 'Contact person',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: contactNumberController,
+                              keyboardType: TextInputType.phone,
+                              decoration: const InputDecoration(
+                                labelText: 'Contact number',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              decoration: const InputDecoration(
+                                labelText: 'Email address',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 12),
                       TextField(
@@ -1027,6 +1114,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                         controller: guestCountController,
                         keyboardType:
                             const TextInputType.numberWithOptions(decimal: false),
+                        onChanged: (_) => _mutateTableState(() {}),
                         decoration: const InputDecoration(
                           labelText: 'Guest count (pax)',
                           border: OutlineInputBorder(),
@@ -1040,6 +1128,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                           Expanded(
                             child: TextField(
                               controller: addressController,
+                              onChanged: (_) => _mutateTableState(() {}),
                               decoration: const InputDecoration(
                                 labelText: 'Venue address',
                                 border: OutlineInputBorder(),
@@ -1057,24 +1146,24 @@ extension _ManageEventsTableExt on _ManageEventsState {
                                   vertical: 6,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: withinTaguig
+                                  color: withinTaguigLive
                                       ? Colors.green.shade50
                                       : Colors.grey.shade200,
                                   borderRadius: BorderRadius.circular(999),
                                   border: Border.all(
-                                    color: withinTaguig
+                                    color: withinTaguigLive
                                         ? Colors.green.shade300
                                         : Colors.grey.shade300,
                                   ),
                                 ),
                                 child: Text(
-                                  withinTaguig
+                                  withinTaguigLive
                                       ? 'Within Taguig'
                                       : 'Outside Taguig',
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w800,
-                                    color: withinTaguig
+                                    color: withinTaguigLive
                                         ? Colors.green.shade900
                                         : Colors.grey.shade800,
                                   ),
@@ -1082,7 +1171,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Catering base: ${formatPesos(dishCostForUi)} (₱${kCateringInquiryPricePerGuest.toStringAsFixed(0)} × pax)',
+                                'Catering base: ${formatPesos(dishCostLive)} (₱${kCateringInquiryPricePerGuest.toStringAsFixed(0)} × pax)',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
@@ -1117,7 +1206,28 @@ extension _ManageEventsTableExt on _ManageEventsState {
                               ),
                             ),
                           ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: endTimeController,
+                              decoration: const InputDecoration(
+                                labelText: 'End time (HH:mm)',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
                         ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: noteController,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Notes',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
                       ),
                     ],
                   ),
@@ -1371,8 +1481,10 @@ extension _ManageEventsTableExt on _ManageEventsState {
                     ],
                   ),
                 ),
-                    if (_orderHasEventDesign(full))
-                      _buildEventDesignDetailSection(full),
+                    if (_orderHasEventDesign(full) ||
+                        full.orderType.toLowerCase().contains('event') ||
+                        full.includeMinimalEventStyling)
+                      _buildEventDesignDetailSection(full, readOnly: false),
                     _buildFinalizeCostSection(
                       order: full,
                       laborController: laborCostController,
@@ -1432,6 +1544,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
       addressController.dispose();
       dateController.dispose();
       timeController.dispose();
+      endTimeController.dispose();
+      customerNameController.dispose();
+      contactPersonController.dispose();
+      contactNumberController.dispose();
+      emailController.dispose();
+      noteController.dispose();
       additionalCostLabelController.dispose();
       additionalCostAmountController.dispose();
     }

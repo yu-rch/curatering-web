@@ -40,6 +40,7 @@ import '../constants/catering_meal_types.dart';
 import '../utils/gallery_search.dart';
 import '../utils/inquiry_pricing.dart';
 import '../utils/image_cache.dart';
+import '../utils/responsive_layout.dart';
 import 'customer_login.dart';
 import 'checkout_page.dart';
 import 'my_orders_page.dart';
@@ -1160,6 +1161,187 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     _scaffoldKey.currentState?.openEndDrawer();
   }
 
+  void _openHomeMobileNavMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) {
+        Widget navTile(String label, VoidCallback onTap, {bool active = false}) {
+          return ListTile(
+            title: Text(
+              label,
+              style: TextStyle(
+                color: active ? const Color(0xFFFFC024) : Colors.white,
+                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              onTap();
+            },
+          );
+        }
+
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                navTile(
+                  'Home',
+                  () => _selectNavIndex(0),
+                  active: _navIndex == 0 && _galleryDetailIndex == null,
+                ),
+                navTile(
+                  'Gallery',
+                  () => Navigator.pushReplacementNamed(
+                    context,
+                    customerRoute('/gallery'),
+                  ),
+                ),
+                navTile(
+                  'Catering Menu',
+                  () => Navigator.pushReplacementNamed(
+                    context,
+                    customerRoute('/catering-menu'),
+                  ),
+                ),
+                navTile(
+                  'Restaurant',
+                  () => Navigator.pushReplacementNamed(
+                    context,
+                    customerRoute('/restaurant'),
+                  ),
+                ),
+                navTile(
+                  'Inquire Now',
+                  () => Navigator.pushReplacementNamed(
+                    context,
+                    customerRoute('/inquire'),
+                  ),
+                ),
+                navTile(
+                  'Contact Us',
+                  () => Navigator.pushReplacementNamed(
+                    context,
+                    customerRoute('/contact-us'),
+                  ),
+                ),
+                navTile(
+                  'Track Order',
+                  () => Navigator.pushReplacementNamed(
+                    context,
+                    customerRoute('/track-order'),
+                  ),
+                ),
+                if (!widget.contentEditable) ...[
+                  const Divider(color: Colors.white24),
+                  if (_isCustomerLoggedIn) ...[
+                    ListTile(
+                      leading: const Icon(Icons.person_outline, color: Colors.white70),
+                      title: Text(
+                        _customerData?['fullName'] ?? 'Customer',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                      ),
+                      enabled: false,
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.person_outline, color: Colors.white70),
+                      title: const Text('My Profile', style: TextStyle(color: Colors.white)),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        _navigateToMyProfile();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.receipt_long, color: Colors.white70),
+                      title: const Text('My Orders', style: TextStyle(color: Colors.white)),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        _navigateToMyOrders();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.event, color: Colors.white70),
+                      title: const Text('My Caterings', style: TextStyle(color: Colors.white)),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        _navigateToMyCaterings();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.local_shipping_outlined, color: Colors.white70),
+                      title: const Text('Order Tracking', style: TextStyle(color: Colors.white)),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        _navigateToOrderTracking();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.logout, color: Colors.redAccent),
+                      title: const Text('Logout', style: TextStyle(color: Colors.redAccent)),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        _handleLogout();
+                      },
+                    ),
+                  ] else
+                    ListTile(
+                      leading: const Icon(Icons.login, color: Colors.white70),
+                      title: const Text('Login', style: TextStyle(color: Colors.white)),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        _handleLogin();
+                      },
+                    ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMobileTrayButton() {
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 16,
+      child: ListenableBuilder(
+        listenable: CartStore.instance,
+        builder: (context, _) {
+          final itemCount = CartStore.instance.itemCount;
+          final total = CartStore.instance.totalAmount;
+          if (itemCount <= 0) return const SizedBox.shrink();
+          return SafeArea(
+            top: false,
+            child: ElevatedButton.icon(
+              onPressed: _openCartSidebar,
+              icon: const Icon(Icons.shopping_bag_outlined),
+              label: Text(
+                'YOUR TRAY · $itemCount ${itemCount == 1 ? 'ITEM' : 'ITEMS'} · ₱${total.toStringAsFixed(2)}',
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1E1E1E),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _navigateToCheckout({NavigatorState? navigator}) async {
     if (CartStore.instance.items.isEmpty) {
       showAppSnackBar(
@@ -1401,30 +1583,48 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Widget _publicHeader() {
+    final mobile = isMobileWidth(context);
+
     return Container(
       color: const Color(0xFF1E1E1E),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Image.asset('lib/assets/main-2.png', height: 34, fit: BoxFit.contain),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Wrap(
-              spacing: 2,
-              runSpacing: 4,
-              alignment: WrapAlignment.center,
-              crossAxisAlignment: WrapCrossAlignment.center,
+          InkWell(
+            onTap: () => _selectNavIndex(0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                _navLink('Home', 0),
-                _navLink('Gallery', 1),
-                _navLink('Catering Menu', 2),
-                _navLink('Restaurant', 3),
-                _navLink('Inquire Now', 4),
-                _navLink('Contact Us', 5),
+                Image.asset('lib/assets/main-2.png', height: 34, fit: BoxFit.contain),
+                if (!mobile) const SizedBox(width: 16),
               ],
             ),
           ),
+          if (mobile)
+            IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white),
+              tooltip: 'Menu',
+              onPressed: _openHomeMobileNavMenu,
+            )
+          else
+            Expanded(
+              child: Wrap(
+                spacing: 2,
+                runSpacing: 4,
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _navLink('Home', 0),
+                  _navLink('Gallery', 1),
+                  _navLink('Catering Menu', 2),
+                  _navLink('Restaurant', 3),
+                  _navLink('Inquire Now', 4),
+                  _navLink('Contact Us', 5),
+                ],
+              ),
+            ),
+          const Spacer(),
           if (!widget.contentEditable) ...[
             // Tray icon
             ListenableBuilder(
@@ -1468,10 +1668,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 );
               },
             ),
-            const SizedBox(width: 8),
-            // Login/Logout Button
-            if (_isCustomerLoggedIn)
-              AntdProfileMenu(
+            if (!mobile) ...[
+              const SizedBox(width: 8),
+              // Login/Logout Button
+              if (_isCustomerLoggedIn)
+                AntdProfileMenu(
                 triggerLabel: _customerData?['fullName'] ?? 'Customer',
                 leading: const Icon(
                   Icons.person_outline,
@@ -1535,6 +1736,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   style: TextStyle(color: Colors.white),
                 ),
               ),
+            ],
           ],
         ],
       ),
@@ -3566,37 +3768,34 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       280.0,
       880.0,
     );
+    final mobile = isMobileWidth(context);
+    final screenW = MediaQuery.sizeOf(context).width;
+    final gridCrossAxisCount = mobile ? (screenW < 400 ? 1 : 2) : 5;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Left side - Menu (bounded height so the row stays viewport-sized and the tray checkout stays reachable)
-        Expanded(
-          flex: 3,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: panelH),
-            child: SingleChildScrollView(
-              padding: websitePagePadding(context, vertical: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    final menuPanel = ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: mobile ? double.infinity : panelH),
+      child: SingleChildScrollView(
+        padding: websitePagePadding(context, vertical: 20),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Title and Login button
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Title and Login button
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            'Restaurant',
-                            style: websiteHeaderStyle(
-                              fontSize: 42,
-                              color: Colors.red.shade400,
-                            ),
-                          ),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        'Restaurant',
+                        style: websiteHeaderStyle(
+                          fontSize: responsiveValue(context, mobile: 28.0, desktop: 42.0),
+                          color: Colors.red.shade400,
                         ),
                       ),
-                      if (!_isCustomerLoggedIn)
-                        ElevatedButton(
+                    ),
+                  ),
+                  if (!_isCustomerLoggedIn && !mobile)
+                    ElevatedButton(
                           onPressed: _handleLogin,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFFFC024),
@@ -3617,9 +3816,36 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             ),
                           ),
                         ),
-                    ],
+                ],
+              ),
+              if (mobile && !_isCustomerLoggedIn) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _handleLogin,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFC024),
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'LOG IN TO ORDER',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 16),
+                ),
+              ],
+              const SizedBox(height: 16),
                   // Loyalty Points Banner
                   _buildLoyaltyBanner(),
                   const SizedBox(height: 16),
@@ -3698,13 +3924,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 5,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 10,
-                            childAspectRatio: 0.70,
-                          ),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: gridCrossAxisCount,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        childAspectRatio: mobile ? 0.75 : 0.70,
+                      ),
                       itemCount: dishes.length,
                       itemBuilder: (ctx, i) {
                         final d = dishes[i];
@@ -3818,18 +4043,22 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         );
                       },
                     ),
-                ],
-              ),
-            ),
+              if (mobile) const SizedBox(height: 80),
+            ],
           ),
         ),
-        // Right side - Tray sidebar
-        Padding(
-          padding: const EdgeInsets.only(right: 24, top: 8, bottom: 8),
-          child: SizedBox(
-            width: 280,
-            height: panelH,
-            child: Container(
+    );
+
+    if (mobile) {
+      return menuPanel;
+    }
+
+    final traySidebar = Padding(
+      padding: const EdgeInsets.only(right: 24, top: 8, bottom: 8),
+      child: SizedBox(
+        width: 280,
+        height: panelH,
+        child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
@@ -3962,7 +4191,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               ),
             ),
           ),
-        ),
+    );
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: 3, child: menuPanel),
+        traySidebar,
       ],
     );
   }
@@ -4082,11 +4317,19 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             ),
           _publicHeader(),
           Expanded(
-            child: CustomScrollView(
-              controller: _pageScrollController,
-              slivers: [
-                SliverToBoxAdapter(child: body),
-                SliverToBoxAdapter(child: _footer(w)),
+            child: Stack(
+              children: [
+                CustomScrollView(
+                  controller: _pageScrollController,
+                  slivers: [
+                    SliverToBoxAdapter(child: body),
+                    SliverToBoxAdapter(child: _footer(w)),
+                  ],
+                ),
+                if (isMobileWidth(context) &&
+                    _navIndex == 3 &&
+                    !widget.contentEditable)
+                  _buildMobileTrayButton(),
               ],
             ),
           ),

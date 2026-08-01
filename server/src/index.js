@@ -6654,6 +6654,8 @@ app.post(
         menu,
         themeDesign,
         totalCost,
+        allergens,
+        note,
         action = 'confirm_inquiry',
       } = req.body || {};
 
@@ -6727,7 +6729,9 @@ app.post(
            guest_count AS "guestCount",
            menu,
            theme_design AS "themeDesign",
-           total_cost AS "totalCost"
+           total_cost AS "totalCost",
+           allergens,
+           note
          FROM event_orders
          WHERE id = $1
            AND source = 'online_inquiry'
@@ -6742,6 +6746,12 @@ app.post(
         const catThemeSel = catCols.has('theme_design')
           ? 'theme_design AS "themeDesign"'
           : "'{}'::jsonb AS \"themeDesign\"";
+        const catAllergensSel = catCols.has('allergens')
+          ? 'allergens'
+          : "''::text AS allergens";
+        const catNoteSel = catCols.has('note')
+          ? 'note'
+          : "''::text AS note";
         existingOrderResult = await pool.query(
           `SELECT
              null AS "eventTitle",
@@ -6756,7 +6766,9 @@ app.post(
              guest_count AS "guestCount",
              menu,
              total_cost AS "totalCost",
-             ${catThemeSel}
+             ${catThemeSel},
+             ${catAllergensSel},
+             ${catNoteSel}
            FROM catering_orders
            WHERE id = $1
              AND source = 'online_inquiry'
@@ -6792,6 +6804,16 @@ app.post(
       addChanged('menu', existing.menu, menu || []);
       addChanged('themeDesign', existing.themeDesign, themeDesign || {});
       addChanged('totalCost', Number(existing.totalCost || 0), Number(totalCost || 0));
+      const allergensText =
+        allergens !== undefined && allergens !== null
+          ? String(allergens).trim()
+          : String(existing.allergens ?? '').trim();
+      const noteText =
+        note !== undefined && note !== null
+          ? String(note).trim()
+          : String(existing.note ?? '').trim();
+      addChanged('allergens', existing.allergens, allergensText);
+      addChanged('note', existing.note, noteText);
 
       const costBreakdown =
         themeDesign?.costBreakdown && typeof themeDesign.costBreakdown === "object"
@@ -6841,34 +6863,28 @@ app.post(
       };
 
       const tableCols = await getTableColumnNames(sourceTable);
-      const laborSql = tableCols.has("labor_cost") ? ", labor_cost = $17" : "";
-      const travelSql = tableCols.has("travel_cost") ? ", travel_cost = $18" : "";
 
       const result = sourceTable === 'event_orders'
-        ? await pool.query(
-            `UPDATE event_orders
-             SET
-               event_title = $1,
-               event_type = $2,
-               formality_level = $3,
-               customer_name = $4,
-               contact_person = $5,
-               contact_number = $6,
-               email_address = $7,
-               schedule_slots = $8,
-               address = $9,
-               guest_count = $10,
-               menu = $11,
-               theme_design = $12,
-               status = $13,
-               total_cost = $14,
-               updated_by = $15,
-               updated_at = now()${laborSql}${travelSql}
-             WHERE id = $16
-               AND source = 'online_inquiry'
-               AND status = 'online_inquiries'
-             RETURNING id;`,
-            [
+        ? await (async () => {
+            const sets = [
+              'event_title = $1',
+              'event_type = $2',
+              'formality_level = $3',
+              'customer_name = $4',
+              'contact_person = $5',
+              'contact_number = $6',
+              'email_address = $7',
+              'schedule_slots = $8',
+              'address = $9',
+              'guest_count = $10',
+              'menu = $11',
+              'theme_design = $12',
+              'status = $13',
+              'total_cost = $14',
+              'updated_by = $15',
+              'updated_at = now()',
+            ];
+            const params = [
               eventTitle,
               eventType,
               formalityLevel,
@@ -6884,11 +6900,39 @@ app.post(
               nextStatus,
               totalCost != null ? Number(totalCost) : 0,
               req.user.id,
-              orderId,
-              ...(tableCols.has("labor_cost") ? [laborCost] : []),
-              ...(tableCols.has("travel_cost") ? [travelCost] : []),
-            ],
-          )
+            ];
+            let p = 16;
+            if (tableCols.has('allergens')) {
+              sets.push(`allergens = $${p}`);
+              params.push(allergensText);
+              p += 1;
+            }
+            if (tableCols.has('note')) {
+              sets.push(`note = $${p}`);
+              params.push(noteText);
+              p += 1;
+            }
+            if (tableCols.has('labor_cost')) {
+              sets.push(`labor_cost = $${p}`);
+              params.push(laborCost);
+              p += 1;
+            }
+            if (tableCols.has('travel_cost')) {
+              sets.push(`travel_cost = $${p}`);
+              params.push(travelCost);
+              p += 1;
+            }
+            params.push(orderId);
+            return pool.query(
+              `UPDATE event_orders
+               SET ${sets.join(', ')}
+               WHERE id = $${p}
+                 AND source = 'online_inquiry'
+                 AND status = 'online_inquiries'
+               RETURNING id;`,
+              params,
+            );
+          })()
         : await (async () => {
             const catSets = [
               'customer_name = $1',
@@ -6926,6 +6970,16 @@ app.post(
             catParams.push(req.user.id);
             p += 1;
             catSets.push('updated_at = now()');
+            if (tableCols.has('allergens')) {
+              catSets.push(`allergens = $${p}`);
+              catParams.push(allergensText);
+              p += 1;
+            }
+            if (tableCols.has('note')) {
+              catSets.push(`note = $${p}`);
+              catParams.push(noteText);
+              p += 1;
+            }
             if (tableCols.has('labor_cost')) {
               catSets.push(`labor_cost = $${p}`);
               catParams.push(laborCost);
@@ -9373,6 +9427,79 @@ async function registerRoutesAfterDbInit() {
     function serializeRestaurantOrderRow(order, parsedItems, channel = 'web') {
       return normalizeRestaurantOrderRow(order, parsedItems, { channel });
     }
+
+    app.post('/api/restaurant/orders/guest-track', async (req, res) => {
+      try {
+        const orderNo = String(
+          req.body?.orderNo ?? req.body?.order_no ?? req.body?.orderId ?? '',
+        ).trim();
+        const email = String(req.body?.email ?? req.body?.userEmail ?? '')
+          .trim()
+          .toLowerCase();
+        const phoneDigits = String(req.body?.phone ?? req.body?.contactNumber ?? '')
+          .replace(/\D/g, '');
+
+        if (!orderNo) {
+          return res.status(400).json({ error: 'Order number is required' });
+        }
+        if (!email && !phoneDigits) {
+          return res.status(400).json({
+            error: 'Email or phone used at checkout is required',
+          });
+        }
+
+        const lookup = await restaurantOrderWhereClause(orderNo, 1);
+        if (!lookup) {
+          return res.status(400).json({ error: 'Invalid order number' });
+        }
+
+        const result = await pool.query(
+          `SELECT * FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
+          [lookup.value],
+        );
+        if (result.rowCount === 0) {
+          return res.status(404).json({ error: 'Order not found' });
+        }
+
+        const order = result.rows[0];
+        const orderEmail = String(order.user_email || '')
+          .trim()
+          .toLowerCase();
+        const orderPhone = String(order.contact_number || '').replace(/\D/g, '');
+
+        let matched = false;
+        if (email && orderEmail && email === orderEmail) matched = true;
+        if (
+          phoneDigits &&
+          orderPhone &&
+          (phoneDigits === orderPhone ||
+            (phoneDigits.length >= 10 &&
+              orderPhone.length >= 10 &&
+              phoneDigits.slice(-10) === orderPhone.slice(-10)))
+        ) {
+          matched = true;
+        }
+
+        if (!matched) {
+          return res.status(403).json({
+            error: 'Email or phone does not match this order',
+          });
+        }
+
+        const parsedItems = parseRestaurantOrderTrayItems(order);
+        // Public guest payload: omit large payment proof blobs.
+        const serialized = serializeRestaurantOrderRow(order, parsedItems);
+        delete serialized.payment_proof;
+        delete serialized.payment_proof_initial;
+        delete serialized.payment_proof_balance;
+        delete serialized.supplemental_payment_proof;
+
+        return res.json({ order: serialized });
+      } catch (error) {
+        console.error('Guest track order failed:', error);
+        return res.status(500).json({ error: 'Failed to look up order' });
+      }
+    });
 
     app.post('/api/restaurant/orders', optionalCustomerAuth, async (req, res) => {
       try {

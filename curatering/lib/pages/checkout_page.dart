@@ -403,10 +403,32 @@ class _CheckoutPageState extends State<CheckoutPage> {
     return null;
   }
 
+  Widget _responsiveCheckoutSlot({
+    required bool mobile,
+    required EdgeInsets desktopMargin,
+    required Widget child,
+    bool addBottomGap = false,
+  }) {
+    final box = Container(
+      margin: mobile
+          ? EdgeInsets.only(bottom: addBottomGap ? 16 : 0)
+          : desktopMargin,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: child,
+    );
+    if (mobile) return box;
+    return Expanded(child: box);
+  }
+
   @override
   Widget build(BuildContext context) {
     final cartItems = CartStore.instance.items;
     final totalAmount = CartStore.instance.totalAmount;
+    final mobile = isMobileWidth(context);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -423,7 +445,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   child: Text(
                     'Checkout',
                     style: websiteHeaderStyle(
-                      fontSize: 42,
+                      fontSize: responsiveValue(context, mobile: 28.0, desktop: 42.0),
                       color: Colors.red.shade400,
                     ),
                   ),
@@ -447,19 +469,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 ),
                 const SizedBox(height: 32),
                 // Three columns layout
-                Row(
+                Flex(
+                  direction: mobile ? Axis.vertical : Axis.horizontal,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // YOUR TRAY
-                    Expanded(
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Column(
+                    _responsiveCheckoutSlot(
+                      mobile: mobile,
+                      desktopMargin: const EdgeInsets.only(right: 12),
+                      addBottomGap: true,
+                      child: Column(
                           children: [
                             Container(
                               padding: const EdgeInsets.all(16),
@@ -685,17 +704,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
                           ],
                         ),
                       ),
-                    ),
                     // DELIVERY INFORMATION
-                    Expanded(
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Column(
+                    _responsiveCheckoutSlot(
+                      mobile: mobile,
+                      desktopMargin: const EdgeInsets.symmetric(horizontal: 12),
+                      addBottomGap: true,
+                      child: Column(
                           children: [
                             Container(
                               padding: const EdgeInsets.all(16),
@@ -837,17 +851,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
                           ],
                         ),
                       ),
-                    ),
                     // NOTES
-                    Expanded(
-                      child: Container(
-                        margin: const EdgeInsets.only(left: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Column(
+                    _responsiveCheckoutSlot(
+                      mobile: mobile,
+                      desktopMargin: const EdgeInsets.only(left: 12),
+                      child: Column(
                           children: [
                             Container(
                               padding: const EdgeInsets.all(16),
@@ -916,7 +924,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
                           ],
                         ),
                       ),
-                    ),
                   ],
                 ),
               ],
@@ -928,55 +935,62 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Widget _buildAddressFieldWithMap() {
+    final mobile = isMobileWidth(context);
+    final labelWidget = Text(
+      'DELIVERY ADDRESS',
+      style: TextStyle(
+        fontSize: 10,
+        color: Colors.grey.shade700,
+        fontWeight: FontWeight.w500,
+      ),
+    );
+    final addressField = TextField(
+      controller: _addressController,
+      maxLines: 3,
+      style: const TextStyle(fontSize: 12),
+      onChanged: (_) {
+        if (_showValidation) setState(() {});
+      },
+      decoration: InputDecoration(
+        isDense: true,
+        errorText:
+            _showValidation ? (_addressError ?? _deliveryPinError) : null,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(6),
+          borderSide: BorderSide(color: Colors.grey.shade300),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 8,
+        ),
+        suffixIcon: IconButton(
+          icon: const Icon(Icons.map, size: 20),
+          onPressed: _showMapPicker,
+          tooltip: 'Pick from map',
+        ),
+      ),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 100,
-              child: Text(
-                'DELIVERY ADDRESS',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey.shade700,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            Expanded(
-              child: TextField(
-                controller: _addressController,
-                maxLines: 3,
-                style: const TextStyle(fontSize: 12),
-                onChanged: (_) {
-                  if (_showValidation) setState(() {});
-                },
-                decoration: InputDecoration(
-                  isDense: true,
-                  errorText:
-                      _showValidation
-                          ? (_addressError ?? _deliveryPinError)
-                          : null,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.map, size: 20),
-                    onPressed: _showMapPicker,
-                    tooltip: 'Pick from map',
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+        if (mobile)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              labelWidget,
+              const SizedBox(height: 6),
+              addressField,
+            ],
+          )
+        else
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(width: 100, child: labelWidget),
+              Expanded(child: addressField),
+            ],
+          ),
         if (_deliveryLat != null && _deliveryLng != null) ...[
           const SizedBox(height: 12),
           _buildCheckoutMapEmbed(),
@@ -1099,89 +1113,98 @@ class _CheckoutPageState extends State<CheckoutPage> {
     String? hintText,
     String? errorText,
   }) {
+    final mobile = isMobileWidth(context);
+    final labelWidget = Text(
+      label,
+      style: TextStyle(
+        fontSize: 10,
+        color: Colors.grey.shade700,
+        fontWeight: FontWeight.w500,
+      ),
+    );
+    final fieldWidget =
+        controller != null
+            ? TextField(
+              controller: controller,
+              maxLines: maxLines,
+              keyboardType: keyboardType,
+              maxLength: maxLength,
+              textCapitalization:
+                  lettersOnly
+                      ? TextCapitalization.words
+                      : TextCapitalization.none,
+              inputFormatters:
+                  digitsOnly
+                      ? [
+                        FilteringTextInputFormatter.digitsOnly,
+                        if (maxLength != null)
+                          LengthLimitingTextInputFormatter(maxLength),
+                      ]
+                      : lettersOnly
+                      ? [
+                        FilteringTextInputFormatter.allow(
+                          RegExp(r'[A-Za-z\s]'),
+                        ),
+                      ]
+                      : null,
+              style: const TextStyle(fontSize: 12),
+              onChanged: (_) {
+                if (_showValidation) setState(() {});
+              },
+              decoration: InputDecoration(
+                isDense: true,
+                errorText: errorText,
+                hintText: hintText,
+                hintStyle: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade400,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                counterText: '',
+              ),
+            )
+            : Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                value.isEmpty ? '' : value,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: value.isEmpty ? Colors.grey.shade400 : Colors.black,
+                ),
+              ),
+            );
+
+    if (mobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          labelWidget,
+          const SizedBox(height: 6),
+          fieldWidget,
+        ],
+      );
+    }
+
     return Row(
       crossAxisAlignment:
           maxLines > 1 ? CrossAxisAlignment.start : CrossAxisAlignment.center,
       children: [
-        SizedBox(
-          width: 100,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              color: Colors.grey.shade700,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        Expanded(
-          child:
-              controller != null
-                  ? TextField(
-                    controller: controller,
-                    maxLines: maxLines,
-                    keyboardType: keyboardType,
-                    maxLength: maxLength,
-                    textCapitalization:
-                        lettersOnly
-                            ? TextCapitalization.words
-                            : TextCapitalization.none,
-                    inputFormatters:
-                        digitsOnly
-                            ? [
-                              FilteringTextInputFormatter.digitsOnly,
-                              if (maxLength != null)
-                                LengthLimitingTextInputFormatter(maxLength),
-                            ]
-                            : lettersOnly
-                            ? [
-                              FilteringTextInputFormatter.allow(
-                                RegExp(r'[A-Za-z\s]'),
-                              ),
-                            ]
-                            : null,
-                    style: const TextStyle(fontSize: 12),
-                    onChanged: (_) {
-                      if (_showValidation) setState(() {});
-                    },
-                    decoration: InputDecoration(
-                      isDense: true,
-                      errorText: errorText,
-                      hintText: hintText,
-                      hintStyle: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade400,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      counterText: '',
-                    ),
-                  )
-                  : Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      value.isEmpty ? '' : value,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color:
-                            value.isEmpty ? Colors.grey.shade400 : Colors.black,
-                      ),
-                    ),
-                  ),
-        ),
+        SizedBox(width: 100, child: labelWidget),
+        Expanded(child: fieldWidget),
       ],
     );
   }

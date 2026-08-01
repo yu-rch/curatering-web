@@ -29,6 +29,7 @@ import 'pages/my_caterings_page.dart';
 import 'pages/restaurant_order_page.dart';
 import 'pages/restaurant_feedback_public_page.dart';
 import 'pages/catering_menu_page.dart';
+import 'pages/guest_order_tracking_page.dart';
 import 'auth/auth_session.dart';
 import 'auth/page_permissions.dart';
 import 'auth/role_guard.dart';
@@ -125,6 +126,11 @@ Route<dynamic>? _buildRouteForPath(String path) {
         (context) => _customerPage(
           const MyCateringsPage(),
           '/my-inquiries',
+        ),
+    '/track-order':
+        (context) => _customerPage(
+          const GuestOrderTrackingPage(),
+          '/track-order',
         ),
     '/restaurant':
         (context) => _customerPage(
@@ -613,6 +619,11 @@ class _MyAppState extends State<MyApp> {
                 (context) => _customerPage(
                   const MyCateringsPage(),
                   '/my-inquiries',
+                ),
+            '/track-order':
+                (context) => _customerPage(
+                  const GuestOrderTrackingPage(),
+                  '/track-order',
                 ),
             '/restaurant':
                 (context) => _customerPage(

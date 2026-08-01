@@ -8,10 +8,13 @@ import '../config.dart';
 import '../utils/order_display_utils.dart';
 import '../services/customer_orders_cache.dart';
 import '../widgets/customer_pages_top_bar.dart';
+import 'customer_login.dart';
 import 'customer_website.dart';
+import 'guest_order_tracking_page.dart';
 import 'my_caterings_page.dart';
 import 'my_orders_page.dart';
 import 'my_profile_page.dart';
+import '../config/site_routes.dart';
 
 class MyOrderTrackingPage extends StatefulWidget {
   const MyOrderTrackingPage({super.key});
@@ -96,7 +99,11 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
 
       if (token == null || token.isEmpty) {
         if (mounted) {
-          Navigator.of(context).pop('login_required');
+          setState(() {
+            _isLoading = false;
+            _error = 'login_required';
+            _allOrders = [];
+          });
         }
         return;
       }
@@ -286,6 +293,90 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
     return formatRestaurantOrderNo({'order_no': orderNo, 'id': rawId});
   }
 
+  Widget _buildGuestGate() {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF8E6),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFFC024)),
+                ),
+                child: const Text(
+                  'Sign up to redeem rewards.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    color: Color(0xFF1E1E1E),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Track a guest order with your order number, or sign in to see all your orders.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    await showDialog<void>(
+                      context: context,
+                      builder: (_) => const CustomerLoginPage(),
+                    );
+                    await _loadActiveOrders(force: true);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFFC024),
+                    foregroundColor: const Color(0xFF1E1E1E),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: const Text(
+                    'Sign up / Log in',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () {
+                    Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(
+                        builder: (_) => const GuestOrderTrackingPage(),
+                      ),
+                    );
+                  },
+                  child: const Text('Track as guest'),
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pushNamedAndRemoveUntil(
+                    customerRoute('/'),
+                    (_) => false,
+                  );
+                },
+                child: const Text('Back to home'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _navigateFromTopBar(CustomerPageTab tab) {
     if (tab == CustomerPageTab.tracking) return;
     final route = switch (tab) {
@@ -331,6 +422,8 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
             child:
                 _isLoading
                     ? const Center(child: CircularProgressIndicator())
+                    : _error == 'login_required'
+                    ? _buildGuestGate()
                     : _error != null
                     ? Center(
                       child: Column(

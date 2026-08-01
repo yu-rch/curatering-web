@@ -21,3 +21,14 @@ EdgeInsets appPagePadding(BuildContext context, {double vertical = 24}) {
           : 16.0;
   return EdgeInsets.symmetric(horizontal: horizontal, vertical: vertical);
 }
+
+T responsiveValue<T>(
+  BuildContext context, {
+  required T mobile,
+  required T desktop,
+  T? tablet,
+}) {
+  if (isMobileWidth(context)) return mobile;
+  if (isTabletWidth(context)) return tablet ?? desktop;
+  return desktop;
+}

@@ -19,6 +19,7 @@ import '../services/cart_store.dart';
 import '../services/menu_store.dart';
 import '../services/website_content_store.dart';
 import '../utils/image_cache.dart';
+import '../utils/responsive_layout.dart';
 import 'antd_message.dart';
 import 'antd_profile_menu.dart';
 
@@ -449,9 +450,127 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
     );
   }
 
+  void _openMobileNavMenu(BuildContext context) {
+    final route = _currentRoute(context);
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) {
+        Widget navTile(String label, String targetRoute) {
+          final active = route == customerRoute(targetRoute);
+          return ListTile(
+            title: Text(
+              label,
+              style: TextStyle(
+                color: active ? const Color(0xFFFFC024) : Colors.white,
+                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              _go(context, targetRoute);
+            },
+          );
+        }
+
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                navTile('Home', '/'),
+                navTile('Gallery', '/gallery'),
+                navTile('Catering Menu', '/catering-menu'),
+                navTile('Restaurant', '/restaurant'),
+                navTile('Inquire Now', '/inquire'),
+                navTile('Contact Us', '/contact-us'),
+                navTile('Track Order', '/track-order'),
+                if (widget.showCartAndCustomerAuth) ...[
+                  const Divider(color: Colors.white24),
+                  if (_isCustomerLoggedIn) ...[
+                    ListTile(
+                      leading: const Icon(Icons.person_outline, color: Colors.white70),
+                      title: Text(
+                        _customerData?['fullName'] ?? 'Customer',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                      ),
+                      enabled: false,
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.person_outline, color: Colors.white70),
+                      title: const Text('My Profile', style: TextStyle(color: Colors.white)),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(builder: (_) => const MyProfilePage()),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.receipt_long, color: Colors.white70),
+                      title: const Text('My Orders', style: TextStyle(color: Colors.white)),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(builder: (_) => const MyOrdersPage()),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.event, color: Colors.white70),
+                      title: const Text('My Caterings', style: TextStyle(color: Colors.white)),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(builder: (_) => const MyCateringsPage()),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.local_shipping_outlined, color: Colors.white70),
+                      title: const Text('Order Tracking', style: TextStyle(color: Colors.white)),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(builder: (_) => const MyOrderTrackingPage()),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.logout, color: Colors.redAccent),
+                      title: const Text('Logout', style: TextStyle(color: Colors.redAccent)),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        _handleLogout();
+                      },
+                    ),
+                  ] else
+                    ListTile(
+                      leading: const Icon(Icons.login, color: Colors.white70),
+                      title: const Text('Login', style: TextStyle(color: Colors.white)),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        _handleLogin();
+                      },
+                    ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final route = _currentRoute(context);
+    final mobile = isMobileWidth(context);
 
     return Material(
       color: const Color(0xFF1E1E1E),
@@ -485,52 +604,61 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                   ],
                 ),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Wrap(
-                  spacing: 2,
-                  runSpacing: 4,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    _navLink(
-                      context,
-                      label: 'Home',
-                      route: '/',
-                      active: route == customerRoute('/'),
-                    ),
-                    _navLink(
-                      context,
-                      label: 'Gallery',
-                      route: '/gallery',
-                      active: route == customerRoute('/gallery'),
-                    ),
-                    _navLink(
-                      context,
-                      label: 'Catering Menu',
-                      route: '/catering-menu',
-                      active: route == customerRoute('/catering-menu'),
-                    ),
-                    _navLink(
-                      context,
-                      label: 'Restaurant',
-                      route: '/restaurant',
-                      active: route == customerRoute('/restaurant'),
-                    ),
-                    _navLink(
-                      context,
-                      label: 'Inquire Now',
-                      route: '/inquire',
-                      active: route == customerRoute('/inquire'),
-                    ),
-                    _navLink(
-                      context,
-                      label: 'Contact Us',
-                      route: '/contact-us',
-                      active: route == customerRoute('/contact-us'),
-                    ),
-                  ],
+              if (mobile) ...[
+                IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white),
+                  tooltip: 'Menu',
+                  onPressed: () => _openMobileNavMenu(context),
                 ),
-              ),
+              ] else ...[
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Wrap(
+                    spacing: 2,
+                    runSpacing: 4,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      _navLink(
+                        context,
+                        label: 'Home',
+                        route: '/',
+                        active: route == customerRoute('/'),
+                      ),
+                      _navLink(
+                        context,
+                        label: 'Gallery',
+                        route: '/gallery',
+                        active: route == customerRoute('/gallery'),
+                      ),
+                      _navLink(
+                        context,
+                        label: 'Catering Menu',
+                        route: '/catering-menu',
+                        active: route == customerRoute('/catering-menu'),
+                      ),
+                      _navLink(
+                        context,
+                        label: 'Restaurant',
+                        route: '/restaurant',
+                        active: route == customerRoute('/restaurant'),
+                      ),
+                      _navLink(
+                        context,
+                        label: 'Inquire Now',
+                        route: '/inquire',
+                        active: route == customerRoute('/inquire'),
+                      ),
+                      _navLink(
+                        context,
+                        label: 'Contact Us',
+                        route: '/contact-us',
+                        active: route == customerRoute('/contact-us'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const Spacer(),
               if (widget.showCartAndCustomerAuth) ...[
                 Stack(
                   clipBehavior: Clip.none,
@@ -569,9 +697,10 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                       ),
                   ],
                 ),
-                const SizedBox(width: 8),
-                if (_isCustomerLoggedIn)
-                  AntdProfileMenu(
+                if (!mobile) ...[
+                  const SizedBox(width: 8),
+                  if (_isCustomerLoggedIn)
+                    AntdProfileMenu(
                     triggerLabel: _customerData?['fullName'] ?? 'Customer',
                     leading: const Icon(
                       Icons.person_outline,
@@ -655,6 +784,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                       style: TextStyle(color: Colors.white),
                     ),
                   ),
+                ],
               ],
             ],
           ),
