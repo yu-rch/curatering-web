@@ -397,18 +397,20 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     AuthSession.instance.isLoggedIn.addListener(_handleSessionChanged);
+    AuthSession.instance.currentUser.addListener(_handleSessionChanged);
     _handleSessionChanged();
   }
 
   @override
   void dispose() {
     AuthSession.instance.isLoggedIn.removeListener(_handleSessionChanged);
+    AuthSession.instance.currentUser.removeListener(_handleSessionChanged);
     _staffIdleTimer?.cancel();
     super.dispose();
   }
 
   void _handleSessionChanged() {
-    if (AuthSession.instance.hasToken) {
+    if (_shouldTrackStaffIdle()) {
       _armStaffIdleTimer();
     } else {
       _staffIdleTimer?.cancel();
@@ -416,19 +418,35 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
+  /// Inactivity logout applies only to manager / supervisor / super admin —
+  /// not cashiers and not customer sessions (customers use a separate token).
+  bool _shouldTrackStaffIdle() {
+    if (!AuthSession.instance.hasToken) return false;
+    final role = AuthSession.instance.currentRole;
+    if (role == null || role == Role.cashier) return false;
+    return role == Role.manager ||
+        role == Role.supervisor ||
+        role == Role.superAdmin;
+  }
+
   void _recordStaffActivity() {
-    if (AuthSession.instance.hasToken) {
+    if (_shouldTrackStaffIdle()) {
       _armStaffIdleTimer();
     }
   }
 
   void _armStaffIdleTimer() {
+    if (!_shouldTrackStaffIdle()) {
+      _staffIdleTimer?.cancel();
+      _staffIdleTimer = null;
+      return;
+    }
     _staffIdleTimer?.cancel();
     _staffIdleTimer = Timer(_staffIdleTimeout, _expireStaffSessionForIdle);
   }
 
   Future<void> _expireStaffSessionForIdle() async {
-    if (!AuthSession.instance.hasToken) return;
+    if (!_shouldTrackStaffIdle()) return;
     final nav = _navigatorKey.currentState;
     if (nav == null) return;
     final context = _navigatorKey.currentContext;
@@ -453,7 +471,7 @@ class _MyAppState extends State<MyApp> {
       );
       _showingTimeoutDialog = false;
     }
-    if (!AuthSession.instance.hasToken) return;
+    if (!_shouldTrackStaffIdle()) return;
     AuthSession.instance.clear();
     nav.pushNamedAndRemoveUntil('/login', (_) => false);
   }

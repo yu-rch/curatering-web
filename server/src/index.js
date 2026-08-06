@@ -3577,6 +3577,7 @@ function registerCustomerAuthRoutes(app, dbGate) {
 
   app.post("/api/customer/login", gate, async (req, res) => {
     try {
+      await ensureCustomerAccountsColumns().catch(() => {});
       const { email, password } = req.body || {};
 
       if (!email || !password) {
@@ -3584,12 +3585,27 @@ function registerCustomerAuthRoutes(app, dbGate) {
       }
 
       const emailNorm = String(email).trim().toLowerCase();
+      const caCols = await getTableColumnNames("customer_accounts");
+      const archivedSelect = caCols.has("archived")
+        ? "COALESCE(archived, FALSE) AS archived"
+        : "FALSE AS archived";
+      const restaurantPtsSelect = caCols.has("restaurant_loyalty_points")
+        ? "COALESCE(restaurant_loyalty_points, 0) AS restaurant_loyalty_points"
+        : "0 AS restaurant_loyalty_points";
+      const cateringPtsSelect = caCols.has("catering_loyalty_points")
+        ? "COALESCE(catering_loyalty_points, 0) AS catering_loyalty_points"
+        : "0 AS catering_loyalty_points";
+      const contactSelect = caCols.has("contact_number")
+        ? "contact_number"
+        : caCols.has("phone")
+          ? "phone AS contact_number"
+          : "NULL::text AS contact_number";
 
       const result = await pool.query(
-        `SELECT id, email, password_hash, full_name, contact_number, is_verified,
-                COALESCE(archived, FALSE) AS archived,
-                COALESCE(restaurant_loyalty_points, 0) AS restaurant_loyalty_points,
-                COALESCE(catering_loyalty_points, 0) AS catering_loyalty_points
+        `SELECT id, email, password_hash, full_name, ${contactSelect}, is_verified,
+                ${archivedSelect},
+                ${restaurantPtsSelect},
+                ${cateringPtsSelect}
          FROM customer_accounts
          WHERE lower(trim(email::text)) = $1
          LIMIT 1`,
@@ -3607,7 +3623,21 @@ function registerCustomerAuthRoutes(app, dbGate) {
         });
       }
 
-      const isValidPassword = await bcrypt.compare(password, customer.password_hash);
+      if (!customer.password_hash) {
+        console.error("customer login: missing password_hash for", emailNorm);
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+
+      let isValidPassword = false;
+      try {
+        isValidPassword = await bcrypt.compare(
+          password,
+          String(customer.password_hash),
+        );
+      } catch (hashErr) {
+        console.error("customer login bcrypt error:", hashErr?.message || hashErr);
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
 
       if (!isValidPassword) {
         return res.status(401).json({ error: "Invalid email or password" });
@@ -3616,11 +3646,20 @@ function registerCustomerAuthRoutes(app, dbGate) {
       if (!customer.is_verified) {
         const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
         const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+        const otpCol = caCols.has("otp_code") ? "otp_code" : null;
+        const otpExpCol = caCols.has("otp_expiry")
+          ? "otp_expiry"
+          : caCols.has("signup_otp_code_expiry")
+            ? "signup_otp_code_expiry"
+            : null;
+        const otpCodeCol = otpCol || (caCols.has("signup_otp_code") ? "signup_otp_code" : null);
 
-        await pool.query(
-          `UPDATE customer_accounts SET otp_code = $1, otp_expiry = $2 WHERE id = $3`,
-          [otpCode, otpExpiry, customer.id],
-        );
+        if (otpCodeCol && otpExpCol) {
+          await pool.query(
+            `UPDATE customer_accounts SET ${otpCodeCol} = $1, ${otpExpCol} = $2 WHERE id = $3`,
+            [otpCode, otpExpiry, customer.id],
+          );
+        }
 
         sendOtpEmailAsync(emailNorm, otpCode);
 
@@ -3673,7 +3712,11 @@ function registerCustomerAuthRoutes(app, dbGate) {
       });
     } catch (error) {
       console.error("Error logging in customer:", error);
-      res.status(500).json({ error: "Failed to login" });
+      res.status(500).json({
+        error: "Failed to login",
+        message: "Failed to login",
+        detail: process.env.NODE_ENV === "production" ? undefined : String(error?.message || error),
+      });
     }
   });
 
@@ -3926,6 +3969,17 @@ async function logAction({
 
 app.post("/api/auth/login", async (req, res) => {
   try {
+    if (!dbReady) {
+      try {
+        await authSchemaPromise;
+      } catch {
+        return res.status(503).json({
+          message: "Server is starting up. Please try again in a moment.",
+          database: dbInitState,
+        });
+      }
+    }
+
     const { email, password } = req.body || {};
 
     if (!email || !password) {
@@ -3935,8 +3989,20 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     const emailNorm = String(email).trim().toLowerCase();
+    const userCols = await getTableColumnNames("users");
+    const archivedSelect = userCols.has("archived")
+      ? "archived"
+      : "FALSE AS archived";
+    const pagePermSelect = userCols.has("page_permissions")
+      ? "page_permissions"
+      : "'{}'::jsonb AS page_permissions";
+    const verifiedSelect = userCols.has("is_verified")
+      ? "is_verified"
+      : "TRUE AS is_verified";
+
     const result = await pool.query(
-      `SELECT id, email, full_name, role, archived, password_hash, page_permissions, is_verified
+      `SELECT id, email, full_name, role, ${archivedSelect}, password_hash,
+              ${pagePermSelect}, ${verifiedSelect}
        FROM users
        WHERE lower(trim(email::text)) = $1
        LIMIT 1;`,
@@ -3953,7 +4019,18 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(401).json({ message: "Account archived" });
     }
 
-    const ok = await bcrypt.compare(password, user.password_hash);
+    if (!user.password_hash) {
+      console.error("staff login: missing password_hash for", emailNorm);
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    let ok = false;
+    try {
+      ok = await bcrypt.compare(password, String(user.password_hash));
+    } catch (hashErr) {
+      console.error("staff login bcrypt error:", hashErr?.message || hashErr);
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
 
     if (!ok) {
       return res.status(401).json({ message: "Invalid credentials" });
@@ -3975,7 +4052,10 @@ app.post("/api/auth/login", async (req, res) => {
     });
   } catch (e) {
     console.error("Login error:", e);
-    return res.status(500).json({ message: "Login failed" });
+    return res.status(500).json({
+      message: "Login failed",
+      detail: process.env.NODE_ENV === "production" ? undefined : String(e?.message || e),
+    });
   }
 });
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
@@ -190,13 +191,19 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        // Save token
+        // Save token — do not block login success on cart sync failures.
         final prefs = await SharedPreferences.getInstance();
         final token = data['token'] as String?;
         await prefs.setString('customer_token', token ?? '');
         await prefs.setString('customer_data', jsonEncode(data['customer']));
         ApiClient.instance.setCustomerBearer(token);
-        await CartSyncService.instance.syncAfterLogin();
+        try {
+          await CartSyncService.instance.syncAfterLogin().timeout(
+            const Duration(seconds: 12),
+          );
+        } catch (e) {
+          debugPrint('Cart sync after login failed: $e');
+        }
 
         if (mounted) {
           Navigator.of(context).pop(data);
@@ -209,8 +216,20 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
           _errorMessage = null;
         });
       } else {
-        setState(() => _errorMessage = data['error'] ?? 'Login failed');
+        setState(
+          () =>
+              _errorMessage =
+                  data['error']?.toString() ??
+                  data['message']?.toString() ??
+                  'Login failed (${response.statusCode})',
+        );
       }
+    } on TimeoutException {
+      setState(
+        () =>
+            _errorMessage =
+                'Login timed out. Please check your connection and try again.',
+      );
     } catch (e) {
       setState(() => _errorMessage = 'Error: $e');
     } finally {
