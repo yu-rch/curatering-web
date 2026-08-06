@@ -558,7 +558,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   void _showDishDetails(MenuDish dish) {
     showDialog<void>(
       context: context,
-      builder: (context) {
+      builder: (ctx) {
         final description = dish.publicDescription.trim();
         final ingredients =
             dish.ingredients.where((e) => e.trim().isNotEmpty).toList();
@@ -566,55 +566,92 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
         return AlertDialog(
           title: Text(dish.name),
           content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
+            constraints: const BoxConstraints(maxWidth: 820),
             child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (dish.imageBase64?.isNotEmpty == true)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: InteractiveViewer(
-                        minScale: 1,
-                        maxScale: 4,
-                        child: CachedBase64Image(
-                          base64String: dish.imageBase64,
-                          fit: BoxFit.contain,
-                        ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final wide = constraints.maxWidth >= 700;
+                  final hasImage = dish.imageBase64?.isNotEmpty == true;
+                  final image =
+                      hasImage
+                          ? ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 320),
+                              child: InteractiveViewer(
+                                minScale: 1,
+                                maxScale: 4,
+                                child: CachedBase64Image(
+                                  base64String: dish.imageBase64,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                          )
+                          : Container(
+                            height: 220,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade200,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Center(
+                              child: Icon(Icons.restaurant_menu, size: 48),
+                            ),
+                          );
+                  final details = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _dishDetailBlock(
+                        'Description',
+                        description.isEmpty
+                            ? 'No description available.'
+                            : description,
                       ),
-                    ),
-                  const SizedBox(height: 16),
-                  _dishDetailBlock(
-                    'Description',
-                    description.isEmpty
-                        ? 'No description available.'
-                        : description,
-                  ),
-                  _dishDetailBlock(
-                    'Ingredients',
-                    ingredients.isEmpty
-                        ? 'No ingredients listed.'
-                        : ingredients.join(', '),
-                  ),
-                  _dishDetailBlock(
-                    'Allergens',
-                    allergens.isEmpty ? 'No allergens listed.' : allergens,
-                  ),
-                ],
+                      _dishDetailBlock(
+                        'Ingredients',
+                        ingredients.isEmpty
+                            ? 'No ingredients listed.'
+                            : ingredients.join(', '),
+                      ),
+                      _dishDetailBlock(
+                        'Allergens',
+                        allergens.isEmpty
+                            ? 'No allergens listed.'
+                            : allergens,
+                      ),
+                    ],
+                  );
+
+                  if (!wide) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [image, const SizedBox(height: 16), details],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(width: 360, child: image),
+                      const SizedBox(width: 22),
+                      Expanded(child: details),
+                    ],
+                  );
+                },
               ),
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(ctx).pop(),
               child: const Text('Close'),
             ),
             FilledButton(
               onPressed:
                   dish.available
                       ? () {
-                        Navigator.of(context).pop();
+                        Navigator.of(ctx).pop();
                         _addToCart(dish);
                       }
                       : null,

@@ -572,135 +572,117 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
     final route = _currentRoute(context);
     final mobile = isMobileWidth(context);
 
-    return Material(
-      color: const Color(0xFF1E1E1E),
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+    final logo = InkWell(
+      onTap: () => _goHome(context),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset(
+            'lib/assets/main-2.png',
+            height: 34,
+            fit: BoxFit.contain,
+          ),
+          const SizedBox(width: 10),
+          Text(
+            WebsiteContentStore.instance.navBrandLabel,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 15,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final navLinks = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _navLink(
+          context,
+          label: 'Home',
+          route: '/',
+          active: route == customerRoute('/'),
+        ),
+        _navLink(
+          context,
+          label: 'Gallery',
+          route: '/gallery',
+          active: route == customerRoute('/gallery'),
+        ),
+        _navLink(
+          context,
+          label: 'Catering Menu',
+          route: '/catering-menu',
+          active: route == customerRoute('/catering-menu'),
+        ),
+        _navLink(
+          context,
+          label: 'Restaurant',
+          route: '/restaurant',
+          active: route == customerRoute('/restaurant'),
+        ),
+        _navLink(
+          context,
+          label: 'Inquire Now',
+          route: '/inquire',
+          active: route == customerRoute('/inquire'),
+        ),
+        _navLink(
+          context,
+          label: 'Contact Us',
+          route: '/contact-us',
+          active: route == customerRoute('/contact-us'),
+        ),
+      ],
+    );
+
+    final trailingActions = widget.showCartAndCustomerAuth
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              InkWell(
-                onTap: () => _goHome(context),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Image.asset(
-                      'lib/assets/main-2.png',
-                      height: 34,
-                      fit: BoxFit.contain,
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.shopping_bag_outlined,
+                      color: Colors.white,
                     ),
-                    const SizedBox(width: 10),
-                    Text(
-                      WebsiteContentStore.instance.navBrandLabel,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                        letterSpacing: 0.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (mobile) ...[
-                IconButton(
-                  icon: const Icon(Icons.menu, color: Colors.white),
-                  tooltip: 'Menu',
-                  onPressed: () => _openMobileNavMenu(context),
-                ),
-              ] else ...[
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Wrap(
-                    spacing: 2,
-                    runSpacing: 4,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      _navLink(
-                        context,
-                        label: 'Home',
-                        route: '/',
-                        active: route == customerRoute('/'),
-                      ),
-                      _navLink(
-                        context,
-                        label: 'Gallery',
-                        route: '/gallery',
-                        active: route == customerRoute('/gallery'),
-                      ),
-                      _navLink(
-                        context,
-                        label: 'Catering Menu',
-                        route: '/catering-menu',
-                        active: route == customerRoute('/catering-menu'),
-                      ),
-                      _navLink(
-                        context,
-                        label: 'Restaurant',
-                        route: '/restaurant',
-                        active: route == customerRoute('/restaurant'),
-                      ),
-                      _navLink(
-                        context,
-                        label: 'Inquire Now',
-                        route: '/inquire',
-                        active: route == customerRoute('/inquire'),
-                      ),
-                      _navLink(
-                        context,
-                        label: 'Contact Us',
-                        route: '/contact-us',
-                        active: route == customerRoute('/contact-us'),
-                      ),
-                    ],
+                    onPressed: _openCart,
+                    tooltip: 'View tray',
                   ),
-                ),
-              ],
-              const Spacer(),
-              if (widget.showCartAndCustomerAuth) ...[
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    IconButton(
-                      icon: const Icon(
-                        Icons.shopping_bag_outlined,
-                        color: Colors.white,
-                      ),
-                      onPressed: _openCart,
-                      tooltip: 'View tray',
-                    ),
-                    if (CartStore.instance.itemCount > 0)
-                      Positioned(
-                        right: 6,
-                        top: 6,
-                        child: Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(10),
+                  if (CartStore.instance.itemCount > 0)
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
+                        child: Text(
+                          '${CartStore.instance.itemCount}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
                           ),
-                          constraints: const BoxConstraints(
-                            minWidth: 18,
-                            minHeight: 18,
-                          ),
-                          child: Text(
-                            '${CartStore.instance.itemCount}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
+                          textAlign: TextAlign.center,
                         ),
                       ),
-                  ],
-                ),
-                if (!mobile) ...[
-                  const SizedBox(width: 8),
-                  if (_isCustomerLoggedIn)
-                    AntdProfileMenu(
+                    ),
+                ],
+              ),
+              if (!mobile) ...[
+                const SizedBox(width: 8),
+                if (_isCustomerLoggedIn)
+                  AntdProfileMenu(
                     triggerLabel: _customerData?['fullName'] ?? 'Customer',
                     leading: const Icon(
                       Icons.person_outline,
@@ -784,10 +766,53 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                       style: TextStyle(color: Colors.white),
                     ),
                   ),
-                ],
               ],
             ],
-          ),
+          )
+        : const SizedBox.shrink();
+
+    return Material(
+      color: const Color(0xFF1E1E1E),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: mobile
+              ? Row(
+                  children: [
+                    logo,
+                    IconButton(
+                      icon: const Icon(Icons.menu, color: Colors.white),
+                      tooltip: 'Menu',
+                      onPressed: () => _openMobileNavMenu(context),
+                    ),
+                    const Spacer(),
+                    trailingActions,
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: logo,
+                      ),
+                    ),
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: navLinks,
+                      ),
+                    ),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: trailingActions,
+                      ),
+                    ),
+                  ],
+                ),
         ),
       ),
     );

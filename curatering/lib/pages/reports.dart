@@ -154,7 +154,7 @@ class _ReportsState extends State<Reports> {
             Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),
             PagedDataTable(
-              title: title,
+              title: '',
               columns: const [
                 DataColumn(label: Text('Name')),
                 DataColumn(label: Text('Count')),
@@ -332,12 +332,18 @@ class _ReportsState extends State<Reports> {
                 ChoiceChip(
                   label: const Text('Monthly'),
                   selected: !_annualMode,
-                  onSelected: (_) => setState(() => _annualMode = false),
+                  onSelected: (_) {
+                    setState(() => _annualMode = false);
+                    _load();
+                  },
                 ),
                 ChoiceChip(
                   label: const Text('Annual'),
                   selected: _annualMode,
-                  onSelected: (_) => setState(() => _annualMode = true),
+                  onSelected: (_) {
+                    setState(() => _annualMode = true);
+                    _load();
+                  },
                 ),
                 if (_annualMode)
                   AntdSelect<int>(
@@ -353,7 +359,22 @@ class _ReportsState extends State<Reports> {
                       _load();
                     },
                   )
-                else
+                else ...[
+                  AntdSelect<int>(
+                    label: 'Year',
+                    value: _selectedMonth.year,
+                    items: List.generate(6, (i) {
+                      final y = DateTime.now().year - i;
+                      return DropdownMenuItem(value: y, child: Text('$y'));
+                    }),
+                    onChanged: (y) {
+                      if (y == null) return;
+                      setState(() {
+                        _selectedMonth = DateTime(y, _selectedMonth.month, 1);
+                      });
+                      _load();
+                    },
+                  ),
                   AntdSelect<int>(
                     label: 'Month',
                     value: _selectedMonth.month,
@@ -372,6 +393,7 @@ class _ReportsState extends State<Reports> {
                       _load();
                     },
                   ),
+                ],
                 AntdSelect<_ReportScope>(
                   label: 'Scope',
                   value: _scope,
@@ -516,6 +538,14 @@ class _ReportsState extends State<Reports> {
                       _rankTable(
                         'Most frequent event type',
                         data.cateringEvents.topEventTypes,
+                      ),
+                      _rankChart(
+                        'Top requested dishes chart',
+                        data.cateringEvents.topDishes,
+                      ),
+                      _rankTable(
+                        'Top requested dishes',
+                        data.cateringEvents.topDishes,
                       ),
                     ],
                     if (_scope == _ReportScope.combined ||

@@ -24,6 +24,7 @@ class CashierPosShell extends StatefulWidget {
 }
 
 class _CashierPosShellState extends State<CashierPosShell> {
+  final GlobalKey<ScaffoldState> _posScaffoldKey = GlobalKey<ScaffoldState>();
   int _selectedTab = 0;
   Timer? _clockTimer;
   String _clock = '';
@@ -1218,21 +1219,39 @@ class _CashierPosShellState extends State<CashierPosShell> {
     const tabLabels = ['NEW ORDER', 'ONLINE ORDERS', 'WALK-IN ORDERS'];
 
     return Scaffold(
+      key: _posScaffoldKey,
       backgroundColor: Colors.white,
+      drawer: MediaQuery.sizeOf(context).width < 900
+          ? Drawer(
+              backgroundColor: const Color(0xFF1E1E1E),
+              width: 220,
+              child: SafeArea(child: _buildSidebar(inDrawer: true)),
+            )
+          : null,
       appBar: AppBar(
         backgroundColor: Colors.black87,
         foregroundColor: Colors.white,
         automaticallyImplyLeading: false,
+        leading: MediaQuery.sizeOf(context).width < 900
+            ? IconButton(
+                tooltip: 'Open menu',
+                icon: const Icon(Icons.menu),
+                onPressed: () => _posScaffoldKey.currentState?.openDrawer(),
+              )
+            : null,
         title: Row(
           children: [
             const Icon(Icons.storefront, size: 22),
             const SizedBox(width: 10),
-            Text(
-              cashierName,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.5,
-                fontSize: 16,
+            Flexible(
+              child: Text(
+                cashierName,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                  fontSize: 16,
+                ),
               ),
             ),
           ],
@@ -1297,8 +1316,9 @@ class _CashierPosShellState extends State<CashierPosShell> {
       ),
       body: Row(
         children: [
-          _buildSidebar(),
-          Container(width: 1, color: Colors.grey.shade300),
+          if (MediaQuery.sizeOf(context).width >= 900) _buildSidebar(),
+          if (MediaQuery.sizeOf(context).width >= 900)
+            Container(width: 1, color: Colors.grey.shade300),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -1335,25 +1355,29 @@ class _CashierPosShellState extends State<CashierPosShell> {
   // Left sidebar navigation + logout
   // ---------------------------------------------------------------------------
 
-  Widget _buildSidebar() {
+  Widget _buildSidebar({bool inDrawer = false}) {
     return Container(
-      width: 82,
+      width: inDrawer ? null : 82,
       color: const Color(0xFF1E1E1E),
       child: Column(
         children: [
           const SizedBox(height: 12),
-          _sidebarTab(0, Icons.add_shopping_cart, 'New\nOrder'),
-          _sidebarTab(1, Icons.cloud_queue, 'Online'),
-          _sidebarTab(2, Icons.storefront_outlined, 'Walk-In'),
+          _sidebarTab(0, Icons.add_shopping_cart, 'New\nOrder', inDrawer: inDrawer),
+          _sidebarTab(1, Icons.cloud_queue, 'Online', inDrawer: inDrawer),
+          _sidebarTab(2, Icons.storefront_outlined, 'Walk-In', inDrawer: inDrawer),
           const Spacer(),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Divider(color: Colors.white24, height: 1),
           ),
           const SizedBox(height: 8),
-          _sidebarAction(Icons.refresh, 'Refresh', Colors.white60, _refreshAll),
+          _sidebarAction(Icons.refresh, 'Refresh', Colors.white60, () {
+            if (inDrawer) _posScaffoldKey.currentState?.closeDrawer();
+            _refreshAll();
+          }),
           const SizedBox(height: 4),
           _sidebarAction(Icons.logout, 'Logout', Colors.red.shade400, () async {
+            if (inDrawer) _posScaffoldKey.currentState?.closeDrawer();
             final ok = await confirmLogout(context);
             if (ok != true || !mounted) return;
             AuthSession.instance.clear();
@@ -1365,10 +1389,11 @@ class _CashierPosShellState extends State<CashierPosShell> {
     );
   }
 
-  Widget _sidebarTab(int index, IconData icon, String label) {
+  Widget _sidebarTab(int index, IconData icon, String label, {bool inDrawer = false}) {
     final active = _selectedTab == index;
     return InkWell(
       onTap: () {
+        if (inDrawer) _posScaffoldKey.currentState?.closeDrawer();
         setState(() => _selectedTab = index);
         if (index == 1) _refreshOnline();
         if (index == 2) _refreshWalkIn();

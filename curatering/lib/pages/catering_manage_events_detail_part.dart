@@ -130,7 +130,8 @@ extension _ManageEventsDetailExt on _ManageEventsState {
     final isCancelled = stage == 'cancelled' || order.status == 'cancelled';
     final isReadOnlyStage =
         isCancelled || stage == 'completed' || stage == 'for_full_payment';
-    final canEditTheme = !isCancelled &&
+    final canEditTheme = _isManager &&
+        !isCancelled &&
         stage != 'for_full_payment' &&
         stage != 'completed' &&
         (order.orderType == 'catering_event' ||
@@ -175,7 +176,8 @@ extension _ManageEventsDetailExt on _ManageEventsState {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (!isCancelled &&
+                  if (_isManager &&
+                      !isCancelled &&
                       (stage == 'online_inquiries' || stage == 'new_event')) ...[
                     _amberStageButton(
                       label: 'Move to Down Payment',
@@ -196,12 +198,12 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                       ),
                     ),
                   ],
-                  if (stage == 'on_going' && !isCancelled)
+                  if (_isManager && stage == 'on_going' && !isCancelled)
                     _amberStageButton(
                       label: 'Move to Full Payment',
                       onPressed: () => _markOrderForFinalPayment(order),
                     ),
-                  if (stage == 'for_down_payment' && !isCancelled) ...[
+                  if (_isManager && stage == 'for_down_payment' && !isCancelled) ...[
                     _detailSection(
                       'Down payment',
                       child: Column(
@@ -235,7 +237,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                     ),
                     const SizedBox(height: 12),
                   ],
-                  if (stage == 'for_full_payment' && !isCancelled) ...[
+                  if (_isManager && stage == 'for_full_payment' && !isCancelled) ...[
                     _detailSection(
                       'Full payment',
                       child: Column(
@@ -284,7 +286,10 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                       stage != 'cancelled') ...[
                     _detailSection(
                       'Additional costs',
-                      child: _buildAdditionalCostsSection(order, editable: true),
+                      child: _buildAdditionalCostsSection(
+                        order,
+                        editable: _isManager,
+                      ),
                     ),
                     const SizedBox(height: 12),
                   ],
@@ -342,7 +347,9 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                           OutlinedButton.icon(
                             onPressed: () => _showChecklistDialog(order),
                             icon: const Icon(Icons.edit_note, size: 18),
-                            label: const Text('Edit checklist'),
+                            label: Text(
+                              _isManager ? 'Edit checklist' : 'View checklist',
+                            ),
                           ),
                           const SizedBox(height: 6),
                           OutlinedButton.icon(
@@ -361,34 +368,36 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    _detailSection(
-                      'Task assignment',
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: () => _showTaskAssignmentEditor(order),
-                            icon: const Icon(Icons.edit_note, size: 18),
-                            label: const Text('Task Assignment Editor'),
-                          ),
-                          const SizedBox(height: 6),
-                          OutlinedButton.icon(
-                            onPressed: () async {
-                              final rows = _taskRowsFromOrder(order);
-                              final bytes = await buildTaskAssignmentPdf(
-                                order: order,
-                                stageLabel: stage.replaceAll('_', ' ').toUpperCase(),
-                                taskRows: rows,
-                              );
-                              await _printPdfBytes(bytes, name: 'task-assignment.pdf');
-                            },
-                            icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                            label: const Text('Generate Task Assignment PDF'),
-                          ),
-                        ],
+                    if (_isManager) ...[
+                      const SizedBox(height: 12),
+                      _detailSection(
+                        'Task assignment',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () => _showTaskAssignmentEditor(order),
+                              icon: const Icon(Icons.edit_note, size: 18),
+                              label: const Text('Task Assignment Editor'),
+                            ),
+                            const SizedBox(height: 6),
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                final rows = _taskRowsFromOrder(order);
+                                final bytes = await buildTaskAssignmentPdf(
+                                  order: order,
+                                  stageLabel: stage.replaceAll('_', ' ').toUpperCase(),
+                                  taskRows: rows,
+                                );
+                                await _printPdfBytes(bytes, name: 'task-assignment.pdf');
+                              },
+                              icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                              label: const Text('Generate Task Assignment PDF'),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                   const SizedBox(height: 12),
                   _detailSection(
@@ -437,11 +446,20 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                     const SizedBox(height: 12),
                     _buildEventDesignDetailSection(order, readOnly: !canEditTheme),
                   ],
+                  if (stage == 'for_full_payment' &&
+                      !isCancelled &&
+                      _isCateringPlusEventOrder(order)) ...[
+                    const SizedBox(height: 12),
+                    _detailSection(
+                      'Actual event photos',
+                      child: _buildActualEventPhotosSection(order),
+                    ),
+                  ],
                   if (showSeating) ...[
                     const SizedBox(height: 12),
                     _detailSection(
                       'Seating layout',
-                      child: isReadOnlyStage
+                      child: isReadOnlyStage || !_isManager
                           ? Text(
                               order.seatingPlan.tables.isEmpty
                                   ? 'No seating plan saved.'
@@ -1325,6 +1343,99 @@ extension _ManageEventsDetailExt on _ManageEventsState {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildActualEventPhotosSection(EventOrderDto order) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (order.actualEventImages.isEmpty)
+          Column(
+            children: [
+              Icon(
+                Icons.photo_library_outlined,
+                size: 48,
+                color: Colors.grey.shade400,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'No event photos uploaded yet',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () => _uploadEventPhotos(order),
+                icon: const Icon(Icons.upload, size: 18),
+                label: const Text('Upload photos'),
+              ),
+            ],
+          )
+        else ...[
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: order.actualEventImages.asMap().entries.map((entry) {
+              final index = entry.key;
+              final imageUrl = entry.value;
+              return Stack(
+                children: [
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(7),
+                      child: imageUrl.startsWith('http')
+                          ? Image.network(
+                              imageUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: Colors.grey.shade200,
+                                child: const Icon(Icons.broken_image),
+                              ),
+                            )
+                          : Image.memory(
+                              Uint8List.fromList(imageUrl.codeUnits),
+                              fit: BoxFit.cover,
+                            ),
+                    ),
+                  ),
+                  if (_isManager)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: GestureDetector(
+                        onTap: () => _removeEventPhoto(order, index),
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.close,
+                            size: 12,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: () => _uploadEventPhotos(order),
+            icon: const Icon(Icons.add_photo_alternate, size: 18),
+            label: const Text('Add more photos'),
+          ),
+        ],
+      ],
     );
   }
 }

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -9,6 +8,7 @@ import '../constants/catering_meal_types.dart';
 import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
 import '../services/website_content_store.dart';
+import '../utils/image_cache.dart';
 import '../widgets/catering_dish_info_dialog.dart';
 import '../widgets/customer_website_topbar.dart';
 
@@ -423,8 +423,8 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                     ),
                     child:
                         d.imageBase64 != null && d.imageBase64!.isNotEmpty
-                            ? Image.memory(
-                              base64Decode(d.imageBase64!),
+                            ? CachedBase64Image(
+                              base64String: d.imageBase64,
                               fit: BoxFit.cover,
                               width: double.infinity,
                             )

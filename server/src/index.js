@@ -8990,6 +8990,213 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
+    // Homepage popular dishes + event designs from completed/successful orders.
+    app.get('/api/public/homepage-highlights', async (_req, res) => {
+      try {
+        const dishCounts = {};
+        const pushMenuItem = (item, qtyFallback = 1) => {
+          const name = String(
+            item?.dishName || item?.dish_name || item?.name || '',
+          )
+            .trim();
+          if (!name) return;
+          const qty = Math.max(
+            1,
+            Number(item?.quantity ?? item?.qty ?? item?.paxCount ?? qtyFallback) ||
+              qtyFallback,
+          );
+          dishCounts[name] = (dishCounts[name] || 0) + qty;
+        };
+
+        const eventOrderCols = await getTableColumnNames('event_orders');
+        const eventImageCol = eventOrderCols.has('actual_event_images')
+          ? 'actual_event_images'
+          : `'[]'::jsonb`;
+        const themeCol = eventOrderCols.has('theme_design')
+          ? 'theme_design'
+          : `'{}'::jsonb`;
+
+        const eventOrders = await pool.query(
+          `SELECT menu, event_title, event_type, ${themeCol} AS theme_design,
+                  ${eventImageCol} AS actual_event_images
+           FROM event_orders
+           WHERE status = 'completed'
+           ORDER BY COALESCE(updated_at, created_at) DESC
+           LIMIT 80`,
+        );
+        for (const row of eventOrders.rows) {
+          let menu = row.menu;
+          if (typeof menu === 'string') {
+            try {
+              menu = JSON.parse(menu);
+            } catch {
+              menu = [];
+            }
+          }
+          if (Array.isArray(menu)) {
+            for (const item of menu) pushMenuItem(item);
+          }
+        }
+
+        const cateringOrders = await pool.query(
+          `SELECT menu
+           FROM catering_orders
+           WHERE status = 'completed'
+           ORDER BY COALESCE(updated_at, created_at) DESC
+           LIMIT 80`,
+        );
+        for (const row of cateringOrders.rows) {
+          let menu = row.menu;
+          if (typeof menu === 'string') {
+            try {
+              menu = JSON.parse(menu);
+            } catch {
+              menu = [];
+            }
+          }
+          if (Array.isArray(menu)) {
+            for (const item of menu) pushMenuItem(item);
+          }
+        }
+
+        const roCols = await getTableColumnNames('restaurant_orders');
+        const roStatusCol = roCols.has('order_status')
+          ? 'order_status'
+          : roCols.has('status')
+            ? 'status'
+            : null;
+        const roItemsCol = roCols.has('tray_items') ? 'tray_items' : null;
+        if (roItemsCol) {
+          const completedFilter = roStatusCol
+            ? `AND upper(COALESCE(${roStatusCol}::text, '')) IN ('DELIVERED', 'COMPLETED')`
+            : '';
+          const restaurantOrders = await pool.query(
+            `SELECT ${roItemsCol} AS items
+             FROM restaurant_orders
+             WHERE 1=1 ${completedFilter}
+             ORDER BY created_at DESC NULLS LAST
+             LIMIT 120`,
+          );
+          for (const row of restaurantOrders.rows) {
+            let items = row.items;
+            if (typeof items === 'string') {
+              try {
+                items = JSON.parse(items);
+              } catch {
+                items = [];
+              }
+            }
+            if (Array.isArray(items)) {
+              for (const item of items) pushMenuItem(item);
+            }
+          }
+        }
+
+        const topNames = Object.entries(dishCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([name, count]) => ({ name, count }));
+
+        const menuCols = await getTableColumnNames('menu_dishes');
+        const hasImage = menuCols.has('image_base64');
+        const hasDesc = menuCols.has('public_description');
+        const popularDishes = [];
+        for (const entry of topNames) {
+          let imageBase64 = null;
+          let description = '';
+          if (menuCols.size > 0) {
+            try {
+              const selectParts = ['name'];
+              if (hasImage) selectParts.push('image_base64');
+              if (hasDesc) selectParts.push('public_description');
+              const dishRow = await pool.query(
+                `SELECT ${selectParts.join(', ')}
+                 FROM menu_dishes
+                 WHERE lower(name) = lower($1)
+                   AND COALESCE(archived, FALSE) = FALSE
+                 ORDER BY updated_at DESC NULLS LAST
+                 LIMIT 1`,
+                [entry.name],
+              );
+              if (dishRow.rows[0]) {
+                imageBase64 = hasImage ? dishRow.rows[0].image_base64 || null : null;
+                description = hasDesc
+                  ? String(dishRow.rows[0].public_description || '')
+                  : '';
+              }
+            } catch (_) {
+              // skip enrichment
+            }
+          }
+          popularDishes.push({
+            name: entry.name,
+            count: entry.count,
+            imageBase64,
+            description,
+          });
+        }
+
+        const eventDesigns = [];
+        const pushDesign = (image, label, description) => {
+          const img = String(image || '').trim();
+          if (!img || eventDesigns.length >= 8) return;
+          if (eventDesigns.some((d) => d.imageBase64 === img)) return;
+          eventDesigns.push({
+            imageBase64: img,
+            label: String(label || 'Event design').trim() || 'Event design',
+            description: String(description || '').trim(),
+          });
+        };
+
+        for (const row of eventOrders.rows) {
+          const title = String(row.event_title || '').trim();
+          const type = String(row.event_type || '').trim();
+          const label =
+            [title, type].filter(Boolean).join(' · ') || 'Successful catering';
+          let images = row.actual_event_images;
+          if (typeof images === 'string') {
+            try {
+              images = JSON.parse(images);
+            } catch {
+              images = [];
+            }
+          }
+          if (Array.isArray(images)) {
+            for (const img of images) {
+              pushDesign(img, label, type);
+            }
+          }
+          let theme = row.theme_design;
+          if (typeof theme === 'string') {
+            try {
+              theme = JSON.parse(theme);
+            } catch {
+              theme = {};
+            }
+          }
+          if (theme && typeof theme === 'object') {
+            pushDesign(
+              theme.confirmedCompositeBase64 ||
+                theme.compositeImageBase64 ||
+                theme.generatedImageBase64 ||
+                theme.previewBase64,
+              label,
+              type,
+            );
+            const picks = theme.picksBase64;
+            if (Array.isArray(picks)) {
+              for (const p of picks) pushDesign(p, label, type);
+            }
+          }
+        }
+
+        res.json({ popularDishes, eventDesigns });
+      } catch (e) {
+        console.error('homepage-highlights', e);
+        res.status(500).json({ error: 'Failed to load homepage highlights' });
+      }
+    });
+
     app.get('/api/menu/dishes', async (req, res) => {
       let retryCount = 0;
       const maxRetries = 3;
@@ -10407,19 +10614,25 @@ async function registerRoutesAfterDbInit() {
           ? 'post_analysis'
           : `'{}'::jsonb`;
 
+        // Attribute completed orders to the period they were completed (updated_at),
+        // not when the inquiry was first created.
         const eventOrders = await pool.query(
           `SELECT event_type, guest_count, menu, total_cost, schedule_slots, status, customer_name,
-                  COALESCE(event_title, '') AS event_title, created_at
+                  COALESCE(event_title, '') AS event_title, created_at, updated_at
            FROM event_orders
-           WHERE status = 'completed' AND created_at >= $1 AND created_at < $2`,
+           WHERE status = 'completed'
+             AND COALESCE(updated_at, created_at) >= $1
+             AND COALESCE(updated_at, created_at) < $2`,
           [rangeStart, rangeEnd],
         );
 
         const cateringOrders = await pool.query(
           `SELECT 'Catering' AS event_type, guest_count, menu, total_cost, schedule_slots, status, customer_name,
-                  '' AS event_title, created_at
+                  '' AS event_title, created_at, updated_at
            FROM catering_orders
-           WHERE status = 'completed' AND created_at >= $1 AND created_at < $2`,
+           WHERE status = 'completed'
+             AND COALESCE(updated_at, created_at) >= $1
+             AND COALESCE(updated_at, created_at) < $2`,
           [rangeStart, rangeEnd],
         );
 
@@ -10445,7 +10658,11 @@ async function registerRoutesAfterDbInit() {
             if (Array.isArray(menu)) {
               for (const item of menu) {
                 const name = String(item?.dishName || item?.dish_name || 'Unknown').trim() || 'Unknown';
-                dishCounts[name] = (dishCounts[name] || 0) + 1;
+                const qty = Math.max(
+                  1,
+                  Number(item?.quantity ?? item?.qty ?? item?.paxCount ?? 1) || 1,
+                );
+                dishCounts[name] = (dishCounts[name] || 0) + qty;
               }
             }
           }
@@ -10454,12 +10671,16 @@ async function registerRoutesAfterDbInit() {
         const cateringOnlyMetrics = aggregateCateringRows(cateringOrders.rows);
         const cateringEventsMetrics = aggregateCateringRows(eventOrders.rows);
 
+        // Sales metrics should only count completed/delivered restaurant orders.
+        const roCompletedFilter = roStatusCol
+          ? `AND upper(COALESCE(${roStatusCol}::text, '')) IN ('DELIVERED', 'COMPLETED')`
+          : '';
         const restaurantOrders = await pool.query(
           `SELECT ${roItemsSelect}, ${roTotalCol} AS total_amount, created_at
                   ${roStatusCol ? `, ${roStatusCol} AS status` : ''}
            FROM restaurant_orders
            WHERE created_at >= $1 AND created_at < $2
-             ${roStatusFilter}`,
+             ${roCompletedFilter || roStatusFilter}`,
           [rangeStart, rangeEnd],
         );
 
@@ -10532,6 +10753,10 @@ async function registerRoutesAfterDbInit() {
           .sort((a, b) => b[1] - a[1])
           .slice(0, 15)
           .map(([name, count]) => ({ name, count }));
+        const topEventDishes = Object.entries(cateringEventsMetrics.dishCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 15)
+          .map(([name, count]) => ({ name, count }));
         const topEventTypes = Object.entries(cateringEventsMetrics.eventTypeCounts)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 15)
@@ -10554,7 +10779,21 @@ async function registerRoutesAfterDbInit() {
              AND COALESCE(feedback_submitted_at, updated_at, created_at) < $2`,
           [rangeStart, rangeEnd],
         );
-        const cateringFeedback = await pool.query(
+        // Keep catering-only and catering+events feedback separate (do not union).
+        const cateringOnlyFeedback = await pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE complaints > 0)::int AS count,
+             COALESCE(SUM(complaints), 0)::int AS complaint_count
+           FROM (
+             SELECT COALESCE((${cateringPostAnalysisExpr}->>'complaints')::int, 0) AS complaints,
+                    COALESCE(updated_at, created_at) AS feedback_at
+             FROM catering_orders
+             WHERE status = 'completed'
+           ) feedback
+           WHERE feedback_at >= $1 AND feedback_at < $2`,
+          [rangeStart, rangeEnd],
+        );
+        const cateringEventsFeedback = await pool.query(
           `SELECT
              COUNT(*) FILTER (WHERE complaints > 0)::int AS count,
              COALESCE(SUM(complaints), 0)::int AS complaint_count
@@ -10562,16 +10801,14 @@ async function registerRoutesAfterDbInit() {
              SELECT COALESCE((${eventPostAnalysisExpr}->>'complaints')::int, 0) AS complaints,
                     COALESCE(updated_at, created_at) AS feedback_at
              FROM event_orders
-             UNION ALL
-             SELECT COALESCE((${cateringPostAnalysisExpr}->>'complaints')::int, 0) AS complaints,
-                    COALESCE(updated_at, created_at) AS feedback_at
-             FROM catering_orders
+             WHERE status = 'completed'
            ) feedback
            WHERE feedback_at >= $1 AND feedback_at < $2`,
           [rangeStart, rangeEnd],
         );
         const rf = restaurantFeedback.rows[0] || {};
-        const cf = cateringFeedback.rows[0] || {};
+        const cof = cateringOnlyFeedback.rows[0] || {};
+        const cef = cateringEventsFeedback.rows[0] || {};
 
         res.json({
           period: { year, month: annual ? null : month, annual },
@@ -10584,12 +10821,12 @@ async function registerRoutesAfterDbInit() {
             topDishes,
             topEventTypes: [],
             feedback: {
-              count: Number(cf.count) || 0,
+              count: Number(cof.count) || 0,
               averageStars: 0,
               positiveCount: 0,
               neutralCount: 0,
-              negativeCount: Number(cf.count) || 0,
-              complaintCount: Number(cf.complaint_count) || 0,
+              negativeCount: Number(cof.count) || 0,
+              complaintCount: Number(cof.complaint_count) || 0,
             },
           },
           cateringEvents: {
@@ -10598,15 +10835,15 @@ async function registerRoutesAfterDbInit() {
             averageGuestCount: cateringEventsMetrics.guestCountN > 0
               ? cateringEventsMetrics.guestTotal / cateringEventsMetrics.guestCountN
               : 0,
-            topDishes: [],
+            topDishes: topEventDishes,
             topEventTypes,
             feedback: {
-              count: Number(cf.count) || 0,
+              count: Number(cef.count) || 0,
               averageStars: 0,
               positiveCount: 0,
               neutralCount: 0,
-              negativeCount: Number(cf.count) || 0,
-              complaintCount: Number(cf.complaint_count) || 0,
+              negativeCount: Number(cef.count) || 0,
+              complaintCount: Number(cef.complaint_count) || 0,
             },
           },
           restaurant: {

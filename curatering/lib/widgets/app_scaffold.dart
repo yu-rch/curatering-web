@@ -15,7 +15,7 @@ void _staffSignOut(BuildContext context) {
   Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
 }
 
-class AppScaffold extends StatelessWidget {
+class AppScaffold extends StatefulWidget {
   final Widget child;
   final TextEditingController? searchController;
   final bool showSearch;
@@ -117,7 +117,9 @@ class AppScaffold extends StatelessWidget {
     BuildContext context,
     String route, {
     bool newTab = false,
+    VoidCallback? beforeNavigate,
   }) {
+    beforeNavigate?.call();
     if (newTab && kIsWeb) {
       openAppRouteInNewTab(staffSiteOrigin, route);
       return;
@@ -132,26 +134,49 @@ class AppScaffold extends StatelessWidget {
     BuildContext context,
     IconData icon,
     String label,
-    String route,
-  ) {
+    String route, {
+    VoidCallback? beforeNavigate,
+  }) {
     final currentRoute = ModalRoute.of(context)?.settings.name;
     final isActive = currentRoute == route;
 
     return GestureDetector(
       onSecondaryTap:
-          kIsWeb ? () => _openRoute(context, route, newTab: true) : null,
-      onTap: () => _openRoute(context, route),
+          kIsWeb
+              ? () => _openRoute(
+                context,
+                route,
+                newTab: true,
+                beforeNavigate: beforeNavigate,
+              )
+              : null,
+      onTap:
+          () => _openRoute(context, route, beforeNavigate: beforeNavigate),
       child: Listener(
         onPointerDown: (e) {
           if (kIsWeb && e.buttons == 4) {
-            _openRoute(context, route, newTab: true);
+            _openRoute(
+              context,
+              route,
+              newTab: true,
+              beforeNavigate: beforeNavigate,
+            );
           }
         },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
           decoration: BoxDecoration(
-            color: isActive ? const Color(0xFFFFC024) : Colors.transparent,
+            color:
+                isActive
+                    ? const Color(0xFFFFC024).withValues(alpha: 0.28)
+                    : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
+            border:
+                isActive
+                    ? const Border(
+                      left: BorderSide(color: Color(0xFFFFC024), width: 3),
+                    )
+                    : null,
           ),
           child: Row(
             children: [
@@ -160,7 +185,7 @@ class AppScaffold extends StatelessWidget {
                 color:
                     isActive
                         ? const Color(0xFF1E1E1E)
-                        : const Color(0xFFF5F7F9),
+                        : const Color(0xFF1E1E1E).withValues(alpha: 0.72),
                 size: 18,
               ),
               const SizedBox(width: 12),
@@ -171,8 +196,8 @@ class AppScaffold extends StatelessWidget {
                     color:
                         isActive
                             ? const Color(0xFF1E1E1E)
-                            : const Color(0xFFF5F7F9),
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                            : const Color(0xFF1E1E1E).withValues(alpha: 0.78),
+                    fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
                     fontSize: 13,
                   ),
                 ),
@@ -221,296 +246,268 @@ class AppScaffold extends StatelessWidget {
   }
 
   @override
+  State<AppScaffold> createState() => _AppScaffoldState();
+}
+
+class _AppScaffoldState extends State<AppScaffold> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  static const double _mobileBreakpoint = 900;
+
+  void _closeDrawerIfOpen() {
+    final state = _scaffoldKey.currentState;
+    if (state?.isDrawerOpen == true) {
+      state!.closeDrawer();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<UserProfile?>(
       valueListenable: AuthSession.instance.currentUser,
       builder: (context, user, _) {
+        final showSearch = widget.showSearch;
+        final searchController = widget.searchController;
+        final searchHint = widget.searchHint;
+        final onSearchChanged = widget.onSearchChanged;
+        final child = widget.child;
+
+        final role = AuthSession.instance.currentRole;
+        final perms = user?.pagePermissions;
+        final userName = user?.fullName ?? user?.email ?? 'Staff';
+        final sidebarItems = AppScaffold._sidebarItemsForRole(role, perms);
+        final isNarrow =
+            MediaQuery.sizeOf(context).width < _mobileBreakpoint;
+
+        final profileItems = <AntdProfileMenuItem>[
+          AntdProfileMenuItem.header(userName),
+          if (role == Role.superAdmin ||
+              pageRouteAllowed(PagePermissionRoutes.settings, perms))
+            AntdProfileMenuItem.action(
+              id: 'settings',
+              icon: Icons.settings_outlined,
+              label: 'Settings',
+              onSelected: () {
+                Navigator.of(context).pushReplacementNamed('/settings');
+              },
+            ),
+          if (role == Role.superAdmin)
+            AntdProfileMenuItem.action(
+              id: 'help_requests',
+              icon: Icons.help_outline,
+              label: 'Help Requests Management',
+              onSelected: () {
+                Navigator.of(context).pushReplacementNamed('/help-requests');
+              },
+            ),
+          AntdProfileMenuItem.action(
+            id: 'logout',
+            icon: Icons.logout,
+            label: 'Logout',
+            destructive: true,
+            dividerBefore: true,
+            onSelected: () => _staffSignOut(context),
+          ),
+        ];
+
+        Widget buildSidebarList({required bool inDrawer}) {
+          void closeDrawer() {
+            if (inDrawer) _closeDrawerIfOpen();
+          }
+
+          final items = [
+            const SizedBox(height: 8),
+            ...sidebarItems.map(
+              (item) => AppScaffold._buildSidebarItem(
+                context,
+                item.icon,
+                item.label,
+                item.route,
+                beforeNavigate: closeDrawer,
+              ),
+            ),
+            const SizedBox(height: 20),
+          ];
+
+          if (inDrawer) {
+            return ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              children: [
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+                  child: Row(
+                    children: [
+                      Image.asset(
+                        'lib/assets/main.png',
+                        height: 28,
+                        fit: BoxFit.contain,
+                      ),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Menu',
+                          style: TextStyle(
+                            color: Color(0xFF1E1E1E),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        onPressed: _closeDrawerIfOpen,
+                        icon: const Icon(
+                          Icons.close,
+                          color: Color(0xFF1E1E1E),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ...items,
+              ],
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 16),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Column(children: items),
+                ),
+              ),
+            ],
+          );
+        }
+
+        Widget buildSidebarPanel({bool inDrawer = false}) {
+          return Container(
+            width: inDrawer ? null : 240,
+            color: const Color(0xFFCDEDEC),
+            child: buildSidebarList(inDrawer: inDrawer),
+          );
+        }
+
         return Theme(
           data: Theme.of(context).copyWith(
             scaffoldBackgroundColor: AntdTokens.staffBg,
-            cardTheme: CardThemeData(
-              color: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AntdTokens.radiusLg),
-                side: const BorderSide(color: AntdTokens.borderSubtle),
-              ),
-            ),
-            dialogTheme: DialogThemeData(
-              backgroundColor: Colors.white,
-              surfaceTintColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AntdTokens.radiusLg),
-              ),
-            ),
-            elevatedButtonTheme: ElevatedButtonThemeData(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AntdTokens.brandPrimary,
-                foregroundColor: AntdTokens.brandOnPrimary,
-                disabledBackgroundColor: AntdTokens.brandPrimary.withValues(
-                  alpha: 0.45,
-                ),
-                disabledForegroundColor: AntdTokens.brandOnPrimary.withValues(
-                  alpha: 0.55,
-                ),
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-                ),
-              ),
-            ),
-            filledButtonTheme: FilledButtonThemeData(
-              style: FilledButton.styleFrom(
-                backgroundColor: AntdTokens.brandPrimary,
-                foregroundColor: AntdTokens.brandOnPrimary,
-                disabledBackgroundColor: AntdTokens.brandPrimary.withValues(
-                  alpha: 0.45,
-                ),
-                disabledForegroundColor: AntdTokens.brandOnPrimary.withValues(
-                  alpha: 0.55,
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-                ),
-              ),
-            ),
-            outlinedButtonTheme: OutlinedButtonThemeData(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AntdTokens.valueDark,
-                side: const BorderSide(color: AntdTokens.border),
-                backgroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-                ),
-              ),
-            ),
-            textButtonTheme: TextButtonThemeData(
-              style: TextButton.styleFrom(
-                foregroundColor: AntdTokens.blue,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-                ),
-              ),
-            ),
-            iconButtonTheme: IconButtonThemeData(
-              style: IconButton.styleFrom(
-                foregroundColor: AntdTokens.valueDark,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-                ),
-              ),
-            ),
-            chipTheme: ChipThemeData(
-              backgroundColor: Colors.white,
-              selectedColor: AntdTokens.brandPrimary,
-              disabledColor: AntdTokens.fillTertiary,
-              side: const BorderSide(color: AntdTokens.border),
-              labelStyle: const TextStyle(color: AntdTokens.valueDark),
-              secondaryLabelStyle: const TextStyle(
-                color: AntdTokens.brandOnPrimary,
-                fontWeight: FontWeight.w600,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            tabBarTheme: const TabBarThemeData(
-              labelColor: AntdTokens.brandOnPrimary,
-              unselectedLabelColor: AntdTokens.textSecondary,
-              indicatorColor: AntdTokens.brandPrimary,
-              dividerColor: AntdTokens.borderSubtle,
-            ),
-            inputDecorationTheme: InputDecorationTheme(
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-                borderSide: const BorderSide(color: AntdTokens.border),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-                borderSide: const BorderSide(color: AntdTokens.border),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-                borderSide: const BorderSide(color: AntdTokens.blue),
-              ),
-            ),
           ),
-          child: _buildScaffold(context, user),
-        );
-      },
-    );
-  }
-
-  Widget _buildScaffold(BuildContext context, UserProfile? user) {
-    final userName = user?.fullName ?? 'Guest';
-    final role = user?.role;
-
-    final perms = user?.pagePermissions;
-    final sidebarItems = _sidebarItemsForRole(role, perms);
-
-    final profileItems = <AntdProfileMenuItem>[
-      AntdProfileMenuItem.header(userName),
-      if (role == Role.superAdmin ||
-          pageRouteAllowed(PagePermissionRoutes.settings, perms))
-        AntdProfileMenuItem.action(
-          id: 'settings',
-          icon: Icons.settings_outlined,
-          label: 'Settings',
-          onSelected: () {
-            Navigator.of(context).pushReplacementNamed('/settings');
-          },
-        ),
-      if (role == Role.superAdmin)
-        AntdProfileMenuItem.action(
-          id: 'help_requests',
-          icon: Icons.help_outline,
-          label: 'Help Requests Management',
-          onSelected: () {
-            Navigator.of(context).pushReplacementNamed('/help-requests');
-          },
-        ),
-      AntdProfileMenuItem.action(
-        id: 'logout',
-        icon: Icons.logout,
-        label: 'Logout',
-        destructive: true,
-        dividerBefore: true,
-        onSelected: () => _staffSignOut(context),
-      ),
-    ];
-
-    return Scaffold(
-      backgroundColor: AntdTokens.staffBg,
-      body: Column(
-        children: [
-          // top bar
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF111111),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
+          child: Scaffold(
+            key: _scaffoldKey,
+            backgroundColor: AntdTokens.staffBg,
+            drawer:
+                isNarrow
+                    ? Drawer(
+                      backgroundColor: const Color(0xFFCDEDEC),
+                      width: 280,
+                      child: SafeArea(
+                        child: buildSidebarPanel(inDrawer: true),
+                      ),
+                    )
+                    : null,
+            body: Column(
               children: [
-                // Left logo
-                Image.asset(
-                  'lib/assets/main.png',
-                  height: 32,
-                  fit: BoxFit.contain,
-                ),
-                const Spacer(),
-                if (showSearch && searchController != null) ...[
-                  AntdSearchInput(
-                    controller: searchController!,
-                    hintText: searchHint,
-                    width: 320,
-                    onChanged: onSearchChanged,
-                    onClear: () {
-                      searchController!.clear();
-                      onSearchChanged?.call('');
-                    },
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
                   ),
-                  const SizedBox(width: 12),
-                ],
-                AntdProfileMenu(
-                  triggerLabel: userName,
-                  leading: Image.asset(
-                    'lib/assets/main-2.png',
-                    height: 22,
-                    fit: BoxFit.contain,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCDEDEC),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  items: profileItems,
-                ),
-              ],
-            ),
-          ),
-          // content area
-          Expanded(
-            child: SafeArea(
-              top: false,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final isNarrow = constraints.maxWidth < 960;
-
-                  Widget sidebar = Container(
-                    width: 240,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0F0F0F),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.1),
-                          blurRadius: 12,
-                          offset: const Offset(2, 0),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const SizedBox(height: 16),
-                        // Menu items
-                        Expanded(
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Column(
-                              children: [
-                                const SizedBox(height: 8),
-                                ...sidebarItems.map(
-                                  (item) => _buildSidebarItem(
-                                    context,
-                                    item.icon,
-                                    item.label,
-                                    item.route,
-                                  ),
-                                ),
-                                const SizedBox(height: 20),
-                              ],
-                            ),
+                  child: Row(
+                    children: [
+                      if (isNarrow)
+                        IconButton(
+                          tooltip: 'Open menu',
+                          onPressed:
+                              () => _scaffoldKey.currentState?.openDrawer(),
+                          icon: const Icon(
+                            Icons.menu,
+                            color: Color(0xFF1E1E1E),
                           ),
                         ),
+                      Image.asset(
+                        'lib/assets/main.png',
+                        height: 32,
+                        fit: BoxFit.contain,
+                      ),
+                      const Spacer(),
+                      if (showSearch && searchController != null) ...[
+                        Flexible(
+                          child: AntdSearchInput(
+                            controller: searchController,
+                            hintText: searchHint,
+                            width: isNarrow ? 180 : 320,
+                            onChanged: onSearchChanged,
+                            onClear: () {
+                              searchController.clear();
+                              onSearchChanged?.call('');
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
                       ],
-                    ),
-                  );
-
-                  Widget mainContent = child;
-
-                  if (isNarrow) {
-                    return Column(
-                      children: [sidebar, Expanded(child: mainContent)],
-                    );
-                  }
-
-                  return Row(children: [sidebar, Expanded(child: mainContent)]);
-                },
-              ),
+                      AntdProfileMenu(
+                        triggerLabel: userName,
+                        triggerForegroundColor: const Color(0xFF1E1E1E),
+                        leading: Image.asset(
+                          'lib/assets/main-2.png',
+                          height: 22,
+                          fit: BoxFit.contain,
+                        ),
+                        items: profileItems,
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: SafeArea(
+                    top: false,
+                    child:
+                        isNarrow
+                            ? child
+                            : Row(
+                              children: [
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFCDEDEC),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.08,
+                                        ),
+                                        blurRadius: 12,
+                                        offset: const Offset(2, 0),
+                                      ),
+                                    ],
+                                  ),
+                                  child: SizedBox(
+                                    width: 240,
+                                    child: buildSidebarPanel(),
+                                  ),
+                                ),
+                                Expanded(child: child),
+                              ],
+                            ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

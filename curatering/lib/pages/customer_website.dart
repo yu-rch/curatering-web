@@ -34,6 +34,7 @@ import '../widgets/antd_profile_menu.dart';
 import '../widgets/pexels_attribution_badge.dart';
 import '../widgets/catering_dish_info_dialog.dart';
 import '../widgets/website_rich_text.dart';
+import '../widgets/image_focus_dialog.dart';
 import '../widgets/customer_footer_feedback.dart';
 import '../theme/website_header_font.dart';
 import '../constants/catering_meal_types.dart';
@@ -309,6 +310,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   String _selectedCateringMealType = ''; // Empty = all catering dishes
   List<Map<String, dynamic>> _reorderDishes = [];
   bool _loadingReorder = false;
+  List<Map<String, dynamic>> _salesPopularDishes = [];
+  List<Map<String, dynamic>> _salesEventDesigns = [];
 
   @override
   void initState() {
@@ -355,10 +358,58 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       }
       await CartStore.instance.init();
       await _checkCustomerAuth();
+      unawaited(_loadHomepageHighlights());
     } catch (e) {
       debugPrint('Deferred bootstrap error: $e');
     }
     if (mounted) setState(() {});
+  }
+
+  Future<void> _loadHomepageHighlights() async {
+    try {
+      final res = await http
+          .get(Uri.parse('$apiBaseUrl/api/public/homepage-highlights'))
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode != 200) return;
+      final decoded = jsonDecode(res.body);
+      if (decoded is! Map) return;
+      final popular = <Map<String, dynamic>>[];
+      final designs = <Map<String, dynamic>>[];
+      final rawPopular = decoded['popularDishes'];
+      if (rawPopular is List) {
+        for (final row in rawPopular) {
+          if (row is! Map) continue;
+          final name = (row['name'] ?? '').toString().trim();
+          if (name.isEmpty) continue;
+          popular.add({
+            'name': name,
+            'count': row['count'],
+            'imageBase64': (row['imageBase64'] ?? '').toString(),
+            'description': (row['description'] ?? '').toString(),
+          });
+        }
+      }
+      final rawDesigns = decoded['eventDesigns'];
+      if (rawDesigns is List) {
+        for (final row in rawDesigns) {
+          if (row is! Map) continue;
+          final image = (row['imageBase64'] ?? '').toString().trim();
+          if (image.isEmpty) continue;
+          designs.add({
+            'imageBase64': image,
+            'label': (row['label'] ?? 'Event design').toString(),
+            'description': (row['description'] ?? '').toString(),
+          });
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _salesPopularDishes = popular;
+        _salesEventDesigns = designs;
+      });
+    } catch (e) {
+      debugPrint('Homepage highlights error: $e');
+    }
   }
 
   void _selectNavIndex(int index) {
@@ -1585,161 +1636,183 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Widget _publicHeader() {
     final mobile = isMobileWidth(context);
 
+    final logo = InkWell(
+      onTap: () => _selectNavIndex(0),
+      child: Image.asset(
+        'lib/assets/main-2.png',
+        height: 34,
+        fit: BoxFit.contain,
+      ),
+    );
+
+    final navLinks = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _navLink('Home', 0),
+        _navLink('Gallery', 1),
+        _navLink('Catering Menu', 2),
+        _navLink('Restaurant', 3),
+        _navLink('Inquire Now', 4),
+        _navLink('Contact Us', 5),
+      ],
+    );
+
+    final trailingActions = !widget.contentEditable
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListenableBuilder(
+                listenable: CartStore.instance,
+                builder: (context, _) {
+                  final count = CartStore.instance.itemCount;
+                  return Stack(
+                    children: [
+                      IconButton(
+                        icon: const Icon(
+                          Icons.shopping_bag_outlined,
+                          color: Colors.white,
+                        ),
+                        onPressed: _openCartSidebar,
+                      ),
+                      if (count > 0)
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            constraints: const BoxConstraints(
+                              minWidth: 18,
+                              minHeight: 18,
+                            ),
+                            child: Text(
+                              '$count',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+              if (!mobile) ...[
+                const SizedBox(width: 8),
+                if (_isCustomerLoggedIn)
+                  AntdProfileMenu(
+                    triggerLabel: _customerData?['fullName'] ?? 'Customer',
+                    leading: const Icon(
+                      Icons.person_outline,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                    items: [
+                      AntdProfileMenuItem.header(
+                        _customerData?['fullName'] ?? 'Customer',
+                      ),
+                      AntdProfileMenuItem.action(
+                        id: 'my_profile',
+                        icon: Icons.person_outline,
+                        label: 'My Profile',
+                        onSelected: () {
+                          _navigateToMyProfile();
+                        },
+                      ),
+                      AntdProfileMenuItem.action(
+                        id: 'my_orders',
+                        icon: Icons.receipt_long,
+                        label: 'My Orders',
+                        onSelected: () {
+                          _navigateToMyOrders();
+                        },
+                      ),
+                      AntdProfileMenuItem.action(
+                        id: 'my_caterings',
+                        icon: Icons.event,
+                        label: 'My Caterings',
+                        onSelected: () {
+                          _navigateToMyCaterings();
+                        },
+                      ),
+                      AntdProfileMenuItem.action(
+                        id: 'order_tracking',
+                        icon: Icons.local_shipping_outlined,
+                        label: 'Order Tracking',
+                        onSelected: () {
+                          _navigateToOrderTracking();
+                        },
+                      ),
+                      AntdProfileMenuItem.action(
+                        id: 'logout',
+                        icon: Icons.logout,
+                        label: 'Logout',
+                        destructive: true,
+                        dividerBefore: true,
+                        onSelected: () {
+                          _handleLogout();
+                        },
+                      ),
+                    ],
+                  )
+                else
+                  TextButton.icon(
+                    onPressed: _handleLogin,
+                    icon: const Icon(Icons.login, color: Colors.white, size: 18),
+                    label: const Text(
+                      'Login',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+              ],
+            ],
+          )
+        : const SizedBox.shrink();
+
     return Container(
       color: const Color(0xFF1E1E1E),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          InkWell(
-            onTap: () => _selectNavIndex(0),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+      child: mobile
+          ? Row(
               children: [
-                Image.asset('lib/assets/main-2.png', height: 34, fit: BoxFit.contain),
-                if (!mobile) const SizedBox(width: 16),
+                logo,
+                IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white),
+                  tooltip: 'Menu',
+                  onPressed: _openHomeMobileNavMenu,
+                ),
+                const Spacer(),
+                trailingActions,
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: logo,
+                  ),
+                ),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: navLinks,
+                  ),
+                ),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: trailingActions,
+                  ),
+                ),
               ],
             ),
-          ),
-          if (mobile)
-            IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              tooltip: 'Menu',
-              onPressed: _openHomeMobileNavMenu,
-            )
-          else
-            Expanded(
-              child: Wrap(
-                spacing: 2,
-                runSpacing: 4,
-                alignment: WrapAlignment.center,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  _navLink('Home', 0),
-                  _navLink('Gallery', 1),
-                  _navLink('Catering Menu', 2),
-                  _navLink('Restaurant', 3),
-                  _navLink('Inquire Now', 4),
-                  _navLink('Contact Us', 5),
-                ],
-              ),
-            ),
-          const Spacer(),
-          if (!widget.contentEditable) ...[
-            // Tray icon
-            ListenableBuilder(
-              listenable: CartStore.instance,
-              builder: (context, _) {
-                final count = CartStore.instance.itemCount;
-                return Stack(
-                  children: [
-                    IconButton(
-                      icon: const Icon(
-                        Icons.shopping_bag_outlined,
-                        color: Colors.white,
-                      ),
-                      onPressed: _openCartSidebar,
-                    ),
-                    if (count > 0)
-                      Positioned(
-                        right: 8,
-                        top: 8,
-                        child: Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          constraints: const BoxConstraints(
-                            minWidth: 18,
-                            minHeight: 18,
-                          ),
-                          child: Text(
-                            '$count',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-            if (!mobile) ...[
-              const SizedBox(width: 8),
-              // Login/Logout Button
-              if (_isCustomerLoggedIn)
-                AntdProfileMenu(
-                triggerLabel: _customerData?['fullName'] ?? 'Customer',
-                leading: const Icon(
-                  Icons.person_outline,
-                  color: Colors.white,
-                  size: 20,
-                ),
-                items: [
-                  AntdProfileMenuItem.header(
-                    _customerData?['fullName'] ?? 'Customer',
-                  ),
-                  AntdProfileMenuItem.action(
-                    id: 'my_profile',
-                    icon: Icons.person_outline,
-                    label: 'My Profile',
-                    onSelected: () {
-                      _navigateToMyProfile();
-                    },
-                  ),
-                  AntdProfileMenuItem.action(
-                    id: 'my_orders',
-                    icon: Icons.receipt_long,
-                    label: 'My Orders',
-                    onSelected: () {
-                      _navigateToMyOrders();
-                    },
-                  ),
-                  AntdProfileMenuItem.action(
-                    id: 'my_caterings',
-                    icon: Icons.event,
-                    label: 'My Caterings',
-                    onSelected: () {
-                      _navigateToMyCaterings();
-                    },
-                  ),
-                  AntdProfileMenuItem.action(
-                    id: 'order_tracking',
-                    icon: Icons.local_shipping_outlined,
-                    label: 'Order Tracking',
-                    onSelected: () {
-                      _navigateToOrderTracking();
-                    },
-                  ),
-                  AntdProfileMenuItem.action(
-                    id: 'logout',
-                    icon: Icons.logout,
-                    label: 'Logout',
-                    destructive: true,
-                    dividerBefore: true,
-                    onSelected: () {
-                      _handleLogout();
-                    },
-                  ),
-                ],
-              )
-            else
-              TextButton.icon(
-                onPressed: _handleLogin,
-                icon: const Icon(Icons.login, color: Colors.white, size: 18),
-                label: const Text(
-                  'Login',
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-            ],
-          ],
-        ],
-      ),
     );
   }
 
@@ -1969,7 +2042,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     },
                     child: Text(
                       w.footerPrivacyLabel,
-                      style: const TextStyle(color: Colors.black),
+                      style: const TextStyle(
+                        color: Color(0xFFF5F7F9),
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.underline,
+                        decorationColor: Color(0xFFF5F7F9),
+                      ),
                     ),
                   ),
                   WebsiteRichText(
@@ -2340,19 +2418,20 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           child: Row(
             children: [
               Expanded(
-                child: Wrap(
-                  alignment: WrapAlignment.center,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 2,
-                  runSpacing: 4,
-                  children: [
-                    _navLink('Home', 0),
-                    _navLink('Gallery', 1),
-                    _navLink('Catering Menu', 2),
-                    _navLink('Restaurant', 3),
-                    _navLink('Inquire Now', 4),
-                    _navLink('Contact Us', 5),
-                  ],
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _navLink('Home', 0),
+                      _navLink('Gallery', 1),
+                      _navLink('Catering Menu', 2),
+                      _navLink('Restaurant', 3),
+                      _navLink('Inquire Now', 4),
+                      _navLink('Contact Us', 5),
+                    ],
+                  ),
                 ),
               ),
               if (!widget.contentEditable) ...[
@@ -2678,10 +2757,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Widget _popularDishCarouselTile({
     required String? imageB64,
     required String label,
+    String? description,
   }) {
     return _HoverZoomPhotoTile(
       imageB64: imageB64,
       label: label,
+      description: description,
       width: 200,
       height: 200,
       margin: const EdgeInsets.only(right: 10),
@@ -2689,90 +2770,209 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
+  String _popularDishLabel(WebsiteContentStore w, int index) {
+    if (index < w.popularDishLabels.length &&
+        w.popularDishLabels[index].trim().isNotEmpty) {
+      return w.popularDishLabels[index].trim();
+    }
+    final dishes = MenuStore.instance.activeDishes;
+    if (index < dishes.length && dishes[index].name.trim().isNotEmpty) {
+      return dishes[index].name.trim();
+    }
+    return 'Popular dish ${index + 1}';
+  }
+
+  List<MenuDish> _fallbackPopularDishes() {
+    if (_reorderDishes.isNotEmpty) {
+      return _reorderDishes
+          .map((row) => row['dish'] as MenuDish)
+          .take(5)
+          .toList();
+    }
+    return MenuStore.instance.activeDishes.take(5).toList();
+  }
+
   Widget _popularAndDesigns(WebsiteContentStore w) {
-    final cmsCount = w.popularDishImageBase64.length;
-    final dishes = MenuStore.instance.activeDishes.take(5).toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _homeSectionTag(w.popularDishesSectionLabel),
-        const SizedBox(height: 8),
-        WebsiteRichText(
-          value: w.popularDishesSubtitle,
-          style: websiteHeaderStyle(fontSize: 18),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 200,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children:
-                cmsCount > 0
-                    ? List.generate(cmsCount, (i) {
-                      final label =
-                          i < w.popularDishLabels.length &&
-                                  w.popularDishLabels[i].trim().isNotEmpty
-                              ? w.popularDishLabels[i]
-                              : 'Dish ${i + 1}';
-                      return _popularDishCarouselTile(
-                        imageB64: w.popularDishImageBase64[i],
-                        label: label,
-                      );
-                    })
-                    : dishes
-                        .map(
-                          (d) => _popularDishCarouselTile(
-                            imageB64: d.imageBase64,
-                            label: d.name,
-                          ),
-                        )
-                        .toList(),
-          ),
-        ),
-        const SizedBox(height: 28),
-        _homeSectionTag(w.eventDesignsSectionLabel),
-        const SizedBox(height: 8),
-        WebsiteRichText(
-          value: w.eventDesignsSubtitle,
-          style: websiteHeaderStyle(fontSize: 18),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 160,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: List.generate(
-              5,
-              (i) => _HoverZoomPhotoTile(
-                imageB64:
-                    i < w.eventDesignImageBase64.length
-                        ? w.eventDesignImageBase64[i]
-                        : null,
-                label: 'Event Design ${i + 1}',
-                width: 200,
-                height: 160,
-                margin: const EdgeInsets.only(right: 8),
-                placeholderIcon: Icons.celebration_outlined,
+    return ListenableBuilder(
+      listenable: MenuStore.instance,
+      builder: (context, _) {
+        final cmsCount = w.popularDishImageBase64.length;
+        final fallbackDishes = _fallbackPopularDishes();
+        final salesPopular =
+            _salesPopularDishes
+                .where(
+                  (row) =>
+                      (row['imageBase64'] ?? '').toString().trim().isNotEmpty ||
+                      (row['name'] ?? '').toString().trim().isNotEmpty,
+                )
+                .toList();
+        final cmsEventImages =
+            w.eventDesignImageBase64
+                .asMap()
+                .entries
+                .where((e) => e.value.trim().isNotEmpty)
+                .toList();
+        final salesEventDesigns = _salesEventDesigns;
+        final useSalesPopular = !widget.contentEditable && salesPopular.isNotEmpty;
+        final useSalesDesigns =
+            !widget.contentEditable && salesEventDesigns.isNotEmpty;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _homeSectionTag(w.popularDishesSectionLabel),
+            const SizedBox(height: 8),
+            WebsiteRichText(
+              value: w.popularDishesSubtitle,
+              style: websiteHeaderStyle(fontSize: 18),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 200,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children:
+                    useSalesPopular
+                        ? salesPopular.map((row) {
+                          final name = (row['name'] ?? 'Popular dish')
+                              .toString()
+                              .trim();
+                          final image = (row['imageBase64'] ?? '')
+                              .toString()
+                              .trim();
+                          final description = (row['description'] ?? '')
+                              .toString()
+                              .trim();
+                          MenuDish? menuMatch;
+                          for (final d in MenuStore.instance.activeDishes) {
+                            if (d.name.trim().toLowerCase() ==
+                                name.toLowerCase()) {
+                              menuMatch = d;
+                              break;
+                            }
+                          }
+                          return _popularDishCarouselTile(
+                            imageB64:
+                                image.isNotEmpty
+                                    ? image
+                                    : menuMatch?.imageBase64,
+                            label: name.isNotEmpty ? name : 'Popular dish',
+                            description:
+                                description.isNotEmpty
+                                    ? description
+                                    : (menuMatch?.publicDescription
+                                            .trim()
+                                            .isNotEmpty ==
+                                        true
+                                    ? menuMatch!.publicDescription.trim()
+                                    : null),
+                          );
+                        }).toList()
+                        : cmsCount > 0
+                        ? List.generate(cmsCount, (i) {
+                          final label = _popularDishLabel(w, i);
+                          final description =
+                              i < MenuStore.instance.activeDishes.length
+                                  ? MenuStore.instance
+                                      .activeDishes[i]
+                                      .publicDescription
+                                      .trim()
+                                  : null;
+                          return _popularDishCarouselTile(
+                            imageB64: w.popularDishImageBase64[i],
+                            label: label,
+                            description:
+                                description != null && description.isNotEmpty
+                                    ? description
+                                    : null,
+                          );
+                        })
+                        : fallbackDishes
+                            .map(
+                              (d) => _popularDishCarouselTile(
+                                imageB64: d.imageBase64,
+                                label:
+                                    d.name.trim().isNotEmpty
+                                        ? d.name.trim()
+                                        : 'Featured dish',
+                                description:
+                                    d.publicDescription.trim().isNotEmpty
+                                        ? d.publicDescription.trim()
+                                        : null,
+                              ),
+                            )
+                            .toList(),
               ),
             ),
-          ),
-        ),
-        if (widget.contentEditable)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () async {
-                final b64 = await _pickImageB64();
-                if (b64 == null) return;
-                w.eventDesignImageBase64.add(b64);
-                await w.saveDraft();
-                setState(() {});
-              },
-              icon: const Icon(Icons.add_photo_alternate),
-              label: const Text('Add event design photo'),
+            const SizedBox(height: 28),
+            _homeSectionTag(w.eventDesignsSectionLabel),
+            const SizedBox(height: 8),
+            WebsiteRichText(
+              value: w.eventDesignsSubtitle,
+              style: websiteHeaderStyle(fontSize: 18),
             ),
-          ),
-      ],
+            const SizedBox(height: 12),
+            if (useSalesDesigns)
+              SizedBox(
+                height: 160,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children:
+                      salesEventDesigns.map((row) {
+                        final label =
+                            (row['label'] ?? 'Event design').toString().trim();
+                        final description =
+                            (row['description'] ?? '').toString().trim();
+                        return _HoverZoomPhotoTile(
+                          imageB64: (row['imageBase64'] ?? '').toString(),
+                          label:
+                              label.isNotEmpty ? label : 'Successful catering',
+                          description:
+                              description.isNotEmpty ? description : null,
+                          width: 200,
+                          height: 160,
+                          margin: const EdgeInsets.only(right: 8),
+                          placeholderIcon: Icons.celebration_outlined,
+                        );
+                      }).toList(),
+                ),
+              )
+            else if (cmsEventImages.isNotEmpty)
+              SizedBox(
+                height: 160,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children:
+                      cmsEventImages.map((entry) {
+                        return _HoverZoomPhotoTile(
+                          imageB64: entry.value,
+                          label: 'Event design ${entry.key + 1}',
+                          width: 200,
+                          height: 160,
+                          margin: const EdgeInsets.only(right: 8),
+                          placeholderIcon: Icons.celebration_outlined,
+                        );
+                      }).toList(),
+                ),
+              ),
+            if (widget.contentEditable)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () async {
+                    final b64 = await _pickImageB64();
+                    if (b64 == null) return;
+                    w.eventDesignImageBase64.add(b64);
+                    await w.saveDraft();
+                    setState(() {});
+                  },
+                  icon: const Icon(Icons.add_photo_alternate),
+                  label: const Text('Add event design photo'),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -4834,6 +5034,7 @@ class _HoverZoomPhotoTile extends StatefulWidget {
   const _HoverZoomPhotoTile({
     required this.imageB64,
     required this.label,
+    this.description,
     required this.width,
     required this.height,
     required this.margin,
@@ -4842,6 +5043,7 @@ class _HoverZoomPhotoTile extends StatefulWidget {
 
   final String? imageB64;
   final String label;
+  final String? description;
   final double width;
   final double height;
   final EdgeInsets margin;
@@ -4883,35 +5085,11 @@ class _HoverZoomPhotoTileState extends State<_HoverZoomPhotoTile> {
 
   void _openZoom() {
     if (widget.imageB64 == null || widget.imageB64!.isEmpty) return;
-    showDialog<void>(
-      context: context,
-      builder:
-          (ctx) => Dialog(
-            insetPadding: const EdgeInsets.symmetric(
-              horizontal: 80,
-              vertical: 48,
-            ),
-            child: Stack(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: InteractiveViewer(
-                    minScale: 1,
-                    maxScale: 5,
-                    child: Center(child: _image(fit: BoxFit.contain)),
-                  ),
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: IconButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    icon: const Icon(Icons.close),
-                  ),
-                ),
-              ],
-            ),
-          ),
+    showImageFocusDialog(
+      context,
+      imageBase64: widget.imageB64,
+      title: widget.label.trim().isNotEmpty ? widget.label : 'Photo',
+      description: widget.description,
     );
   }
 
@@ -4954,7 +5132,9 @@ class _HoverZoomPhotoTileState extends State<_HoverZoomPhotoTile> {
                         ),
                         color: Colors.black.withValues(alpha: 0.45),
                         child: Text(
-                          widget.label,
+                          widget.label.trim().isNotEmpty
+                              ? widget.label
+                              : 'Photo',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             color: Colors.white,

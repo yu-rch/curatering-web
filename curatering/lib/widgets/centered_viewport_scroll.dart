@@ -8,11 +8,13 @@ class CenteredViewportScroll extends StatelessWidget {
     required this.child,
     this.padding,
     this.crossAxisAlignment = CrossAxisAlignment.stretch,
+    this.mainAxisAlignment = MainAxisAlignment.center,
   });
 
   final Widget child;
   final EdgeInsetsGeometry? padding;
   final CrossAxisAlignment crossAxisAlignment;
+  final MainAxisAlignment mainAxisAlignment;
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +25,7 @@ class CenteredViewportScroll extends StatelessWidget {
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: constraints.maxHeight),
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisAlignment: mainAxisAlignment,
               crossAxisAlignment: crossAxisAlignment,
               children: [child],
             ),

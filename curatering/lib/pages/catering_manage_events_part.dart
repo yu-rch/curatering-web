@@ -544,8 +544,16 @@ extension _ManageEventsTableExt on _ManageEventsState {
     }
   }
 
-  double _dishCostForFinalize(EventOrderDto order) {
-    final guests = order.guestCount > 0 ? order.guestCount : 0;
+  double _dishCostForFinalize(
+    int guests, {
+    List<Map<String, dynamic>>? menuOverride,
+  }) {
+    if (menuOverride != null && menuOverride.isNotEmpty) {
+      return menuOverride.fold<double>(
+        0.0,
+        (sum, row) => sum + (double.tryParse('${row['price']}') ?? 0.0),
+      );
+    }
     return estimateInquiryCateringTotal(guests);
   }
 
@@ -690,10 +698,11 @@ extension _ManageEventsTableExt on _ManageEventsState {
     String? endTime,
     String? note,
   }) async {
+    if (!_isManager) return;
     final laborCost = double.tryParse(laborController.text.trim()) ?? 0.0;
     final travelCost = double.tryParse(travelController.text.trim()) ?? 0.0;
     final guests = guestCount ?? order.guestCount;
-    final dishCost = estimateInquiryCateringTotal(guests);
+    final dishCost = _dishCostForFinalize(guests, menuOverride: menuOverride);
     final additionalCostsTotal = additionalCosts.fold<double>(
       0,
       (sum, e) => sum + (double.tryParse('${e['amount'] ?? e['cost'] ?? 0}') ?? 0),
@@ -859,7 +868,11 @@ extension _ManageEventsTableExt on _ManageEventsState {
                         final guests =
                             int.tryParse(guestCountController.text.trim()) ??
                             order.guestCount;
-                        final dishCost = estimateInquiryCateringTotal(guests);
+                        final menuOverride = inquiryMenuPayloadForSave();
+                        final dishCost = _dishCostForFinalize(
+                          guests,
+                          menuOverride: menuOverride,
+                        );
                         final laborCost =
                             double.tryParse(laborCostController.text.trim()) ??
                             0.0;
@@ -900,60 +913,62 @@ extension _ManageEventsTableExt on _ManageEventsState {
                           label: 'Close',
                           onPressed: () => Navigator.of(footerContext).pop(),
                         ),
-                        ElevatedButton(
-                          onPressed: () => runFinalizeAction(
-                            action: 'post_changes',
-                            successMessage:
-                                'Changes saved. Customer can review updates in My Caterings.',
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFF4511E),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
+                        if (_isManager) ...[
+                          ElevatedButton(
+                            onPressed: () => runFinalizeAction(
+                              action: 'post_changes',
+                              successMessage:
+                                  'Changes saved. Customer can review updates in My Caterings.',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFF4511E),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                            child: const Text(
+                              'Post changes',
+                              style: TextStyle(fontWeight: FontWeight.w700),
                             ),
                           ),
-                          child: const Text(
-                            'Save',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        ElevatedButton(
-                          onPressed: () => runFinalizeAction(
-                            action: 'confirm_inquiry',
-                            successMessage:
-                                'Order accepted and moved to For down payment.',
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1DB954),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
+                          ElevatedButton(
+                            onPressed: () => runFinalizeAction(
+                              action: 'confirm_inquiry',
+                              successMessage:
+                                  'Order accepted and moved to For down payment.',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1DB954),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                            child: const Text(
+                              'Accept order',
+                              style: TextStyle(fontWeight: FontWeight.w700),
                             ),
                           ),
-                          child: const Text(
-                            'Accept order',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        OutlinedButton(
-                          onPressed: () => runFinalizeAction(
-                            action: 'cancel_event',
-                            successMessage: 'Inquiry cancelled.',
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.black87,
-                            side: const BorderSide(color: Color(0xFFFFC107)),
-                            backgroundColor: const Color(0xFFFFC107),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
+                          OutlinedButton(
+                            onPressed: () => runFinalizeAction(
+                              action: 'cancel_event',
+                              successMessage: 'Inquiry cancelled.',
                             ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.black87,
+                              side: const BorderSide(color: Color(0xFFFFC107)),
+                              backgroundColor: const Color(0xFFFFC107),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                            child: const Text('Cancel order'),
                           ),
-                          child: const Text('Cancel order'),
-                        ),
+                        ],
                       ],
                     ),
                   ],
@@ -1591,7 +1606,30 @@ extension _ManageEventsTableExt on _ManageEventsState {
     }
   }
 
+  Widget _eventInquiryColumnCell(EventOrderDto dto) {
+    final eventType =
+        dto.eventType.trim().isEmpty ? '—' : dto.eventType.trim();
+    final title = dto.eventTitle.trim().isEmpty
+        ? dto.customerName
+        : dto.eventTitle.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+        ),
+        const SizedBox(height: 2),
+        Text('Type: $eventType', style: const TextStyle(fontSize: 11)),
+      ],
+    );
+  }
+
   Widget _mergedInquiryColumnCell(EventOrderDto dto) {
+    if (_isCateringPlusEventOrder(dto)) {
+      return _eventInquiryColumnCell(dto);
+    }
     final eventType =
         dto.eventType.trim().isEmpty ? '—' : dto.eventType.trim();
     final menuLine =
@@ -1625,25 +1663,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
     );
   }
 
-  Widget _basicInquiryColumnCell(EventOrderDto dto) {
-    final eventType =
-        dto.eventType.trim().isEmpty ? '—' : dto.eventType.trim();
-    final title = dto.eventTitle.trim().isEmpty
-        ? dto.customerName
-        : dto.eventTitle.trim();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-        ),
-        const SizedBox(height: 2),
-        Text('Type: $eventType', style: const TextStyle(fontSize: 11)),
-      ],
-    );
-  }
+  Widget _basicInquiryColumnCell(EventOrderDto dto) => _eventInquiryColumnCell(dto);
 
   Widget _buildOrdersTablePanel({
     required String title,
@@ -1714,30 +1734,32 @@ extension _ManageEventsTableExt on _ManageEventsState {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                    if (title.trim().isNotEmpty) ...[
+                      Row(
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: 'Refresh',
-                          onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
-                          icon: _ordersLoading
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.refresh),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
+                          const Spacer(),
+                          IconButton(
+                            tooltip: 'Refresh',
+                            onPressed: _ordersLoading ? null : _refreshOrdersFromButton,
+                            icon: _ordersLoading
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.refresh),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     if (rows.isEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 24),
@@ -1757,7 +1779,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                                   maxWidth: tableConstraints.maxWidth,
                                 ),
                                 child: PagedDataTable(
-                                  title: title,
+                                  title: title.trim(),
                                   fullWidth: false,
                                   maxTableHeight: tableConstraints.maxHeight,
                                   filters: filters,
@@ -2059,7 +2081,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         }).toList();
 
     return _buildManageEventsSplitShell(
-      title: 'Online inquiries',
+      title: '',
       emptyMessage: 'No online inquiries to show yet.',
       filters: [_buildOnlineInquiryTableFilters(serviceTypes, eventTypes)],
       columns: const [
@@ -2084,7 +2106,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
 
   Widget _buildForDownpaymentTableView(bool isNarrow) {
     return _buildOrdersTablePanel(
-      title: 'For downpayment',
+      title: '',
       orders: _downpaymentOrders,
       emptyMessage: 'No confirmed orders awaiting downpayment.',
     );
@@ -2092,7 +2114,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
 
   Widget _buildOngoingTableView(bool isNarrow) {
     return _buildOrdersTablePanel(
-      title: 'Ongoing',
+      title: '',
       orders: _ongoingOrders,
       emptyMessage: 'No ongoing events.',
     );
@@ -2100,7 +2122,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
 
   Widget _buildForFullPaymentTableView(bool isNarrow) {
     return _buildOrdersTablePanel(
-      title: 'For full payment',
+      title: '',
       orders: _postAnalysisOrdersDto,
       emptyMessage: 'No orders awaiting full payment.',
     );

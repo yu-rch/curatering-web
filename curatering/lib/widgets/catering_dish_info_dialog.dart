@@ -1,8 +1,7 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 
 import '../models/menu_dish.dart';
+import '../utils/image_cache.dart';
 
 void showCateringDishInfoDialog(
   BuildContext context,
@@ -26,18 +25,21 @@ void showCateringDishInfoDialog(
           child: SingleChildScrollView(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 680;
+                final wide = constraints.maxWidth >= 700;
                 final hasImage = dish.imageBase64?.isNotEmpty == true;
                 final image =
                     hasImage
                         ? ClipRRect(
                           borderRadius: BorderRadius.circular(12),
-                          child: InteractiveViewer(
-                            minScale: 1,
-                            maxScale: 4,
-                            child: Image.memory(
-                              base64Decode(dish.imageBase64!),
-                              fit: BoxFit.contain,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxHeight: 320),
+                            child: InteractiveViewer(
+                              minScale: 1,
+                              maxScale: 4,
+                              child: CachedBase64Image(
+                                base64String: dish.imageBase64,
+                                fit: BoxFit.contain,
+                              ),
                             ),
                           ),
                         )

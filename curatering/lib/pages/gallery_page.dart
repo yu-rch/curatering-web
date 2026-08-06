@@ -1,13 +1,13 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../services/website_content_store.dart';
 import '../utils/gallery_search.dart';
+import '../utils/image_cache.dart';
 import '../utils/website_image_utils.dart';
 import '../widgets/centered_viewport_scroll.dart';
 import '../widgets/customer_website_topbar.dart';
+import '../widgets/image_focus_dialog.dart';
 import '../widgets/pexels_attribution_badge.dart';
 import '../widgets/website_rich_text.dart';
 
@@ -86,6 +86,7 @@ class _GalleryPageState extends State<GalleryPage> {
             Expanded(
               child: CenteredViewportScroll(
                 padding: websitePagePadding(context),
+                mainAxisAlignment: MainAxisAlignment.start,
                 child: ListenableBuilder(
                   listenable: w,
                   builder: (context, _) => _buildGalleryDetail(w, cat),
@@ -108,6 +109,7 @@ class _GalleryPageState extends State<GalleryPage> {
           Expanded(
             child: CenteredViewportScroll(
               padding: websitePagePadding(context),
+              mainAxisAlignment: MainAxisAlignment.start,
               child: ListenableBuilder(
                 listenable: w,
                 builder: (context, _) => _buildGallery(w),
@@ -198,25 +200,42 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   Widget _galleryImage(String? b64, {BoxFit fit = BoxFit.cover}) {
-    if (b64 == null || b64.trim().isEmpty) {
-      return Container(
+    return CachedBase64Image(
+      base64String: b64,
+      fit: fit,
+      placeholder: Container(
         color: Colors.grey.shade300,
         child: const Icon(Icons.image_outlined, color: Colors.grey),
-      );
-    }
-    try {
-      final normalized =
-          b64
-              .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
-              .replaceAll('\n', '')
-              .trim();
-      return Image.memory(base64Decode(normalized), fit: fit);
-    } catch (_) {
-      return Container(
-        color: Colors.grey.shade300,
-        child: const Icon(Icons.broken_image_outlined, color: Colors.grey),
-      );
-    }
+      ),
+    );
+  }
+
+  void _showGalleryImageDetail(
+    GalleryImageData imgData, {
+    required String categoryLabel,
+  }) {
+    if (imgData.imageBase64.trim().isEmpty) return;
+    final tags =
+        imgData.tags.where((t) => t.trim().isNotEmpty).toList(growable: false);
+    final title =
+        tags.isNotEmpty ? tags.first : categoryLabel.trim().isNotEmpty ? categoryLabel : 'Gallery photo';
+    final description =
+        tags.length > 1
+            ? tags.sublist(1).join(', ')
+            : tags.isEmpty && categoryLabel.trim().isNotEmpty
+            ? categoryLabel
+            : null;
+
+    showImageFocusDialog(
+      context,
+      imageBase64: imgData.imageBase64,
+      title: title,
+      description: description,
+      detailBlocks:
+          tags.isNotEmpty
+              ? [MapEntry('Tags', tags.join(', '))]
+              : const [],
+    );
   }
 
   Widget _buildGalleryToolbar({
@@ -554,18 +573,27 @@ class _GalleryPageState extends State<GalleryPage> {
             itemBuilder: (context, index) {
               final imgData = filteredImages[index];
               final fullIndex = cat.images.indexOf(imgData);
-              return Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (imgData.imageBase64.isNotEmpty)
-                      _galleryImage(imgData.imageBase64)
-                    else
-                      Container(color: Colors.grey.shade300),
+              return GestureDetector(
+                onTap:
+                    imgData.imageBase64.isNotEmpty
+                        ? () => _showGalleryImageDetail(
+                          imgData,
+                          categoryLabel: cat.label,
+                        )
+                        : null,
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (imgData.imageBase64.isNotEmpty)
+                        _galleryImage(imgData.imageBase64)
+                      else
+                        Container(color: Colors.grey.shade300),
                     if (imgData.tags.isNotEmpty)
                       Positioned(
                         left: 8,
@@ -609,7 +637,8 @@ class _GalleryPageState extends State<GalleryPage> {
                       ),
                   ],
                 ),
-              );
+              ),
+            );
             },
           ),
         const SizedBox(height: 32),

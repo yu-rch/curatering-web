@@ -56,7 +56,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
   final _feedbackEmailController = TextEditingController();
   final _feedbackMessageController = TextEditingController();
   bool _isSubmittingFeedback = false;
-  int _feedbackRating = 5;
+  int _feedbackRating = 0;
 
   @override
   void initState() {
@@ -82,6 +82,12 @@ class _ContactUsPageState extends State<ContactUsPage> {
 
   Future<void> _submitFeedback() async {
     if (!_feedbackFormKey.currentState!.validate()) return;
+    if (_feedbackRating < 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a star rating.')),
+      );
+      return;
+    }
 
     setState(() => _isSubmittingFeedback = true);
     try {
@@ -110,7 +116,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
       _feedbackNameController.clear();
       _feedbackEmailController.clear();
       _feedbackMessageController.clear();
-      setState(() => _feedbackRating = 5);
+      setState(() => _feedbackRating = 0);
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

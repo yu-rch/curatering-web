@@ -4486,8 +4486,9 @@ class _ManageEventsState extends State<ManageEvents>
                 )
                 .toList();
 
-    final canEditChecklist =
+    final canToggleChecklistStatus =
         _isManager || AuthSession.instance.currentRole == Role.supervisor;
+    final canMutateChecklist = _isManager;
     final showInventoryPicker = _isManager && _isCateringPlusEventOrder(sourceOrder);
     final inventoryOptions = <Map<String, dynamic>>[];
     if (showInventoryPicker) {
@@ -4671,15 +4672,14 @@ class _ManageEventsState extends State<ManageEvents>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (canEditChecklist)
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: IconButton(
-                          tooltip: 'Close',
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.close),
-                        ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close),
                       ),
+                    ),
                     Expanded(
                       child: LayoutBuilder(
                         builder: (context, tableConstraints) {
@@ -4695,7 +4695,7 @@ class _ManageEventsState extends State<ManageEvents>
                         maxTableHeight: tableConstraints.maxHeight,
                         forceVerticalScroll: true,
                         toolbarActions:
-                            canEditChecklist
+                            canMutateChecklist
                                 ? [
                                   AntdSecondaryButton(
                                     onPressed: () => dialogSetState(() {
@@ -4747,7 +4747,7 @@ class _ManageEventsState extends State<ManageEvents>
                             label: Text('Status'),
                             columnWidth: FixedColumnWidth(120),
                           ),
-                          if (canEditChecklist) ...[
+                          if (canMutateChecklist) ...[
                             const DataColumn(
                               label: Text('Actions'),
                               columnWidth: FixedColumnWidth(110),
@@ -4776,7 +4776,7 @@ class _ManageEventsState extends State<ManageEvents>
                                             CrossAxisAlignment.start,
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          canEditChecklist
+                                          canMutateChecklist
                                               ? TextFormField(
                                                 initialValue: item.item,
                                                 decoration: InputDecoration(
@@ -4837,7 +4837,7 @@ class _ManageEventsState extends State<ManageEvents>
                                   DataCell(
                                     SizedBox(
                                       width: 192,
-                                      child: canEditChecklist
+                                      child: canMutateChecklist
                                           ? TextFormField(
                                           initialValue: item.description,
                                           decoration: const InputDecoration(
@@ -4865,7 +4865,7 @@ class _ManageEventsState extends State<ManageEvents>
                                   DataCell(
                                     SizedBox(
                                       width: 72,
-                                      child: canEditChecklist
+                                      child: canMutateChecklist
                                           ? TextFormField(
                                           initialValue:
                                               item.quantity.toString(),
@@ -4948,84 +4948,98 @@ class _ManageEventsState extends State<ManageEvents>
                                   DataCell(
                                     SizedBox(
                                       width: 112,
-                                      child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color:
-                                            item.isCompleted
-                                                ? Colors.green.shade50
-                                                : Colors.red.shade50,
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(
-                                          color:
-                                              item.isCompleted
-                                                  ? Colors.green
-                                                  : Colors.red,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      child: DropdownButtonHideUnderline(
-                                        child: DropdownButton<bool>(
-                                          value: item.isCompleted,
-                                          isDense: true,
-                                          icon: const Icon(
-                                            Icons.keyboard_arrow_down,
-                                            size: 18,
-                                          ),
-                                          style: TextStyle(
-                                            color:
-                                                item.isCompleted
-                                                    ? Colors.green
-                                                    : Colors.red,
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 12,
-                                          ),
-                                          items: [
-                                            DropdownMenuItem(
-                                              value: true,
-                                              child: Text(
-                                                'completed',
-                                                style: TextStyle(
-                                                  color: Colors.green,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
+                                      child: canToggleChecklistStatus
+                                          ? Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  item.isCompleted
+                                                      ? Colors.green.shade50
+                                                      : Colors.red.shade50,
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color:
+                                                    item.isCompleted
+                                                        ? Colors.green
+                                                        : Colors.red,
+                                                width: 1,
                                               ),
                                             ),
-                                            DropdownMenuItem(
-                                              value: false,
-                                              child: Text(
-                                                'not done',
-                                                style: TextStyle(
-                                                  color: Colors.red,
-                                                  fontWeight: FontWeight.w600,
+                                            child: DropdownButtonHideUnderline(
+                                              child: DropdownButton<bool>(
+                                                value: item.isCompleted,
+                                                isDense: true,
+                                                icon: const Icon(
+                                                  Icons.keyboard_arrow_down,
+                                                  size: 18,
                                                 ),
+                                                style: TextStyle(
+                                                  color:
+                                                      item.isCompleted
+                                                          ? Colors.green
+                                                          : Colors.red,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 12,
+                                                ),
+                                                items: const [
+                                                  DropdownMenuItem(
+                                                    value: true,
+                                                    child: Text(
+                                                      'completed',
+                                                      style: TextStyle(
+                                                        color: Colors.green,
+                                                        fontWeight: FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  DropdownMenuItem(
+                                                    value: false,
+                                                    child: Text(
+                                                      'not done',
+                                                      style: TextStyle(
+                                                        color: Colors.red,
+                                                        fontWeight: FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                                onChanged: (value) {
+                                                  if (value != null) {
+                                                    dialogSetState(() {
+                                                      editableItems[index] =
+                                                          ChecklistItem(
+                                                            item: item.item,
+                                                            description:
+                                                                item.description,
+                                                            quantity: item.quantity,
+                                                            cost: item.cost,
+                                                            isCompleted: value,
+                                                            inventoryId:
+                                                                item.inventoryId,
+                                                          );
+                                                    });
+                                                  }
+                                                },
                                               ),
                                             ),
-                                          ],
-                                          onChanged: (value) {
-                                            if (value != null) {
-                                              dialogSetState(() {
-                                                editableItems[index] =
-                                                    ChecklistItem(
-                                                      item: item.item,
-                                                      description:
-                                                          item.description,
-                                                      quantity: item.quantity,
-                                                      cost: item.cost,
-                                                      isCompleted: value,
-                                                    );
-                                              });
-                                            }
-                                          },
-                                        ),
-                                      ),
-                                    ),
+                                          )
+                                          : Text(
+                                            item.isCompleted ? 'completed' : 'not done',
+                                            style: TextStyle(
+                                              color:
+                                                  item.isCompleted
+                                                      ? Colors.green
+                                                      : Colors.red,
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 12,
+                                            ),
+                                          ),
                                     ),
                                   ),
-                                  if (canEditChecklist) ...[
+                                  if (canMutateChecklist) ...[
                                     DataCell(
                                       SizedBox(
                                         width: 104,
@@ -5065,7 +5079,7 @@ class _ManageEventsState extends State<ManageEvents>
                                 ],
                               );
                             }),
-                          if (canEditChecklist && showNewItemRow)
+                          if (canMutateChecklist && showNewItemRow)
                             DataRow(
                               color: WidgetStateProperty.all(
                                 Colors.blue.shade50,
@@ -5153,7 +5167,7 @@ class _ManageEventsState extends State<ManageEvents>
                                 ] else
                                   const DataCell(Text('')),
                                 const DataCell(Text('')),
-                                if (canEditChecklist)
+                                if (canMutateChecklist)
                                   DataCell(
                                     IconButton(
                                       tooltip: 'Cancel new row',
@@ -5196,26 +5210,26 @@ class _ManageEventsState extends State<ManageEvents>
                           child: const Text('generate PDF'),
                         ),
                         const SizedBox(width: 12),
-                        // Save button (green outline)
-                        OutlinedButton(
-                          onPressed: () => _saveChecklist(
-                            sourceOrder,
-                            editableItems,
-                            dialogContext: context,
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.green,
-                            side: const BorderSide(color: Colors.green),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
+                        if (canToggleChecklistStatus)
+                          OutlinedButton(
+                            onPressed: () => _saveChecklist(
+                              sourceOrder,
+                              editableItems,
+                              dialogContext: context,
                             ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.green,
+                              side: const BorderSide(color: Colors.green),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
                             ),
+                            child: const Text('save'),
                           ),
-                          child: const Text('save'),
-                        ),
                         const SizedBox(width: 12),
                         // Close button (red outline)
                         OutlinedButton(
@@ -5859,9 +5873,7 @@ class _ManageEventsState extends State<ManageEvents>
             ],
 
             // Actual Event Photos Section - Only for catering+event orders
-            if (!_isSupervisor &&
-                selPost != null &&
-                _isCateringPlusEventOrder(selPost)) ...[
+            if (selPost != null && _isCateringPlusEventOrder(selPost)) ...[
               const Text(
                 'Actual Event Photos',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -5962,26 +5974,28 @@ class _ManageEventsState extends State<ManageEvents>
                                       Positioned(
                                         top: 4,
                                         right: 4,
-                                        child: GestureDetector(
-                                          onTap:
-                                              () => _removeEventPhoto(
-                                                selPost,
-                                                index,
+                                        child: _isManager
+                                            ? GestureDetector(
+                                              onTap:
+                                                  () => _removeEventPhoto(
+                                                    selPost,
+                                                    index,
+                                                  ),
+                                              child: Container(
+                                                padding: const EdgeInsets.all(4),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.red,
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                                child: const Icon(
+                                                  Icons.close,
+                                                  size: 12,
+                                                  color: Colors.white,
+                                                ),
                                               ),
-                                          child: Container(
-                                            padding: const EdgeInsets.all(4),
-                                            decoration: BoxDecoration(
-                                              color: Colors.red,
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                            ),
-                                            child: const Icon(
-                                              Icons.close,
-                                              size: 12,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                        ),
+                                            )
+                                            : const SizedBox.shrink(),
                                       ),
                                     ],
                                   );
@@ -6623,7 +6637,7 @@ class _ManageEventsState extends State<ManageEvents>
         }).toList();
 
     return _buildOrdersTablePanel(
-      title: 'Completed events',
+      title: '',
       orders: orderDtos,
       emptyMessage: 'No completed events in the last 30 days.',
     );
@@ -8259,7 +8273,7 @@ class _ManageEventsState extends State<ManageEvents>
           ),
         Expanded(
           child: _buildOrdersTablePanel(
-            title: 'New Events',
+            title: '',
             orders: orders,
             emptyMessage: 'No new events.',
             showGuestsAndTotal: false,
@@ -8271,7 +8285,7 @@ class _ManageEventsState extends State<ManageEvents>
 
   Widget _buildCancelledTab(bool isNarrow) {
     return _buildOrdersTablePanel(
-      title: 'Cancelled',
+      title: '',
       orders: _cancelledOrdersDto,
       emptyMessage: 'No cancelled events.',
     );
