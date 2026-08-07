@@ -16,7 +16,18 @@ import 'order_tracking_page.dart';
 /// Public order tracking for guests (no login required).
 /// Lookup by order number + email (or phone).
 class GuestOrderTrackingPage extends StatefulWidget {
-  const GuestOrderTrackingPage({super.key});
+  const GuestOrderTrackingPage({
+    super.key,
+    this.initialOrderNo,
+    this.initialEmail,
+    this.initialPhone,
+    this.autoLookup = false,
+  });
+
+  final String? initialOrderNo;
+  final String? initialEmail;
+  final String? initialPhone;
+  final bool autoLookup;
 
   @override
   State<GuestOrderTrackingPage> createState() => _GuestOrderTrackingPageState();
@@ -50,13 +61,25 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
 
   void _hydrateFromQuery() {
     final q = Uri.base.queryParameters;
-    final orderNo = (q['order'] ?? q['orderNo'] ?? q['order_no'] ?? '').trim();
-    final email = (q['email'] ?? '').trim();
-    final phone = (q['phone'] ?? '').trim();
+    final orderNo =
+        widget.initialOrderNo?.trim().isNotEmpty == true
+            ? widget.initialOrderNo!.trim()
+            : (q['order'] ?? q['orderNo'] ?? q['order_no'] ?? '').trim();
+    final email =
+        widget.initialEmail?.trim().isNotEmpty == true
+            ? widget.initialEmail!.trim()
+            : (q['email'] ?? '').trim();
+    final phone =
+        widget.initialPhone?.trim().isNotEmpty == true
+            ? widget.initialPhone!.trim()
+            : (q['phone'] ?? '').trim();
     if (orderNo.isNotEmpty) _orderNoCtrl.text = orderNo;
     if (email.isNotEmpty) _emailCtrl.text = email;
     if (phone.isNotEmpty) _phoneCtrl.text = phone;
-    if (orderNo.isNotEmpty && (email.isNotEmpty || phone.isNotEmpty)) {
+    final shouldLookup =
+        widget.autoLookup ||
+        (orderNo.isNotEmpty && (email.isNotEmpty || phone.isNotEmpty));
+    if (shouldLookup) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_lookup());
       });

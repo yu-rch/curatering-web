@@ -335,20 +335,29 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     MenuStore.instance.addListener(_onMenuChanged);
     CartStore.instance.addListener(_onCartChanged);
 
-    // Staff live editor loads draft; customers load published content only.
-    if (widget.contentEditable) {
-      try {
-        await WebsiteContentStore.instance.loadDraft();
-      } catch (_) {
-        await WebsiteContentStore.instance.ensureLoaded();
-      }
-    } else {
-      await WebsiteContentStore.instance.ensureLoaded();
-    }
+    // Paint homepage sections from local CMS cache immediately.
+    await WebsiteContentStore.instance.hydrateFromLocalCache();
     if (mounted) setState(() {});
 
-    // Menu metadata, cart sync, and auth continue in the background.
+    unawaited(_refreshWebsiteContent());
     unawaited(_loadDeferredBootstrap());
+  }
+
+  Future<void> _refreshWebsiteContent() async {
+    try {
+      if (widget.contentEditable) {
+        try {
+          await WebsiteContentStore.instance.loadDraft();
+        } catch (_) {
+          await WebsiteContentStore.instance.ensureLoaded();
+        }
+      } else {
+        await WebsiteContentStore.instance.ensureLoaded();
+      }
+    } catch (e) {
+      debugPrint('Website content refresh error: $e');
+    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadDeferredBootstrap() async {
@@ -2519,45 +2528,38 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Widget _buildRedBannerStrip(WebsiteContentStore w) {
+    final bannerStyle = websiteHeaderStyle(
+      fontSize: 22,
+      color: Colors.red.shade700,
+      fontWeight: FontWeight.w700,
+    );
     return Container(
       width: double.infinity,
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: websiteContentMaxWidth(context),
-          ),
-          child: Column(
-            children: [
-              WebsiteRichText(
-                value: w.redBannerText,
-                style: websiteHeaderStyle(
-                  fontSize: 22,
-                  color: Colors.red.shade700,
-                  fontWeight: FontWeight.w700,
-                ),
-                textAlign: TextAlign.center,
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Column(
+        children: [
+          _RedBannerMarquee(text: w.redBannerText, style: bannerStyle),
+          if (widget.contentEditable)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: TextButton.icon(
+                onPressed: () async {
+                  final value = await showWebsiteRichTextEditor(
+                    context: context,
+                    title: 'Edit red banner text',
+                    initialValue: w.redBannerText,
+                  );
+                  if (value == null || value.isEmpty) return;
+                  w.redBannerText = value;
+                  await w.saveDraft();
+                  setState(() {});
+                },
+                icon: const Icon(Icons.edit, size: 16),
+                label: const Text('Edit banner'),
               ),
-              if (widget.contentEditable)
-                TextButton.icon(
-                  onPressed: () async {
-                    final value = await showWebsiteRichTextEditor(
-                      context: context,
-                      title: 'Edit red banner text',
-                      initialValue: w.redBannerText,
-                    );
-                    if (value == null || value.isEmpty) return;
-                    w.redBannerText = value;
-                    await w.saveDraft();
-                    setState(() {});
-                  },
-                  icon: const Icon(Icons.edit, size: 16),
-                  label: const Text('Edit banner'),
-                ),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -2747,7 +2749,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 ),
               ),
             ),
-            _buildRedBannerStrip(w),
           ],
         );
       },
@@ -2868,8 +2869,15 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     : null),
                           );
                         }).toList()
-                        : cmsCount > 0
-                        ? List.generate(cmsCount, (i) {
+                        : cmsCount > 0 ||
+                            w.popularDishLabels.any((l) => l.trim().isNotEmpty)
+                        ? List.generate(
+                          [
+                            cmsCount,
+                            w.popularDishLabels.length,
+                            5,
+                          ].reduce(math.max),
+                          (i) {
                           final label = _popularDishLabel(w, i);
                           final description =
                               i < MenuStore.instance.activeDishes.length
@@ -2879,7 +2887,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                       .trim()
                                   : null;
                           return _popularDishCarouselTile(
-                            imageB64: w.popularDishImageBase64[i],
+                            imageB64:
+                                i < w.popularDishImageBase64.length
+                                    ? w.popularDishImageBase64[i]
+                                    : null,
                             label: label,
                             description:
                                 description != null && description.isNotEmpty
@@ -2887,7 +2898,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     : null,
                           );
                         })
-                        : fallbackDishes
+                        : fallbackDishes.isNotEmpty
+                        ? fallbackDishes
                             .map(
                               (d) => _popularDishCarouselTile(
                                 imageB64: d.imageBase64,
@@ -2901,7 +2913,15 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                         : null,
                               ),
                             )
-                            .toList(),
+                            .toList()
+                        : List.generate(
+                          5,
+                          (i) => _popularDishCarouselTile(
+                            imageB64: null,
+                            label: _popularDishLabel(w, i),
+                            description: null,
+                          ),
+                        ),
               ),
             ),
             const SizedBox(height: 28),
@@ -5030,7 +5050,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 }
 
-class _HoverZoomPhotoTile extends StatefulWidget {
+class _HoverZoomPhotoTile extends StatelessWidget {
   const _HoverZoomPhotoTile({
     required this.imageB64,
     required this.label,
@@ -5049,15 +5069,8 @@ class _HoverZoomPhotoTile extends StatefulWidget {
   final EdgeInsets margin;
   final IconData placeholderIcon;
 
-  @override
-  State<_HoverZoomPhotoTile> createState() => _HoverZoomPhotoTileState();
-}
-
-class _HoverZoomPhotoTileState extends State<_HoverZoomPhotoTile> {
-  bool _hovered = false;
-
   Widget _image({BoxFit fit = BoxFit.cover}) {
-    final image = widget.imageB64;
+    final image = imageB64;
     if (image != null && image.isNotEmpty) {
       final normalized =
           image
@@ -5076,81 +5089,156 @@ class _HoverZoomPhotoTileState extends State<_HoverZoomPhotoTile> {
     return Container(
       color: Colors.grey.shade300,
       child: Icon(
-        widget.placeholderIcon,
+        placeholderIcon,
         size: 48,
         color: Colors.grey.shade700,
       ),
     );
   }
 
-  void _openZoom() {
-    if (widget.imageB64 == null || widget.imageB64!.isEmpty) return;
+  void _openFocus(BuildContext context) {
+    if (imageB64 == null || imageB64!.isEmpty) return;
     showImageFocusDialog(
       context,
-      imageBase64: widget.imageB64,
-      title: widget.label.trim().isNotEmpty ? widget.label : 'Photo',
-      description: widget.description,
+      imageBase64: imageB64,
+      title: label.trim().isNotEmpty ? label : 'Photo',
+      description: description,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: widget.margin,
+      padding: margin,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
         child: GestureDetector(
-          onTap: _openZoom,
-          child: AnimatedScale(
-            duration: const Duration(milliseconds: 160),
-            scale: _hovered ? 1.04 : 1,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: SizedBox(
-                width: widget.width,
-                height: widget.height,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _image(),
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 160),
-                      color: Colors.black.withValues(
-                        alpha: _hovered ? 0.08 : 0,
+          onTap: () => _openFocus(context),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _image(),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      color: Colors.black.withValues(alpha: 0.45),
+                      child: Text(
+                        label.trim().isNotEmpty ? label : 'Photo',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
-                        color: Colors.black.withValues(alpha: 0.45),
-                        child: Text(
-                          widget.label.trim().isNotEmpty
-                              ? widget.label
-                              : 'Photo',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RedBannerMarquee extends StatefulWidget {
+  const _RedBannerMarquee({required this.text, required this.style});
+
+  final String text;
+  final TextStyle style;
+
+  @override
+  State<_RedBannerMarquee> createState() => _RedBannerMarqueeState();
+}
+
+class _RedBannerMarqueeState extends State<_RedBannerMarquee>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  final GlobalKey _measureKey = GlobalKey();
+  double _segmentWidth = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 16),
+    )..repeat();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureSegment());
+  }
+
+  @override
+  void didUpdateWidget(covariant _RedBannerMarquee oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _measureSegment());
+    }
+  }
+
+  void _measureSegment() {
+    final box = _measureKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final next = box.size.width + 64;
+    if ((next - _segmentWidth).abs() > 1 && mounted) {
+      setState(() => _segmentWidth = next);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Widget _segment({Key? key}) {
+    return Padding(
+      key: key,
+      padding: const EdgeInsets.only(right: 64),
+      child: WebsiteRichText(
+        value: widget.text,
+        style: widget.style,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const repeatCount = 6;
+    final travel = _segmentWidth > 0 ? _segmentWidth : 400.0;
+
+    return SizedBox(
+      height: 32,
+      child: ClipRect(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            final offset = travel * _controller.value;
+            return Transform.translate(
+              offset: Offset(-travel + offset, 0),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _segment(key: _measureKey),
+                  for (var i = 1; i < repeatCount; i++) _segment(),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );

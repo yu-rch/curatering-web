@@ -436,6 +436,12 @@ class _ManageEventsState extends State<ManageEvents>
     'Completed',
     'Cancelled',
   ];
+  static const _supervisorStageLabels = ['On Going'];
+
+  List<String> get _visibleStageLabels =>
+      _isSupervisor ? _supervisorStageLabels : _stageLabels;
+
+  int get _tabCount => _visibleStageLabels.length;
 
   final TextEditingController _eventSearchController = TextEditingController();
   final TextEditingController _inquirySearchController =
@@ -481,18 +487,21 @@ class _ManageEventsState extends State<ManageEvents>
   void initState() {
     super.initState();
     final role = AuthSession.instance.currentRole;
-    final initialTab = role == Role.supervisor ? 3 : 0;
+    final isSupervisor = role == Role.supervisor;
     _tabController = TabController(
-      length: 7,
+      length: isSupervisor ? 1 : 7,
       vsync: this,
-      initialIndex: initialTab,
     );
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) return;
-      final idx = _tabController.index;
       setState(() {
-        if (idx < EventStatus.values.length) {
-          _selectedStatus = EventStatus.values[idx];
+        if (_isSupervisor) {
+          _selectedStatus = EventStatus.ongoing;
+        } else {
+          final idx = _tabController.index;
+          if (idx < EventStatus.values.length) {
+            _selectedStatus = EventStatus.values[idx];
+          }
         }
         _selectedManageEventsOrder = null;
         _manageEventsDetailError = null;
@@ -557,7 +566,10 @@ class _ManageEventsState extends State<ManageEvents>
     final oldStatus = _selectedStatus;
     setState(fn);
     if (_selectedStatus != oldStatus) {
-      final targetIndex = _selectedStatus.index;
+      final targetIndex =
+          _isSupervisor
+              ? (_selectedStatus == EventStatus.ongoing ? 0 : -1)
+              : _selectedStatus.index;
       if (targetIndex >= 0 &&
           targetIndex < _tabController.length &&
           targetIndex != _tabController.index) {
@@ -8188,6 +8200,9 @@ class _ManageEventsState extends State<ManageEvents>
       }).toList();
 
   int _orderCountForTab(int tabIndex) {
+    if (_isSupervisor) {
+      return tabIndex == 0 ? _ongoingOrders.length : 0;
+    }
     switch (tabIndex) {
       case 0:
         return _newEventOrders.length;
@@ -8202,6 +8217,21 @@ class _ManageEventsState extends State<ManageEvents>
       default:
         return 0;
     }
+  }
+
+  List<Widget> _manageEventsTabViews(bool isNarrow) {
+    if (_isSupervisor) {
+      return [_buildOngoingTableView(isNarrow)];
+    }
+    return [
+      _buildNewEventTab(isNarrow),
+      _buildOnlineInquiriesView(isNarrow),
+      _buildForDownpaymentTableView(isNarrow),
+      _buildOngoingTableView(isNarrow),
+      _buildForFullPaymentTableView(isNarrow),
+      _buildCompletedEventsView(isNarrow),
+      _buildCancelledTab(isNarrow),
+    ];
   }
 
   Widget _tabCountBadge(int count) {
@@ -8307,7 +8337,7 @@ class _ManageEventsState extends State<ManageEvents>
                 child: Row(
                 children: [
                   Text(
-                    _stageLabels[_tabController.index].toUpperCase(),
+                    _visibleStageLabels[_tabController.index].toUpperCase(),
                     style: const TextStyle(
                       color: Color(0xFFFFC024),
                       fontWeight: FontWeight.w800,
@@ -8348,14 +8378,15 @@ class _ManageEventsState extends State<ManageEvents>
                 labelColor: const Color(0xFFFFC024),
                 unselectedLabelColor: Colors.grey.shade700,
                 tabAlignment: TabAlignment.start,
-                tabs: List.generate(_stageLabels.length, (i) {
+                tabs: List.generate(_tabCount, (i) {
                   final count = _orderCountForTab(i);
                   return Tab(
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(_stageLabels[i]),
-                        if (i <= 4 && count > 0) ...[
+                        Text(_visibleStageLabels[i]),
+                        if ((_isSupervisor && count > 0) ||
+                            (!_isSupervisor && i <= 4 && count > 0)) ...[
                           const SizedBox(width: 6),
                           _tabCountBadge(count),
                         ],
@@ -8370,15 +8401,7 @@ class _ManageEventsState extends State<ManageEvents>
                 color: const Color(0xFFF7F8FA),
                 child: TabBarView(
                   controller: _tabController,
-                  children: [
-                    _buildNewEventTab(isNarrow),
-                    _buildOnlineInquiriesView(isNarrow),
-                    _buildForDownpaymentTableView(isNarrow),
-                    _buildOngoingTableView(isNarrow),
-                    _buildForFullPaymentTableView(isNarrow),
-                    _buildCompletedEventsView(isNarrow),
-                    _buildCancelledTab(isNarrow),
-                  ],
+                  children: _manageEventsTabViews(isNarrow),
                 ),
               ),
             ),

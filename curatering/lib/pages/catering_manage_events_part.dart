@@ -1780,7 +1780,9 @@ extension _ManageEventsTableExt on _ManageEventsState {
                                 ),
                                 child: PagedDataTable(
                                   title: title.trim(),
-                                  fullWidth: false,
+                                  fullWidth: true,
+                                  columnSpacing: 12,
+                                  horizontalMargin: 8,
                                   maxTableHeight: tableConstraints.maxHeight,
                                   filters: filters,
                                   headingRowColor: WidgetStateProperty.all(

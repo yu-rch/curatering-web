@@ -190,6 +190,11 @@ class _PagedDataTableState extends State<PagedDataTable> {
       pageSize: widget.pageSize,
     );
 
+    final columnSpacing =
+        widget.columnSpacing ?? (widget.fullWidth ? 12.0 : 28.0);
+    final horizontalMargin =
+        widget.horizontalMargin ?? (widget.fullWidth ? 8.0 : 16.0);
+
     final table = Theme(
       data: Theme.of(context).copyWith(
         dataTableTheme: DataTableThemeData(
@@ -211,6 +216,7 @@ class _PagedDataTableState extends State<PagedDataTable> {
         ),
       ),
       child: DataTable(
+        showCheckboxColumn: false,
         columns: widget.columns,
         rows: pageRows,
         border: TableBorder(
@@ -230,26 +236,25 @@ class _PagedDataTableState extends State<PagedDataTable> {
                   ? AntdTokens.fillTertiary
                   : Colors.white,
         ),
-        columnSpacing: widget.columnSpacing ?? 28,
+        columnSpacing: columnSpacing,
         dataRowMinHeight: widget.dataRowMinHeight ?? 44,
         dataRowMaxHeight: widget.dataRowMaxHeight ?? 64,
         headingRowHeight: widget.headingRowHeight ?? 44,
-        horizontalMargin: widget.horizontalMargin ?? 16,
+        horizontalMargin: horizontalMargin,
       ),
     );
 
     Widget tableScroll = LayoutBuilder(
       builder: (context, constraints) {
-        final child =
-            widget.fullWidth
-                ? ConstrainedBox(
-                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                  child: table,
-                )
-                : table;
+        if (widget.fullWidth && constraints.maxWidth.isFinite) {
+          return SizedBox(
+            width: constraints.maxWidth,
+            child: table,
+          );
+        }
         return SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          child: child,
+          child: table,
         );
       },
     );

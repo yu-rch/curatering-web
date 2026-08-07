@@ -344,7 +344,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
           _notify('Session expired. Please log in again.', error: true);
         }
       } else {
-        _notify(data['error'] ?? 'Failed to create order', error: true);
+        final parts = <String>[];
+        for (final key in ['error', 'details', 'message']) {
+          final value = data[key]?.toString().trim();
+          if (value != null && value.isNotEmpty) parts.add(value);
+        }
+        _notify(
+          parts.isNotEmpty ? parts.join(' — ') : 'Failed to create order',
+          error: true,
+        );
       }
     } catch (e) {
       if (mounted) {

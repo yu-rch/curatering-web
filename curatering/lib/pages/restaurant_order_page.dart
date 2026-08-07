@@ -465,7 +465,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => _showDishDetails(dish),
+        onTap: () => _showAddToCartOptions(dish),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -551,115 +551,6 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
           ],
         ),
       ),
-    );
-  }
-
-  // ignore: unused_element
-  void _showDishDetails(MenuDish dish) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) {
-        final description = dish.publicDescription.trim();
-        final ingredients =
-            dish.ingredients.where((e) => e.trim().isNotEmpty).toList();
-        final allergens = dish.allergens.trim();
-        return AlertDialog(
-          title: Text(dish.name),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 820),
-            child: SingleChildScrollView(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final wide = constraints.maxWidth >= 700;
-                  final hasImage = dish.imageBase64?.isNotEmpty == true;
-                  final image =
-                      hasImage
-                          ? ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxHeight: 320),
-                              child: InteractiveViewer(
-                                minScale: 1,
-                                maxScale: 4,
-                                child: CachedBase64Image(
-                                  base64String: dish.imageBase64,
-                                  fit: BoxFit.contain,
-                                ),
-                              ),
-                            ),
-                          )
-                          : Container(
-                            height: 220,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Center(
-                              child: Icon(Icons.restaurant_menu, size: 48),
-                            ),
-                          );
-                  final details = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _dishDetailBlock(
-                        'Description',
-                        description.isEmpty
-                            ? 'No description available.'
-                            : description,
-                      ),
-                      _dishDetailBlock(
-                        'Ingredients',
-                        ingredients.isEmpty
-                            ? 'No ingredients listed.'
-                            : ingredients.join(', '),
-                      ),
-                      _dishDetailBlock(
-                        'Allergens',
-                        allergens.isEmpty
-                            ? 'No allergens listed.'
-                            : allergens,
-                      ),
-                    ],
-                  );
-
-                  if (!wide) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [image, const SizedBox(height: 16), details],
-                    );
-                  }
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(width: 360, child: image),
-                      const SizedBox(width: 22),
-                      Expanded(child: details),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Close'),
-            ),
-            FilledButton(
-              onPressed:
-                  dish.available
-                      ? () {
-                        Navigator.of(ctx).pop();
-                        _addToCart(dish);
-                      }
-                      : null,
-              child: const Text('Add to tray'),
-            ),
-          ],
-        );
-      },
     );
   }
 

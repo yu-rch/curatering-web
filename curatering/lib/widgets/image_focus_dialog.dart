@@ -45,13 +45,9 @@ void showImageFocusDialog(
                                   constraints: const BoxConstraints(
                                     maxHeight: 320,
                                   ),
-                                  child: InteractiveViewer(
-                                    minScale: 1,
-                                    maxScale: 4,
-                                    child: CachedBase64Image(
-                                      base64String: imageBase64,
-                                      fit: BoxFit.contain,
-                                    ),
+                                  child: CachedBase64Image(
+                                    base64String: imageBase64,
+                                    fit: BoxFit.contain,
                                   ),
                                 ),
                               )

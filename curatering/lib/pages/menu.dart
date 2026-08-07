@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -301,6 +302,11 @@ class _MenuState extends State<Menu> {
     super.initState();
     MenuStore.instance.addListener(_onMenuChanged);
     SetMenuStore.instance.addListener(_onSetMenusChanged);
+    // Always ensure dishes are loading so the page never looks empty.
+    if (MenuStore.instance.activeDishes.isEmpty) {
+      unawaited(MenuStore.instance.loadDishes());
+    }
+    unawaited(SetMenuStore.instance.loadSetMenus());
   }
 
   void _onMenuChanged() {
@@ -2712,8 +2718,10 @@ class _MenuState extends State<Menu> {
     return AnimatedBuilder(
       animation: MenuStore.instance,
       builder: (context, _) {
-        // Show loading state
-        if (MenuStore.instance.isLoading) {
+        // Show loading state while fetching or before first paint of dishes.
+        if (MenuStore.instance.isLoading ||
+            (MenuStore.instance.activeDishes.isEmpty &&
+                MenuStore.instance.error == null)) {
           return AppScaffold(
             child: const Center(
               child: Column(

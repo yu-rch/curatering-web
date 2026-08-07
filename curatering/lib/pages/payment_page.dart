@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/website_header_font.dart';
@@ -6,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../config.dart';
 import 'order_tracking_page.dart';
+import 'guest_order_tracking_page.dart';
 import '../utils/order_display_utils.dart';
 import '../utils/responsive_layout.dart';
 
@@ -115,11 +117,16 @@ class _PaymentPageState extends State<PaymentPage> {
               ..['payment_uploaded_initial'] = true;
 
         if (mounted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (context) => OrderTrackingPage(orderData: orderMap),
-            ),
-          );
+          final isGuest = token == null || token.isEmpty;
+          if (isGuest) {
+            await _showGuestPaymentConfirmation(context, orderMap);
+          } else {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (context) => OrderTrackingPage(orderData: orderMap),
+              ),
+            );
+          }
         }
       } else {
         if (mounted) {
@@ -141,6 +148,43 @@ class _PaymentPageState extends State<PaymentPage> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<void> _showGuestPaymentConfirmation(
+    BuildContext context,
+    Map<String, dynamic> orderMap,
+  ) async {
+    final orderNo = formatRestaurantOrderNo(orderMap);
+    final guestEmail =
+        orderMap['user_email']?.toString().trim() ??
+        orderMap['userEmail']?.toString().trim() ??
+        orderMap['guest_contact_email']?.toString().trim() ??
+        '';
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return _GuestPaymentCountdownDialog(
+          orderNo: orderNo,
+          onComplete: () {
+            Navigator.of(ctx).pop();
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder:
+                    (_) => GuestOrderTrackingPage(
+                      initialOrderNo: orderNo != 'N/A' ? orderNo : null,
+                      initialEmail:
+                          guestEmail.isNotEmpty ? guestEmail : null,
+                      autoLookup:
+                          orderNo != 'N/A' && guestEmail.isNotEmpty,
+                    ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   String? get _referenceError {
@@ -681,6 +725,70 @@ class _PaymentPageState extends State<PaymentPage> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _GuestPaymentCountdownDialog extends StatefulWidget {
+  const _GuestPaymentCountdownDialog({
+    required this.orderNo,
+    required this.onComplete,
+  });
+
+  final String orderNo;
+  final VoidCallback onComplete;
+
+  @override
+  State<_GuestPaymentCountdownDialog> createState() =>
+      _GuestPaymentCountdownDialogState();
+}
+
+class _GuestPaymentCountdownDialogState
+    extends State<_GuestPaymentCountdownDialog> {
+  static const _totalSeconds = 5;
+  late int _secondsLeft;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _secondsLeft = _totalSeconds;
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_secondsLeft <= 1) {
+        timer.cancel();
+        widget.onComplete();
+        return;
+      }
+      if (mounted) setState(() => _secondsLeft--);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Payment confirmed'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.orderNo != 'N/A'
+                ? 'Thank you! Order ${widget.orderNo} is being processed.'
+                : 'Thank you! Your order is being processed.',
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Redirecting to order tracking in $_secondsLeft…',
+            style: TextStyle(color: Colors.grey.shade700),
+          ),
+        ],
+      ),
     );
   }
 }

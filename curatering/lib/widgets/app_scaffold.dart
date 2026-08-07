@@ -184,8 +184,8 @@ class AppScaffold extends StatefulWidget {
                 icon,
                 color:
                     isActive
-                        ? const Color(0xFF1E1E1E)
-                        : const Color(0xFF1E1E1E).withValues(alpha: 0.72),
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: 0.78),
                 size: 18,
               ),
               const SizedBox(width: 12),
@@ -195,8 +195,8 @@ class AppScaffold extends StatefulWidget {
                   style: TextStyle(
                     color:
                         isActive
-                            ? const Color(0xFF1E1E1E)
-                            : const Color(0xFF1E1E1E).withValues(alpha: 0.78),
+                            ? Colors.white
+                            : Colors.white.withValues(alpha: 0.82),
                     fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
                     fontSize: 13,
                   ),
@@ -224,6 +224,11 @@ class AppScaffold extends StatefulWidget {
     }
     if (role == Role.supervisor) {
       return const [
+        _SidebarItemData(
+          icon: Icons.dashboard,
+          label: 'Dashboard',
+          route: '/dashboard',
+        ),
         _SidebarItemData(
           icon: Icons.event,
           label: 'Manage Events',
@@ -339,7 +344,7 @@ class _AppScaffoldState extends State<AppScaffold> {
                   child: Row(
                     children: [
                       Image.asset(
-                        'lib/assets/main.png',
+                        'lib/assets/main-2.png',
                         height: 28,
                         fit: BoxFit.contain,
                       ),
@@ -348,7 +353,7 @@ class _AppScaffoldState extends State<AppScaffold> {
                         child: Text(
                           'Menu',
                           style: TextStyle(
-                            color: Color(0xFF1E1E1E),
+                            color: Colors.white,
                             fontWeight: FontWeight.w700,
                             fontSize: 16,
                           ),
@@ -359,7 +364,7 @@ class _AppScaffoldState extends State<AppScaffold> {
                         onPressed: _closeDrawerIfOpen,
                         icon: const Icon(
                           Icons.close,
-                          color: Color(0xFF1E1E1E),
+                          color: Colors.white,
                         ),
                       ),
                     ],
@@ -387,7 +392,7 @@ class _AppScaffoldState extends State<AppScaffold> {
         Widget buildSidebarPanel({bool inDrawer = false}) {
           return Container(
             width: inDrawer ? null : 240,
-            color: const Color(0xFFCDEDEC),
+            color: const Color(0xFF1E1E1E),
             child: buildSidebarList(inDrawer: inDrawer),
           );
         }
@@ -402,7 +407,7 @@ class _AppScaffoldState extends State<AppScaffold> {
             drawer:
                 isNarrow
                     ? Drawer(
-                      backgroundColor: const Color(0xFFCDEDEC),
+                      backgroundColor: const Color(0xFF1E1E1E),
                       width: 280,
                       child: SafeArea(
                         child: buildSidebarPanel(inDrawer: true),
@@ -417,7 +422,7 @@ class _AppScaffoldState extends State<AppScaffold> {
                     vertical: 12,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFCDEDEC),
+                    color: const Color(0xFF1E1E1E),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.08),
@@ -435,11 +440,11 @@ class _AppScaffoldState extends State<AppScaffold> {
                               () => _scaffoldKey.currentState?.openDrawer(),
                           icon: const Icon(
                             Icons.menu,
-                            color: Color(0xFF1E1E1E),
+                            color: Colors.white,
                           ),
                         ),
                       Image.asset(
-                        'lib/assets/main.png',
+                        'lib/assets/main-2.png',
                         height: 32,
                         fit: BoxFit.contain,
                       ),
@@ -461,7 +466,7 @@ class _AppScaffoldState extends State<AppScaffold> {
                       ],
                       AntdProfileMenu(
                         triggerLabel: userName,
-                        triggerForegroundColor: const Color(0xFF1E1E1E),
+                        triggerForegroundColor: Colors.white,
                         leading: Image.asset(
                           'lib/assets/main-2.png',
                           height: 22,
@@ -482,7 +487,7 @@ class _AppScaffoldState extends State<AppScaffold> {
                               children: [
                                 DecoratedBox(
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFCDEDEC),
+                                    color: const Color(0xFF1E1E1E),
                                     boxShadow: [
                                       BoxShadow(
                                         color: Colors.black.withValues(

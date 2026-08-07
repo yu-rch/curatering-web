@@ -304,6 +304,15 @@ class WebsiteContentStore extends ChangeNotifier {
 
   bool get isDraftMode => _draftMode;
 
+  /// Apply persisted CMS content immediately so the homepage can paint without
+  /// waiting for the network round-trip.
+  Future<void> hydrateFromLocalCache() async {
+    if (_hydratedFromLocalCache) return;
+    await _loadFromLocalCache();
+    _hydratedFromLocalCache = true;
+    notifyListeners();
+  }
+
   Future<void> ensureLoaded({bool force = false}) async {
     if (_loaded && !force && !_draftMode) return;
 

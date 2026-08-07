@@ -8175,7 +8175,9 @@ async function seedSuperAdminIfNeeded() {
 function parseRestaurantCoord(value) {
   if (value == null || value === '') return null;
   const n = Number(value);
-  return Number.isFinite(n) ? n : null;
+  if (!Number.isFinite(n)) return null;
+  // Fit DECIMAL(10,8) / similar columns without overflowing precision.
+  return Math.round(n * 1e8) / 1e8;
 }
 
 async function customerAccountIdentityWhereSql(paramRef) {

@@ -348,7 +348,9 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                             onPressed: () => _showChecklistDialog(order),
                             icon: const Icon(Icons.edit_note, size: 18),
                             label: Text(
-                              _isManager ? 'Edit checklist' : 'View checklist',
+                              (_isManager || _isSupervisor)
+                                  ? 'Edit checklist'
+                                  : 'View checklist',
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -368,7 +370,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                         ],
                       ),
                     ),
-                    if (_isManager) ...[
+                    if (_isManager || _isSupervisor) ...[
                       const SizedBox(height: 12),
                       _detailSection(
                         'Task assignment',
