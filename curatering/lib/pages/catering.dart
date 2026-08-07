@@ -8293,7 +8293,10 @@ class _ManageEventsState extends State<ManageEvents>
                   _activeNewEventSideTab = _NewEventSideTab.eventInfo;
                 }),
                 icon: const Icon(Icons.add_circle_outline),
-                label: const Text('CREATE NEW EVENT'),
+                label: const Text(
+                  'CREATE NEW EVENT',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFFFFC024),
                   foregroundColor: Colors.black,

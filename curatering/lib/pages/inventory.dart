@@ -515,6 +515,19 @@ class _InventoryState extends State<Inventory> {
                       AntdFieldShell(
                         label: 'Item',
                         required: true,
+                        errorText:
+                            item == null &&
+                                    !createNewItem &&
+                                    _nameController.text.trim().isNotEmpty &&
+                                    (_stockTargetItem == null ||
+                                        _stockTargetItem!.name
+                                                .toLowerCase()
+                                                .trim() !=
+                                            _nameController.text
+                                                .toLowerCase()
+                                                .trim())
+                                ? 'Select a matching inventory item'
+                                : null,
                         child:
                             item == null && !createNewItem
                                 ? Autocomplete<InventoryItem>(
@@ -527,13 +540,7 @@ class _InventoryState extends State<Inventory> {
                                       return _activeItems.take(12);
                                     }
                                     return _activeItems.where(
-                                      (i) =>
-                                          i.name.toLowerCase().contains(
-                                            query,
-                                          ) ||
-                                          i.itemCode.toLowerCase().contains(
-                                            query,
-                                          ),
+                                      (i) => _matchesInventoryPrefix(i, query),
                                     );
                                   },
                                   fieldViewBuilder: (
@@ -550,13 +557,27 @@ class _InventoryState extends State<Inventory> {
                                       controller: controller,
                                       focusNode: focusNode,
                                       decoration: const InputDecoration(
-                                        hintText: 'Search existing item',
+                                        hintText:
+                                            'Search by first letter / prefix…',
                                         border: InputBorder.none,
                                         isDense: true,
                                       ),
                                       onChanged: (value) {
-                                        _nameController.text = value;
-                                        _stockTargetItem = null;
+                                        setModalState(() {
+                                          _nameController.text = value;
+                                          InventoryItem? match;
+                                          final normalized =
+                                              value.toLowerCase().trim();
+                                          for (final i in _activeItems) {
+                                            if (i.name.toLowerCase().trim() ==
+                                                normalized) {
+                                              match = i;
+                                              break;
+                                            }
+                                          }
+                                          _stockTargetItem = match;
+                                          _editingItemId = match?.id;
+                                        });
                                       },
                                     );
                                   },
@@ -1214,7 +1235,7 @@ class _InventoryState extends State<Inventory> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Search by item prefix…',
+                hintText: 'Search by first letter / prefix…',
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon:
                     _searchController.text.isEmpty

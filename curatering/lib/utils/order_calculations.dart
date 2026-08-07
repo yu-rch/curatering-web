@@ -1,4 +1,5 @@
 import '../models/event_order.dart';
+import '../services/loyalty_rewards_store.dart';
 import 'inquiry_pricing.dart';
 
 double _parseDoubleLoose(String raw) {
@@ -98,9 +99,15 @@ double computeOrderTotalCost(EventOrderDto order) {
   return menuSum;
 }
 
-int computeLoyaltyPointsFromCost(double totalCost) {
+int computeLoyaltyPointsFromCost(
+  double totalCost, {
+  String orderType = 'restaurant',
+}) {
   if (totalCost <= 0) return 0;
-  return (totalCost / 205.0).round();
+  return LoyaltyRewardsStore.instance.getPointsForOrder(
+    totalCost,
+    orderType: orderType,
+  );
 }
 
 String formatPesos(double amount) {

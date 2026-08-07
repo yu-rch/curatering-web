@@ -313,13 +313,37 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
                       : PagedDataTable(
                         title: 'Action Logs',
                         enableSearch: false,
-                        fullWidth: true,
+                        fullWidth: false,
+                        minTableWidth: 1280,
+                        columnSpacing: 32,
                         columns: const [
-                          DataColumn(label: Text('User')),
-                          DataColumn(label: Text('Feature')),
-                          DataColumn(label: Text('Action')),
-                          DataColumn(label: Text('Date & Time')),
-                          DataColumn(label: Text('Other')),
+                          DataColumn(
+                            label: SizedBox(width: 140, child: Text('User')),
+                          ),
+                          DataColumn(
+                            label: SizedBox(
+                              width: 140,
+                              child: Text('Feature'),
+                            ),
+                          ),
+                          DataColumn(
+                            label: SizedBox(
+                              width: 280,
+                              child: Text('Action'),
+                            ),
+                          ),
+                          DataColumn(
+                            label: SizedBox(
+                              width: 160,
+                              child: Text('Date & Time'),
+                            ),
+                          ),
+                          DataColumn(
+                            label: SizedBox(
+                              width: 320,
+                              child: Text('Other'),
+                            ),
+                          ),
                         ],
                         rows:
                             filtered.map((l) {

@@ -226,11 +226,6 @@ class AppScaffold extends StatefulWidget {
     if (role == Role.supervisor) {
       return const [
         _SidebarItemData(
-          icon: Icons.dashboard,
-          label: 'Dashboard',
-          route: '/dashboard',
-        ),
-        _SidebarItemData(
           icon: Icons.event,
           label: 'Manage Events',
           route: '/manage-events',

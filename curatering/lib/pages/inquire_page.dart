@@ -1759,7 +1759,7 @@ class _InquirePageState extends State<InquirePage> {
           child: Center(
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: 720,
+                maxWidth: 1100,
                 maxHeight: maxH,
               ),
               child: Card(

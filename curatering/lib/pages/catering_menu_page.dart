@@ -306,90 +306,97 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
     return _withHomepageTopBar(
       context,
       child: SingleChildScrollView(
-        padding: websitePagePadding(context),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1200),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(
-                  WebsiteContentStore.instance.cateringPageTitle,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.getFont(
-                    _primaryFont,
-                    fontSize: 42,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1E1E1E),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: websitePagePadding(context),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1200),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        WebsiteContentStore.instance.cateringPageTitle,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.getFont(
+                          _primaryFont,
+                          fontSize: 42,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E1E1E),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Color(0xFFFFC024),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          WebsiteContentStore.instance.cateringPageSubtitle,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1E1E1E),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [_setMenuDropdown(setMenus), _mealTypeChips()],
+                      ),
+                      const SizedBox(height: 24),
+                      Card(
+                        elevation: 4,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (visibleDishes.isEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.all(32),
+                                  child: Center(
+                                    child: Text(
+                                      _mealTypeFilter.isEmpty
+                                          ? 'No dishes available'
+                                          : 'No dishes in "$_mealTypeFilter"',
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              else
+                                _dishGrid(context, visibleDishes),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 48),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Color(0xFFFFC024),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    WebsiteContentStore.instance.cateringPageSubtitle,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E1E1E),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  alignment: WrapAlignment.center,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [_setMenuDropdown(setMenus), _mealTypeChips()],
-                ),
-                const SizedBox(height: 24),
-                Card(
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (visibleDishes.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Center(
-                              child: Text(
-                                _mealTypeFilter.isEmpty
-                                    ? 'No dishes available'
-                                    : 'No dishes in "$_mealTypeFilter"',
-                                style: const TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ),
-                          )
-                        else
-                          _dishGrid(context, visibleDishes),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 48),
-                CustomerSiteFooter(
-                  store: WebsiteContentStore.instance,
-                  contentEditable: widget.contentEditable,
-                ),
-              ],
+              ),
             ),
-          ),
+            CustomerSiteFooter(
+              store: WebsiteContentStore.instance,
+              contentEditable: widget.contentEditable,
+            ),
+          ],
         ),
       ),
     );

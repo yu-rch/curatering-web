@@ -309,15 +309,19 @@ extension _ManageEventsTableExt on _ManageEventsState {
         label: 'Formality',
         value: dto.formalityLevel.isEmpty ? '—' : dto.formalityLevel,
       ),
-      AntdDescriptionItem(label: 'Customer', value: dto.customerName),
-      AntdDescriptionItem(label: 'Contact person', value: dto.contactPerson),
-      AntdDescriptionItem(label: 'Phone', value: dto.contactNumber),
-      AntdDescriptionItem(
-        label: 'Email',
-        value: dto.emailAddress,
-        span: cols >= 2 ? 2 : 1,
-      ),
-      AntdDescriptionItem(label: 'Guests', value: '${dto.guestCount}'),
+      if (!_isSupervisor)
+        AntdDescriptionItem(label: 'Customer', value: dto.customerName),
+      if (!_isSupervisor) ...[
+        AntdDescriptionItem(label: 'Contact person', value: dto.contactPerson),
+        AntdDescriptionItem(label: 'Phone', value: dto.contactNumber),
+        AntdDescriptionItem(
+          label: 'Email',
+          value: dto.emailAddress,
+          span: cols >= 2 ? 2 : 1,
+        ),
+      ],
+      if (!_isSupervisor)
+        AntdDescriptionItem(label: 'Guests', value: '${dto.guestCount}'),
       AntdDescriptionItem(
         label: 'Allergens',
         value: dto.allergens.trim().isEmpty ? '—' : dto.allergens,
@@ -348,17 +352,19 @@ extension _ManageEventsTableExt on _ManageEventsState {
         value: _themeExtrasLine(dto),
         span: cols >= 2 ? 2 : 1,
       ),
-      AntdDescriptionItem(label: 'Total cost', value: formatPesos(total)),
-      AntdDescriptionItem(
-        label: 'Down payment',
-        value:
-            '${dto.downPaymentStatus} · ${formatPesos(dto.downPaymentAmount > 0 ? dto.downPaymentAmount : total / 2)}',
-      ),
-      AntdDescriptionItem(
-        label: 'Full payment',
-        value:
-            '${dto.fullPaymentStatus} · ${formatPesos(dto.fullPaymentAmount > 0 ? dto.fullPaymentAmount : total)}',
-      ),
+      if (!_isSupervisor) ...[
+        AntdDescriptionItem(label: 'Total cost', value: formatPesos(total)),
+        AntdDescriptionItem(
+          label: 'Down payment',
+          value:
+              '${dto.downPaymentStatus} · ${formatPesos(dto.downPaymentAmount > 0 ? dto.downPaymentAmount : total / 2)}',
+        ),
+        AntdDescriptionItem(
+          label: 'Full payment',
+          value:
+              '${dto.fullPaymentStatus} · ${formatPesos(dto.fullPaymentAmount > 0 ? dto.fullPaymentAmount : total)}',
+        ),
+      ],
     ];
   }
 
@@ -2119,6 +2125,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
       title: '',
       orders: _ongoingOrders,
       emptyMessage: 'No ongoing events.',
+      showGuestsAndTotal: !_isSupervisor,
     );
   }
 

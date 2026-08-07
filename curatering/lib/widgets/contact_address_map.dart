@@ -6,10 +6,15 @@ import '../utils/geo_utils.dart';
 
 /// Read-only map preview for Contact Us (fixed Macrina's Kitchen coordinates).
 class ContactAddressMap extends StatelessWidget {
-  const ContactAddressMap({super.key, required this.address});
+  const ContactAddressMap({
+    super.key,
+    required this.address,
+    this.height = 220,
+  });
 
   /// Shown in UI copy; map center uses [contactPageMapLat] / [contactPageMapLng].
   final String address;
+  final double height;
 
   static final LatLng _pin = LatLng(contactPageMapLat, contactPageMapLng);
 
@@ -18,7 +23,7 @@ class ContactAddressMap extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: SizedBox(
-        height: 220,
+        height: height,
         child: FlutterMap(
           options: MapOptions(initialCenter: _pin, initialZoom: 16),
           children: [

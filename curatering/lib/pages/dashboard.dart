@@ -20,6 +20,38 @@ class Dashboard extends StatefulWidget {
   State<Dashboard> createState() => _DashboardState();
 }
 
+enum _DashboardSection {
+  restaurant,
+  catering,
+  aiInsights,
+  orderOutcomes,
+  performanceMix,
+  financial,
+  websiteAnalytics,
+}
+
+extension on _DashboardSection {
+  String get label => switch (this) {
+    _DashboardSection.restaurant => 'Restaurant metrics',
+    _DashboardSection.catering => 'Catering metrics',
+    _DashboardSection.aiInsights => 'AI insights',
+    _DashboardSection.orderOutcomes => 'Order outcomes',
+    _DashboardSection.performanceMix => 'Performance mix',
+    _DashboardSection.financial => 'Financial data',
+    _DashboardSection.websiteAnalytics => 'Website analytics',
+  };
+
+  IconData get icon => switch (this) {
+    _DashboardSection.restaurant => Icons.restaurant_menu,
+    _DashboardSection.catering => Icons.celebration,
+    _DashboardSection.aiInsights => Icons.auto_awesome,
+    _DashboardSection.orderOutcomes => Icons.bar_chart,
+    _DashboardSection.performanceMix => Icons.donut_large,
+    _DashboardSection.financial => Icons.payments_outlined,
+    _DashboardSection.websiteAnalytics => Icons.language,
+  };
+}
+
 class _DashboardState extends State<Dashboard> {
   static const bool _showAiHealthPanel = false;
   static const bool _showDishTrendsPanel = false;
@@ -48,6 +80,7 @@ class _DashboardState extends State<Dashboard> {
   String _businessSide = 'ALL';
   String _cateringStyle = 'ALL';
   String _dashboardSearch = '';
+  _DashboardSection _selectedDashboardSection = _DashboardSection.restaurant;
 
   @override
   void initState() {
@@ -1158,21 +1191,6 @@ class _DashboardState extends State<Dashboard> {
                   color: AntdTokens.success,
                   child: _insightList(insight.recommendations),
                 ),
-                _aiSectionCard(
-                  title: 'Alerts',
-                  subtitle: 'Severity cards',
-                  icon: Icons.notifications_active_outlined,
-                  color: AntdTokens.error,
-                  child:
-                      insight.alerts.isEmpty
-                          ? const Text(
-                            'No alerts.',
-                            style: TextStyle(color: AntdTokens.labelMuted),
-                          )
-                          : Column(
-                            children: insight.alerts.map(_alertCard).toList(),
-                          ),
-                ),
               ]),
           ],
         ),
@@ -1687,6 +1705,153 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
+  List<_DashboardSection> get _availableDashboardSections {
+    final sections = <_DashboardSection>[];
+    if (_showRestaurantSection()) {
+      sections.add(_DashboardSection.restaurant);
+    }
+    if (_showCateringSection()) {
+      sections.add(_DashboardSection.catering);
+    }
+    sections.add(_DashboardSection.aiInsights);
+    if (_showBusinessOverview()) {
+      sections.addAll([
+        _DashboardSection.orderOutcomes,
+        _DashboardSection.performanceMix,
+        _DashboardSection.financial,
+        _DashboardSection.websiteAnalytics,
+      ]);
+    }
+    return sections;
+  }
+
+  _DashboardSection get _effectiveDashboardSection {
+    final available = _availableDashboardSections;
+    if (available.contains(_selectedDashboardSection)) {
+      return _selectedDashboardSection;
+    }
+    return available.isEmpty
+        ? _DashboardSection.restaurant
+        : available.first;
+  }
+
+  Widget _pinnedAlertsStrip() {
+    final alerts = _insight?.alerts ?? const <DashboardInsightAlert>[];
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: AntdTokens.borderSubtle),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.notifications_active_outlined,
+                  color: AntdTokens.error,
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'Alerts',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: AntdTokens.valueDark,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (alerts.isEmpty)
+              const Text(
+                'No alerts.',
+                style: TextStyle(color: AntdTokens.labelMuted),
+              )
+            else
+              Column(children: alerts.map(_alertCard).toList()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dashboardSectionGrid() {
+    final available = _availableDashboardSections;
+    final selected = _effectiveDashboardSection;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final crossAxisCount = width >= 900 ? 4 : (width >= 560 ? 2 : 1);
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: available.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: crossAxisCount == 1 ? 4.2 : 2.4,
+          ),
+          itemBuilder: (context, index) {
+            final section = available[index];
+            final isSelected = section == selected;
+            return Material(
+              color: isSelected
+                  ? AntdTokens.blue.withValues(alpha: 0.10)
+                  : Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(
+                  color: isSelected
+                      ? AntdTokens.blue
+                      : AntdTokens.borderSubtle,
+                  width: isSelected ? 1.6 : 1,
+                ),
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => setState(() => _selectedDashboardSection = section),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        section.icon,
+                        color: isSelected
+                            ? AntdTokens.blue
+                            : AntdTokens.labelMuted,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          section.label,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: isSelected
+                                ? AntdTokens.valueDark
+                                : AntdTokens.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = _summary;
@@ -1814,17 +1979,25 @@ class _DashboardState extends State<Dashboard> {
                       child: Center(child: CircularProgressIndicator()),
                     )
                   else if (s != null) ...[
-                    _aiInsightsPanel(),
-                    if (_showAiHealthPanel) ...[
-                      const SizedBox(height: 16),
-                      _aiHealthPanel(),
-                    ],
-                    if (_showDishTrendsPanel) ...[
-                      const SizedBox(height: 16),
-                      _dishTrendsPanel(),
-                    ],
+                    _pinnedAlertsStrip(),
                     const SizedBox(height: 16),
-                    if (_showRestaurantSection()) ...[
+                    _dashboardSectionGrid(),
+                    const SizedBox(height: 16),
+                    if (_effectiveDashboardSection ==
+                        _DashboardSection.aiInsights) ...[
+                      _aiInsightsPanel(),
+                      if (_showAiHealthPanel) ...[
+                        const SizedBox(height: 16),
+                        _aiHealthPanel(),
+                      ],
+                      if (_showDishTrendsPanel) ...[
+                        const SizedBox(height: 16),
+                        _dishTrendsPanel(),
+                      ],
+                    ],
+                    if (_effectiveDashboardSection ==
+                            _DashboardSection.restaurant &&
+                        _showRestaurantSection()) ...[
                       _businessSection(
                         title: 'Restaurant Orders',
                         subtitle:
@@ -1936,7 +2109,9 @@ class _DashboardState extends State<Dashboard> {
                       ),
                       const SizedBox(height: 16),
                     ],
-                    if (_showCateringSection()) ...[
+                    if (_effectiveDashboardSection ==
+                            _DashboardSection.catering &&
+                        _showCateringSection()) ...[
                       _businessSection(
                         title: 'Catering Orders',
                         subtitle:
@@ -2053,10 +2228,15 @@ class _DashboardState extends State<Dashboard> {
                       ),
                       const SizedBox(height: 16),
                     ],
-                    if (_showBusinessOverview()) ...[
+                    if (_effectiveDashboardSection ==
+                            _DashboardSection.websiteAnalytics &&
+                        _showBusinessOverview()) ...[
                       _chartGrid([_websiteAnalyticsCard()]),
-                      const SizedBox(height: 20),
-                      _sectionTitle('Business Overview'),
+                    ],
+                    if (_effectiveDashboardSection ==
+                            _DashboardSection.orderOutcomes &&
+                        _showBusinessOverview()) ...[
+                      _sectionTitle('Order Outcomes'),
                       _chartGrid([
                         _dashboardCard(
                           title: 'Order Outcomes',
@@ -2110,6 +2290,13 @@ class _DashboardState extends State<Dashboard> {
                             ),
                           ),
                         ),
+                      ]),
+                    ],
+                    if (_effectiveDashboardSection ==
+                            _DashboardSection.performanceMix &&
+                        _showBusinessOverview()) ...[
+                      _sectionTitle('Performance Mix'),
+                      _chartGrid([
                         _dashboardCard(
                           title: 'Performance Mix',
                           subtitle: 'Success vs. open/cancelled work',
@@ -2164,7 +2351,10 @@ class _DashboardState extends State<Dashboard> {
                           ),
                         ),
                       ]),
-                      const SizedBox(height: 20),
+                    ],
+                    if (_effectiveDashboardSection ==
+                            _DashboardSection.financial &&
+                        _showBusinessOverview()) ...[
                       _sectionTitle('Financial Data'),
                       _metricsRow([
                         _metricCard(

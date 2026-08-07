@@ -69,7 +69,7 @@ class _LoginState extends State<Login> {
       final role = resp.user.role;
       final targetRoute = switch (role) {
         Role.superAdmin => '/manage-accounts',
-        Role.supervisor => '/dashboard',
+        Role.supervisor => '/manage-events',
         Role.manager => '/manage-events',
         Role.cashier => '/restaurant-orders',
       };

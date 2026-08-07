@@ -96,6 +96,7 @@ class _GalleryPageState extends State<GalleryPage> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 48),
                 ListenableBuilder(
                   listenable: w,
                   builder:
@@ -133,6 +134,7 @@ class _GalleryPageState extends State<GalleryPage> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 48),
                 ListenableBuilder(
                   listenable: w,
                   builder:
@@ -198,12 +200,16 @@ class _GalleryPageState extends State<GalleryPage> {
     return DropdownButtonFormField<String>(
       value: value,
       isExpanded: true,
+      isDense: true,
+      style: const TextStyle(fontSize: 12, color: Color(0xFF1E1E1E)),
       decoration: InputDecoration(
         labelText: title,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        labelStyle: const TextStyle(fontSize: 11),
+        isDense: true,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 12,
+          horizontal: 4,
+          vertical: 4,
         ),
       ),
       items: items,
@@ -215,13 +221,16 @@ class _GalleryPageState extends State<GalleryPage> {
     return TextField(
       onChanged:
           (v) => setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
+      style: const TextStyle(fontSize: 12),
       decoration: InputDecoration(
         hintText: hintText,
-        prefixIcon: const Icon(Icons.search),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        hintStyle: const TextStyle(fontSize: 11),
+        prefixIcon: const Icon(Icons.search, size: 16),
+        isDense: true,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 12,
+          horizontal: 4,
+          vertical: 4,
         ),
       ),
     );
@@ -272,7 +281,7 @@ class _GalleryPageState extends State<GalleryPage> {
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        const gap = 12.0;
+        const gap = 4.0;
         final inline = constraints.maxWidth >= 760;
 
         if (!inline) {

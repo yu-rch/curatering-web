@@ -20,14 +20,50 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
   bool _isLoading = true;
   String? _error;
   bool _includeArchived = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _statusFilter = 'all'; // all | verified | pending | archived
 
   bool get _isSuperAdmin =>
       AuthSession.instance.currentRole == Role.superAdmin;
+
+  List<dynamic> get _filteredCustomers {
+    final q = _searchQuery.trim().toLowerCase();
+    return _customers.where((customer) {
+      final isArchived = customer['archived'] == true;
+      final isVerified = customer['is_verified'] == true;
+      switch (_statusFilter) {
+        case 'verified':
+          if (isArchived || !isVerified) return false;
+          break;
+        case 'pending':
+          if (isArchived || isVerified) return false;
+          break;
+        case 'archived':
+          if (!isArchived) return false;
+          break;
+        case 'all':
+        default:
+          break;
+      }
+      if (q.isEmpty) return true;
+      final name = '${customer['full_name'] ?? ''}'.toLowerCase();
+      final email = '${customer['email'] ?? ''}'.toLowerCase();
+      final phone = '${customer['phone'] ?? ''}'.toLowerCase();
+      return name.contains(q) || email.contains(q) || phone.contains(q);
+    }).toList();
+  }
 
   @override
   void initState() {
     super.initState();
     _loadCustomers();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadCustomers() async {
@@ -183,6 +219,64 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
               style: TextStyle(color: Colors.grey.shade700),
             ),
             const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: const InputDecoration(
+                      hintText: 'Search by name, email, or phone',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (value) => setState(() => _searchQuery = value),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 180,
+                  child: DropdownButtonFormField<String>(
+                    value: _statusFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Status',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: 'all',
+                        child: Text('All'),
+                      ),
+                      const DropdownMenuItem(
+                        value: 'verified',
+                        child: Text('Verified'),
+                      ),
+                      const DropdownMenuItem(
+                        value: 'pending',
+                        child: Text('Pending'),
+                      ),
+                      if (_isSuperAdmin)
+                        const DropdownMenuItem(
+                          value: 'archived',
+                          child: Text('Archived'),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _statusFilter = value;
+                        if (value == 'archived' && !_includeArchived) {
+                          _includeArchived = true;
+                          _loadCustomers();
+                        }
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
             Expanded(
               child:
                   _isLoading
@@ -204,13 +298,13 @@ class _CustomerManagementPageState extends State<CustomerManagementPage> {
                           ],
                         ),
                       )
-                      : _customers.isEmpty
+                      : _filteredCustomers.isEmpty
                       ? const Center(child: Text('No customers found'))
                       : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
-                        itemCount: _customers.length,
+                        itemCount: _filteredCustomers.length,
                         itemBuilder: (context, index) {
-                          final customer = _customers[index];
+                          final customer = _filteredCustomers[index];
                           final isArchived = customer['archived'] == true;
                           return Card(
                             margin: const EdgeInsets.only(bottom: 12),

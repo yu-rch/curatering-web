@@ -11,6 +11,7 @@ import '../config/site_routes.dart';
 import '../constants/catering_meal_types.dart';
 import '../pages/checkout_page.dart';
 import '../pages/customer_login.dart';
+import '../pages/guest_order_tracking_page.dart';
 import '../pages/my_caterings_page.dart';
 import '../pages/my_order_tracking_page.dart';
 import '../pages/my_orders_page.dart';
@@ -30,6 +31,10 @@ class CustomerWebsiteTopBar extends StatefulWidget {
 
   /// When false (e.g. staff preview with content editing), cart and login strip are hidden.
   final bool showCartAndCustomerAuth;
+
+  /// Shared across route rebuilds so the yellow underline can slide between pages.
+  static double? sharedUnderlineLeft;
+  static double? sharedUnderlineWidth;
 
   @override
   State<CustomerWebsiteTopBar> createState() => _CustomerWebsiteTopBarState();
@@ -92,18 +97,73 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
     if (itemCtx == null || rowCtx == null) return;
     final itemBox = itemCtx.findRenderObject() as RenderBox?;
     final rowBox = rowCtx.findRenderObject() as RenderBox?;
-    if (itemBox == null || rowBox == null || !itemBox.hasSize || !rowBox.hasSize) {
+    if (itemBox == null ||
+        rowBox == null ||
+        !itemBox.hasSize ||
+        !rowBox.hasSize) {
       return;
     }
     final offset = itemBox.localToGlobal(Offset.zero, ancestor: rowBox);
     const barWidth = 32.0;
     final left = offset.dx + (itemBox.size.width - barWidth) / 2;
-    if (_underlineLeft == left && _underlineReady) return;
+
+    if (!_underlineReady) {
+      final seedLeft = CustomerWebsiteTopBar.sharedUnderlineLeft ?? left;
+      final seedWidth = CustomerWebsiteTopBar.sharedUnderlineWidth ?? barWidth;
+      setState(() {
+        _underlineLeft = seedLeft;
+        _underlineWidth = seedWidth;
+        _underlineReady = true;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          _underlineLeft = left;
+          _underlineWidth = barWidth;
+        });
+        CustomerWebsiteTopBar.sharedUnderlineLeft = left;
+        CustomerWebsiteTopBar.sharedUnderlineWidth = barWidth;
+      });
+      return;
+    }
+
+    if (_underlineLeft == left && _underlineWidth == barWidth) return;
     setState(() {
       _underlineLeft = left;
       _underlineWidth = barWidth;
-      _underlineReady = true;
     });
+    CustomerWebsiteTopBar.sharedUnderlineLeft = left;
+    CustomerWebsiteTopBar.sharedUnderlineWidth = barWidth;
+  }
+
+  Future<void> _openOrderTracking() async {
+    if (_isCustomerLoggedIn) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const MyOrderTrackingPage(),
+        ),
+      );
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final orderNo = prefs.getString('guest_track_order_no');
+    final email = prefs.getString('guest_track_email');
+    final phone = prefs.getString('guest_track_phone');
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder:
+            (_) => GuestOrderTrackingPage(
+              initialOrderNo: orderNo,
+              initialEmail: email,
+              initialPhone: phone,
+              autoLookup:
+                  (orderNo ?? '').trim().isNotEmpty &&
+                  ((email ?? '').trim().isNotEmpty ||
+                      (phone ?? '').trim().isNotEmpty),
+            ),
+      ),
+    );
   }
 
   String _navRouteFor(CmsNavItem item) {
@@ -705,6 +765,14 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
         ? Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              IconButton(
+                icon: const Icon(
+                  Icons.local_shipping_outlined,
+                  color: Colors.white,
+                ),
+                onPressed: _openOrderTracking,
+                tooltip: 'Track your order',
+              ),
               Stack(
                 clipBehavior: Clip.none,
                 children: [

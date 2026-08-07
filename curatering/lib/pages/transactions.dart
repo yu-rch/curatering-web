@@ -115,8 +115,14 @@ class _TransactionsState extends State<Transactions> {
         final totalCost = computeOrderTotalCost(o);
         final points =
             o.totalCost > 0
-                ? computeLoyaltyPointsFromCost(o.totalCost)
-                : computeLoyaltyPointsFromCost(totalCost);
+                ? computeLoyaltyPointsFromCost(
+                  o.totalCost,
+                  orderType: 'catering',
+                )
+                : computeLoyaltyPointsFromCost(
+                  totalCost,
+                  orderType: 'catering',
+                );
         rows.add(
           _HistoryRow(
             orderNo: _displayOrderNo(o),
@@ -147,7 +153,10 @@ class _TransactionsState extends State<Transactions> {
         final points =
             pointsEarned is num && pointsEarned > 0
                 ? pointsEarned.round()
-                : computeLoyaltyPointsFromCost(total);
+                : computeLoyaltyPointsFromCost(
+                  total,
+                  orderType: 'restaurant',
+                );
         rows.add(
           _HistoryRow(
             orderNo: formatRestaurantOrderNo(o),

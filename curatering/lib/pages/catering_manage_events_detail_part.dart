@@ -283,7 +283,8 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                   ],
                   if (!isCancelled &&
                       stage != 'completed' &&
-                      stage != 'cancelled') ...[
+                      stage != 'cancelled' &&
+                      !_isSupervisor) ...[
                     _detailSection(
                       'Additional costs',
                       child: _buildAdditionalCostsSection(
@@ -300,30 +301,35 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                       children: [
                         _detailInfoRow('Transaction #', tx),
                         _detailInfoRow('Event', order.eventTitle),
-                        _detailInfoRow('Customer', order.customerName),
-                        _detailInfoRow('Contact', order.contactPerson),
-                        _detailInfoRow('Contact number', order.contactNumber),
-                        _detailInfoRow('Email', order.emailAddress),
+                        if (!_isSupervisor) ...[
+                          _detailInfoRow('Customer', order.customerName),
+                          _detailInfoRow('Contact', order.contactPerson),
+                          _detailInfoRow('Contact number', order.contactNumber),
+                          _detailInfoRow('Email', order.emailAddress),
+                        ],
                         _detailInfoRow('Event type', order.eventType),
-                        _detailInfoRow('Guests', '${order.guestCount}'),
+                        if (!_isSupervisor)
+                          _detailInfoRow('Guests', '${order.guestCount}'),
                         _detailInfoRow('Venue', order.address),
                         _detailInfoRow('Schedule', _formatOrderSchedule(order)),
-                        _detailInfoRow('Total cost', formatPesos(total)),
-                        if ((order.themeDesign.laborCost ?? 0) > 0)
-                          _detailInfoRow(
-                            'Labor cost',
-                            formatPesos(order.themeDesign.laborCost!),
-                          ),
-                        if ((order.themeDesign.travelCost ?? 0) > 0)
-                          _detailInfoRow(
-                            'Travel cost',
-                            formatPesos(order.themeDesign.travelCost!),
-                          ),
-                        if (_additionalCostsTotal(order) > 0)
-                          _detailInfoRow(
-                            'Additional costs',
-                            formatPesos(_additionalCostsTotal(order)),
-                          ),
+                        if (!_isSupervisor) ...[
+                          _detailInfoRow('Total cost', formatPesos(total)),
+                          if ((order.themeDesign.laborCost ?? 0) > 0)
+                            _detailInfoRow(
+                              'Labor cost',
+                              formatPesos(order.themeDesign.laborCost!),
+                            ),
+                          if ((order.themeDesign.travelCost ?? 0) > 0)
+                            _detailInfoRow(
+                              'Travel cost',
+                              formatPesos(order.themeDesign.travelCost!),
+                            ),
+                          if (_additionalCostsTotal(order) > 0)
+                            _detailInfoRow(
+                              'Additional costs',
+                              formatPesos(_additionalCostsTotal(order)),
+                            ),
+                        ],
                       ],
                     ),
                   ),
@@ -401,49 +407,51 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                       ),
                     ],
                   ],
-                  const SizedBox(height: 12),
-                  _detailSection(
-                    'Order summary',
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        OutlinedButton(
-                          onPressed: () => _generateOrderSummaryPdf(
-                            order,
-                            OrderSummaryPdfVariant.beforeDownPayment,
-                          ),
-                          child: const Text('Order Summary before Down Payment'),
-                        ),
-                        if (stage != 'new_event' && stage != 'online_inquiries')
+                  if (!_isSupervisor) ...[
+                    const SizedBox(height: 12),
+                    _detailSection(
+                      'Order summary',
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
                           OutlinedButton(
                             onPressed: () => _generateOrderSummaryPdf(
                               order,
-                              OrderSummaryPdfVariant.afterDownPayment,
+                              OrderSummaryPdfVariant.beforeDownPayment,
                             ),
-                            child: const Text('Order Summary after Down Payment'),
+                            child: const Text('Order Summary before Down Payment'),
                           ),
-                        if (stage == 'for_down_payment' ||
-                            stage == 'on_going' ||
-                            stage == 'for_full_payment')
-                          OutlinedButton(
-                            onPressed: () => _generateOrderSummaryPdf(
-                              order,
-                              OrderSummaryPdfVariant.additionalCosts,
+                          if (stage != 'new_event' && stage != 'online_inquiries')
+                            OutlinedButton(
+                              onPressed: () => _generateOrderSummaryPdf(
+                                order,
+                                OrderSummaryPdfVariant.afterDownPayment,
+                              ),
+                              child: const Text('Order Summary after Down Payment'),
                             ),
-                            child: const Text('Order Summary | Additional Costs'),
-                          ),
-                        if (stage == 'completed')
-                          OutlinedButton(
-                            onPressed: () => _generateOrderSummaryPdf(
-                              order,
-                              OrderSummaryPdfVariant.fullyPaid,
+                          if (stage == 'for_down_payment' ||
+                              stage == 'on_going' ||
+                              stage == 'for_full_payment')
+                            OutlinedButton(
+                              onPressed: () => _generateOrderSummaryPdf(
+                                order,
+                                OrderSummaryPdfVariant.additionalCosts,
+                              ),
+                              child: const Text('Order Summary | Additional Costs'),
                             ),
-                            child: const Text('Order Summary Fully Paid'),
-                          ),
-                      ],
+                          if (stage == 'completed')
+                            OutlinedButton(
+                              onPressed: () => _generateOrderSummaryPdf(
+                                order,
+                                OrderSummaryPdfVariant.fullyPaid,
+                              ),
+                              child: const Text('Order Summary Fully Paid'),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                   if (_orderHasEventDesign(order) || canEditTheme) ...[
                     const SizedBox(height: 12),
                     _buildEventDesignDetailSection(order, readOnly: !canEditTheme),

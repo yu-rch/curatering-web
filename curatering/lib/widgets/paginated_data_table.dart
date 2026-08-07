@@ -126,6 +126,7 @@ class PagedDataTable extends StatefulWidget {
     this.maxTableHeight = 560,
     this.pdfExcludedColumnIndexes = const {},
     this.fullWidth = false,
+    this.minTableWidth,
     this.dataRowMinHeight,
     this.dataRowMaxHeight,
     this.headingRowHeight,
@@ -148,6 +149,7 @@ class PagedDataTable extends StatefulWidget {
   final double maxTableHeight;
   final Set<int> pdfExcludedColumnIndexes;
   final bool fullWidth;
+  final double? minTableWidth;
   final double? dataRowMinHeight;
   final double? dataRowMaxHeight;
   final double? headingRowHeight;
@@ -248,12 +250,12 @@ class _PagedDataTableState extends State<PagedDataTable> {
       builder: (context, constraints) {
         final minTableWidth = widget.fullWidth && constraints.maxWidth.isFinite
             ? constraints.maxWidth
-            : null;
+            : (widget.minTableWidth ?? 720);
         return SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              minWidth: minTableWidth ?? 720,
+              minWidth: minTableWidth,
             ),
             child: table,
           ),

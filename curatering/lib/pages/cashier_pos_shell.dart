@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../auth/auth_session.dart';
+import '../auth/roles.dart';
 import '../services/cashier_pos_api.dart';
 import '../services/menu_store.dart';
 import '../models/menu_dish.dart';
@@ -1375,14 +1376,16 @@ class _CashierPosShellState extends State<CashierPosShell> {
             if (inDrawer) _posScaffoldKey.currentState?.closeDrawer();
             _refreshAll();
           }),
-          const SizedBox(height: 4),
-          _sidebarAction(Icons.logout, 'Logout', Colors.red.shade400, () async {
-            if (inDrawer) _posScaffoldKey.currentState?.closeDrawer();
-            final ok = await confirmLogout(context);
-            if (ok != true || !mounted) return;
-            AuthSession.instance.clear();
-            Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-          }),
+          if (AuthSession.instance.currentRole == Role.cashier) ...[
+            const SizedBox(height: 4),
+            _sidebarAction(Icons.logout, 'Logout', Colors.red.shade400, () async {
+              if (inDrawer) _posScaffoldKey.currentState?.closeDrawer();
+              final ok = await confirmLogout(context);
+              if (ok != true || !mounted) return;
+              AuthSession.instance.clear();
+              Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+            }),
+          ],
           const SizedBox(height: 16),
         ],
       ),
@@ -1568,6 +1571,11 @@ class _CashierPosShellState extends State<CashierPosShell> {
 
   Widget _buildDishCard(MenuDish dish) {
     final price = double.tryParse(dish.price) ?? 0;
+    void addToTray() {
+      if (!dish.available) return;
+      _showAddToTrayDialog(dish);
+    }
+
     return Card(
       elevation: 2,
       shape:
@@ -1578,20 +1586,26 @@ class _CashierPosShellState extends State<CashierPosShell> {
         children: [
           Expanded(
             flex: 3,
-            child: ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(12)),
-              child: RepaintBoundary(
-                child: dish.imageBase64?.isNotEmpty == true
-                    ? Image.memory(
-                        base64Decode(dish.imageBase64!),
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                      )
-                    : Container(
-                        color: Colors.grey.shade200,
-                        child: const Icon(Icons.fastfood, size: 48),
-                      ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: dish.available ? addToTray : null,
+                child: ClipRRect(
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(12)),
+                  child: RepaintBoundary(
+                    child: dish.imageBase64?.isNotEmpty == true
+                        ? Image.memory(
+                            base64Decode(dish.imageBase64!),
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                          )
+                        : Container(
+                            color: Colors.grey.shade200,
+                            child: const Icon(Icons.fastfood, size: 48),
+                          ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -1625,9 +1639,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
                   SizedBox(
                     height: 28,
                     child: ElevatedButton(
-                      onPressed: dish.available
-                          ? () => _showAddToTrayDialog(dish)
-                          : null,
+                      onPressed: dish.available ? addToTray : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: dish.available
                             ? AntdTokens.brandOnPrimary

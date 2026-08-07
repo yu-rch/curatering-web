@@ -741,7 +741,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                 Expanded(
                   flex: 2,
                   child: Text(
-                    'Points Application',
+                    'Earn Rate (%)',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -774,7 +774,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                   ),
                   Expanded(
                     flex: 2,
-                    child: Text('${condition.pointsApplication} pts'),
+                    child: Text('${condition.pointsApplication}%'),
                   ),
                   Expanded(
                     flex: 1,
@@ -1105,7 +1105,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                                 const SizedBox(
                                   width: 100,
                                   child: Text(
-                                    'POINTS APPLICATION',
+                                    'EARN RATE (%)',
                                     style: TextStyle(fontSize: 11),
                                   ),
                                 ),
@@ -1114,7 +1114,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                                     controller: pointsController,
                                     decoration: const InputDecoration(
                                       isDense: true,
-                                      suffixText: 'pts',
+                                      suffixText: '%',
                                       border: OutlineInputBorder(),
                                     ),
                                     keyboardType: TextInputType.number,
@@ -1144,7 +1144,8 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                             if (points == null || points <= 0) {
                               setDialogState(
                                 () =>
-                                    errorMessage = 'Please enter valid points',
+                                    errorMessage =
+                                        'Please enter a valid earn rate (%)',
                               );
                               return;
                             }
@@ -1297,7 +1298,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                                 const SizedBox(
                                   width: 100,
                                   child: Text(
-                                    'POINTS APPLICATION',
+                                    'EARN RATE (%)',
                                     style: TextStyle(fontSize: 11),
                                   ),
                                 ),
@@ -1306,7 +1307,7 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                                     controller: pointsController,
                                     decoration: const InputDecoration(
                                       isDense: true,
-                                      suffixText: 'pts',
+                                      suffixText: '%',
                                       border: OutlineInputBorder(),
                                     ),
                                     keyboardType: TextInputType.number,
@@ -1336,7 +1337,8 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                             if (points == null || points <= 0) {
                               setDialogState(
                                 () =>
-                                    errorMessage = 'Please enter valid points',
+                                    errorMessage =
+                                        'Please enter a valid earn rate (%)',
                               );
                               return;
                             }
@@ -1441,12 +1443,12 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                           const SizedBox(
                             width: 100,
                             child: Text(
-                              'POINTS',
+                              'EARN RATE',
                               style: TextStyle(fontSize: 11),
                             ),
                           ),
                           Text(
-                            '${condition.pointsApplication} pts',
+                            '${condition.pointsApplication}%',
                             style: const TextStyle(fontSize: 13),
                           ),
                         ],
@@ -2227,8 +2229,11 @@ class _LoyaltyRewardCalculatorCardState
 
     final rule = _pointsRule();
     final ptsPerOrder =
-        rule != null && avgOrder >= rule.minimumCost
-            ? rule.pointsApplication
+        rule != null
+            ? LoyaltyRewardsStore.instance.getPointsForOrder(
+              avgOrder,
+              orderType: _channel,
+            )
             : 0;
     final monthlyPoints = ptsPerOrder * ordersPerMonth;
     final ordersToRedeem =
@@ -2342,7 +2347,7 @@ class _LoyaltyRewardCalculatorCardState
               )
             else ...[
               Text(
-                'Earns $ptsPerOrder pts per order (min PHP ${rule.minimumCost.toStringAsFixed(0)})',
+                'Earns $ptsPerOrder pts per order at ${rule.pointsApplication}% of order cost (min PHP ${rule.minimumCost.toStringAsFixed(0)})',
                 style: const TextStyle(fontSize: 12),
               ),
               const SizedBox(height: 8),

@@ -156,50 +156,71 @@ class _ContactUsPageState extends State<ContactUsPage> {
           ),
           Expanded(
             child: CenteredViewportScroll(
-              padding: websitePagePadding(context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 24),
-                  Text(
-                    'GET IN TOUCH',
-                    style: GoogleFonts.getFont(
-                      _primaryFont,
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF1E1E1E),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  WebsiteRichText(
-                    value: w.contactPageIntro,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey.shade600,
-                      height: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 48),
-
-                  if (isDesktop(context))
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(flex: 2, child: _buildFeedbackModule()),
-                        const SizedBox(width: 48),
-                        Expanded(child: _buildContactInfo(w)),
-                      ],
-                    )
-                  else
-                    Column(
-                      children: [
-                        _buildFeedbackModule(),
-                        const SizedBox(height: 48),
-                        _buildContactInfo(w),
-                      ],
-                    ),
-                ],
-              ),
+              padding: websitePagePadding(context, vertical: 12),
+              child:
+                  isDesktop(context)
+                      ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'GET IN TOUCH',
+                                  style: GoogleFonts.getFont(
+                                    _primaryFont,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFF1E1E1E),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                WebsiteRichText(
+                                  value: w.contactPageIntro,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey.shade600,
+                                    height: 1.35,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                _buildFeedbackModule(),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 24),
+                          Expanded(child: _buildContactInfo(w)),
+                        ],
+                      )
+                      : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'GET IN TOUCH',
+                            style: GoogleFonts.getFont(
+                              _primaryFont,
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF1E1E1E),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          WebsiteRichText(
+                            value: w.contactPageIntro,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                              height: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildFeedbackModule(),
+                          const SizedBox(height: 16),
+                          _buildContactInfo(w),
+                        ],
+                      ),
             ),
           ),
         ],
@@ -210,10 +231,11 @@ class _ContactUsPageState extends State<ContactUsPage> {
   Widget _buildFeedbackModule() {
     final twoCol = !isMobile(context);
     return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 2,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(14),
         child: Form(
           key: _feedbackFormKey,
           child: Column(
@@ -223,51 +245,51 @@ class _ContactUsPageState extends State<ContactUsPage> {
                 'Share your feedback',
                 style: GoogleFonts.getFont(
                   _primaryFont,
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: const Color(0xFF1E1E1E),
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Text(
                 'Tell us what worked well or what we can improve.',
                 style: TextStyle(
                   color: Colors.grey.shade600,
-                  fontSize: 13,
-                  height: 1.4,
+                  fontSize: 12,
+                  height: 1.3,
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               if (twoCol)
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(child: _feedbackNameField()),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(child: _feedbackEmailField()),
                   ],
                 )
               else ...[
                 _feedbackNameField(),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 _feedbackEmailField(),
               ],
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               if (twoCol)
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(child: _feedbackRatingField()),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(child: _feedbackMessageField()),
                   ],
                 )
               else ...[
                 _feedbackRatingField(),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 _feedbackMessageField(),
               ],
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
@@ -275,7 +297,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF1E1E1E),
                     side: const BorderSide(color: Color(0xFF1E1E1E)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -283,14 +305,17 @@ class _ContactUsPageState extends State<ContactUsPage> {
                   icon:
                       _isSubmittingFeedback
                           ? const SizedBox(
-                            height: 18,
-                            width: 18,
+                            height: 16,
+                            width: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Icon(Icons.rate_review_outlined),
+                          : const Icon(Icons.rate_review_outlined, size: 18),
                   label: Text(
                     _isSubmittingFeedback ? 'SUBMITTING...' : 'SUBMIT FEEDBACK',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ),
@@ -397,47 +422,42 @@ class _ContactUsPageState extends State<ContactUsPage> {
           'Contact Information',
           style: GoogleFonts.getFont(
             _primaryFont,
-            fontSize: 24,
+            fontSize: 20,
             fontWeight: FontWeight.bold,
             color: const Color(0xFF1E1E1E),
           ),
         ),
-        const SizedBox(height: 24),
-
+        const SizedBox(height: 8),
         _ContactCard(
           icon: Icons.place,
           title: 'Address',
           subtitle: w.contactAddress,
           onTap: () => _launchMap(w.contactAddress),
         ),
-        const SizedBox(height: 10),
-        ContactAddressMap(address: w.contactAddress),
-        const SizedBox(height: 16),
-
+        const SizedBox(height: 6),
+        ContactAddressMap(address: w.contactAddress, height: 120),
+        const SizedBox(height: 8),
         _ContactCard(
           icon: Icons.phone,
           title: 'Phone',
           subtitle: w.contactPhone,
           onTap: () => _launchPhone(w.contactPhone),
         ),
-        const SizedBox(height: 16),
-
+        const SizedBox(height: 8),
         _ContactCard(
           icon: Icons.email,
           title: 'Email',
           subtitle: w.contactEmail,
           onTap: () => _launchEmail(w.contactEmail),
         ),
-        const SizedBox(height: 16),
-
+        const SizedBox(height: 8),
         _ContactCard(
           icon: Icons.schedule,
           title: 'Business Hours',
           subtitle: w.contactHours,
           onTap: null,
         ),
-        const SizedBox(height: 16),
-
+        const SizedBox(height: 8),
         _ContactCard(
           icon: Icons.facebook,
           title: 'Facebook',
@@ -470,25 +490,26 @@ class _ContactCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      elevation: 2,
+      elevation: 1,
+      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 32,
+                height: 32,
                 decoration: BoxDecoration(
                   color: const Color(0xFF1E1E1E).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(icon, color: const Color(0xFF1E1E1E), size: 24),
+                child: Icon(icon, color: const Color(0xFF1E1E1E), size: 16),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -496,16 +517,16 @@ class _ContactCard extends StatelessWidget {
                     Text(
                       title,
                       style: const TextStyle(
-                        fontSize: 14,
+                        fontSize: 12,
                         fontWeight: FontWeight.bold,
                         color: Color(0xFF1E1E1E),
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 12,
                         color: Colors.grey.shade600,
                       ),
                     ),
@@ -515,7 +536,7 @@ class _ContactCard extends StatelessWidget {
               if (onTap != null)
                 Icon(
                   Icons.arrow_forward_ios,
-                  size: 16,
+                  size: 12,
                   color: Colors.grey.shade400,
                 ),
             ],

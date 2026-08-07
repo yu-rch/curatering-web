@@ -36,6 +36,7 @@ import '../widgets/website_rich_text.dart';
 import '../widgets/image_focus_dialog.dart';
 import '../widgets/cms_sections.dart';
 import '../widgets/customer_site_footer.dart';
+import '../widgets/customer_website_topbar.dart';
 import '../theme/website_header_font.dart';
 import '../constants/catering_meal_types.dart';
 import '../constants/home_default_assets.dart';
@@ -51,7 +52,6 @@ import 'my_orders_page.dart';
 import 'my_caterings_page.dart';
 import 'my_order_tracking_page.dart';
 import 'my_profile_page.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 part 'customer_website_theme_editor.dart';
 
@@ -305,6 +305,11 @@ class _LazyMainTabStackState extends State<_LazyMainTabStack> {
 class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ScrollController _pageScrollController = ScrollController();
+  final GlobalKey _homeNavRowKey = GlobalKey();
+  final List<GlobalKey> _homeNavItemKeys = List.generate(6, (_) => GlobalKey());
+  double _homeUnderlineLeft = 0;
+  double _homeUnderlineWidth = 32;
+  bool _homeUnderlineReady = false;
   int _navIndex = 0;
   int? _galleryDetailIndex;
   String _gallerySearchQuery = '';
@@ -1433,7 +1438,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     final r = AuthSession.instance.currentUser.value?.role;
     return switch (r) {
       Role.superAdmin => '/manage-accounts',
-      Role.supervisor => '/dashboard',
+      Role.supervisor => '/manage-events',
       _ => '/manage-events',
     };
   }
@@ -1603,22 +1608,45 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       ),
     );
 
-    final navLinks = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _navLink('Home', 0),
-        _navLink('Gallery', 1),
-        _navLink('Catering Menu', 2),
-        _navLink('Restaurant', 3),
-        _navLink('Inquire Now', 4),
-        _navLink('Contact Us', 5),
-      ],
-    );
+    final navLinks = _buildHomeSlidingNav();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateHomeUnderline());
 
     final trailingActions = !widget.contentEditable
         ? Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              IconButton(
+                icon: const Icon(
+                  Icons.local_shipping_outlined,
+                  color: Colors.white,
+                ),
+                tooltip: 'Track your order',
+                onPressed: () async {
+                  if (_isCustomerLoggedIn) {
+                    await _navigateToOrderTracking();
+                    return;
+                  }
+                  final prefs = await SharedPreferences.getInstance();
+                  final orderNo = prefs.getString('guest_track_order_no');
+                  final email = prefs.getString('guest_track_email');
+                  final phone = prefs.getString('guest_track_phone');
+                  if (!mounted) return;
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder:
+                          (_) => GuestOrderTrackingPage(
+                            initialOrderNo: orderNo,
+                            initialEmail: email,
+                            initialPhone: phone,
+                            autoLookup:
+                                (orderNo ?? '').trim().isNotEmpty &&
+                                ((email ?? '').trim().isNotEmpty ||
+                                    (phone ?? '').trim().isNotEmpty),
+                          ),
+                    ),
+                  );
+                },
+              ),
               ListenableBuilder(
                 listenable: CartStore.instance,
                 builder: (context, _) {
@@ -1774,129 +1802,139 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
+  Widget _buildHomeSlidingNav() {
+    const labels = [
+      'Home',
+      'Gallery',
+      'Catering Menu',
+      'Restaurant',
+      'Inquire Now',
+      'Contact Us',
+    ];
+    return Stack(
+      key: _homeNavRowKey,
+      clipBehavior: Clip.none,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < labels.length; i++)
+              KeyedSubtree(
+                key: _homeNavItemKeys[i],
+                child: _navLink(labels[i], i),
+              ),
+          ],
+        ),
+        if (_homeUnderlineReady)
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+            left: _homeUnderlineLeft,
+            bottom: 2,
+            width: _homeUnderlineWidth,
+            height: 2,
+            child: const ColoredBox(color: Color(0xFFFFC024)),
+          ),
+      ],
+    );
+  }
+
+  void _updateHomeUnderline() {
+    if (!mounted) return;
+    final activeIndex = _navIndex.clamp(0, _homeNavItemKeys.length - 1);
+    final itemCtx = _homeNavItemKeys[activeIndex].currentContext;
+    final rowCtx = _homeNavRowKey.currentContext;
+    if (itemCtx == null || rowCtx == null) return;
+    final itemBox = itemCtx.findRenderObject() as RenderBox?;
+    final rowBox = rowCtx.findRenderObject() as RenderBox?;
+    if (itemBox == null ||
+        rowBox == null ||
+        !itemBox.hasSize ||
+        !rowBox.hasSize) {
+      return;
+    }
+    final offset = itemBox.localToGlobal(Offset.zero, ancestor: rowBox);
+    const barWidth = 32.0;
+    final left = offset.dx + (itemBox.size.width - barWidth) / 2;
+
+    if (!_homeUnderlineReady) {
+      final seedLeft = CustomerWebsiteTopBar.sharedUnderlineLeft ?? left;
+      final seedWidth = CustomerWebsiteTopBar.sharedUnderlineWidth ?? barWidth;
+      setState(() {
+        _homeUnderlineLeft = seedLeft;
+        _homeUnderlineWidth = seedWidth;
+        _homeUnderlineReady = true;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          _homeUnderlineLeft = left;
+          _homeUnderlineWidth = barWidth;
+        });
+        CustomerWebsiteTopBar.sharedUnderlineLeft = left;
+        CustomerWebsiteTopBar.sharedUnderlineWidth = barWidth;
+      });
+      return;
+    }
+
+    if (_homeUnderlineLeft == left && _homeUnderlineWidth == barWidth) return;
+    setState(() {
+      _homeUnderlineLeft = left;
+      _homeUnderlineWidth = barWidth;
+    });
+    CustomerWebsiteTopBar.sharedUnderlineLeft = left;
+    CustomerWebsiteTopBar.sharedUnderlineWidth = barWidth;
+  }
+
   Widget _navLink(String label, int index) {
     final on = _navIndex == index && _galleryDetailIndex == null;
 
-    // Handle special navigation for gallery, restaurant, inquire, and contact us
-    if (index == 1 && label == 'Gallery') {
-      return InkWell(
-        onTap:
-            () => Navigator.pushReplacementNamed(
+    VoidCallback? onTap;
+    switch (index) {
+      case 1:
+        onTap = () => Navigator.pushReplacementNamed(
               context,
               customerRoute('/gallery'),
-            ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.normal,
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (index == 2 && label == 'Catering Menu') {
-      return InkWell(
-        onTap:
-            () => Navigator.pushReplacementNamed(
+            );
+        break;
+      case 2:
+        onTap = () => Navigator.pushReplacementNamed(
               context,
               customerRoute('/catering-menu'),
-            ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.normal,
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (index == 3 && label == 'Restaurant') {
-      return InkWell(
-        onTap:
-            () => Navigator.pushReplacementNamed(
+            );
+        break;
+      case 3:
+        onTap = () => Navigator.pushReplacementNamed(
               context,
               customerRoute('/restaurant'),
-            ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.normal,
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (index == 4 && label == 'Inquire Now') {
-      return InkWell(
-        onTap:
-            () => Navigator.pushReplacementNamed(
+            );
+        break;
+      case 4:
+        onTap = () => Navigator.pushReplacementNamed(
               context,
               customerRoute('/inquire'),
-            ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.normal,
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (index == 5 && label == 'Contact Us') {
-      return InkWell(
-        onTap:
-            () => Navigator.pushReplacementNamed(
+            );
+        break;
+      case 5:
+        onTap = () => Navigator.pushReplacementNamed(
               context,
               customerRoute('/contact-us'),
-            ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.normal,
-            ),
-          ),
-        ),
-      );
+            );
+        break;
+      default:
+        onTap = () => _selectNavIndex(index);
     }
 
     return InkWell(
-      onTap: () => _selectNavIndex(index),
+      onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: on ? Colors.white : Colors.white70,
-                fontWeight: on ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
-            if (on)
-              Container(height: 2, width: 32, color: const Color(0xFFFFC024)),
-          ],
+        child: Text(
+          label,
+          style: TextStyle(
+            color: on ? Colors.white : Colors.white70,
+            fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+          ),
         ),
       ),
     );
@@ -1925,73 +1963,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         child: IconButton(
           icon: const Icon(Icons.edit, color: Colors.white, size: 20),
           onPressed: onEdit,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTrackYourOrderCta() {
-    return Material(
-      color: Colors.white,
-      elevation: 1,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () async {
-          if (_isCustomerLoggedIn) {
-            await _navigateToOrderTracking();
-            return;
-          }
-          final prefs = await SharedPreferences.getInstance();
-          final orderNo = prefs.getString('guest_track_order_no');
-          final email = prefs.getString('guest_track_email');
-          final phone = prefs.getString('guest_track_phone');
-          if (!mounted) return;
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder:
-                  (_) => GuestOrderTrackingPage(
-                    initialOrderNo: orderNo,
-                    initialEmail: email,
-                    initialPhone: phone,
-                    autoLookup:
-                        (orderNo ?? '').trim().isNotEmpty &&
-                        ((email ?? '').trim().isNotEmpty ||
-                            (phone ?? '').trim().isNotEmpty),
-                  ),
-            ),
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Row(
-            children: [
-              Icon(Icons.local_shipping_outlined, color: Colors.amber.shade800),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Track your order',
-                      style: websiteHeaderStyle(fontSize: 18),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _isCustomerLoggedIn
-                          ? 'View the status of your recent orders'
-                          : 'Enter your order number or continue with a saved lookup',
-                      style: TextStyle(
-                        color: Colors.grey.shade700,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: Colors.grey.shade600),
-            ],
-          ),
         ),
       ),
     );
@@ -2483,8 +2454,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _buildTrackYourOrderCta(),
-                      const SizedBox(height: 28),
                       if (_isCustomerLoggedIn) ...[
                         _buildOrderAgainStrip(),
                         const SizedBox(height: 28),
@@ -2734,18 +2703,21 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 height: 160,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
-                  children: const [
+                  children: [
                     _SampleEventThemeTile(
                       label: 'Garden Reception',
                       subtitle: 'Soft florals & candlelight',
+                      assetPath: HomeDefaultAssets.collageAt(0)!,
                     ),
                     _SampleEventThemeTile(
                       label: 'Modern Corporate',
                       subtitle: 'Clean lines & brand accents',
+                      assetPath: HomeDefaultAssets.collageAt(1)!,
                     ),
                     _SampleEventThemeTile(
                       label: 'Birthday Glow',
                       subtitle: 'Warm lights & dessert station',
+                      assetPath: HomeDefaultAssets.collageAt(2)!,
                     ),
                   ],
                 ),
@@ -4863,10 +4835,12 @@ class _SampleEventThemeTile extends StatelessWidget {
   const _SampleEventThemeTile({
     required this.label,
     required this.subtitle,
+    required this.assetPath,
   });
 
   final String label;
   final String subtitle;
+  final String assetPath;
 
   @override
   Widget build(BuildContext context) {
@@ -4876,47 +4850,48 @@ class _SampleEventThemeTile extends StatelessWidget {
       margin: const EdgeInsets.only(right: 8),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.amber.shade100,
-            Colors.brown.shade100,
-            Colors.grey.shade200,
-          ],
-        ),
         border: Border.all(color: Colors.black12),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.celebration_outlined, color: Colors.amber.shade800),
-            const Spacer(),
-            Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
+            assetPath,
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.medium,
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              color: Colors.black.withValues(alpha: 0.45),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Sample theme',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Colors.amber.shade900,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

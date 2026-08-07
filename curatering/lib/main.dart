@@ -160,7 +160,7 @@ Route<dynamic>? _buildRouteForPath(String path) {
         (context) => _staffPage(
           RoleGuard(
             requiredRole: Role.manager,
-            allowedRoles: {Role.manager, Role.supervisor, Role.superAdmin},
+            allowedRoles: {Role.manager, Role.superAdmin},
             child: PagePermissionGuard(
               route: PagePermissionRoutes.dashboard,
               child: const _RoleAwareDashboard(),
@@ -675,7 +675,6 @@ class _MyAppState extends State<MyApp> {
                     requiredRole: Role.manager,
                     allowedRoles: {
                       Role.manager,
-                      Role.supervisor,
                       Role.superAdmin,
                     },
                     child: PagePermissionGuard(

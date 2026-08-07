@@ -197,15 +197,14 @@ class _MenuState extends State<Menu> {
   String _editingType = ''; // For restaurant dish type grouping
   String _editingMealType = ''; // Catering meal type (menu_dishes.meal_type)
   int _activeTabIndex = 0;
-  bool _isRestaurantGridView = true;
+  bool _isRestaurantGridView = false;
   List<String> _editingPaxOptions = ['1 pax'];
   List<String> _editingSauces = [];
   bool _editingSupportsAddOns = false;
   bool _editingAvailable = true;
   List<String> _selectedSetDishIds = [];
   String? _selectedSetMenuId;
-  bool _isModifyingSet = false;
-  bool _isGridView = true; // Default to grid view
+  bool _isGridView = false; // Default to table view
   bool _isSavingSetMenu = false;
   String? _setMenuError;
 
@@ -1328,9 +1327,9 @@ class _MenuState extends State<Menu> {
 
   Widget _buildDishCard(MenuDish dish) {
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(8.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -1338,29 +1337,29 @@ class _MenuState extends State<Menu> {
             Row(
               children: [
                 Container(
-                  width: 56,
-                  height: 56,
+                  width: 42,
+                  height: 42,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(6),
                     color: Colors.grey.shade200,
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: LazyDishImage(
                     dishId: dish.id,
-                    width: 56,
-                    height: 56,
+                    width: 42,
+                    height: 42,
                     fit: BoxFit.cover,
                     placeholder: Container(
                       color: Colors.grey.shade200,
                       child: const Icon(
                         Icons.fastfood,
-                        size: 28,
+                        size: 20,
                         color: Colors.grey,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1370,20 +1369,20 @@ class _MenuState extends State<Menu> {
                         dish.name,
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: 12,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 2),
                       Text(
                         'PHP${dish.price}',
                         style: TextStyle(
                           color: Colors.grey.shade600,
-                          fontSize: 12,
+                          fontSize: 11,
                         ),
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 2),
                       Text(
                         dish.available ? 'Available' : 'Not Available',
                         style: TextStyle(
@@ -1391,7 +1390,7 @@ class _MenuState extends State<Menu> {
                               dish.available
                                   ? Colors.green.shade700
                                   : Colors.red.shade700,
-                          fontSize: 11,
+                          fontSize: 10,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -1400,10 +1399,10 @@ class _MenuState extends State<Menu> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Wrap(
-              spacing: 6,
-              runSpacing: 4,
+              spacing: 4,
+              runSpacing: 2,
               children: [
                 _buildIconLabelButton(
                   icon: Icons.list_alt,
@@ -1632,7 +1631,10 @@ class _MenuState extends State<Menu> {
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                 fontSize: 11,
                 letterSpacing: 0.2,
-                color: selected ? Colors.white : Colors.grey.shade700,
+                color:
+                    selected
+                        ? const Color(0xFF1E1E1E)
+                        : Colors.grey.shade700,
               ),
             ),
           ),
@@ -1656,10 +1658,10 @@ class _MenuState extends State<Menu> {
     }
 
     return GridView.count(
-      crossAxisCount: 3,
-      crossAxisSpacing: 16,
-      mainAxisSpacing: 16,
-      childAspectRatio: 1.5,
+      crossAxisCount: 4,
+      crossAxisSpacing: 10,
+      mainAxisSpacing: 10,
+      childAspectRatio: 1.35,
       shrinkWrap: shrinkWrap,
       physics: physics,
       children: dishes.map(_buildDishCard).toList(),
@@ -2190,8 +2192,23 @@ class _MenuState extends State<Menu> {
     );
   }
 
+  List<MenuDish> _sortedCateringDishesForSet(List<MenuDish> cateringDishes) {
+    final byId = {for (final dish in cateringDishes) dish.id: dish};
+    final selected = <MenuDish>[];
+    for (final id in _selectedSetDishIds) {
+      final dish = byId[id];
+      if (dish != null) selected.add(dish);
+    }
+    final rest =
+        cateringDishes
+            .where((dish) => !_selectedSetDishIds.contains(dish.id))
+            .toList();
+    return [...selected, ...rest];
+  }
+
   Widget _buildSetMenuTab(List<MenuDish> cateringDishes) {
     final setMenus = SetMenuStore.instance.activeSetMenus;
+    final sortedCateringDishes = _sortedCateringDishesForSet(cateringDishes);
     final selectedSetName =
         _selectedSetMenuId != null
             ? setMenus
@@ -2344,10 +2361,7 @@ class _MenuState extends State<Menu> {
                                       dish,
                                       isInSet: true,
                                       onRemove:
-                                          _isModifyingSet
-                                              ? () =>
-                                                  _removeDishFromSet(dish.id)
-                                              : null,
+                                          () => _removeDishFromSet(dish.id),
                                     );
                                   },
                                 ),
@@ -2509,7 +2523,15 @@ class _MenuState extends State<Menu> {
                                       dish,
                                       isInSet: isInCurrentSelection,
                                       onAddToMenu:
-                                          () => _addDishToCurrentSet(dish.id),
+                                          isInCurrentSelection
+                                              ? null
+                                              : () =>
+                                                  _addDishToCurrentSet(dish.id),
+                                      onRemove:
+                                          isInCurrentSelection
+                                              ? () =>
+                                                  _removeDishFromSet(dish.id)
+                                              : null,
                                     );
                                   },
                                 ),
@@ -2551,19 +2573,26 @@ class _MenuState extends State<Menu> {
                           ),
                         ),
                       ),
-                      // All catering dishes
+                      // All catering dishes (selected set dishes sorted first)
                       Expanded(
                         child: ListView.builder(
                           padding: const EdgeInsets.all(12),
-                          itemCount: cateringDishes.length,
+                          itemCount: sortedCateringDishes.length,
                           itemBuilder: (context, index) {
-                            final dish = cateringDishes[index];
+                            final dish = sortedCateringDishes[index];
                             final isInCurrentSelection = _selectedSetDishIds
                                 .contains(dish.id);
                             return _buildSetMenuDishCard(
                               dish,
                               isInSet: isInCurrentSelection,
-                              onAddToMenu: () => _addDishToCurrentSet(dish.id),
+                              onAddToMenu:
+                                  isInCurrentSelection
+                                      ? null
+                                      : () => _addDishToCurrentSet(dish.id),
+                              onRemove:
+                                  isInCurrentSelection
+                                      ? () => _removeDishFromSet(dish.id)
+                                      : null,
                             );
                           },
                         ),
@@ -2591,9 +2620,6 @@ class _MenuState extends State<Menu> {
     final setMenus = SetMenuStore.instance.activeSetMenus;
     final setMenu = setMenus.firstWhere((s) => s.id == setMenuId);
     _applySetMenu(setMenu);
-    setState(() {
-      _isModifyingSet = true;
-    });
   }
 
   void _removeDishFromSet(String dishId) {
@@ -2606,7 +2632,6 @@ class _MenuState extends State<Menu> {
     // Only view the set menu without entering edit mode
     setState(() {
       _selectedSetMenuId = setMenu.id;
-      _isModifyingSet = false;
       // Clear the editing state when just viewing
       _selectedSetDishIds = [];
       _setMenuNameController.clear();
