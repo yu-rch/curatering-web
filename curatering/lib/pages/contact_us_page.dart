@@ -347,7 +347,8 @@ class _ContactUsPageState extends State<ContactUsPage> {
       children: [
         Text(
           'Contact Information',
-          style: GoogleFonts.playfairDisplay(
+          style: GoogleFonts.getFont(
+            _primaryFont,
             fontSize: 24,
             fontWeight: FontWeight.bold,
             color: const Color(0xFF1E1E1E),

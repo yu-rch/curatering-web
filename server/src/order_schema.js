@@ -256,6 +256,12 @@ async function ensureRestaurantOrdersCanonicalColumnsOnce() {
     await pool.query(`DROP INDEX IF EXISTS restaurant_orders_order_no_uq`);
   } catch (_) {}
 
+  // Never btree-index the full tray_items jsonb — payloads include (or used to
+  // include) dish image_base64 and exceed Postgres' 8191-byte index row limit.
+  try {
+    await pool.query(`DROP INDEX IF EXISTS idx_restaurant_order_items_dish`);
+  } catch (_) {}
+
   const dropColumns = [
     'items',
     'total_amount',
@@ -527,6 +533,27 @@ export function restaurantOrderItemsInsertSql(cols) {
     return { columns: 'tray_items', placeholders: json };
   }
   return { columns: 'tray_items', placeholders: json };
+}
+
+/**
+ * Remove embedded dish photos from tray lines before persisting orders.
+ * Clients may include imageBase64 for cart UI; storing them bloats JSON and
+ * breaks any accidental btree index on tray_items (8191-byte limit).
+ */
+export function stripTrayItemImages(items) {
+  if (!Array.isArray(items)) return [];
+  return items.map((raw) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+    const item = { ...raw };
+    delete item.image_base64;
+    delete item.imageBase64;
+    if (item.dish && typeof item.dish === 'object' && !Array.isArray(item.dish)) {
+      item.dish = { ...item.dish };
+      delete item.dish.image_base64;
+      delete item.dish.imageBase64;
+    }
+    return item;
+  });
 }
 
 /** SET clauses for web checkout payment (reference → *_reference_initial, proof → payment_proof_initial). */

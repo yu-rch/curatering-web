@@ -7,6 +7,7 @@ import {
   restaurantOrderItemsInsertSql,
   parseRestaurantOrderTrayItems,
   normalizeRestaurantOrderStatus,
+  stripTrayItemImages,
   ensureCateringEventOrdersCanonicalColumns,
   buildStaffEventsOrdersListSql,
   buildStaffEventOrderByIdQueries,
@@ -753,7 +754,8 @@ export function registerPosRoutes(app, {
       const roCols = await ensureRestaurantOrdersCanonicalColumns();
       const orderIdCol = restaurantOrderIdInsertColumn(roCols);
       const itemsInsert = restaurantOrderItemsInsertSql(roCols);
-      const itemsJson = JSON.stringify(items);
+      const itemsForPersist = stripTrayItemImages(items);
+      const itemsJson = JSON.stringify(itemsForPersist);
       const itemsSql = itemsInsert.placeholders.replace(/\$ITEM\$/g, "$3::jsonb");
       const change =
         amountReceived > total ? Number((amountReceived - total).toFixed(2)) : 0;

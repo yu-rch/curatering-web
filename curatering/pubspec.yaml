@@ -72,3 +72,8 @@ flutter:
     - lib/assets/main-2.png
     - lib/assets/profileIcon 1.png
     - lib/assets/gcash_qr.jpg
+    - lib/assets/home/home-hero.jpg
+    - lib/assets/home/home-collage-1.jpg
+    - lib/assets/home/home-collage-2.jpg
+    - lib/assets/home/home-collage-3.jpg
+    - lib/assets/home/home-collage-4.jpg

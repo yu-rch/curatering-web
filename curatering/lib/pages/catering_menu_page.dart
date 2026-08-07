@@ -312,7 +312,6 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const SizedBox(height: 24),
                 Text(
                   WebsiteContentStore.instance.cateringPageTitle,
                   textAlign: TextAlign.center,

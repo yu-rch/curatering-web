@@ -7,8 +7,8 @@ import '../utils/image_cache.dart';
 import '../utils/website_image_utils.dart';
 import '../widgets/centered_viewport_scroll.dart';
 import '../widgets/customer_website_topbar.dart';
+import '../widgets/customer_site_footer.dart';
 import '../widgets/image_focus_dialog.dart';
-import '../widgets/pexels_attribution_badge.dart';
 import '../widgets/website_rich_text.dart';
 
 // Font constants
@@ -83,16 +83,30 @@ class _GalleryPageState extends State<GalleryPage> {
             CustomerWebsiteTopBar(
               showCartAndCustomerAuth: !widget.contentEditable,
             ),
-            Expanded(
-              child: CenteredViewportScroll(
-                padding: websitePagePadding(context),
-                mainAxisAlignment: MainAxisAlignment.start,
-                child: ListenableBuilder(
-                  listenable: w,
-                  builder: (context, _) => _buildGalleryDetail(w, cat),
+          Expanded(
+            child: Column(
+              children: [
+                Expanded(
+                  child: CenteredViewportScroll(
+                    padding: websitePagePadding(context),
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    child: ListenableBuilder(
+                      listenable: w,
+                      builder: (context, _) => _buildGalleryDetail(w, cat),
+                    ),
+                  ),
                 ),
-              ),
+                ListenableBuilder(
+                  listenable: w,
+                  builder:
+                      (context, _) => CustomerSiteFooter(
+                        store: w,
+                        contentEditable: widget.contentEditable,
+                      ),
+                ),
+              ],
             ),
+          ),
           ],
         ),
       );
@@ -107,13 +121,27 @@ class _GalleryPageState extends State<GalleryPage> {
             showCartAndCustomerAuth: !widget.contentEditable,
           ),
           Expanded(
-            child: CenteredViewportScroll(
-              padding: websitePagePadding(context),
-              mainAxisAlignment: MainAxisAlignment.start,
-              child: ListenableBuilder(
-                listenable: w,
-                builder: (context, _) => _buildGallery(w),
-              ),
+            child: Column(
+              children: [
+                Expanded(
+                  child: CenteredViewportScroll(
+                    padding: websitePagePadding(context),
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    child: ListenableBuilder(
+                      listenable: w,
+                      builder: (context, _) => _buildGallery(w),
+                    ),
+                  ),
+                ),
+                ListenableBuilder(
+                  listenable: w,
+                  builder:
+                      (context, _) => CustomerSiteFooter(
+                        store: w,
+                        contentEditable: widget.contentEditable,
+                      ),
+                ),
+              ],
             ),
           ),
         ],
@@ -461,10 +489,6 @@ class _GalleryPageState extends State<GalleryPage> {
               );
             },
           ),
-        const SizedBox(height: 48),
-        const PexelsAttributionBadge(photographer: 'Curatering Gallery'),
-        const SizedBox(height: 32),
-        _galleryFooter(w),
       ],
     );
   }
@@ -641,39 +665,7 @@ class _GalleryPageState extends State<GalleryPage> {
             );
             },
           ),
-        const SizedBox(height: 32),
-        _galleryFooter(w),
       ],
-    );
-  }
-
-  Widget _galleryFooter(WebsiteContentStore w) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Wrap(
-        spacing: 24,
-        runSpacing: 8,
-        alignment: WrapAlignment.spaceBetween,
-        children: [
-          Text(
-            w.contactFacebook,
-            style: const TextStyle(color: Colors.white, fontSize: 12),
-          ),
-          Text(
-            w.contactPhone,
-            style: const TextStyle(color: Colors.white, fontSize: 12),
-          ),
-          Text(
-            w.contactEmail,
-            style: const TextStyle(color: Colors.white, fontSize: 12),
-          ),
-        ],
-      ),
     );
   }
 }

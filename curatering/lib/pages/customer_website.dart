@@ -27,17 +27,17 @@ import '../widgets/contact_address_map.dart';
 import '../widgets/event_venue_map_preview.dart';
 import '../widgets/venue_autocomplete_field.dart';
 import '../widgets/app_snackbar.dart';
-import '../widgets/antd_buttons.dart';
-import '../widgets/antd_dialog.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_profile_menu.dart';
 import '../widgets/pexels_attribution_badge.dart';
 import '../widgets/catering_dish_info_dialog.dart';
 import '../widgets/website_rich_text.dart';
 import '../widgets/image_focus_dialog.dart';
-import '../widgets/customer_footer_feedback.dart';
+import '../widgets/customer_site_footer.dart';
 import '../theme/website_header_font.dart';
 import '../constants/catering_meal_types.dart';
+import '../constants/home_default_assets.dart';
+import '../utils/browser_tab_title.dart';
 import '../utils/gallery_search.dart';
 import '../utils/inquiry_pricing.dart';
 import '../utils/image_cache.dart';
@@ -406,7 +406,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           if (image.isEmpty) continue;
           designs.add({
             'imageBase64': image,
-            'label': (row['label'] ?? 'Event design').toString(),
+            'label': (row['label'] ?? 'Featured Event Design').toString(),
             'description': (row['description'] ?? '').toString(),
           });
         }
@@ -433,6 +433,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     if (index == 3) {
       unawaited(LoyaltyRewardsStore.instance.ensureLoaded());
     }
+    const labels = [
+      'Home',
+      'Gallery',
+      'Catering Menu',
+      'Restaurant',
+      'Inquire Now',
+      'Contact Us',
+    ];
+    final label = index >= 0 && index < labels.length ? labels[index] : 'Home';
+    unawaited(setBrowserTabTitle(label, staff: false));
   }
 
   Future<bool> _confirmAction({
@@ -1965,281 +1975,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     });
   }
 
-  void _goFooterRoute(String route) {
-    final target = customerRoute(route);
-    final current = ModalRoute.of(context)?.settings.name ?? '';
-    if (current == target) {
-      if (_pageScrollController.hasClients) {
-        _pageScrollController.animateTo(
-          0,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
-      return;
-    }
-    Navigator.pushReplacementNamed(context, target);
-  }
-
-  Widget _footerPageLink(String label, VoidCallback onPressed) {
-    return TextButton(
-      onPressed: onPressed,
-      child: Text(label, style: const TextStyle(color: Color(0xFFF5F7F9))),
-    );
-  }
-
-  Future<void> _launchFooterEmail(String email) async {
-    final trimmed = email.trim();
-    if (trimmed.isEmpty) return;
-    final uri = Uri(scheme: 'mailto', path: trimmed);
-    try {
-      await launchUrl(uri);
-    } catch (e) {
-      debugPrint('Failed to open mailto: $e');
-    }
-  }
-
-  Future<void> _launchFooterFacebook(String facebook) async {
-    final store = WebsiteContentStore.instance;
-    final trimmed = store.contactFacebookUrl.trim().isNotEmpty
-        ? store.contactFacebookUrl.trim()
-        : facebook.trim();
-    final uri =
-        trimmed.startsWith('http://') || trimmed.startsWith('https://')
-            ? Uri.parse(trimmed)
-            : Uri.parse(
-              store.contactFacebookUrl.trim().isNotEmpty
-                  ? store.contactFacebookUrl.trim()
-                  : 'https://www.facebook.com/3tavs',
-            );
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      debugPrint('Failed to open Facebook: $e');
-    }
-  }
-
-  Widget _footer(WebsiteContentStore w) {
-    return Container(
-      color: const Color(0xFF242424),
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth > 900;
-          final cols = [
-            SizedBox(
-              width: wide ? null : 220,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextButton(
-                    onPressed: () {
-                      showAntdModal<void>(
-                        context: context,
-                        title: w.footerPrivacyLabel,
-                        body: WebsiteRichText(
-                          value: w.footerPrivacyBody,
-                          style: const TextStyle(fontSize: 14, height: 1.5),
-                        ),
-                        actions: [
-                          AntdPrimaryButton(
-                            label: 'Close',
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                        ],
-                      );
-                    },
-                    child: Text(
-                      w.footerPrivacyLabel,
-                      style: const TextStyle(
-                        color: Color(0xFFF5F7F9),
-                        fontWeight: FontWeight.w600,
-                        decoration: TextDecoration.underline,
-                        decorationColor: Color(0xFFF5F7F9),
-                      ),
-                    ),
-                  ),
-                  WebsiteRichText(
-                    value: w.footerCopyright,
-                    style: const TextStyle(fontSize: 11, height: 1.4),
-                  ),
-                  if (widget.contentEditable)
-                    TextButton.icon(
-                      onPressed: () async {
-                        final value = await showWebsiteRichTextEditor(
-                          context: context,
-                          title: 'Edit footer copyright',
-                          initialValue: w.footerCopyright,
-                        );
-                        if (value == null || value.isEmpty) return;
-                        w.footerCopyright = value;
-                        await w.saveDraft();
-                        setState(() {});
-                      },
-                      icon: const Icon(Icons.edit, size: 14),
-                      label: const Text('Edit'),
-                    ),
-                ],
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _footerPageLink(
-                  'GALLERY',
-                  () => _goFooterRoute('/gallery'),
-                ),
-                _footerPageLink(
-                  'CATERING MENU',
-                  () => _goFooterRoute('/catering-menu'),
-                ),
-                _footerPageLink(
-                  'RESTAURANT',
-                  () => _goFooterRoute('/restaurant'),
-                ),
-              ],
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _footerPageLink(
-                  'INQUIRE NOW',
-                  () => _goFooterRoute('/inquire'),
-                ),
-                _footerPageLink(
-                  'CONTACT US',
-                  () => _goFooterRoute('/contact-us'),
-                ),
-                TextButton(
-                  onPressed:
-                      () => showCustomerFooterFeedback(
-                        context,
-                        isLoggedIn: _isCustomerLoggedIn,
-                        onLogin: _checkCustomerAuth,
-                      ),
-                  child: const Text(
-                    'FEEDBACK',
-                    style: TextStyle(color: Color(0xFFF5F7F9)),
-                  ),
-                ),
-              ],
-            ),
-            _footerCol(
-              Icons.facebook,
-              w.contactFacebook,
-              onTap: () => _launchFooterFacebook(w.contactFacebook),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _footerRow(Icons.place, w.contactAddress),
-                _footerRow(Icons.schedule, w.contactHours),
-              ],
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _footerRow(Icons.phone, w.contactPhone),
-                _footerRow(
-                  Icons.email,
-                  w.contactEmail,
-                  onTap: () => _launchFooterEmail(w.contactEmail),
-                ),
-              ],
-            ),
-          ];
-          if (wide) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (var i = 0; i < cols.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 28),
-                  Expanded(child: cols[i]),
-                ],
-                const SizedBox(width: 16),
-                Image.asset(
-                  'lib/assets/main-2.png',
-                  height: 72,
-                  fit: BoxFit.contain,
-                ),
-              ],
-            );
-          }
-          return Wrap(
-            spacing: 24,
-            runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.start,
-            children: cols,
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _footerCol(IconData icon, String text, {VoidCallback? onTap}) {
-    final row = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: Colors.white),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.white,
-              decoration:
-                  onTap != null ? TextDecoration.underline : TextDecoration.none,
-              decorationColor: Colors.white70,
-            ),
-          ),
-        ),
-      ],
-    );
-    return SizedBox(
-      width: 200,
-      child:
-          onTap == null
-              ? row
-              : InkWell(
-                onTap: onTap,
-                child: row,
-              ),
-    );
-  }
-
-  Widget _footerRow(IconData icon, String text, {VoidCallback? onTap}) {
-    final row = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: Colors.white),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.white,
-              decoration:
-                  onTap != null ? TextDecoration.underline : TextDecoration.none,
-              decorationColor: Colors.white70,
-            ),
-          ),
-        ),
-      ],
-    );
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child:
-          onTap == null
-              ? row
-              : InkWell(
-                onTap: onTap,
-                child: row,
-              ),
-    );
-  }
-
   Widget _editChip(VoidCallback onEdit) {
     if (!widget.contentEditable) return const SizedBox.shrink();
     return Positioned(
@@ -2356,32 +2091,32 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Widget _buildHomeHero(WebsiteContentStore w) {
+    final hasHeroImage = w.homeHeroImageBase64.trim().isNotEmpty;
     return Stack(
+      fit: StackFit.passthrough,
       children: [
         SizedBox(
           height: isMobile(context) ? 280 : 380,
           width: double.infinity,
           child:
-              w.homeHeroImageBase64.isEmpty
-                  ? Container(
-                    color: Colors.grey.shade700,
-                    alignment: Alignment.center,
-                    child: Text(
-                      'Macrina\'s Kitchen and Catering',
-                      style: GoogleFonts.playfairDisplay(
-                        fontSize: 28,
-                        color: Colors.white,
-                      ),
-                    ),
-                  )
-                  : _b64Image(
+              hasHeroImage
+                  ? _b64Image(
                     w.homeHeroImageBase64,
                     height: isMobile(context) ? 280 : 380,
                     alignment: _imageAlignmentFor(w, w.homeHeroImageBase64),
+                  )
+                  : Image.asset(
+                    HomeDefaultAssets.hero,
+                    height: isMobile(context) ? 280 : 380,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    alignment: Alignment.center,
+                    filterQuality: FilterQuality.medium,
                   ),
         ),
+        // Soften photo so centered logo stays readable.
         Positioned.fill(
-          child: Container(color: Colors.black.withValues(alpha: 0.35)),
+          child: Container(color: Colors.black.withValues(alpha: 0.28)),
         ),
         Positioned.fill(
           child: Center(
@@ -2389,6 +2124,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               'lib/assets/main-2.png',
               height: isMobile(context) ? 80 : 128,
               fit: BoxFit.contain,
+              filterQuality: FilterQuality.medium,
             ),
           ),
         ),
@@ -2399,7 +2135,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           await w.saveDraft();
           setState(() {});
         }),
-        if (widget.contentEditable && w.homeHeroImageBase64.isNotEmpty)
+        if (widget.contentEditable && hasHeroImage)
           Positioned(
             right: 8,
             bottom: 8,
@@ -2637,12 +2373,14 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     at(0),
                                     width: halfW,
                                     height: 170,
+                                    fallbackAsset: HomeDefaultAssets.collageAt(0),
                                   ),
                                   SizedBox(width: gap),
                                   _collageTile(
                                     at(1),
                                     width: halfW,
                                     height: 170,
+                                    fallbackAsset: HomeDefaultAssets.collageAt(1),
                                   ),
                                 ],
                               ),
@@ -2653,12 +2391,14 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     at(2),
                                     width: halfW,
                                     height: 170,
+                                    fallbackAsset: HomeDefaultAssets.collageAt(2),
                                   ),
                                   SizedBox(width: gap),
                                   _collageTile(
                                     at(3),
                                     width: halfW,
                                     height: 170,
+                                    fallbackAsset: HomeDefaultAssets.collageAt(3),
                                   ),
                                 ],
                               ),
@@ -2940,13 +2680,15 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   children:
                       salesEventDesigns.map((row) {
                         final label =
-                            (row['label'] ?? 'Event design').toString().trim();
+                            (row['label'] ?? '').toString().trim();
                         final description =
                             (row['description'] ?? '').toString().trim();
                         return _HoverZoomPhotoTile(
                           imageB64: (row['imageBase64'] ?? '').toString(),
                           label:
-                              label.isNotEmpty ? label : 'Successful catering',
+                              label.isNotEmpty
+                                  ? label
+                                  : 'Featured Event Design',
                           description:
                               description.isNotEmpty ? description : null,
                           width: 200,
@@ -2957,7 +2699,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       }).toList(),
                 ),
               )
-            else if (cmsEventImages.isNotEmpty)
+            else if (widget.contentEditable && cmsEventImages.isNotEmpty)
               SizedBox(
                 height: 160,
                 child: ListView(
@@ -2966,7 +2708,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       cmsEventImages.map((entry) {
                         return _HoverZoomPhotoTile(
                           imageB64: entry.value,
-                          label: 'Event design ${entry.key + 1}',
+                          // Staff CMS preview only — public site uses completed-event names.
+                          label: 'Draft design ${entry.key + 1}',
                           width: 200,
                           height: 160,
                           margin: const EdgeInsets.only(right: 8),
@@ -3000,13 +2743,27 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     String? b64, {
     required double width,
     required double height,
+    String? fallbackAsset,
   }) {
     return SizedBox(
       width: width,
       height: height,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
-        child: _b64Image(b64, fit: BoxFit.cover),
+        child: _b64Image(
+          b64,
+          fit: BoxFit.cover,
+          placeholder:
+              fallbackAsset == null
+                  ? null
+                  : Image.asset(
+                    fallbackAsset,
+                    fit: BoxFit.cover,
+                    width: width,
+                    height: height,
+                    filterQuality: FilterQuality.medium,
+                  ),
+        ),
       ),
     );
   }
@@ -4543,7 +4300,17 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   controller: _pageScrollController,
                   slivers: [
                     SliverToBoxAdapter(child: body),
-                    SliverToBoxAdapter(child: _footer(w)),
+                    SliverToBoxAdapter(
+                      child: CustomerSiteFooter(
+                        store: w,
+                        contentEditable: widget.contentEditable,
+                        isCustomerLoggedIn: _isCustomerLoggedIn,
+                        onLogin: _checkCustomerAuth,
+                        onSaved: () {
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                    ),
                   ],
                 ),
                 if (isMobileWidth(context) &&
@@ -5169,34 +4936,14 @@ class _RedBannerMarquee extends StatefulWidget {
 class _RedBannerMarqueeState extends State<_RedBannerMarquee>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  final GlobalKey _measureKey = GlobalKey();
-  double _segmentWidth = 0;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 16),
+      duration: const Duration(seconds: 28),
     )..repeat();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _measureSegment());
-  }
-
-  @override
-  void didUpdateWidget(covariant _RedBannerMarquee oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.text != widget.text) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _measureSegment());
-    }
-  }
-
-  void _measureSegment() {
-    final box = _measureKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return;
-    final next = box.size.width + 64;
-    if ((next - _segmentWidth).abs() > 1 && mounted) {
-      setState(() => _segmentWidth = next);
-    }
   }
 
   @override
@@ -5205,37 +4952,39 @@ class _RedBannerMarqueeState extends State<_RedBannerMarquee>
     super.dispose();
   }
 
-  Widget _segment({Key? key}) {
-    return Padding(
-      key: key,
-      padding: const EdgeInsets.only(right: 64),
-      child: WebsiteRichText(
-        value: widget.text,
-        style: widget.style,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    const repeatCount = 6;
-    final travel = _segmentWidth > 0 ? _segmentWidth : 400.0;
+    final plain = widget.text.replaceAll(RegExp(r'<[^>]*>'), ' ').trim();
+    final label = plain.isEmpty ? 'WE CATER' : plain;
+    final unit = '$label    •    ';
+    // Approximate unit width so we can loop seamlessly without a measure pass.
+    final unitWidth =
+        (unit.length * (widget.style.fontSize ?? 14) * 0.62).clamp(160.0, 900.0);
 
     return SizedBox(
-      height: 32,
+      height: 36,
+      width: double.infinity,
       child: ClipRect(
         child: AnimatedBuilder(
           animation: _controller,
           builder: (context, _) {
-            final offset = travel * _controller.value;
-            return Transform.translate(
-              offset: Offset(-travel + offset, 0),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _segment(key: _measureKey),
-                  for (var i = 1; i < repeatCount; i++) _segment(),
-                ],
+            final dx = -unitWidth * _controller.value;
+            return OverflowBox(
+              maxWidth: double.infinity,
+              alignment: Alignment.centerLeft,
+              child: Transform.translate(
+                offset: Offset(dx, 0),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(16, (_) {
+                    return Text(
+                      unit,
+                      maxLines: 1,
+                      softWrap: false,
+                      style: widget.style,
+                    );
+                  }),
+                ),
               ),
             );
           },
@@ -5394,7 +5143,11 @@ class _ContactSectionState extends State<_ContactSection> {
                       children: [
                         WebsiteRichText(
                           value: widget.store.contactReachUsLabel,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+                          style: websiteHeaderStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF1E1E1E),
+                          ),
                         ),
                         const SizedBox(height: 16),
                         _contactRow(

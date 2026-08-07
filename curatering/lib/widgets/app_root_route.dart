@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/site_routes.dart';
 import '../pages/customer_website.dart';
+import '../utils/browser_tab_title.dart';
 
 /// Host-aware `/` entry.
 class AppRootRoute extends StatefulWidget {
@@ -15,11 +16,15 @@ class _AppRootRouteState extends State<AppRootRoute> {
   @override
   void initState() {
     super.initState();
-    if (!isStaffSiteHost) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed('/login');
-    });
+    if (isStaffSiteHost) {
+      setBrowserTabTitle('Login', staff: true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacementNamed('/login');
+      });
+      return;
+    }
+    setBrowserTabTitle('Home', staff: false);
   }
 
   @override

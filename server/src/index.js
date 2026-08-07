@@ -62,6 +62,7 @@ import {
   parseRestaurantOrderTrayItems,
   restaurantOrderItemsInsertSql,
   buildRestaurantOrderPaymentUpdateSets,
+  stripTrayItemImages,
 } from "./order_schema.js";
 import CartAPI from "./cart_api.js";
 import {
@@ -9219,13 +9220,122 @@ async function registerRoutesAfterDbInit() {
         }
 
         const eventDesigns = [];
+        const seenDesignImages = new Set();
+
+        const titleCaseWords = (raw) =>
+          String(raw || '')
+            .trim()
+            .split(/[\s_/|-]+/)
+            .filter(Boolean)
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(' ');
+
+        const settingDescriptor = (raw) => {
+          const s = String(raw || '').trim().toLowerCase();
+          if (!s) return '';
+          if (s === 'open' || s.includes('outdoor') || s.includes('garden')) {
+            return 'Outdoor';
+          }
+          if (
+            s === 'closed' ||
+            s.includes('indoor') ||
+            s.includes('ballroom') ||
+            s.includes('hall')
+          ) {
+            return 'Indoor';
+          }
+          return titleCaseWords(s);
+        };
+
+        const leadDescriptor = (theme) => {
+          const formality = String(
+            theme.formality_level || theme.formality || '',
+          )
+            .trim()
+            .toLowerCase();
+          const style = String(theme.style || '').trim();
+          const mood = String(theme.mood || '').trim();
+          if (formality === 'formal' || formality === 'semi-formal') {
+            return 'Elegant';
+          }
+          if (style) return titleCaseWords(style);
+          if (mood) return titleCaseWords(mood);
+          if (formality === 'casual') return 'Casual';
+          return '';
+        };
+
+        /** e.g. "Elegant Outdoor Birthday", "Minimalist Indoor Birthday" */
+        const buildEventDesignName = (theme, eventTitle, eventType) => {
+          const t = theme && typeof theme === 'object' ? theme : {};
+          const typeWord = titleCaseWords(
+            t.event_type || t.eventDesignEventType || eventType || '',
+          );
+          const setting = settingDescriptor(t.event_setting);
+          const lead = leadDescriptor(t);
+          const composed = [lead, setting, typeWord].filter(Boolean);
+          if (composed.length >= 2) return composed.join(' ');
+
+          const themeTitle = String(t.event_title || eventTitle || '').trim();
+          if (themeTitle) return themeTitle;
+          if (composed.length === 1) return composed[0];
+          if (typeWord) return `${typeWord} Event Design`;
+          return 'Featured Event Design';
+        };
+
+        const looksLikeImageBase64 = (value) => {
+          const s = String(value || '').trim();
+          if (!s) return false;
+          if (/^https?:\/\//i.test(s) || s.startsWith('/')) return false;
+          if (/^data:image\//i.test(s)) return true;
+          // Skip short non-image strings; keep large base64 payloads.
+          return s.length > 256 && !/\s/.test(s.slice(0, 80));
+        };
+
+        const collectThemeDesignImages = (theme) => {
+          const out = [];
+          const add = (value) => {
+            if (value == null) return;
+            if (Array.isArray(value)) {
+              for (const item of value) add(item);
+              return;
+            }
+            if (typeof value === 'object') {
+              add(
+                value.imageBase64 ||
+                  value.image_base64 ||
+                  value.base64 ||
+                  value.dataBase64 ||
+                  value.data ||
+                  value.url,
+              );
+              return;
+            }
+            if (looksLikeImageBase64(value)) out.push(String(value).trim());
+          };
+
+          add(theme.confirmedCompositeBase64);
+          add(theme.compositeImageBase64);
+          add(theme.generatedImageBase64);
+          add(theme.previewBase64);
+          add(theme.venuePhotoBase64);
+          add(theme.picksBase64);
+          add(theme.venuePhotos);
+          add(theme.reference_images);
+          add(theme.referenceImages);
+          return out;
+        };
+
         const pushDesign = (image, label, description) => {
           const img = String(image || '').trim();
-          if (!img || eventDesigns.length >= 8) return;
-          if (eventDesigns.some((d) => d.imageBase64 === img)) return;
+          if (!img || !looksLikeImageBase64(img) || eventDesigns.length >= 8) {
+            return;
+          }
+          const key = img.slice(0, 120);
+          if (seenDesignImages.has(key)) return;
+          seenDesignImages.add(key);
           eventDesigns.push({
             imageBase64: img,
-            label: String(label || 'Event design').trim() || 'Event design',
+            label: String(label || '').trim() || 'Featured Event Design',
             description: String(description || '').trim(),
           });
         };
@@ -9233,21 +9343,6 @@ async function registerRoutesAfterDbInit() {
         for (const row of eventOrders.rows) {
           const title = String(row.event_title || '').trim();
           const type = String(row.event_type || '').trim();
-          const label =
-            [title, type].filter(Boolean).join(' · ') || 'Successful catering';
-          let images = row.actual_event_images;
-          if (typeof images === 'string') {
-            try {
-              images = JSON.parse(images);
-            } catch {
-              images = [];
-            }
-          }
-          if (Array.isArray(images)) {
-            for (const img of images) {
-              pushDesign(img, label, type);
-            }
-          }
           let theme = row.theme_design;
           if (typeof theme === 'string') {
             try {
@@ -9256,18 +9351,32 @@ async function registerRoutesAfterDbInit() {
               theme = {};
             }
           }
-          if (theme && typeof theme === 'object') {
-            pushDesign(
-              theme.confirmedCompositeBase64 ||
-                theme.compositeImageBase64 ||
-                theme.generatedImageBase64 ||
-                theme.previewBase64,
-              label,
-              type,
-            );
-            const picks = theme.picksBase64;
-            if (Array.isArray(picks)) {
-              for (const p of picks) pushDesign(p, label, type);
+          if (!theme || typeof theme !== 'object') theme = {};
+
+          const label = buildEventDesignName(theme, title, type);
+          const description = [
+            type,
+            String(theme.note || '').trim(),
+          ]
+            .filter(Boolean)
+            .join(' · ');
+
+          // Prefer completed-event theme / AI design images over generic photos.
+          for (const img of collectThemeDesignImages(theme)) {
+            pushDesign(img, label, description);
+          }
+
+          let images = row.actual_event_images;
+          if (typeof images === 'string') {
+            try {
+              images = JSON.parse(images);
+            } catch {
+              images = [];
+            }
+          }
+          if (Array.isArray(images) && eventDesigns.length < 8) {
+            for (const img of images) {
+              pushDesign(img, label, description);
             }
           }
         }
@@ -9838,7 +9947,7 @@ async function registerRoutesAfterDbInit() {
           ...new Set(
             orderItems
               .map((item) => item?.dish_id ?? item?.dishId ?? item?.menu_dish_id ?? item?.id)
-              .filter((value) => value != null && String(value).trim().isNotEmpty)
+              .filter((value) => value != null && String(value).trim() !== '')
               .map((value) => String(value).trim()),
           ),
         ];
@@ -9921,7 +10030,8 @@ async function registerRoutesAfterDbInit() {
         const roCols = await ensureRestaurantOrdersCanonicalColumns();
         const orderIdCol = restaurantOrderIdInsertColumn(roCols);
         const itemsInsert = restaurantOrderItemsInsertSql(roCols);
-        const itemsJson = JSON.stringify(orderItems);
+        const itemsForPersist = stripTrayItemImages(orderItems);
+        const itemsJson = JSON.stringify(itemsForPersist);
         const itemsSql = itemsInsert.placeholders.replace(/\$ITEM\$/g, '$6');
         const normalizedSource = (() => {
           const s = String(orderSource || req.body?.platform || 'WEB_APP').trim().toUpperCase();
@@ -9991,7 +10101,7 @@ async function registerRoutesAfterDbInit() {
         }
 
         res.status(201).json({
-          order: serializeRestaurantOrderRow(result.rows[0], orderItems),
+          order: serializeRestaurantOrderRow(result.rows[0], itemsForPersist),
         });
       } catch (error) {
         console.error('Error creating restaurant order:', error);

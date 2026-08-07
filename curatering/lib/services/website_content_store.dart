@@ -311,6 +311,13 @@ class WebsiteContentStore extends ChangeNotifier {
     await _loadFromLocalCache();
     _hydratedFromLocalCache = true;
     notifyListeners();
+    // Resolve media IDs from cache refs so hero/collage aren't empty placeholders.
+    try {
+      await resolveMediaRefs();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[website-content] hydrate media resolve failed: $e');
+    }
   }
 
   Future<void> ensureLoaded({bool force = false}) async {
@@ -320,6 +327,12 @@ class WebsiteContentStore extends ChangeNotifier {
       await _loadFromLocalCache();
       _hydratedFromLocalCache = true;
       notifyListeners();
+      try {
+        await resolveMediaRefs();
+        notifyListeners();
+      } catch (_) {
+        /* keep text/metadata already applied */
+      }
     }
 
     try {
@@ -582,13 +595,34 @@ class WebsiteContentStore extends ChangeNotifier {
     }
   }
 
-  /// Text/metadata only — images are always loaded from the API.
+  /// Text/metadata + mediaId refs — strip large base64 blobs, keep image IDs
+  /// so first paint can resolve hero/collage without waiting on full API body.
   Map<String, dynamic> _toLocalCacheMap(Map<String, dynamic> full) {
     final slim = Map<String, dynamic>.from(full);
-    slim['homeHeroImageBase64'] = '';
-    slim['latestEventCollageBase64'] = <dynamic>[];
-    slim['popularDishImageBase64'] = <dynamic>[];
-    slim['eventDesignImageBase64'] = <dynamic>[];
+
+    dynamic hero = full['homeHeroImageBase64'] ?? full['homeHero'];
+    if (hero is Map && (hero['mediaId'] ?? '').toString().trim().isNotEmpty) {
+      slim['homeHeroImageBase64'] = {
+        'mediaId': hero['mediaId'].toString().trim(),
+      };
+    } else if (homeHeroMediaId != null && homeHeroMediaId!.trim().isNotEmpty) {
+      slim['homeHeroImageBase64'] = {'mediaId': homeHeroMediaId!.trim()};
+    } else {
+      slim['homeHeroImageBase64'] = '';
+    }
+
+    slim['latestEventCollageBase64'] = _mediaIdsOnlyList(
+      full['latestEventCollageBase64'],
+      latestEventCollageMediaIds,
+    );
+    slim['popularDishImageBase64'] = _mediaIdsOnlyList(
+      full['popularDishImageBase64'],
+      popularDishMediaIds,
+    );
+    slim['eventDesignImageBase64'] = _mediaIdsOnlyList(
+      full['eventDesignImageBase64'],
+      eventDesignMediaIds,
+    );
     slim.remove('imageAlignments');
     final cats = slim['galleryCategories'];
     if (cats is List) {
@@ -596,12 +630,42 @@ class WebsiteContentStore extends ChangeNotifier {
           cats.map((raw) {
             if (raw is! Map) return raw;
             final m = Map<String, dynamic>.from(raw);
-            m['images'] = <dynamic>[];
+            final images = m['images'];
+            if (images is List) {
+              m['images'] =
+                  images.map((img) {
+                    if (img is! Map) return <String, dynamic>{};
+                    final mid = (img['mediaId'] ?? '').toString().trim();
+                    if (mid.isEmpty) return <String, dynamic>{};
+                    return <String, dynamic>{'mediaId': mid};
+                  }).toList();
+            } else {
+              m['images'] = <dynamic>[];
+            }
             m.remove('imageBase64List');
             return m;
           }).toList();
     }
     return slim;
+  }
+
+  List<dynamic> _mediaIdsOnlyList(dynamic raw, List<String?> fallbackIds) {
+    final out = <dynamic>[];
+    if (raw is List) {
+      for (final e in raw) {
+        if (e is Map) {
+          final mid = (e['mediaId'] ?? '').toString().trim();
+          if (mid.isNotEmpty) out.add({'mediaId': mid});
+        }
+      }
+    }
+    if (out.isEmpty) {
+      for (final mid in fallbackIds) {
+        final id = (mid ?? '').trim();
+        if (id.isNotEmpty) out.add({'mediaId': id});
+      }
+    }
+    return out;
   }
 
   void touch() => notifyListeners();

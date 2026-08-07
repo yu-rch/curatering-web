@@ -88,7 +88,6 @@ class CartSyncService {
             ? item.dish.effectiveMealType.trim()
             : item.dish.type.trim();
     final mealType = item.dish.effectiveMealType.trim();
-    final imageBase64 = item.dish.imageBase64;
 
     return {
       'id': item.dish.id,
@@ -109,8 +108,6 @@ class CartSyncService {
       'dishType': dishType,
       'meal_type': mealType,
       'mealType': mealType,
-      'image_base64': imageBase64,
-      'imageBase64': imageBase64,
       'selectedSauce': sauceVal.isEmpty ? null : sauceVal,
       'selected_sauce': sauceVal.isEmpty ? null : sauceVal,
       'notes': item.specialInstructions?.trim() ?? '',
@@ -128,8 +125,6 @@ class CartSyncService {
         'type': dishType,
         'mealType': mealType,
         'meal_type': mealType,
-        'image_base64': imageBase64,
-        'imageBase64': imageBase64,
       },
     };
   }
