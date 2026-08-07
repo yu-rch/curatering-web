@@ -38,15 +38,101 @@ class CustomerWebsiteTopBar extends StatefulWidget {
 class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
   bool _isCustomerLoggedIn = false;
   Map<String, dynamic>? _customerData;
+  final GlobalKey _navRowKey = GlobalKey();
+  late List<GlobalKey> _navItemKeys;
+  double _underlineLeft = 0;
+  double _underlineWidth = 32;
+  bool _underlineReady = false;
+
+  List<CmsNavItem> get _navItems =>
+      WebsiteContentStore.instance.navItems.where((e) => e.visible).toList();
 
   @override
   void initState() {
     super.initState();
+    _navItemKeys = [];
     CartStore.instance.addListener(_onCartChanged);
     MenuStore.instance.addListener(_onCartChanged);
     WebsiteContentStore.instance.addListener(_onCartChanged);
     unawaited(WebsiteContentStore.instance.ensureLoaded());
     _refreshCustomerAuth();
+  }
+
+  void _ensureNavKeys(int count) {
+    while (_navItemKeys.length < count) {
+      _navItemKeys.add(GlobalKey());
+    }
+    if (_navItemKeys.length > count) {
+      _navItemKeys = _navItemKeys.sublist(0, count);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateUnderline());
+  }
+
+  void _updateUnderline() {
+    if (!mounted) return;
+    final items = _navItems;
+    _ensureNavKeys(items.length);
+    if (items.isEmpty) return;
+    final route = _currentRoute(context);
+    var activeIndex = 0;
+    for (var i = 0; i < items.length; i++) {
+      if (_isNavActive(items[i], route)) {
+        activeIndex = i;
+        break;
+      }
+    }
+    if (activeIndex >= _navItemKeys.length) return;
+    final itemCtx = _navItemKeys[activeIndex].currentContext;
+    final rowCtx = _navRowKey.currentContext;
+    if (itemCtx == null || rowCtx == null) return;
+    final itemBox = itemCtx.findRenderObject() as RenderBox?;
+    final rowBox = rowCtx.findRenderObject() as RenderBox?;
+    if (itemBox == null || rowBox == null || !itemBox.hasSize || !rowBox.hasSize) {
+      return;
+    }
+    final offset = itemBox.localToGlobal(Offset.zero, ancestor: rowBox);
+    const barWidth = 32.0;
+    final left = offset.dx + (itemBox.size.width - barWidth) / 2;
+    if (_underlineLeft == left && _underlineReady) return;
+    setState(() {
+      _underlineLeft = left;
+      _underlineWidth = barWidth;
+      _underlineReady = true;
+    });
+  }
+
+  String _navRouteFor(CmsNavItem item) {
+    switch (item.targetType) {
+      case CmsNavTargetType.builtin:
+        return item.target.startsWith('/') ? item.target : '/${item.target}';
+      case CmsNavTargetType.customPage:
+        return '/p/${item.target}';
+      case CmsNavTargetType.url:
+        return item.target;
+    }
+  }
+
+  bool _isNavActive(CmsNavItem item, String currentRoute) {
+    if (item.targetType == CmsNavTargetType.url) return false;
+    return currentRoute == customerRoute(_navRouteFor(item));
+  }
+
+  Future<void> _goNav(BuildContext context, CmsNavItem item, {bool newTab = false}) async {
+    if (item.targetType == CmsNavTargetType.url) {
+      // External / absolute links are opened as named routes when they look local.
+      final t = item.target.trim();
+      if (t.startsWith('http://') || t.startsWith('https://')) {
+        return;
+      }
+      _go(context, t.startsWith('/') ? t : '/$t', newTab: newTab);
+      return;
+    }
+    _go(context, _navRouteFor(item), newTab: newTab);
   }
 
   @override
@@ -389,28 +475,6 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
     return ModalRoute.of(context)?.settings.name ?? '/';
   }
 
-  Widget _navLabel(String label, {required bool active}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: active ? Colors.white : Colors.white70,
-              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-            ),
-          ),
-          if (active)
-            Container(height: 2, width: 32, color: const Color(0xFFFFC024)),
-        ],
-      ),
-    );
-  }
-
   void _goHome(BuildContext context) {
     Navigator.pushNamedAndRemoveUntil(
       context,
@@ -430,23 +494,64 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
     }
   }
 
-  Widget _navLink(
-    BuildContext context, {
-    required String label,
-    required String route,
-    required bool active,
-  }) {
-    return GestureDetector(
-      onSecondaryTap: kIsWeb ? () => _go(context, route, newTab: true) : null,
-      onTap: () => _go(context, route),
-      child: Listener(
-        onPointerDown: (e) {
-          if (kIsWeb && e.buttons == 4) {
-            _go(context, route, newTab: true);
-          }
-        },
-        child: _navLabel(label, active: active),
-      ),
+  Widget _buildSlidingNav(BuildContext context, String route) {
+    final items = _navItems;
+    _ensureNavKeys(items.length);
+    return Stack(
+      key: _navRowKey,
+      clipBehavior: Clip.none,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < items.length; i++)
+              GestureDetector(
+                key: _navItemKeys[i],
+                onSecondaryTap:
+                    kIsWeb
+                        ? () => _goNav(context, items[i], newTab: true)
+                        : null,
+                onTap: () => _goNav(context, items[i]),
+                child: Listener(
+                  onPointerDown: (e) {
+                    if (kIsWeb && e.buttons == 4) {
+                      _goNav(context, items[i], newTab: true);
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                    child: Text(
+                      items[i].label,
+                      style: TextStyle(
+                        color:
+                            _isNavActive(items[i], route)
+                                ? Colors.white
+                                : Colors.white70,
+                        fontWeight:
+                            _isNavActive(items[i], route)
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        if (_underlineReady)
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+            left: _underlineLeft,
+            bottom: 2,
+            width: _underlineWidth,
+            height: 2,
+            child: const ColoredBox(color: Color(0xFFFFC024)),
+          ),
+      ],
     );
   }
 
@@ -459,6 +564,23 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (sheetCtx) {
+        Widget navTileFor(CmsNavItem item) {
+          final active = _isNavActive(item, route);
+          return ListTile(
+            title: Text(
+              item.label,
+              style: TextStyle(
+                color: active ? const Color(0xFFFFC024) : Colors.white,
+                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              _goNav(context, item);
+            },
+          );
+        }
+
         Widget navTile(String label, String targetRoute) {
           final active = route == customerRoute(targetRoute);
           return ListTile(
@@ -483,12 +605,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                navTile('Home', '/'),
-                navTile('Gallery', '/gallery'),
-                navTile('Catering Menu', '/catering-menu'),
-                navTile('Restaurant', '/restaurant'),
-                navTile('Inquire Now', '/inquire'),
-                navTile('Contact Us', '/contact-us'),
+                for (final item in _navItems) navTileFor(item),
                 navTile('Track Order', '/track-order'),
                 if (widget.showCartAndCustomerAuth) ...[
                   const Divider(color: Colors.white24),
@@ -574,69 +691,15 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
 
     final logo = InkWell(
       onTap: () => _goHome(context),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Image.asset(
-            'lib/assets/main-2.png',
-            height: 34,
-            fit: BoxFit.contain,
-          ),
-          const SizedBox(width: 10),
-          Text(
-            WebsiteContentStore.instance.navBrandLabel,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 15,
-              letterSpacing: 0.4,
-            ),
-          ),
-        ],
+      child: Image.asset(
+        'lib/assets/main-2.png',
+        height: 34,
+        fit: BoxFit.contain,
       ),
     );
 
-    final navLinks = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _navLink(
-          context,
-          label: 'Home',
-          route: '/',
-          active: route == customerRoute('/'),
-        ),
-        _navLink(
-          context,
-          label: 'Gallery',
-          route: '/gallery',
-          active: route == customerRoute('/gallery'),
-        ),
-        _navLink(
-          context,
-          label: 'Catering Menu',
-          route: '/catering-menu',
-          active: route == customerRoute('/catering-menu'),
-        ),
-        _navLink(
-          context,
-          label: 'Restaurant',
-          route: '/restaurant',
-          active: route == customerRoute('/restaurant'),
-        ),
-        _navLink(
-          context,
-          label: 'Inquire Now',
-          route: '/inquire',
-          active: route == customerRoute('/inquire'),
-        ),
-        _navLink(
-          context,
-          label: 'Contact Us',
-          route: '/contact-us',
-          active: route == customerRoute('/contact-us'),
-        ),
-      ],
-    );
+    final navLinks = _buildSlidingNav(context, route);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateUnderline());
 
     final trailingActions = widget.showCartAndCustomerAuth
         ? Row(

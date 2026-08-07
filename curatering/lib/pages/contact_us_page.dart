@@ -82,12 +82,6 @@ class _ContactUsPageState extends State<ContactUsPage> {
 
   Future<void> _submitFeedback() async {
     if (!_feedbackFormKey.currentState!.validate()) return;
-    if (_feedbackRating < 1) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a star rating.')),
-      );
-      return;
-    }
 
     setState(() => _isSubmittingFeedback = true);
     try {
@@ -214,11 +208,12 @@ class _ContactUsPageState extends State<ContactUsPage> {
   }
 
   Widget _buildFeedbackModule() {
+    final twoCol = !isMobile(context);
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(24),
         child: Form(
           key: _feedbackFormKey,
           child: Column(
@@ -228,86 +223,51 @@ class _ContactUsPageState extends State<ContactUsPage> {
                 'Share your feedback',
                 style: GoogleFonts.getFont(
                   _primaryFont,
-                  fontSize: 24,
+                  fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: const Color(0xFF1E1E1E),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
-                'Tell us what worked well or what we can improve. Your feedback is reviewed by our team.',
+                'Tell us what worked well or what we can improve.',
                 style: TextStyle(
                   color: Colors.grey.shade600,
-                  fontSize: 14,
+                  fontSize: 13,
                   height: 1.4,
                 ),
               ),
-              const SizedBox(height: 20),
-              TextFormField(
-                controller: _feedbackNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  border: OutlineInputBorder(),
-                ),
-              ),
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _feedbackEmailController,
-                decoration: const InputDecoration(
-                  labelText: 'Email Address',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  final text = value?.trim() ?? '';
-                  if (text.isNotEmpty && !text.contains('@')) {
-                    return 'Please enter a valid email';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Rating',
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: List.generate(5, (index) {
-                  final star = index + 1;
-                  return IconButton(
-                    tooltip: '$star star${star == 1 ? '' : 's'}',
-                    onPressed:
-                        _isSubmittingFeedback
-                            ? null
-                            : () => setState(() => _feedbackRating = star),
-                    icon: Icon(
-                      star <= _feedbackRating ? Icons.star : Icons.star_border,
-                      color: Colors.amber.shade700,
-                      size: 28,
-                    ),
-                  );
-                }),
-              ),
+              if (twoCol)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: _feedbackNameField()),
+                    const SizedBox(width: 12),
+                    Expanded(child: _feedbackEmailField()),
+                  ],
+                )
+              else ...[
+                _feedbackNameField(),
+                const SizedBox(height: 12),
+                _feedbackEmailField(),
+              ],
               const SizedBox(height: 12),
-              TextFormField(
-                controller: _feedbackMessageController,
-                decoration: const InputDecoration(
-                  labelText: 'Feedback',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 4,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter your feedback';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 20),
+              if (twoCol)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: _feedbackRatingField()),
+                    const SizedBox(width: 12),
+                    Expanded(child: _feedbackMessageField()),
+                  ],
+                )
+              else ...[
+                _feedbackRatingField(),
+                const SizedBox(height: 12),
+                _feedbackMessageField(),
+              ],
+              const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
@@ -315,7 +275,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF1E1E1E),
                     side: const BorderSide(color: Color(0xFF1E1E1E)),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -338,6 +298,94 @@ class _ContactUsPageState extends State<ContactUsPage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _feedbackNameField() {
+    return TextFormField(
+      controller: _feedbackNameController,
+      decoration: const InputDecoration(
+        labelText: 'Name',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+    );
+  }
+
+  Widget _feedbackEmailField() {
+    return TextFormField(
+      controller: _feedbackEmailController,
+      decoration: const InputDecoration(
+        labelText: 'Email Address',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      keyboardType: TextInputType.emailAddress,
+      validator: (value) {
+        final text = value?.trim() ?? '';
+        if (text.isNotEmpty && !text.contains('@')) {
+          return 'Please enter a valid email';
+        }
+        return null;
+      },
+    );
+  }
+
+  Widget _feedbackRatingField() {
+    return FormField<int>(
+      validator: (_) {
+        if (_feedbackRating < 1) return 'Rating is required';
+        return null;
+      },
+      builder: (state) {
+        return InputDecorator(
+          decoration: InputDecoration(
+            labelText: 'Rating *',
+            border: const OutlineInputBorder(),
+            isDense: true,
+            errorText: state.errorText,
+          ),
+          child: Row(
+            children: List.generate(5, (index) {
+              final star = index + 1;
+              return IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: '$star star${star == 1 ? '' : 's'}',
+                onPressed:
+                    _isSubmittingFeedback
+                        ? null
+                        : () {
+                          setState(() => _feedbackRating = star);
+                          state.didChange(star);
+                        },
+                icon: Icon(
+                  star <= _feedbackRating ? Icons.star : Icons.star_border,
+                  color: Colors.amber.shade700,
+                  size: 26,
+                ),
+              );
+            }),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _feedbackMessageField() {
+    return TextFormField(
+      controller: _feedbackMessageController,
+      decoration: const InputDecoration(
+        labelText: 'Feedback',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      maxLines: 4,
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return 'Please enter your feedback';
+        }
+        return null;
+      },
     );
   }
 

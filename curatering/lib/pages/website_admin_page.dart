@@ -12,6 +12,7 @@ import '../widgets/antd_form_field.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_tokens.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/cms_sections.dart';
 import '../widgets/paginated_data_table.dart';
 import '../widgets/website_media_picker.dart';
 import '../widgets/website_rich_text.dart';
@@ -32,6 +33,7 @@ enum _CmsSection {
   gallery,
   contact,
   navigation,
+  pages,
   media,
   revisions,
 }
@@ -153,7 +155,10 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
   }
 
   void _previewDraft() {
-    Navigator.of(context).pushNamed('/website');
+    Navigator.of(context).pushNamed(
+      '/website',
+      arguments: const {'returnRoute': '/website-admin'},
+    );
   }
 
   String get _sectionTitle {
@@ -172,6 +177,8 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
         return 'Contact & footer';
       case _CmsSection.navigation:
         return 'Navigation';
+      case _CmsSection.pages:
+        return 'Custom pages';
       case _CmsSection.media:
         return 'Media library';
       case _CmsSection.revisions:
@@ -185,10 +192,196 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
     final publishedLabel = store.publishedAt == null
         ? 'Never published'
         : 'Published ${store.publishedAt}';
+    final narrow = MediaQuery.sizeOf(context).width < 700;
+
+    Widget editorBody() {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(
+                  width: narrow ? double.infinity : null,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          if (narrow)
+                            IconButton(
+                              tooltip: 'Sections',
+                              onPressed: () async {
+                                final next = await showModalBottomSheet<_CmsSection>(
+                                  context: context,
+                                  builder: (ctx) {
+                                    return SafeArea(
+                                      child: ListView(
+                                        shrinkWrap: true,
+                                        children: [
+                                          for (final item in _CmsSideNav._items)
+                                            ListTile(
+                                              leading: Icon(item.$3),
+                                              title: Text(item.$2),
+                                              selected: _section == item.$1,
+                                              onTap: () => Navigator.pop(ctx, item.$1),
+                                            ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                );
+                                if (next != null) {
+                                  setState(() => _section = next);
+                                }
+                              },
+                              icon: const Icon(Icons.menu),
+                            ),
+                          Expanded(
+                            child: Text(
+                              'Website CMS · $_sectionTitle',
+                              style: const TextStyle(
+                                fontSize: 21,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$publishedLabel · Editing draft',
+                        style: const TextStyle(
+                          color: AntdTokens.labelMuted,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    if (isStaffSiteHost) {
+                      redirectToSiteOrigin(customerSiteOrigin, '/');
+                    } else {
+                      Navigator.of(context).pushNamed(customerRoute('/'));
+                    }
+                  },
+                  icon: const Icon(Icons.public, size: 18),
+                  label: const Text('Live site'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _previewDraft,
+                  icon: const Icon(Icons.visibility_outlined, size: 18),
+                  label: const Text('Preview draft'),
+                ),
+                AntdSecondaryButton(
+                  label: _dirty ? 'Save draft *' : 'Save draft',
+                  onPressed: _saving || _publishing ? null : _saveDraft,
+                ),
+                AntdPrimaryButton(
+                  label: 'Publish',
+                  loading: _publishing,
+                  onPressed: _saving || _publishing ? null : _publish,
+                ),
+              ],
+            ),
+          ),
+          if (_dirty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+              child: Material(
+                color: AntdTokens.warning.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+                child: const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: AntdTokens.warning),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Unsaved local edits. Save draft, then Publish to update the customer site.',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          Expanded(
+            child: ListenableBuilder(
+              listenable: store,
+              builder: (context, _) {
+                switch (_section) {
+                  case _CmsSection.home:
+                    return _HomepageEditor(onChanged: _markDirty);
+                  case _CmsSection.catering:
+                    return _SimplePageEditor(
+                      pageKey: 'catering',
+                      titleLabel: 'Catering page title',
+                      titleValue: store.cateringPageTitle,
+                      onTitle: (v) {
+                        store.cateringPageTitle = v;
+                        _markDirty();
+                      },
+                      subtitleLabel: 'Subtitle',
+                      subtitleValue: store.cateringPageSubtitle,
+                      onSubtitle: (v) {
+                        store.cateringPageSubtitle = v;
+                        _markDirty();
+                      },
+                      onChanged: _markDirty,
+                    );
+                  case _CmsSection.restaurant:
+                    return _SimplePageEditor(
+                      pageKey: 'restaurant',
+                      titleLabel: 'Restaurant page title',
+                      titleValue: store.restaurantPageTitle,
+                      onTitle: (v) {
+                        store.restaurantPageTitle = v;
+                        _markDirty();
+                      },
+                      subtitleLabel: 'Subtitle',
+                      subtitleValue: store.restaurantPageSubtitle,
+                      onSubtitle: (v) {
+                        store.restaurantPageSubtitle = v;
+                        _markDirty();
+                      },
+                      onChanged: _markDirty,
+                    );
+                  case _CmsSection.inquiry:
+                    return _InquiryEditor(onChanged: _markDirty);
+                  case _CmsSection.gallery:
+                    return _GalleryEditor(onChanged: _markDirty);
+                  case _CmsSection.contact:
+                    return _ContactEditor(onChanged: _markDirty);
+                  case _CmsSection.navigation:
+                    return _NavigationEditor(onChanged: _markDirty);
+                  case _CmsSection.pages:
+                    return _CustomPagesEditor(onChanged: _markDirty);
+                  case _CmsSection.media:
+                    return const _MediaLibraryPanel();
+                  case _CmsSection.revisions:
+                    return const _RevisionsPanel();
+                }
+              },
+            ),
+          ),
+        ],
+      );
+    }
 
     return AppScaffold(
       child: _loading
           ? const Center(child: CircularProgressIndicator())
+          : narrow
+          ? editorBody()
           : Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -196,152 +389,7 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
                 selected: _section,
                 onSelect: (s) => setState(() => _section = s),
               ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Website CMS · $_sectionTitle',
-                                  style: const TextStyle(
-                                    fontSize: 21,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '$publishedLabel · Editing draft',
-                                  style: const TextStyle(
-                                    color: AntdTokens.labelMuted,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              if (isStaffSiteHost) {
-                                redirectToSiteOrigin(customerSiteOrigin, '/');
-                              } else {
-                                Navigator.of(
-                                  context,
-                                ).pushNamed(customerRoute('/'));
-                              }
-                            },
-                            icon: const Icon(Icons.public, size: 18),
-                            label: const Text('Live site'),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: _previewDraft,
-                            icon: const Icon(Icons.visibility_outlined, size: 18),
-                            label: const Text('Preview draft'),
-                          ),
-                          const SizedBox(width: 8),
-                          AntdSecondaryButton(
-                            label: _dirty ? 'Save draft *' : 'Save draft',
-                            onPressed: _saving || _publishing ? null : _saveDraft,
-                          ),
-                          const SizedBox(width: 8),
-                          AntdPrimaryButton(
-                            label: 'Publish',
-                            loading: _publishing,
-                            onPressed:
-                                _saving || _publishing ? null : _publish,
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (_dirty)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-                        child: Material(
-                          color: AntdTokens.warning.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                          child: const Padding(
-                            padding: EdgeInsets.all(10),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.info_outline,
-                                  color: AntdTokens.warning,
-                                ),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Unsaved local edits. Save draft, then Publish to update the customer site.',
-                                    style: TextStyle(fontSize: 13),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    Expanded(
-                      child: ListenableBuilder(
-                        listenable: store,
-                        builder: (context, _) {
-                          switch (_section) {
-                            case _CmsSection.home:
-                              return _HomepageEditor(onChanged: _markDirty);
-                            case _CmsSection.catering:
-                              return _SimplePageEditor(
-                                titleLabel: 'Catering page title',
-                                titleValue: store.cateringPageTitle,
-                                onTitle: (v) {
-                                  store.cateringPageTitle = v;
-                                  _markDirty();
-                                },
-                                subtitleLabel: 'Subtitle',
-                                subtitleValue: store.cateringPageSubtitle,
-                                onSubtitle: (v) {
-                                  store.cateringPageSubtitle = v;
-                                  _markDirty();
-                                },
-                              );
-                            case _CmsSection.restaurant:
-                              return _SimplePageEditor(
-                                titleLabel: 'Restaurant page title',
-                                titleValue: store.restaurantPageTitle,
-                                onTitle: (v) {
-                                  store.restaurantPageTitle = v;
-                                  _markDirty();
-                                },
-                                subtitleLabel: 'Subtitle',
-                                subtitleValue: store.restaurantPageSubtitle,
-                                onSubtitle: (v) {
-                                  store.restaurantPageSubtitle = v;
-                                  _markDirty();
-                                },
-                              );
-                            case _CmsSection.inquiry:
-                              return _InquiryEditor(onChanged: _markDirty);
-                            case _CmsSection.gallery:
-                              return _GalleryEditor(onChanged: _markDirty);
-                            case _CmsSection.contact:
-                              return _ContactEditor(onChanged: _markDirty);
-                            case _CmsSection.navigation:
-                              return _NavigationEditor(onChanged: _markDirty);
-                            case _CmsSection.media:
-                              return const _MediaLibraryPanel();
-                            case _CmsSection.revisions:
-                              return const _RevisionsPanel();
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              Expanded(child: editorBody()),
             ],
           ),
     );
@@ -362,6 +410,7 @@ class _CmsSideNav extends StatelessWidget {
     (_CmsSection.gallery, 'Gallery', Icons.photo_library_outlined),
     (_CmsSection.contact, 'Contact & footer', Icons.contact_page_outlined),
     (_CmsSection.navigation, 'Navigation', Icons.menu_outlined),
+    (_CmsSection.pages, 'Pages', Icons.article_outlined),
     (_CmsSection.media, 'Media', Icons.perm_media_outlined),
     (_CmsSection.revisions, 'Revisions', Icons.history),
   ];
@@ -481,23 +530,29 @@ class _CmsTextFieldState extends State<_CmsTextField> {
 
 class _SimplePageEditor extends StatelessWidget {
   const _SimplePageEditor({
+    required this.pageKey,
     required this.titleLabel,
     required this.titleValue,
     required this.onTitle,
     required this.subtitleLabel,
     required this.subtitleValue,
     required this.onSubtitle,
+    required this.onChanged,
   });
 
+  final String pageKey;
   final String titleLabel;
   final String titleValue;
   final ValueChanged<String> onTitle;
   final String subtitleLabel;
   final String subtitleValue;
   final ValueChanged<String> onSubtitle;
+  final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
+    final extras =
+        WebsiteContentStore.instance.pageExtraSections[pageKey] ?? <CmsSection>[];
     return _cmsPad(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -511,6 +566,8 @@ class _SimplePageEditor extends StatelessWidget {
             onChanged: onSubtitle,
             maxLines: 3,
           ),
+          const SizedBox(height: 24),
+          CmsSectionsEditor(sections: extras, onChanged: onChanged),
         ],
       ),
     );
@@ -704,6 +761,11 @@ class _HomepageEditor extends StatelessWidget {
               ),
             ),
           ),
+          const SizedBox(height: 24),
+          CmsSectionsEditor(
+            sections: w.pageExtraSections['home'] ?? <CmsSection>[],
+            onChanged: onChanged,
+          ),
         ],
       ),
     );
@@ -796,61 +858,82 @@ class _GalleryEditor extends StatelessWidget {
             },
           ),
           const SizedBox(height: 16),
-          _sectionTitle('Categories'),
-          for (final cat in w.galleryCategories) ...[
-            Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _CmsTextField(
-                      label: 'Category label',
-                      value: cat.label,
-                      onChanged: (v) {
-                        cat.label = v;
-                        onChanged();
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${cat.images.length} image(s)',
-                      style: const TextStyle(color: AntdTokens.labelMuted),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: AntdSecondaryButton(
-                        label: 'Add images from library',
-                        onPressed: () async {
-                          final picked = await showWebsiteMediaPicker(context);
-                          if (picked == null) return;
-                          var b64 = picked.dataBase64 ?? '';
-                          if (b64.isEmpty) {
-                            b64 =
-                                (await WebsiteContentStore.instance
-                                    .resolveMediaId(picked.id)) ??
-                                '';
-                          }
-                          cat.images.add(
-                            GalleryImageData(
-                              id: 'img_${picked.id}',
-                              mediaId: picked.id,
-                              imageBase64: b64,
-                              tags: List.from(cat.defaultTagsForUpload),
+          _sectionTitle('Categories (drag to rearrange)'),
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: w.galleryCategories.length,
+            onReorder: (oldIndex, newIndex) {
+              if (newIndex > oldIndex) newIndex -= 1;
+              final item = w.galleryCategories.removeAt(oldIndex);
+              w.galleryCategories.insert(newIndex, item);
+              onChanged();
+            },
+            itemBuilder: (context, index) {
+              final cat = w.galleryCategories[index];
+              return Card(
+                key: ValueKey(cat.id),
+                margin: const EdgeInsets.only(bottom: 12),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.drag_handle),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _CmsTextField(
+                              label: 'Category label',
+                              value: cat.label,
+                              onChanged: (v) {
+                                cat.label = v;
+                                onChanged();
+                              },
                             ),
-                          );
-                          w.touch();
-                          onChanged();
-                        },
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      Text(
+                        '${cat.images.length} image(s)',
+                        style: const TextStyle(color: AntdTokens.labelMuted),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: AntdSecondaryButton(
+                          label: 'Add images from library',
+                          onPressed: () async {
+                            final picked = await showWebsiteMediaPicker(context);
+                            if (picked == null) return;
+                            var b64 = picked.dataBase64 ?? '';
+                            if (b64.isEmpty) {
+                              b64 =
+                                  (await WebsiteContentStore.instance
+                                      .resolveMediaId(picked.id)) ??
+                                  '';
+                            }
+                            cat.images.add(
+                              GalleryImageData(
+                                id: 'img_${picked.id}',
+                                mediaId: picked.id,
+                                imageBase64: b64,
+                                tags: List.from(cat.defaultTagsForUpload),
+                              ),
+                            );
+                            w.touch();
+                            onChanged();
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ),
-          ],
+              );
+            },
+          ),
           Text(
             galleryTagsHint(),
             style: const TextStyle(fontSize: 12, color: AntdTokens.labelMuted),
@@ -1043,15 +1126,235 @@ class _NavigationEditor extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _sectionTitle('Top navigation'),
-          _CmsTextField(
-            label: 'Brand label',
-            value: w.navBrandLabel,
-            onChanged: (v) {
-              w.navBrandLabel = v;
+          Row(
+            children: [
+              Expanded(child: _sectionTitle('Top navigation tabs')),
+              TextButton.icon(
+                onPressed: () {
+                  w.navItems.add(
+                    CmsNavItem(
+                      id: 'nav_${DateTime.now().microsecondsSinceEpoch}',
+                      label: 'New tab',
+                      targetType: CmsNavTargetType.builtin,
+                      target: '/',
+                    ),
+                  );
+                  onChanged();
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Add tab'),
+              ),
+            ],
+          ),
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: w.navItems.length,
+            onReorder: (oldIndex, newIndex) {
+              if (newIndex > oldIndex) newIndex -= 1;
+              final item = w.navItems.removeAt(oldIndex);
+              w.navItems.insert(newIndex, item);
               onChanged();
             },
+            itemBuilder: (context, index) {
+              final item = w.navItems[index];
+              return Card(
+                key: ValueKey(item.id),
+                margin: const EdgeInsets.only(bottom: 8),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.drag_handle),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextFormField(
+                              initialValue: item.label,
+                              decoration: const InputDecoration(
+                                labelText: 'Label',
+                                isDense: true,
+                                border: OutlineInputBorder(),
+                              ),
+                              onChanged: (v) {
+                                item.label = v;
+                                onChanged();
+                              },
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.red),
+                            onPressed: () {
+                              w.navItems.removeAt(index);
+                              onChanged();
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<CmsNavTargetType>(
+                              value: item.targetType,
+                              decoration: const InputDecoration(
+                                labelText: 'Target type',
+                                isDense: true,
+                                border: OutlineInputBorder(),
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: CmsNavTargetType.builtin,
+                                  child: Text('Built-in page'),
+                                ),
+                                DropdownMenuItem(
+                                  value: CmsNavTargetType.customPage,
+                                  child: Text('Custom page'),
+                                ),
+                                DropdownMenuItem(
+                                  value: CmsNavTargetType.url,
+                                  child: Text('URL'),
+                                ),
+                              ],
+                              onChanged: (v) {
+                                if (v == null) return;
+                                item.targetType = v;
+                                onChanged();
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextFormField(
+                              initialValue: item.target,
+                              decoration: InputDecoration(
+                                labelText:
+                                    item.targetType == CmsNavTargetType.customPage
+                                        ? 'Page slug'
+                                        : item.targetType == CmsNavTargetType.url
+                                        ? 'URL'
+                                        : 'Route (e.g. /gallery)',
+                                isDense: true,
+                                border: const OutlineInputBorder(),
+                              ),
+                              onChanged: (v) {
+                                item.target = v;
+                                onChanged();
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Visible'),
+                        value: item.visible,
+                        onChanged: (v) {
+                          item.visible = v;
+                          onChanged();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CustomPagesEditor extends StatelessWidget {
+  const _CustomPagesEditor({required this.onChanged});
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = WebsiteContentStore.instance;
+    return _cmsPad(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(child: _sectionTitle('Custom pages')),
+              TextButton.icon(
+                onPressed: () {
+                  final id = 'page_${DateTime.now().microsecondsSinceEpoch}';
+                  w.customPages.add(
+                    CmsCustomPage(
+                      id: id,
+                      slug: 'page-${w.customPages.length + 1}',
+                      title: 'New page',
+                    ),
+                  );
+                  onChanged();
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Add page'),
+              ),
+            ],
+          ),
+          for (final page in w.customPages) ...[
+            Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: page.title,
+                            decoration: const InputDecoration(
+                              labelText: 'Title',
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                            ),
+                            onChanged: (v) {
+                              page.title = v;
+                              onChanged();
+                            },
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.red),
+                          onPressed: () {
+                            w.customPages.remove(page);
+                            onChanged();
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      initialValue: page.slug,
+                      decoration: const InputDecoration(
+                        labelText: 'Slug (URL /p/slug)',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (v) {
+                        page.slug = v.trim().toLowerCase().replaceAll(' ', '-');
+                        onChanged();
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    CmsSectionsEditor(
+                      sections: page.sections,
+                      onChanged: onChanged,
+                      title: 'Page sections',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -22,6 +22,7 @@ import 'pages/reports.dart';
 import 'pages/transactions.dart';
 import 'pages/settings.dart';
 import 'pages/customer_website.dart';
+import 'pages/custom_cms_page.dart';
 import 'pages/gallery_page.dart';
 import 'pages/contact_us_page.dart';
 import 'pages/inquire_page.dart';
@@ -372,7 +373,16 @@ Route<dynamic>? _buildRouteForPath(String path) {
   }
 
   final builder = routes[path];
-  if (builder == null) return null;
+  if (builder == null) {
+    if (path.startsWith('/p/') && path.length > 3) {
+      final slug = path.substring(3);
+      return MaterialPageRoute<void>(
+        settings: RouteSettings(name: path),
+        builder: (_) => CustomCmsPage(slug: slug),
+      );
+    }
+    return null;
+  }
   return MaterialPageRoute<void>(
     settings: RouteSettings(name: path),
     builder: builder,

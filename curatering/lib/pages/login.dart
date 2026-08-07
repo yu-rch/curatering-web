@@ -175,6 +175,8 @@ class _LoginState extends State<Login> {
                       const SizedBox(height: 28),
                       TextField(
                         controller: _emailController,
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => FocusScope.of(context).nextFocus(),
                         decoration: InputDecoration(
                           labelText: 'Email address',
                           border: OutlineInputBorder(
@@ -192,6 +194,8 @@ class _LoginState extends State<Login> {
                           ),
                         ),
                         obscureText: true,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _onLogin(),
                       ),
                       const SizedBox(height: 24),
                       SizedBox(

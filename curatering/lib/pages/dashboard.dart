@@ -1721,44 +1721,55 @@ class _DashboardState extends State<Dashboard> {
                           ),
                         ),
                       ),
-                      if (isSuperAdmin) ...[
-                        OutlinedButton.icon(
-                          onPressed:
-                              () => Navigator.of(
-                                context,
-                              ).pushReplacementNamed('/super-admin-dashboard'),
-                          icon: const Icon(Icons.admin_panel_settings_outlined),
-                          label: const Text('Super Admin Dashboard'),
+                      Flexible(
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          alignment: WrapAlignment.end,
+                          children: [
+                            if (isSuperAdmin)
+                              OutlinedButton.icon(
+                                onPressed:
+                                    () => Navigator.of(context)
+                                        .pushReplacementNamed(
+                                          '/super-admin-dashboard',
+                                        ),
+                                icon: const Icon(
+                                  Icons.admin_panel_settings_outlined,
+                                ),
+                                label: const Text('Super Admin Dashboard'),
+                              ),
+                            OutlinedButton.icon(
+                              onPressed:
+                                  _isPrintingPdf || s == null
+                                      ? null
+                                      : () => _printDashboardPdf(s),
+                              icon:
+                                  _isPrintingPdf
+                                      ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                      : const Icon(Icons.picture_as_pdf),
+                              label: Text(
+                                _isPrintingPdf
+                                    ? 'Preparing PDF'
+                                    : 'Preview / Print',
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Refresh',
+                              onPressed:
+                                  _isLoading
+                                      ? null
+                                      : () => _refreshDashboard(force: true),
+                              icon: const Icon(Icons.refresh),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                      ],
-                      OutlinedButton.icon(
-                        onPressed:
-                            _isPrintingPdf || s == null
-                                ? null
-                                : () => _printDashboardPdf(s),
-                        icon:
-                            _isPrintingPdf
-                                ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                                : const Icon(Icons.picture_as_pdf),
-                        label: Text(
-                          _isPrintingPdf ? 'Preparing PDF' : 'Preview / Print',
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        tooltip: 'Refresh',
-                        onPressed:
-                            _isLoading
-                                ? null
-                                : () => _refreshDashboard(force: true),
-                        icon: const Icon(Icons.refresh),
                       ),
                     ],
                   ),
@@ -1779,9 +1790,21 @@ class _DashboardState extends State<Dashboard> {
                       color: Colors.red.shade50,
                       child: Padding(
                         padding: const EdgeInsets.all(12),
-                        child: Text(
-                          _errorMessage!,
-                          style: TextStyle(color: Colors.red.shade800),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _errorMessage!,
+                                style: TextStyle(color: Colors.red.shade800),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            OutlinedButton.icon(
+                              onPressed: () => _refreshDashboard(force: true),
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Reload'),
+                            ),
+                          ],
                         ),
                       ),
                     ),

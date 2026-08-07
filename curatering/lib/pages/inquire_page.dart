@@ -174,7 +174,8 @@ class _InquirePageState extends State<InquirePage> {
   bool _menuChoicePicked = false;
   bool _attemptedSubmit = false;
   static const int _minSelectedDishesRequired = 4;
-  static const int _maxSelectedDishesRequired = 8;
+  static const int _maxSelectedDishesRequired = 10;
+  static const int _visibleDishRows = 8;
   static const int _maxMainDishSelections = 3;
   String _menuSuggestionNote = '';
   String _selectedSetMenu = 'All Dishes';
@@ -1748,138 +1749,153 @@ class _InquirePageState extends State<InquirePage> {
   Widget _buildPackagesPage(BuildContext context) {
     final content = WebsiteContentStore.instance;
 
-    return Center(
-      child: SingleChildScrollView(
-        padding: websitePagePadding(context),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 620),
-          child: Card(
-            elevation: 4,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    content.inquiryPageTitle,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.getFont(
-                      _primaryFont,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: _darkHeader,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _accentYellow,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      content.inquiryPageSubtitle,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: _darkHeader,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxH = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : MediaQuery.sizeOf(context).height;
+        return Padding(
+          padding: websitePagePadding(context, vertical: 12),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 720,
+                maxHeight: maxH,
+              ),
+              child: Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                  child: Column(
+                    children: [
+                      Text(
+                        content.inquiryPageTitle,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.getFont(
+                          _primaryFont,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: _darkHeader,
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                  Text(
-                    'Our Catering Packages',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 20),
-                  GridView.count(
-                    crossAxisCount: 2,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 1.1,
-                    children: List.generate(_locationPackages.length, (index) {
-                      final pkg = _locationPackages[index];
-                      final selected = _selectedPackageIndex == index;
-                      return Material(
-                        color: selected
-                            ? _accentYellow.withValues(alpha: 0.25)
-                            : Colors.grey.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () => _selectPackage(index),
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: selected
-                                    ? _darkHeader
-                                    : Colors.grey.shade300,
-                                width: selected ? 2 : 1,
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(
-                                  pkg['icon'] as IconData,
-                                  size: 28,
-                                  color: _darkHeader,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  pkg['title'] as String,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13,
-                                    color: _darkHeader,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Expanded(
-                                  child: Text(
-                                    pkg['description'] as String,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700,
-                                      height: 1.4,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _accentYellow,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          content.inquiryPageSubtitle,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: _darkHeader,
+                            fontSize: 12,
                           ),
                         ),
-                      );
-                    }),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Our Catering Packages',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 10),
+                      Expanded(
+                        child: GridView.count(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                          childAspectRatio: 1.15,
+                          children: List.generate(_locationPackages.length, (
+                            index,
+                          ) {
+                            final pkg = _locationPackages[index];
+                            final selected = _selectedPackageIndex == index;
+                            return Material(
+                              color:
+                                  selected
+                                      ? _accentYellow.withValues(alpha: 0.25)
+                                      : Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () => _selectPackage(index),
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color:
+                                          selected
+                                              ? _darkHeader
+                                              : Colors.grey.shade300,
+                                      width: selected ? 2 : 1,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        pkg['icon'] as IconData,
+                                        size: 22,
+                                        color: _darkHeader,
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        pkg['title'] as String,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                          color: _darkHeader,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Expanded(
+                                        child: Text(
+                                          pkg['description'] as String,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.grey.shade700,
+                                            height: 1.3,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: AntdPrimaryButton(
+                          label: 'NEXT',
+                          onPressed: _proceedFromPackages,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 28),
-                  SizedBox(
-                    width: double.infinity,
-                    child: AntdPrimaryButton(
-                      label: 'NEXT',
-                      onPressed: _proceedFromPackages,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -3078,7 +3094,7 @@ class _InquirePageState extends State<InquirePage> {
             TextField(
               controller: _note,
               decoration: const InputDecoration(
-                labelText: 'Note (optional)',
+                labelText: 'Order notes (add other inclusions here)',
                 border: OutlineInputBorder(),
               ),
               maxLines: 3,
@@ -3256,6 +3272,7 @@ class _InquirePageState extends State<InquirePage> {
               label: 'Food allergens to avoid',
               child: AllergenSelectorField(
                 initialSerialized: _allergensSerialized,
+                dropdownMode: true,
                 onChanged: (s) {
                   setState(() {
                     _allergensSerialized = s;
@@ -3266,83 +3283,73 @@ class _InquirePageState extends State<InquirePage> {
             ),
 
             const SizedBox(height: 20),
-            const Text(
-              'WOULD YOU LIKE TO CURATE YOUR OWN MENU?',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            RadioListTile<bool>(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              value: true,
-              groupValue: _menuChoicePicked ? _curateOwn : null,
-              title: const Text('Yes, curate my own menu'),
-              onChanged: (v) => setState(() {
-                _menuChoicePicked = true;
-                _curateOwn = true;
-                _menuSuggestionNote = '';
-                _selectedSetMenu = 'All Dishes';
-                _selectedDishIds.clear();
-                _menuSelections.clear();
-              }),
-            ),
-            RadioListTile<bool>(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              value: false,
-              groupValue: _menuChoicePicked ? _curateOwn : null,
-              title: const Text('No, suggest a menu'),
-              onChanged: (v) => setState(() {
-                _menuChoicePicked = true;
-                _curateOwn = false;
-                _selectedDishIds.clear();
-                _menuSelections.clear();
-                _menuSuggestionNote = 'No, suggest me a menu instead.';
-              }),
+            DropdownButtonFormField<String>(
+              value:
+                  !_menuChoicePicked
+                      ? null
+                      : (_curateOwn ? 'curate' : 'suggest'),
+              decoration: const InputDecoration(
+                labelText: 'Menu selection',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'curate',
+                  child: Text('Yes, curate my own menu'),
+                ),
+                DropdownMenuItem(
+                  value: 'suggest',
+                  child: Text('No, suggest a menu'),
+                ),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() {
+                  _menuChoicePicked = true;
+                  _curateOwn = v == 'curate';
+                  if (_curateOwn) {
+                    _menuSuggestionNote = '';
+                    _selectedSetMenu = 'All Dishes';
+                    _selectedDishIds.clear();
+                    _menuSelections.clear();
+                  } else {
+                    _selectedDishIds.clear();
+                    _menuSelections.clear();
+                    _menuSuggestionNote = 'No, suggest me a menu instead.';
+                  }
+                });
+              },
             ),
             if (_attemptedSubmit && !_menuChoicePicked)
               Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.only(top: 8, bottom: 8),
                 child: Text(
                   'Required',
                   style: TextStyle(color: Colors.red.shade700, fontSize: 12),
                 ),
               ),
             if (_menuChoicePicked && _curateOwn) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  ChoiceChip(
-                    label: const Text('I want to make my own menu'),
-                    selected: _menuPrefTabIndex == 0,
-                    selectedColor: AntdTokens.brandPrimary,
-                    labelStyle: TextStyle(
-                      color: _menuPrefTabIndex == 0
-                          ? AntdTokens.brandOnPrimary
-                          : Colors.black87,
-                      fontWeight: _menuPrefTabIndex == 0
-                          ? FontWeight.w700
-                          : FontWeight.normal,
-                    ),
-                    onSelected: (_) => _switchMenuPrefTab(0),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                value: _menuPrefTabIndex,
+                decoration: const InputDecoration(
+                  labelText: 'How would you like to build your menu?',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 0,
+                    child: Text('I want to make my own menu'),
                   ),
-                  ChoiceChip(
-                    label: const Text('Choose from Set Menu'),
-                    selected: _menuPrefTabIndex == 1,
-                    selectedColor: AntdTokens.brandPrimary,
-                    labelStyle: TextStyle(
-                      color: _menuPrefTabIndex == 1
-                          ? AntdTokens.brandOnPrimary
-                          : Colors.black87,
-                      fontWeight: _menuPrefTabIndex == 1
-                          ? FontWeight.w700
-                          : FontWeight.normal,
-                    ),
-                    onSelected: (_) => _switchMenuPrefTab(1),
+                  DropdownMenuItem(
+                    value: 1,
+                    child: Text('Choose from Set Menu'),
                   ),
                 ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  _switchMenuPrefTab(v);
+                },
               ),
               const SizedBox(height: 12),
               ListenableBuilder(
@@ -3374,8 +3381,10 @@ class _InquirePageState extends State<InquirePage> {
                         initialSelections:
                             List<Map<String, dynamic>>.from(_menuSelections),
                         mode: InquiryMenuPickerMode.inquiryExclusive,
-                        minCustomDishes: 4,
-                        maxCustomDishes: 8,
+                        minCustomDishes: _minSelectedDishesRequired,
+                        maxCustomDishes: _maxSelectedDishesRequired,
+                        visibleRowCount: _visibleDishRows,
+                        twoColumnSetMenu: true,
                         onSelectionChanged: _onInlineMenuSelectionChanged,
                       ),
                       if (additionalTotal > 0) ...[
@@ -3431,6 +3440,35 @@ class _InquirePageState extends State<InquirePage> {
               style: TextStyle(height: 1.35),
             ),
             const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.amber.shade200),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "What's included in event styling",
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  SizedBox(height: 6),
+                  Text('• Basic table styling and centerpiece arrangement'),
+                  Text('• Coordinated dinnerware / place setting layout'),
+                  Text('• Soft ambient décor accents matched to your theme'),
+                  Text('• On-site styling setup for the booked event window'),
+                  SizedBox(height: 8),
+                  Text(
+                    'Other inclusions (extra décor, specialty rentals, etc.) should be added in Order notes.',
+                    style: TextStyle(fontSize: 12, height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -3474,7 +3512,7 @@ class _InquirePageState extends State<InquirePage> {
                 controller: _themeNotesController,
                 maxLines: 4,
                 decoration: const InputDecoration(
-                  labelText: 'Theme / styling notes',
+                  labelText: 'Theme / styling notes (other inclusions → Order notes)',
                   hintText:
                       'Describe preferred look, colors, motif, and styling notes',
                   border: OutlineInputBorder(),

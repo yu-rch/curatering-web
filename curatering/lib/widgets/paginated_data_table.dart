@@ -246,15 +246,17 @@ class _PagedDataTableState extends State<PagedDataTable> {
 
     Widget tableScroll = LayoutBuilder(
       builder: (context, constraints) {
-        if (widget.fullWidth && constraints.maxWidth.isFinite) {
-          return SizedBox(
-            width: constraints.maxWidth,
-            child: table,
-          );
-        }
+        final minTableWidth = widget.fullWidth && constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : null;
         return SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          child: table,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minWidth: minTableWidth ?? 720,
+            ),
+            child: table,
+          ),
         );
       },
     );

@@ -58,7 +58,7 @@ class AntdPageHeader extends StatelessWidget {
       alignment: WrapAlignment.spaceBetween,
       children: [
         ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 260, maxWidth: 720),
+          constraints: const BoxConstraints(maxWidth: 720),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

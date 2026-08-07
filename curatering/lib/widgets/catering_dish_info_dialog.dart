@@ -21,39 +21,36 @@ void showCateringDishInfoDialog(
       return AlertDialog(
         title: Text(dish.name),
         content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 820),
-          child: SingleChildScrollView(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 700;
-                final hasImage = dish.imageBase64?.isNotEmpty == true;
-                final image =
-                    hasImage
-                        ? ClipRRect(
+          constraints: const BoxConstraints(maxWidth: 820, maxHeight: 520),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 700;
+              final hasImage = dish.imageBase64?.isNotEmpty == true;
+              final image =
+                  hasImage
+                      ? ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: SizedBox(
+                          height: wide ? 320 : 220,
+                          width: double.infinity,
+                          child: CachedBase64Image(
+                            base64String: dish.imageBase64,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      )
+                      : Container(
+                        height: 220,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
                           borderRadius: BorderRadius.circular(12),
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxHeight: 320),
-                            child: InteractiveViewer(
-                              minScale: 1,
-                              maxScale: 4,
-                              child: CachedBase64Image(
-                                base64String: dish.imageBase64,
-                                fit: BoxFit.contain,
-                              ),
-                            ),
-                          ),
-                        )
-                        : Container(
-                          height: 220,
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade200,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Center(
-                            child: Icon(Icons.restaurant_menu, size: 48),
-                          ),
-                        );
-                final details = Column(
+                        ),
+                        child: const Center(
+                          child: Icon(Icons.restaurant_menu, size: 48),
+                        ),
+                      );
+              final details = SingleChildScrollView(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -72,25 +69,28 @@ void showCateringDishInfoDialog(
                       allergens.isEmpty ? 'None listed.' : allergens,
                     ),
                   ],
-                );
+                ),
+              );
 
-                if (!wide) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [image, const SizedBox(height: 16), details],
-                  );
-                }
-                return Row(
+              if (!wide) {
+                return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SizedBox(width: 360, child: image),
-                    const SizedBox(width: 22),
+                    image,
+                    const SizedBox(height: 16),
                     Expanded(child: details),
                   ],
                 );
-              },
-            ),
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: 360, child: image),
+                  const SizedBox(width: 22),
+                  Expanded(child: details),
+                ],
+              );
+            },
           ),
         ),
         actions: [

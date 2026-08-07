@@ -800,6 +800,14 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                             controller: _passwordController,
                             obscureText: _obscurePassword,
                             style: const TextStyle(fontSize: 13),
+                            textInputAction: TextInputAction.done,
+                            onFieldSubmitted: (_) {
+                              if (_isLoginMode) {
+                                _handleLogin();
+                              } else {
+                                _handleSignup();
+                              }
+                            },
                             decoration: InputDecoration(
                               isDense: true,
                               border: OutlineInputBorder(

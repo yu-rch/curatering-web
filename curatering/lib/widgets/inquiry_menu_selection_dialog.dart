@@ -65,7 +65,9 @@ class InquiryMenuPicker extends StatefulWidget {
     this.initialSelections = const [],
     this.mode = InquiryMenuPickerMode.inquiryExclusive,
     this.minCustomDishes = 4,
-    this.maxCustomDishes = 8,
+    this.maxCustomDishes = 10,
+    this.visibleRowCount = 8,
+    this.twoColumnSetMenu = false,
     this.embedded = false,
     this.tabIndex = 0,
     this.onSelectionChanged,
@@ -78,6 +80,8 @@ class InquiryMenuPicker extends StatefulWidget {
   final InquiryMenuPickerMode mode;
   final int minCustomDishes;
   final int maxCustomDishes;
+  final int visibleRowCount;
+  final bool twoColumnSetMenu;
 
   /// When true, renders inline (no modal chrome, no Done/Cancel). Parent owns tab chips via [tabIndex].
   final bool embedded;
@@ -387,12 +391,14 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
             ),
           )
         else
-          ListView.builder(
-            shrinkWrap: widget.embedded,
-            physics:
-                widget.embedded ? const NeverScrollableScrollPhysics() : null,
-            itemCount: filtered.length,
-            itemBuilder: (context, i) {
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: widget.visibleRowCount * 52.0,
+            ),
+            child: ListView.builder(
+              shrinkWrap: !widget.embedded,
+              itemCount: filtered.length,
+              itemBuilder: (context, i) {
               final d = filtered[i];
               final checked = _customIds.contains(d.id);
               return CheckboxListTile(
@@ -402,10 +408,16 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
                 onChanged: (v) {
                   setState(() {
                     if (v == true) {
+                      if (_customIds.length >= widget.maxCustomDishes) {
+                        _localError =
+                            'Select at most ${widget.maxCustomDishes} dishes.';
+                        return;
+                      }
                       _customIds.add(d.id);
                       _localError = null;
                     } else {
                       _customIds.remove(d.id);
+                      _localError = null;
                     }
                   });
                   _emitSelection();
@@ -413,6 +425,7 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
                 title: Text(d.name),
               );
             },
+            ),
           ),
       ],
     );
@@ -776,22 +789,54 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
 
   /// Inline inquiry form: fixed max height + scroll (avoids IndexedStack empty gap).
   Widget _buildEmbeddedMenuPanel() {
-    const maxHeight = 280.0;
+    final maxHeight = widget.twoColumnSetMenu && _activeTab == 1
+        ? 360.0
+        : widget.visibleRowCount * 52.0 + 100;
     final panel =
         _activeTab == 0
             ? _buildCustomDishesPanel()
-            : Column(
-              children: [_buildSetMenusPanel(), _buildSetDishCustomizer()],
-            );
+            : (widget.twoColumnSetMenu
+                ? SizedBox(
+                  height: 340,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Scrollbar(
+                          thumbVisibility: true,
+                          child: SingleChildScrollView(
+                            child: _buildSetMenusPanel(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 3,
+                        child: Scrollbar(
+                          thumbVisibility: true,
+                          child: SingleChildScrollView(
+                            child: _buildSetDishCustomizer(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+                : Column(
+                  children: [_buildSetMenusPanel(), _buildSetDishCustomizer()],
+                ));
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: maxHeight),
-      child: Scrollbar(
-        thumbVisibility: true,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.only(right: 4),
-          child: panel,
-        ),
-      ),
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: widget.twoColumnSetMenu && _activeTab == 1
+          ? panel
+          : Scrollbar(
+            thumbVisibility: true,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.only(right: 4),
+              child: panel,
+            ),
+          ),
     );
   }
 

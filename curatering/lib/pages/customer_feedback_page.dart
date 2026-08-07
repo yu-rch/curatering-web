@@ -183,7 +183,22 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (_error != null) ...[
-                    AntdStatusTag(label: _error!, color: AntdTokens.error),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: AntdStatusTag(
+                            label: _error!,
+                            color: AntdTokens.error,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        AntdSecondaryButton(
+                          label: 'Reload',
+                          icon: Icons.refresh,
+                          onPressed: _fetch,
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 12),
                   ],
                   if (_analysis != null) ...[

@@ -166,6 +166,150 @@ class GalleryCategoryData {
   }
 }
 
+enum CmsSectionType { richText, heading, image, imageRow, cta }
+
+class CmsSection {
+  CmsSection({
+    required this.id,
+    required this.type,
+    this.heading = '',
+    this.bodyHtml = '',
+    this.imageBase64 = '',
+    this.mediaId,
+    this.ctaLabel = '',
+    this.ctaUrl = '',
+    List<CmsImageRef>? images,
+  }) : images = images ?? <CmsImageRef>[];
+
+  final String id;
+  CmsSectionType type;
+  String heading;
+  String bodyHtml;
+  String imageBase64;
+  String? mediaId;
+  String ctaLabel;
+  String ctaUrl;
+  final List<CmsImageRef> images;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'type': type.name,
+    'heading': heading,
+    'bodyHtml': bodyHtml,
+    'imageBase64': imageBase64,
+    if (mediaId != null && mediaId!.isNotEmpty) 'mediaId': mediaId,
+    'ctaLabel': ctaLabel,
+    'ctaUrl': ctaUrl,
+    'images': images.map((e) => e.toJson()).toList(),
+  };
+
+  factory CmsSection.fromJson(Map<String, dynamic> m) {
+    final typeName = (m['type'] ?? 'richText').toString();
+    final type = CmsSectionType.values.firstWhere(
+      (e) => e.name == typeName,
+      orElse: () => CmsSectionType.richText,
+    );
+    final imgs = <CmsImageRef>[];
+    final rawImgs = m['images'];
+    if (rawImgs is List) {
+      for (final e in rawImgs) {
+        imgs.add(CmsImageRef.fromDynamic(e));
+      }
+    }
+    return CmsSection(
+      id: (m['id'] ?? 'sec_${DateTime.now().microsecondsSinceEpoch}').toString(),
+      type: type,
+      heading: (m['heading'] ?? '').toString(),
+      bodyHtml: (m['bodyHtml'] ?? m['body'] ?? '').toString(),
+      imageBase64: (m['imageBase64'] ?? '').toString(),
+      mediaId: (m['mediaId'] ?? m['media_id'])?.toString(),
+      ctaLabel: (m['ctaLabel'] ?? '').toString(),
+      ctaUrl: (m['ctaUrl'] ?? '').toString(),
+      images: imgs,
+    );
+  }
+}
+
+enum CmsNavTargetType { builtin, customPage, url }
+
+class CmsNavItem {
+  CmsNavItem({
+    required this.id,
+    required this.label,
+    required this.targetType,
+    required this.target,
+    this.visible = true,
+  });
+
+  final String id;
+  String label;
+  CmsNavTargetType targetType;
+  String target;
+  bool visible;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'label': label,
+    'targetType': targetType.name,
+    'target': target,
+    'visible': visible,
+  };
+
+  factory CmsNavItem.fromJson(Map<String, dynamic> m) {
+    final typeName = (m['targetType'] ?? 'builtin').toString();
+    final type = CmsNavTargetType.values.firstWhere(
+      (e) => e.name == typeName,
+      orElse: () => CmsNavTargetType.builtin,
+    );
+    return CmsNavItem(
+      id: (m['id'] ?? 'nav_${DateTime.now().microsecondsSinceEpoch}').toString(),
+      label: (m['label'] ?? 'Tab').toString(),
+      targetType: type,
+      target: (m['target'] ?? '/').toString(),
+      visible: m['visible'] != false,
+    );
+  }
+}
+
+class CmsCustomPage {
+  CmsCustomPage({
+    required this.id,
+    required this.slug,
+    required this.title,
+    List<CmsSection>? sections,
+  }) : sections = sections ?? <CmsSection>[];
+
+  final String id;
+  String slug;
+  String title;
+  final List<CmsSection> sections;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'slug': slug,
+    'title': title,
+    'sections': sections.map((e) => e.toJson()).toList(),
+  };
+
+  factory CmsCustomPage.fromJson(Map<String, dynamic> m) {
+    final secs = <CmsSection>[];
+    final raw = m['sections'];
+    if (raw is List) {
+      for (final e in raw) {
+        if (e is Map) {
+          secs.add(CmsSection.fromJson(Map<String, dynamic>.from(e)));
+        }
+      }
+    }
+    return CmsCustomPage(
+      id: (m['id'] ?? 'page_${DateTime.now().microsecondsSinceEpoch}').toString(),
+      slug: (m['slug'] ?? 'page').toString(),
+      title: (m['title'] ?? 'Untitled').toString(),
+      sections: secs,
+    );
+  }
+}
+
 class WebsiteMediaItem {
   final String id;
   final String name;
@@ -285,6 +429,27 @@ class WebsiteContentStore extends ChangeNotifier {
     GalleryCategoryData(id: 'c5', label: 'WEDDING RECEPTIONS'),
     GalleryCategoryData(id: 'c6', label: 'COMPANY CELEBRATIONS'),
   ];
+
+  final List<CmsNavItem> navItems = [
+    CmsNavItem(id: 'nav_home', label: 'Home', targetType: CmsNavTargetType.builtin, target: '/'),
+    CmsNavItem(id: 'nav_gallery', label: 'Gallery', targetType: CmsNavTargetType.builtin, target: '/gallery'),
+    CmsNavItem(id: 'nav_catering', label: 'Catering Menu', targetType: CmsNavTargetType.builtin, target: '/catering-menu'),
+    CmsNavItem(id: 'nav_restaurant', label: 'Restaurant', targetType: CmsNavTargetType.builtin, target: '/restaurant'),
+    CmsNavItem(id: 'nav_inquire', label: 'Inquire Now', targetType: CmsNavTargetType.builtin, target: '/inquire'),
+    CmsNavItem(id: 'nav_contact', label: 'Contact Us', targetType: CmsNavTargetType.builtin, target: '/contact-us'),
+  ];
+
+  final List<CmsCustomPage> customPages = [];
+
+  /// Extra CMS sections appended to built-in pages (home, gallery, catering, restaurant, inquiry, contact).
+  final Map<String, List<CmsSection>> pageExtraSections = {
+    'home': <CmsSection>[],
+    'gallery': <CmsSection>[],
+    'catering': <CmsSection>[],
+    'restaurant': <CmsSection>[],
+    'inquiry': <CmsSection>[],
+    'contact': <CmsSection>[],
+  };
 
   String contactFacebook = 'MACRINA\'S KITCHEN AND CATERING';
   String contactAddress = 'SAMPALOC EXT., TAGUIG, PHILIPPINES, 1633';
@@ -822,6 +987,62 @@ class WebsiteContentStore extends ChangeNotifier {
     if (galleryCategories.isEmpty) {
       _seedDefaultGallery();
     }
+
+    final navRaw = map['navItems'];
+    if (navRaw is List && navRaw.isNotEmpty) {
+      navItems
+        ..clear()
+        ..addAll(
+          navRaw
+              .whereType<Map>()
+              .map((e) => CmsNavItem.fromJson(Map<String, dynamic>.from(e))),
+        );
+    }
+    if (navItems.isEmpty) {
+      _seedDefaultNav();
+    }
+
+    final pagesRaw = map['customPages'];
+    customPages.clear();
+    if (pagesRaw is List) {
+      for (final e in pagesRaw) {
+        if (e is Map) {
+          customPages.add(
+            CmsCustomPage.fromJson(Map<String, dynamic>.from(e)),
+          );
+        }
+      }
+    }
+
+    final extrasRaw = map['pageExtraSections'];
+    if (extrasRaw is Map) {
+      for (final key in pageExtraSections.keys) {
+        final list = extrasRaw[key];
+        pageExtraSections[key] = <CmsSection>[];
+        if (list is List) {
+          for (final e in list) {
+            if (e is Map) {
+              pageExtraSections[key]!.add(
+                CmsSection.fromJson(Map<String, dynamic>.from(e)),
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
+  void _seedDefaultNav() {
+    navItems
+      ..clear()
+      ..addAll([
+        CmsNavItem(id: 'nav_home', label: 'Home', targetType: CmsNavTargetType.builtin, target: '/'),
+        CmsNavItem(id: 'nav_gallery', label: 'Gallery', targetType: CmsNavTargetType.builtin, target: '/gallery'),
+        CmsNavItem(id: 'nav_catering', label: 'Catering Menu', targetType: CmsNavTargetType.builtin, target: '/catering-menu'),
+        CmsNavItem(id: 'nav_restaurant', label: 'Restaurant', targetType: CmsNavTargetType.builtin, target: '/restaurant'),
+        CmsNavItem(id: 'nav_inquire', label: 'Inquire Now', targetType: CmsNavTargetType.builtin, target: '/inquire'),
+        CmsNavItem(id: 'nav_contact', label: 'Contact Us', targetType: CmsNavTargetType.builtin, target: '/contact-us'),
+      ]);
   }
 
   Map<String, dynamic> _toMap() {
@@ -873,6 +1094,12 @@ class WebsiteContentStore extends ChangeNotifier {
       ),
       'imageAlignments': imageAlignments,
       'galleryCategories': galleryCategories.map((e) => e.toJson()).toList(),
+      'navItems': navItems.map((e) => e.toJson()).toList(),
+      'customPages': customPages.map((e) => e.toJson()).toList(),
+      'pageExtraSections': {
+        for (final e in pageExtraSections.entries)
+          e.key: e.value.map((s) => s.toJson()).toList(),
+      },
       'contactFacebook': contactFacebook,
       'contactAddress': contactAddress,
       'contactHours': contactHours,

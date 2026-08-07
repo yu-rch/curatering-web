@@ -9,11 +9,13 @@ class AllergenSelectorField extends StatefulWidget {
     super.key,
     required this.initialSerialized,
     required this.onChanged,
+    this.dropdownMode = false,
   });
 
   /// Comma-separated list from server / model.
   final String initialSerialized;
   final ValueChanged<String> onChanged;
+  final bool dropdownMode;
 
   @override
   State<AllergenSelectorField> createState() => _AllergenSelectorFieldState();
@@ -118,6 +120,74 @@ class _AllergenSelectorFieldState extends State<AllergenSelectorField> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.dropdownMode) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          DropdownButtonFormField<String>(
+            decoration: const InputDecoration(
+              labelText: 'Add allergen',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            items: [
+              for (final a in _preset)
+                DropdownMenuItem(value: a, child: Text(a)),
+              const DropdownMenuItem(value: '__other__', child: Text('Other')),
+            ],
+            onChanged: (v) {
+              if (v == null) return;
+              if (v == '__other__') {
+                setState(() {
+                  _otherSelected = true;
+                  _emit();
+                });
+                return;
+              }
+              _togglePreset(v);
+            },
+          ),
+          if (_selected.isNotEmpty || _otherSelected) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final a in _selected)
+                  InputChip(
+                    label: Text(a),
+                    onDeleted: () => _togglePreset(a),
+                  ),
+                if (_otherSelected)
+                  InputChip(
+                    label: const Text('Other'),
+                    onDeleted: () {
+                      setState(() {
+                        _otherSelected = false;
+                        _otherCtrl.clear();
+                        _emit();
+                      });
+                    },
+                  ),
+              ],
+            ),
+          ],
+          if (_otherSelected) ...[
+            const SizedBox(height: 8),
+            TextField(
+              controller: _otherCtrl,
+              onChanged: (_) => _emit(),
+              decoration: const InputDecoration(
+                hintText: 'Describe any allergens not listed above',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ],
+      );
+    }
+
     FilterChip chip(String label, bool selected, VoidCallback onTap) {
       return FilterChip(
         label: Text(label, style: const TextStyle(fontSize: 12)),

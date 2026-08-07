@@ -417,7 +417,7 @@ class _GalleryPageState extends State<GalleryPage> {
                       ? 2
                       : isTablet(context)
                       ? 3
-                      : 4,
+                      : 5,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
               childAspectRatio: 1.2,
@@ -589,7 +589,7 @@ class _GalleryPageState extends State<GalleryPage> {
                       ? 2
                       : isTablet(context)
                       ? 3
-                      : 4,
+                      : 5,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
             ),

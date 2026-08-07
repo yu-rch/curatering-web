@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../auth/auth_session.dart';
 import '../auth/page_permissions.dart';
 import '../auth/roles.dart';
@@ -256,8 +257,36 @@ class AppScaffold extends StatefulWidget {
 
 class _AppScaffoldState extends State<AppScaffold> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  Timer? _clockTimer;
+  String _clock = '';
 
   static const double _mobileBreakpoint = 900;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateClock();
+    _clockTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _updateClock(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    super.dispose();
+  }
+
+  void _updateClock() {
+    final now = DateTime.now();
+    final h =
+        now.hour > 12 ? now.hour - 12 : (now.hour == 0 ? 12 : now.hour);
+    final m = now.minute.toString().padLeft(2, '0');
+    final s = now.second.toString().padLeft(2, '0');
+    final ap = now.hour >= 12 ? 'PM' : 'AM';
+    if (mounted) setState(() => _clock = '$h:$m:$s $ap');
+  }
 
   void _closeDrawerIfOpen() {
     final state = _scaffoldKey.currentState;
@@ -463,6 +492,17 @@ class _AppScaffoldState extends State<AppScaffold> {
                           ),
                         ),
                         const SizedBox(width: 12),
+                      ],
+                      if (_clock.isNotEmpty) ...[
+                        Text(
+                          _clock,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w600,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
                       ],
                       AntdProfileMenu(
                         triggerLabel: userName,

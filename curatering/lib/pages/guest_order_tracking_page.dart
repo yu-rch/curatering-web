@@ -83,7 +83,21 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_lookup());
       });
+    } else {
+      unawaited(_hydrateFromCache());
     }
+  }
+
+  Future<void> _hydrateFromCache() async {
+    if (_orderNoCtrl.text.trim().isNotEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final orderNo = prefs.getString('guest_track_order_no')?.trim() ?? '';
+    final email = prefs.getString('guest_track_email')?.trim() ?? '';
+    final phone = prefs.getString('guest_track_phone')?.trim() ?? '';
+    if (!mounted) return;
+    if (orderNo.isNotEmpty) _orderNoCtrl.text = orderNo;
+    if (email.isNotEmpty && _emailCtrl.text.isEmpty) _emailCtrl.text = email;
+    if (phone.isNotEmpty && _phoneCtrl.text.isEmpty) _phoneCtrl.text = phone;
   }
 
   Future<void> _refreshAuth() async {
@@ -140,6 +154,14 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
       setState(() {
         _order = Map<String, dynamic>.from(decoded['order'] as Map);
       });
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('guest_track_order_no', _orderNoCtrl.text.trim());
+      if (email.isNotEmpty) {
+        await prefs.setString('guest_track_email', email);
+      }
+      if (phone.isNotEmpty) {
+        await prefs.setString('guest_track_phone', phone);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '$e'.replaceFirst('Exception: ', ''));

@@ -70,8 +70,6 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
   final TextEditingController _orderSearchController = TextEditingController();
   String _orderSearchQuery = '';
   String _orderDateFilter = 'all';
-  double? _minCostFilter;
-  double? _maxCostFilter;
 
   List<LoyaltyCustomer> _customers = [];
   List<CustomerTransaction> _orders = [];
@@ -307,12 +305,6 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
       orders = orders.where((o) => o.orderType == 'catering');
     }
     orders = orders.where(_matchesOrderDateFilter);
-    if (_minCostFilter != null) {
-      orders = orders.where((o) => o.totalCost >= _minCostFilter!);
-    }
-    if (_maxCostFilter != null) {
-      orders = orders.where((o) => o.totalCost <= _maxCostFilter!);
-    }
     if (_orderSearchQuery.isNotEmpty) {
       orders = orders.where((order) {
         final haystack =
@@ -635,19 +627,6 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
   }
 
   Widget _buildCustomerOrdersToolbar() {
-    final maxCost =
-        _orders.isEmpty
-            ? 1000.0
-            : _orders
-                .map((o) => o.totalCost)
-                .fold<double>(0, (max, value) => value > max ? value : max);
-    final sliderMax =
-        (((maxCost <= 0 ? 1000 : maxCost) / 500).ceil() * 500).toDouble();
-    final range = RangeValues(
-      (_minCostFilter ?? 0).clamp(0, sliderMax).toDouble(),
-      (_maxCostFilter ?? sliderMax).clamp(0, sliderMax).toDouble(),
-    );
-
     return AntdToolbar(
       children: [
         AntdSearchInput(
@@ -677,57 +656,14 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
           onChanged:
               (value) => setState(() => _orderDateFilter = value ?? 'all'),
         ),
-        SizedBox(
-          width: 320,
-          child: InputDecorator(
-            decoration: const InputDecoration(
-              labelText: 'Cost range',
-              isDense: true,
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  '₱${range.start.toStringAsFixed(2)} - ₱${range.end.toStringAsFixed(2)}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                RangeSlider(
-                  values: range,
-                  min: 0,
-                  max: sliderMax,
-                  divisions: (sliderMax / 500).round().clamp(1, 200),
-                  labels: RangeLabels(
-                    '₱${range.start.toStringAsFixed(0)}',
-                    '₱${range.end.toStringAsFixed(0)}',
-                  ),
-                  onChanged:
-                      (next) => setState(() {
-                        _minCostFilter = next.start <= 0 ? null : next.start;
-                        _maxCostFilter =
-                            next.end >= sliderMax ? null : next.end;
-                      }),
-                ),
-              ],
-            ),
-          ),
-        ),
         TextButton.icon(
           onPressed:
-              (_orderSearchQuery.isEmpty &&
-                      _orderDateFilter == 'all' &&
-                      _minCostFilter == null &&
-                      _maxCostFilter == null)
+              (_orderSearchQuery.isEmpty && _orderDateFilter == 'all')
                   ? null
                   : () {
                     setState(() {
                       _orderSearchQuery = '';
                       _orderDateFilter = 'all';
-                      _minCostFilter = null;
-                      _maxCostFilter = null;
                       _orderSearchController.clear();
                     });
                   },

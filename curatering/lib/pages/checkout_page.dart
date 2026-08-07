@@ -436,7 +436,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   Widget build(BuildContext context) {
     final cartItems = CartStore.instance.items;
     final totalAmount = CartStore.instance.totalAmount;
-    final mobile = isMobileWidth(context);
+    final mobile = MediaQuery.sizeOf(context).width < 900;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),

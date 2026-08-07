@@ -10,6 +10,7 @@ import '../services/set_menu_store.dart';
 import '../services/website_content_store.dart';
 import '../utils/image_cache.dart';
 import '../widgets/catering_dish_info_dialog.dart';
+import '../widgets/customer_site_footer.dart';
 import '../widgets/customer_website_topbar.dart';
 
 // Font constants
@@ -380,6 +381,11 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                       ],
                     ),
                   ),
+                ),
+                const SizedBox(height: 48),
+                CustomerSiteFooter(
+                  store: WebsiteContentStore.instance,
+                  contentEditable: widget.contentEditable,
                 ),
               ],
             ),

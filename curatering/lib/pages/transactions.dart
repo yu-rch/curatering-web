@@ -56,8 +56,6 @@ class _TransactionsState extends State<Transactions> {
   String _searchQuery = '';
   String _serviceTypeFilter = '';
   String _eventTypeFilter = '';
-  double? _minPriceFilter;
-  double? _maxPriceFilter;
   int? _completionYearFilter;
   int? _completionMonthFilter;
   int? _completionDayFilter;
@@ -277,14 +275,6 @@ class _TransactionsState extends State<Transactions> {
             return true;
           }).toList();
     }
-    if (_minPriceFilter != null) {
-      filteredRows =
-          filteredRows.where((r) => r.totalAmount >= _minPriceFilter!).toList();
-    }
-    if (_maxPriceFilter != null) {
-      filteredRows =
-          filteredRows.where((r) => r.totalAmount <= _maxPriceFilter!).toList();
-    }
     if (_searchQuery.isNotEmpty) {
       filteredRows =
           filteredRows.where((r) {
@@ -321,18 +311,6 @@ class _TransactionsState extends State<Transactions> {
                 r.fulfilmentDate!.day,
           }.toList()
           ..sort();
-    final maxPrice =
-        _allRows.isEmpty
-            ? 1000.0
-            : _allRows
-                .map((r) => r.totalAmount)
-                .fold<double>(0, (max, value) => value > max ? value : max);
-    final sliderMax =
-        (((maxPrice <= 0 ? 1000 : maxPrice) / 500).ceil() * 500).toDouble();
-    final priceRange = RangeValues(
-      (_minPriceFilter ?? 0).clamp(0, sliderMax).toDouble(),
-      (_maxPriceFilter ?? sliderMax).clamp(0, sliderMax).toDouble(),
-    );
 
     return AppScaffold(
       showSearch: true,
@@ -496,8 +474,6 @@ class _TransactionsState extends State<Transactions> {
                     _completionYearFilter != null ||
                     _completionMonthFilter != null ||
                     _completionDayFilter != null ||
-                    _minPriceFilter != null ||
-                    _maxPriceFilter != null ||
                     _searchQuery.isNotEmpty)
                   TextButton.icon(
                     onPressed: () {
@@ -507,8 +483,6 @@ class _TransactionsState extends State<Transactions> {
                         _completionYearFilter = null;
                         _completionMonthFilter = null;
                         _completionDayFilter = null;
-                        _minPriceFilter = null;
-                        _maxPriceFilter = null;
                         _searchQuery = '';
                         _searchController.clear();
                       });
@@ -516,43 +490,6 @@ class _TransactionsState extends State<Transactions> {
                     icon: const Icon(Icons.filter_alt_off, size: 18),
                     label: const Text('Clear filters'),
                   ),
-                SizedBox(
-                  width: 340,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'Cost range',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          '${formatPesos(priceRange.start)} - ${formatPesos(priceRange.end)}',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        RangeSlider(
-                          values: priceRange,
-                          min: 0,
-                          max: sliderMax,
-                          divisions: (sliderMax / 500).round().clamp(1, 200),
-                          labels: RangeLabels(
-                            formatPesos(priceRange.start),
-                            formatPesos(priceRange.end),
-                          ),
-                          onChanged:
-                              (range) => setState(() {
-                                _minPriceFilter =
-                                    range.start <= 0 ? null : range.start;
-                                _maxPriceFilter =
-                                    range.end >= sliderMax ? null : range.end;
-                              }),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -585,11 +522,30 @@ class _TransactionsState extends State<Transactions> {
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 40),
                           child: Center(
-                            child: Text(
-                              _errorMessage ??
+                            child: _errorMessage != null
+                                ? Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      _errorMessage!,
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    OutlinedButton.icon(
+                                      onPressed: _loadCompletedOrders,
+                                      icon: const Icon(Icons.refresh),
+                                      label: const Text('Reload'),
+                                    ),
+                                  ],
+                                )
+                                : Text(
                                   'No orders match the selected filters.',
-                              style: TextStyle(color: Colors.grey.shade600),
-                            ),
+                                  style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
                           ),
                         )
                       else

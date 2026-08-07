@@ -275,9 +275,10 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 if (_error != null)
-                  const AntdStatusTag(
-                    label: 'Failed to load',
-                    color: AntdTokens.error,
+                  AntdSecondaryButton(
+                    label: 'Reload',
+                    icon: Icons.refresh,
+                    onPressed: _fetch,
                   ),
               ],
             ),
@@ -286,6 +287,14 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
               child:
                   _loading
                       ? const AntdLoadingState()
+                      : _error != null
+                      ? Center(
+                        child: AntdSecondaryButton(
+                          label: 'Reload',
+                          icon: Icons.refresh,
+                          onPressed: _fetch,
+                        ),
+                      )
                       : _filtered.isEmpty
                       ? const AntdEmptyState(message: 'No help requests found.')
                       : PagedDataTable(
