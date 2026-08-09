@@ -1,8 +1,13 @@
 part of 'catering.dart';
 
 extension _ManageEventsDetailExt on _ManageEventsState {
-  String get _activeManageEventsStage => _ManageEventsState._stageKeys[
-      _tabController.index.clamp(0, _ManageEventsState._stageKeys.length - 1)];
+  String get _activeManageEventsStage {
+    // Supervisor only has the On Going tab (index 0); do not map that to
+    // `_stageKeys[0]` (`new_event`) or checklist/task sections stay hidden.
+    if (_isSupervisor) return 'on_going';
+    return _ManageEventsState._stageKeys[_tabController.index
+        .clamp(0, _ManageEventsState._stageKeys.length - 1)];
+  }
 
   /// Resolves catering_orders vs event_orders for manager API patches.
   String _managerOrderKind(EventOrderDto order) {
@@ -310,7 +315,13 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                         _detailInfoRow('Event type', order.eventType),
                         if (!_isSupervisor)
                           _detailInfoRow('Guests', '${order.guestCount}'),
-                        _detailInfoRow('Venue', order.address),
+                        _detailInfoRow(
+                          'Venue',
+                          order.address,
+                          onTap: order.address.trim().isEmpty
+                              ? null
+                              : () => showVenueMapDialog(context, order.address),
+                        ),
                         _detailInfoRow('Schedule', _formatOrderSchedule(order)),
                         if (!_isSupervisor) ...[
                           _detailInfoRow('Total cost', formatPesos(total)),
@@ -332,11 +343,6 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                         ],
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  _detailSection(
-                    'Menu & allergens',
-                    child: _buildMenuAllergensDetail(order),
                   ),
                   if (stage == 'on_going' && !isCancelled) ...[
                     const SizedBox(height: 12),
@@ -407,6 +413,11 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                       ),
                     ],
                   ],
+                  const SizedBox(height: 12),
+                  _detailSection(
+                    'Menu & allergens',
+                    child: _buildMenuAllergensDetail(order),
+                  ),
                   if (!_isSupervisor) ...[
                     const SizedBox(height: 12),
                     _detailSection(
@@ -533,11 +544,13 @@ extension _ManageEventsDetailExt on _ManageEventsState {
 
   Future<void> _showTaskAssignmentEditor(EventOrderDto order) async {
     final rows = List<Map<String, dynamic>>.from(_taskRowsFromOrder(order));
-    await showDialog<void>(
+    final size = MediaQuery.sizeOf(context);
+    final modalHeight = (size.height * 0.62).clamp(360.0, 560.0);
+    await showAntdModal<void>(
       context: context,
-      builder: (ctx) {
-        final size = MediaQuery.sizeOf(ctx);
-        return StatefulBuilder(
+      title: 'Task assignment — ${order.transactionNo}',
+      maxWidth: 1000,
+      body: StatefulBuilder(
           builder: (ctx, setModal) {
             Future<void> editRowDialog(int index) async {
               final row = rows[index];
@@ -659,22 +672,12 @@ extension _ManageEventsDetailExt on _ManageEventsState {
               );
             }
 
-            return AlertDialog(
-              title: Text('Task assignment — ${order.transactionNo}'),
-              content: SizedBox(
-                width: size.width * 0.9 > 1000 ? 1000 : size.width * 0.9,
-                height: size.height * 0.78 > 640 ? 640 : size.height * 0.78,
+            return SizedBox(
+                height: modalHeight,
+                width: double.infinity,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: IconButton(
-                        tooltip: 'Close',
-                        onPressed: () => Navigator.pop(ctx),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ),
                     Expanded(
                       child: LayoutBuilder(
                         builder: (context, constraints) {
@@ -809,87 +812,96 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                         },
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        AntdCancelButton(
+                          label: 'Close',
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                        const SizedBox(width: 8),
+                        AntdPrimaryButton(
+                          label: 'Save',
+                          onPressed: () async {
+                            final confirmed = await showDialog<bool>(
+                              context: ctx,
+                              builder: (dctx) => AlertDialog(
+                                title: const Text('Save task assignment'),
+                                content: const Text(
+                                  'Apply changes to task assignment rows?',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(dctx).pop(false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        Navigator.of(dctx).pop(true),
+                                    child: const Text('Save'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed != true) return;
+                            BuildContext? loaderCtx;
+                            try {
+                              showDialog<void>(
+                                context: ctx,
+                                barrierDismissible: false,
+                                builder: (dctx) {
+                                  loaderCtx = dctx;
+                                  return const AlertDialog(
+                                    content: Row(
+                                      children: [
+                                        SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        ),
+                                        SizedBox(width: 12),
+                                        Text('Saving task assignment...'),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              );
+                              await ManagerCateringApi.instance.patchStageData(
+                                id: order.id,
+                                orderKind: _managerOrderKind(order),
+                                patch: {'task_assignment_rows': rows},
+                              );
+                              if (loaderCtx != null &&
+                                  Navigator.of(loaderCtx!).canPop()) {
+                                Navigator.of(loaderCtx!).pop();
+                              }
+                              if (ctx.mounted) Navigator.pop(ctx);
+                              await _selectManageEventsOrder(order);
+                            } catch (e) {
+                              if (loaderCtx != null &&
+                                  Navigator.of(loaderCtx!).canPop()) {
+                                Navigator.of(loaderCtx!).pop();
+                              }
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Save failed: $e')),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Close'),
-                ),
-                FilledButton(
-                  onPressed: () async {
-                    final confirmed = await showDialog<bool>(
-                      context: ctx,
-                      builder:
-                          (dctx) => AlertDialog(
-                            title: const Text('Save task assignment'),
-                            content: const Text(
-                              'Apply changes to task assignment rows?',
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.of(dctx).pop(false),
-                                child: const Text('Cancel'),
-                              ),
-                              FilledButton(
-                                onPressed: () => Navigator.of(dctx).pop(true),
-                                child: const Text('Save'),
-                              ),
-                            ],
-                          ),
-                    );
-                    if (confirmed != true) return;
-                    BuildContext? loaderCtx;
-                    try {
-                      showDialog<void>(
-                        context: ctx,
-                        barrierDismissible: false,
-                        builder: (dctx) {
-                          loaderCtx = dctx;
-                          return const AlertDialog(
-                            content: Row(
-                              children: [
-                                SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                ),
-                                SizedBox(width: 12),
-                                Text('Saving task assignment...'),
-                              ],
-                            ),
-                          );
-                        },
-                      );
-                      await ManagerCateringApi.instance.patchStageData(
-                        id: order.id,
-                        orderKind: _managerOrderKind(order),
-                        patch: {'task_assignment_rows': rows},
-                      );
-                      if (loaderCtx != null && Navigator.of(loaderCtx!).canPop()) {
-                        Navigator.of(loaderCtx!).pop();
-                      }
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      await _selectManageEventsOrder(order);
-                    } catch (e) {
-                      if (loaderCtx != null && Navigator.of(loaderCtx!).canPop()) {
-                        Navigator.of(loaderCtx!).pop();
-                      }
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Save failed: $e')),
-                        );
-                      }
-                    }
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
             );
           },
-        );
-      },
+      ),
+      actions: const [],
     );
   }
 
@@ -1335,7 +1347,17 @@ extension _ManageEventsDetailExt on _ManageEventsState {
     );
   }
 
-  Widget _detailInfoRow(String label, String value) {
+  Widget _detailInfoRow(String label, String value, {VoidCallback? onTap}) {
+    final display = value.trim().isEmpty ? '—' : value;
+    final valueWidget = Text(
+      display,
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        color: onTap != null ? const Color(0xFF1E1E1E) : null,
+        decoration: onTap != null ? TextDecoration.underline : null,
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
@@ -1346,10 +1368,17 @@ extension _ManageEventsDetailExt on _ManageEventsState {
             child: Text(label, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
           ),
           Expanded(
-            child: Text(
-              value.trim().isEmpty ? '—' : value,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-            ),
+            child: onTap == null
+                ? valueWidget
+                : InkWell(
+                    onTap: onTap,
+                    child: Row(
+                      children: [
+                        Expanded(child: valueWidget),
+                        const Icon(Icons.map_outlined, size: 16, color: Color(0xFFFFC024)),
+                      ],
+                    ),
+                  ),
           ),
         ],
       ),

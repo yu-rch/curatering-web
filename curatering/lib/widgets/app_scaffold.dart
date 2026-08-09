@@ -320,15 +320,6 @@ class _AppScaffoldState extends State<AppScaffold> {
                 Navigator.of(context).pushReplacementNamed('/settings');
               },
             ),
-          if (role == Role.superAdmin)
-            AntdProfileMenuItem.action(
-              id: 'help_requests',
-              icon: Icons.help_outline,
-              label: 'Help Requests Management',
-              onSelected: () {
-                Navigator.of(context).pushReplacementNamed('/help-requests');
-              },
-            ),
           AntdProfileMenuItem.action(
             id: 'logout',
             icon: Icons.logout,
@@ -439,8 +430,10 @@ class _AppScaffoldState extends State<AppScaffold> {
                     )
                     : null,
             body: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Container(
+                  width: double.infinity,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 12,
@@ -519,6 +512,7 @@ class _AppScaffoldState extends State<AppScaffold> {
                         isNarrow
                             ? child
                             : Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 DecoratedBox(
                                   decoration: BoxDecoration(

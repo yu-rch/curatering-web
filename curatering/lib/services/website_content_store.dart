@@ -404,7 +404,7 @@ class WebsiteContentStore extends ChangeNotifier {
   String contactTitle = 'Contact Us';
   String contactBannerText = 'WE\'D LOVE TO HEAR FROM YOU!';
   String contactReachUsLabel = 'YOU CAN REACH US VIA:';
-  String footerPrivacyLabel = 'PRIVACY POLICY';
+  String footerPrivacyLabel = 'Privacy Policy';
   String footerPrivacyBody =
       '<p>We respect your privacy. Contact details and inquiry data are used only to serve your event and orders.</p>';
   String navBrandLabel = 'MACRINA\'S';

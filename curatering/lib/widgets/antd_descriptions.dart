@@ -6,12 +6,14 @@ class AntdDescriptionItem {
     required this.label,
     required this.value,
     this.span = 1,
+    this.onValueTap,
   });
 
   final String label;
   final String value;
   /// Relative width when [column] columns are shown (e.g. 2 spans two columns).
   final int span;
+  final VoidCallback? onValueTap;
 }
 
 /// Ant Design–style read-only grid: muted labels, bright values (dark theme).
@@ -75,13 +77,21 @@ class AntdDescriptions extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              it.value.isEmpty ? '—' : it.value,
-                              style: TextStyle(
-                                color: valueColor,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                height: 1.35,
+                            InkWell(
+                              onTap: it.onValueTap,
+                              child: Text(
+                                it.value.isEmpty ? '—' : it.value,
+                                style: TextStyle(
+                                  color: it.onValueTap != null
+                                      ? const Color(0xFFFFC024)
+                                      : valueColor,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.35,
+                                  decoration: it.onValueTap != null
+                                      ? TextDecoration.underline
+                                      : TextDecoration.none,
+                                ),
                               ),
                             ),
                           ],

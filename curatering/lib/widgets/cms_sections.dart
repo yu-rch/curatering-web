@@ -97,7 +97,6 @@ class CmsSectionsEditor extends StatelessWidget {
                 key: ValueKey(s.id),
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ExpansionTile(
-                  leading: const Icon(Icons.drag_handle),
                   title: Text('${_typeLabel(s.type)} · ${s.heading.isEmpty ? s.id : s.heading}'),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline, color: Colors.red),

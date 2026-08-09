@@ -30,6 +30,7 @@ import '../widgets/antd_tokens.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/paginated_data_table.dart';
 import '../widgets/map_picker.dart';
+import '../widgets/event_venue_map_preview.dart';
 import '../widgets/processing_seating_section.dart';
 import '../widgets/inquiry_menu_selection_dialog.dart';
 import '../utils/inquiry_pricing.dart';
@@ -4521,11 +4522,13 @@ class _ManageEventsState extends State<ManageEvents>
     int? duplicateHighlightIndex;
     var showNewItemRow = false;
     try {
-    await showDialog<void>(
+    final dialogSize = MediaQuery.sizeOf(context);
+    final modalHeight = (dialogSize.height * 0.62).clamp(360.0, 560.0);
+    await showAntdModal<void>(
       context: context,
-      builder: (context) {
-        final dialogSize = MediaQuery.sizeOf(context);
-        return StatefulBuilder(
+      title: 'Checklist for ${sourceOrder.eventTitle}',
+      maxWidth: 1040,
+      body: StatefulBuilder(
           builder: (context, dialogSetState) {
             void addChecklistByName(
               String raw, {
@@ -4676,22 +4679,12 @@ class _ManageEventsState extends State<ManageEvents>
               costCtrl.dispose();
             }
 
-            return AlertDialog(
-              title: Text('Checklist for ${sourceOrder.eventTitle}'),
-              content: SizedBox(
-                width: dialogSize.width * 0.92 > 1040 ? 1040 : dialogSize.width * 0.92,
-                height: dialogSize.height * 0.82 > 680 ? 680 : dialogSize.height * 0.82,
+            return SizedBox(
+                height: modalHeight,
+                width: double.infinity,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: IconButton(
-                        tooltip: 'Close',
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ),
                     Expanded(
                       child: LayoutBuilder(
                         builder: (context, tableConstraints) {
@@ -5263,12 +5256,10 @@ class _ManageEventsState extends State<ManageEvents>
                     ),
                   ],
                 ),
-              ),
-              actions: [],
             );
           },
-        );
-      },
+      ),
+      actions: const [],
     );
     } finally {
       newItemController.dispose();
@@ -8334,6 +8325,7 @@ class _ManageEventsState extends State<ManageEvents>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
+                width: double.infinity,
                 color: const Color(0xFF242424),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 20, vertical: 14),

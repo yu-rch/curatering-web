@@ -2243,12 +2243,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Widget _buildRedBannerStrip(WebsiteContentStore w) {
     final bannerStyle = websiteHeaderStyle(
       fontSize: 22,
-      color: Colors.red.shade700,
+      color: const Color(0xFFFFC024),
       fontWeight: FontWeight.w700,
     );
     return Container(
       width: double.infinity,
-      color: Colors.white,
+      color: const Color(0xFF1E1E1E),
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: Column(
         children: [
@@ -2268,8 +2268,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   await w.saveDraft();
                   setState(() {});
                 },
-                icon: const Icon(Icons.edit, size: 16),
-                label: const Text('Edit banner'),
+                icon: const Icon(Icons.edit, size: 16, color: Color(0xFFFFC024)),
+                label: const Text(
+                  'Edit banner',
+                  style: TextStyle(color: Color(0xFFFFC024)),
+                ),
               ),
             ),
         ],
@@ -2277,15 +2280,276 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
+  Widget _buildLatestEventCollage(WebsiteContentStore w) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final totalW = constraints.maxWidth;
+        final gap = 10.0;
+        final halfW = (totalW - gap) / 2;
+        final list = w.latestEventCollageBase64;
+        String? at(int i) => i < list.length ? list[i] : null;
+        return Column(
+          children: [
+            Row(
+              children: [
+                _collageTile(
+                  at(0),
+                  width: halfW,
+                  height: 150,
+                  fallbackAsset: HomeDefaultAssets.collageAt(0),
+                ),
+                SizedBox(width: gap),
+                _collageTile(
+                  at(1),
+                  width: halfW,
+                  height: 150,
+                  fallbackAsset: HomeDefaultAssets.collageAt(1),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _collageTile(
+                  at(2),
+                  width: halfW,
+                  height: 150,
+                  fallbackAsset: HomeDefaultAssets.collageAt(2),
+                ),
+                SizedBox(width: gap),
+                _collageTile(
+                  at(3),
+                  width: halfW,
+                  height: 150,
+                  fallbackAsset: HomeDefaultAssets.collageAt(3),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildEtdAdvertCard({required bool compact}) {
+    Map<String, dynamic>? first;
+    for (final row in _salesEventDesigns) {
+      if ((row['imageBase64'] ?? '').toString().trim().isNotEmpty) {
+        first = row;
+        break;
+      }
+    }
+    final imageB64 = (first?['imageBase64'] ?? '').toString();
+    final label =
+        (first?['label'] ?? 'Event Theme Design').toString().trim();
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(compact ? 12 : 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A2A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (imageB64.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: AspectRatio(
+                aspectRatio: compact ? 16 / 9 : 4 / 3,
+                child: CachedBase64Image(
+                  base64String: imageB64,
+                  fit: BoxFit.cover,
+                  placeholder: Container(
+                    color: Colors.grey.shade800,
+                    child: const Icon(
+                      Icons.celebration_outlined,
+                      color: Colors.white54,
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else
+            Container(
+              height: compact ? 100 : 140,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade800,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.celebration_outlined,
+                color: Colors.white54,
+                size: 40,
+              ),
+            ),
+          const SizedBox(height: 10),
+          Text(
+            label.isNotEmpty ? label : 'Event Theme Design',
+            style: const TextStyle(
+              color: Color(0xFFFFC024),
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Custom décor and table settings for your celebration.',
+            style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.35),
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed:
+                () => Navigator.pushReplacementNamed(
+                  context,
+                  customerRoute('/inquire'),
+                ),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFFFC024),
+              foregroundColor: const Color(0xFF1E1E1E),
+            ),
+            child: const Text(
+              'Inquire Now',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHomeSidePanel(WebsiteContentStore w) {
+    final popular =
+        _salesPopularDishes.isNotEmpty
+            ? _salesPopularDishes.take(3).toList()
+            : _fallbackPopularDishes()
+                .take(3)
+                .map(
+                  (d) => <String, dynamic>{
+                    'name': d.name,
+                    'imageBase64': d.imageBase64,
+                  },
+                )
+                .toList();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            "Macrina's Kitchen",
+            style: TextStyle(
+              color: Color(0xFFFFC024),
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Restaurant favorites ready for dine-in and pickup.',
+            style: TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 72,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: popular.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final row = popular[index];
+                final name = (row['name'] ?? 'Dish').toString();
+                final image = (row['imageBase64'] ?? '').toString();
+                return SizedBox(
+                  width: 120,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child:
+                              image.trim().isNotEmpty
+                                  ? CachedBase64Image(
+                                    base64String: image,
+                                    fit: BoxFit.cover,
+                                    width: 120,
+                                    height: 48,
+                                    placeholder: Container(
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  )
+                                  : Container(color: Colors.grey.shade700),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton(
+            onPressed:
+                () => Navigator.pushReplacementNamed(
+                  context,
+                  customerRoute('/restaurant'),
+                ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFFFC024),
+              side: const BorderSide(color: Color(0xFFFFC024)),
+            ),
+            child: const Text('Go to Restaurant'),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            "Macrina's Catering",
+            style: TextStyle(
+              color: Color(0xFFFFC024),
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Full-service catering with event theme designs.',
+            style: TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+          const SizedBox(height: 10),
+          _buildEtdAdvertCard(compact: true),
+        ],
+      ),
+    );
+  }
+
   Widget _buildLatestEventSection(WebsiteContentStore w) {
+    final mobile = isMobile(context);
     return Stack(
       children: [
         Flex(
-          direction: isMobile(context) ? Axis.vertical : Axis.horizontal,
+          direction: mobile ? Axis.vertical : Axis.horizontal,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              flex: 5,
+              flex: 6,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -2294,7 +2558,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                   WebsiteRichText(
                     value: w.latestEventTitle,
                     style: GoogleFonts.pacifico(
-                      fontSize: isMobile(context) ? 32 : 48,
+                      fontSize: mobile ? 32 : 48,
                       color: const Color(0xFFB0305A),
                       height: 1.1,
                     ),
@@ -2322,87 +2586,32 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       style: const TextStyle(fontSize: 14, height: 1.45),
                     ),
                   ),
-                ],
-              ),
-            ),
-            SizedBox(
-              width: isMobile(context) ? 0 : 24,
-              height: isMobile(context) ? 20 : 0,
-            ),
-            Expanded(
-              flex: 5,
-              child: Stack(
-                children: [
-                  Column(
+                  const SizedBox(height: 16),
+                  Stack(
                     children: [
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final totalW = constraints.maxWidth;
-                          final gap = 10.0;
-                          final halfW = (totalW - gap) / 2;
-                          final list = w.latestEventCollageBase64;
-                          String? at(int i) => i < list.length ? list[i] : null;
-                          return Column(
-                            children: [
-                              Row(
-                                children: [
-                                  _collageTile(
-                                    at(0),
-                                    width: halfW,
-                                    height: 170,
-                                    fallbackAsset: HomeDefaultAssets.collageAt(0),
-                                  ),
-                                  SizedBox(width: gap),
-                                  _collageTile(
-                                    at(1),
-                                    width: halfW,
-                                    height: 170,
-                                    fallbackAsset: HomeDefaultAssets.collageAt(1),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  _collageTile(
-                                    at(2),
-                                    width: halfW,
-                                    height: 170,
-                                    fallbackAsset: HomeDefaultAssets.collageAt(2),
-                                  ),
-                                  SizedBox(width: gap),
-                                  _collageTile(
-                                    at(3),
-                                    width: halfW,
-                                    height: 170,
-                                    fallbackAsset: HomeDefaultAssets.collageAt(3),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          );
-                        },
-                      ),
+                      _buildLatestEventCollage(w),
+                      _editChip(() async {
+                        final b64 = await _pickImageB64();
+                        if (b64 == null) return;
+                        if (w.latestEventCollageBase64.length < 4) {
+                          w.latestEventCollageBase64.add(b64);
+                        } else {
+                          w.latestEventCollageBase64[w
+                                      .latestEventCollageBase64
+                                      .length -
+                                  1] =
+                              b64;
+                        }
+                        await w.saveDraft();
+                        setState(() {});
+                      }),
                     ],
                   ),
-                  _editChip(() async {
-                    final b64 = await _pickImageB64();
-                    if (b64 == null) return;
-                    if (w.latestEventCollageBase64.length < 4) {
-                      w.latestEventCollageBase64.add(b64);
-                    } else {
-                      w.latestEventCollageBase64[w
-                                  .latestEventCollageBase64
-                                  .length -
-                              1] =
-                          b64;
-                    }
-                    await w.saveDraft();
-                    setState(() {});
-                  }),
                 ],
               ),
             ),
+            SizedBox(width: mobile ? 0 : 20, height: mobile ? 20 : 0),
+            Expanded(flex: 4, child: _buildHomeSidePanel(w)),
           ],
         ),
         _editChip(() async {
@@ -2688,7 +2897,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       cmsEventImages.map((entry) {
                         return _HoverZoomPhotoTile(
                           imageB64: entry.value,
-                          // Staff CMS preview only — public site uses completed-event names.
                           label: 'Draft design ${entry.key + 1}',
                           width: 200,
                           height: 160,
@@ -2699,27 +2907,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 ),
               )
             else if (!widget.contentEditable)
-              SizedBox(
-                height: 160,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    _SampleEventThemeTile(
-                      label: 'Garden Reception',
-                      subtitle: 'Soft florals & candlelight',
-                      assetPath: HomeDefaultAssets.collageAt(0)!,
-                    ),
-                    _SampleEventThemeTile(
-                      label: 'Modern Corporate',
-                      subtitle: 'Clean lines & brand accents',
-                      assetPath: HomeDefaultAssets.collageAt(1)!,
-                    ),
-                    _SampleEventThemeTile(
-                      label: 'Birthday Glow',
-                      subtitle: 'Warm lights & dessert station',
-                      assetPath: HomeDefaultAssets.collageAt(2)!,
-                    ),
-                  ],
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  'Completed event designs will appear here once available.',
+                  style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
                 ),
               ),
             if (widget.contentEditable)

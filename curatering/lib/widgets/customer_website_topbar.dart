@@ -152,6 +152,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: RouteSettings(name: customerRoute('/track-order')),
         builder:
             (_) => GuestOrderTrackingPage(
               initialOrderNo: orderNo,
@@ -766,9 +767,12 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
             mainAxisSize: MainAxisSize.min,
             children: [
               IconButton(
-                icon: const Icon(
+                icon: Icon(
                   Icons.local_shipping_outlined,
-                  color: Colors.white,
+                  color:
+                      route == customerRoute('/track-order')
+                          ? const Color(0xFFFFC024)
+                          : Colors.white,
                 ),
                 onPressed: _openOrderTracking,
                 tooltip: 'Track your order',

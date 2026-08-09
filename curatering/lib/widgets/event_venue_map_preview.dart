@@ -5,6 +5,8 @@ import 'package:latlong2/latlong.dart';
 import '../services/nominatim_service.dart';
 import '../utils/geo_utils.dart';
 import '../utils/maps_launcher.dart';
+import 'antd_buttons.dart';
+import 'antd_dialog.dart';
 
 /// Read-only venue map (flutter_map / OpenStreetMap) + external OSM link.
 class EventVenueMapPreview extends StatefulWidget {
@@ -106,4 +108,22 @@ class _EventVenueMapPreviewState extends State<EventVenueMapPreview> {
       ],
     );
   }
+}
+
+/// Staff read-only venue map popup for a tappable address.
+Future<void> showVenueMapDialog(BuildContext context, String address) async {
+  final trimmed = address.trim();
+  if (trimmed.isEmpty || trimmed == '—') return;
+  await showAntdModal<void>(
+    context: context,
+    title: 'Venue map',
+    maxWidth: 640,
+    body: EventVenueMapPreview(address: trimmed),
+    actions: [
+      AntdPrimaryButton(
+        label: 'Close',
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+    ],
+  );
 }

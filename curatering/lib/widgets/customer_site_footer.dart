@@ -193,10 +193,10 @@ class CustomerSiteFooter extends StatelessWidget {
                     child: Text(
                       w.footerPrivacyLabel,
                       style: const TextStyle(
-                        color: Color(0xFFF5F7F9),
+                        color: Color(0xFFFFC024),
                         fontWeight: FontWeight.w600,
                         decoration: TextDecoration.underline,
-                        decorationColor: Color(0xFFF5F7F9),
+                        decorationColor: Color(0xFFFFC024),
                       ),
                     ),
                   ),
@@ -233,19 +233,19 @@ class CustomerSiteFooter extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _pageLink('GALLERY', () => _goRoute(context, '/gallery')),
+                _pageLink('Gallery', () => _goRoute(context, '/gallery')),
                 _pageLink(
-                  'CATERING MENU',
+                  'Catering Menu',
                   () => _goRoute(context, '/catering-menu'),
                 ),
-                _pageLink('RESTAURANT', () => _goRoute(context, '/restaurant')),
+                _pageLink('Restaurant', () => _goRoute(context, '/restaurant')),
               ],
             ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _pageLink('INQUIRE NOW', () => _goRoute(context, '/inquire')),
-                _pageLink('CONTACT US', () => _goRoute(context, '/contact-us')),
+                _pageLink('Inquire Now', () => _goRoute(context, '/inquire')),
+                _pageLink('Contact Us', () => _goRoute(context, '/contact-us')),
                 TextButton(
                   onPressed:
                       () => showCustomerFooterFeedback(
@@ -254,7 +254,7 @@ class CustomerSiteFooter extends StatelessWidget {
                         onLogin: onLogin ?? () async {},
                       ),
                   child: const Text(
-                    'FEEDBACK',
+                    'Feedback',
                     style: TextStyle(color: Color(0xFFF5F7F9)),
                   ),
                 ),

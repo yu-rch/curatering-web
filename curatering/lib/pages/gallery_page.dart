@@ -1,6 +1,11 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 
+import '../config.dart';
 import '../services/website_content_store.dart';
 import '../utils/gallery_search.dart';
 import '../utils/image_cache.dart';
@@ -53,6 +58,7 @@ class _GalleryPageState extends State<GalleryPage> {
   String _gallerySearchQuery = '';
   String _selectedGalleryCategoryId = 'ALL';
   String _selectedGalleryTag = 'ALL';
+  List<GalleryCategoryData> _fallbackCategories = const [];
 
   @override
   void initState() {
@@ -67,6 +73,65 @@ class _GalleryPageState extends State<GalleryPage> {
         if (mounted) setState(() {});
       });
     });
+    if (!widget.contentEditable) {
+      unawaited(_loadFallbackGalleryImages());
+    }
+  }
+
+  Future<void> _loadFallbackGalleryImages() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$apiBaseUrl/api/public/homepage-highlights'))
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200 || !mounted) return;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) return;
+      final rawDesigns = decoded['eventDesigns'];
+      if (rawDesigns is! List || rawDesigns.isEmpty) return;
+      final byType = <String, List<GalleryImageData>>{};
+      for (final item in rawDesigns) {
+        if (item is! Map) continue;
+        final image = (item['imageBase64'] ?? '').toString().trim();
+        if (image.isEmpty) continue;
+        final label = (item['label'] ?? item['eventType'] ?? 'Event').toString();
+        final eventType =
+            (item['eventType'] ?? item['type'] ?? 'Completed Events')
+                .toString()
+                .trim();
+        final key = eventType.isEmpty ? 'Completed Events' : eventType;
+        byType.putIfAbsent(key, () => <GalleryImageData>[]);
+        final list = byType[key]!;
+        list.add(
+          GalleryImageData(
+            id: 'fallback-${list.length}-${key.hashCode}',
+            imageBase64: image,
+            tags: [label],
+          ),
+        );
+      }
+      if (byType.isEmpty || !mounted) return;
+      setState(() {
+        _fallbackCategories =
+            byType.entries
+                .map(
+                  (e) => GalleryCategoryData(
+                    id: 'fallback-${e.key.hashCode}',
+                    label: e.key,
+                    images: e.value,
+                  ),
+                )
+                .toList();
+      });
+    } catch (_) {
+      // Keep CMS-only gallery when highlights are unavailable.
+    }
+  }
+
+  List<GalleryCategoryData> _effectiveCategories(WebsiteContentStore w) {
+    final cmsHasImages = w.galleryCategories.any((c) => c.images.isNotEmpty);
+    if (cmsHasImages || widget.contentEditable) return w.galleryCategories;
+    if (_fallbackCategories.isNotEmpty) return _fallbackCategories;
+    return w.galleryCategories;
   }
 
   @override
@@ -74,7 +139,9 @@ class _GalleryPageState extends State<GalleryPage> {
     final w = WebsiteContentStore.instance;
 
     if (_galleryDetailIndex != null) {
-      final cat = w.galleryCategories[_galleryDetailIndex!];
+      final source = _effectiveCategories(w);
+      final idx = _galleryDetailIndex!.clamp(0, source.length - 1);
+      final cat = source[idx];
       return Scaffold(
         backgroundColor: const Color(0xFFF5F5F5),
         body: Column(
@@ -319,9 +386,10 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   Widget _buildGallery(WebsiteContentStore w) {
-    final allTags = _allGalleryTags(w.galleryCategories);
+    final source = _effectiveCategories(w);
+    final allTags = _allGalleryTags(source);
     final categories =
-        w.galleryCategories
+        source
             .where((c) => galleryCategoryMatchesSearch(c, _gallerySearchQuery))
             .where(_matchesSelectedCategory)
             .where(_matchesSelectedTag)
@@ -377,14 +445,12 @@ class _GalleryPageState extends State<GalleryPage> {
             _buildFilterDropdown(
               title: 'CATEGORIES',
               value:
-                  w.galleryCategories.any(
-                        (cat) => cat.id == _selectedGalleryCategoryId,
-                      )
+                  source.any((cat) => cat.id == _selectedGalleryCategoryId)
                       ? _selectedGalleryCategoryId
                       : 'ALL',
               items: [
                 const DropdownMenuItem(value: 'ALL', child: Text('ALL')),
-                ...w.galleryCategories.map(
+                ...source.map(
                   (cat) =>
                       DropdownMenuItem(value: cat.id, child: Text(cat.label)),
                 ),
@@ -434,7 +500,7 @@ class _GalleryPageState extends State<GalleryPage> {
             itemCount: categories.length,
             itemBuilder: (context, index) {
               final cat = categories[index];
-              final realIndex = w.galleryCategories.indexOf(cat);
+              final realIndex = source.indexOf(cat);
               final visibleCount = _filteredGalleryImages(cat).length;
 
               return GestureDetector(

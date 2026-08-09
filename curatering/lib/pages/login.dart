@@ -120,7 +120,7 @@ class _LoginState extends State<Login> {
 
   Widget _buildRightPanel() {
     return Container(
-      color: const Color(0xFFF4F4F6),
+      color: const Color(0xFF1E1E1E),
       child: Stack(
         children: [
           Center(
@@ -128,6 +128,7 @@ class _LoginState extends State<Login> {
               constraints: const BoxConstraints(maxWidth: 420),
               child: Card(
                 elevation: 3,
+                color: const Color(0xFF2A2A2A),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -142,43 +143,35 @@ class _LoginState extends State<Login> {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w500,
-                          color: Colors.black87,
+                          color: Colors.white70,
                         ),
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
                       Center(
-                        child: RichText(
-                          text: const TextSpan(
-                            style: TextStyle(
-                              fontSize: 38,
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'Inter',
-                            ),
-                            children: [
-                              TextSpan(
-                                text: 'CURA',
-                                style: TextStyle(color: Color(0xFFFFB300)),
-                              ),
-                              TextSpan(
-                                text: 'TE',
-                                style: TextStyle(color: Colors.black87),
-                              ),
-                              TextSpan(
-                                text: 'RING',
-                                style: TextStyle(color: Color(0xFFF4511E)),
-                              ),
-                            ],
-                          ),
+                        child: Image.asset(
+                          'lib/assets/main-2.png',
+                          height: 56,
+                          fit: BoxFit.contain,
                         ),
                       ),
                       const SizedBox(height: 28),
                       TextField(
                         controller: _emailController,
+                        style: const TextStyle(color: Colors.white),
                         textInputAction: TextInputAction.next,
                         onSubmitted: (_) => FocusScope.of(context).nextFocus(),
                         decoration: InputDecoration(
                           labelText: 'Email address',
+                          labelStyle: const TextStyle(color: Colors.white70),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Colors.white38),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFFFC024)),
+                          ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
@@ -187,8 +180,18 @@ class _LoginState extends State<Login> {
                       const SizedBox(height: 16),
                       TextField(
                         controller: _passwordController,
+                        style: const TextStyle(color: Colors.white),
                         decoration: InputDecoration(
                           labelText: 'Password',
+                          labelStyle: const TextStyle(color: Colors.white70),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Colors.white38),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFFFC024)),
+                          ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
@@ -216,7 +219,10 @@ class _LoginState extends State<Login> {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : const Text('Log in'),
+                              : const Text(
+                                  'Log in',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
                         ),
                       ),
                       if (_errorMessage != null) ...[
@@ -237,7 +243,7 @@ class _LoginState extends State<Login> {
                         child: const Text(
                           'Forgot Password?',
                           style: TextStyle(
-                            color: Colors.blueAccent,
+                            color: Color(0xFFFFC024),
                             decoration: TextDecoration.underline,
                           ),
                           textAlign: TextAlign.center,

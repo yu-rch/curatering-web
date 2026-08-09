@@ -13,6 +13,7 @@ import '../widgets/antd_message.dart';
 import '../widgets/antd_tokens.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/cms_sections.dart';
+import '../widgets/completed_event_gallery_picker.dart';
 import '../widgets/paginated_data_table.dart';
 import '../widgets/website_media_picker.dart';
 import '../widgets/website_rich_text.dart';
@@ -200,13 +201,10 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  width: narrow ? double.infinity : null,
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -263,30 +261,40 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
                     ],
                   ),
                 ),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    if (isStaffSiteHost) {
-                      redirectToSiteOrigin(customerSiteOrigin, '/');
-                    } else {
-                      Navigator.of(context).pushNamed(customerRoute('/'));
-                    }
-                  },
-                  icon: const Icon(Icons.public, size: 18),
-                  label: const Text('Live site'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _previewDraft,
-                  icon: const Icon(Icons.visibility_outlined, size: 18),
-                  label: const Text('Preview draft'),
-                ),
-                AntdSecondaryButton(
-                  label: _dirty ? 'Save draft *' : 'Save draft',
-                  onPressed: _saving || _publishing ? null : _saveDraft,
-                ),
-                AntdPrimaryButton(
-                  label: 'Publish',
-                  loading: _publishing,
-                  onPressed: _saving || _publishing ? null : _publish,
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.end,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          if (isStaffSiteHost) {
+                            redirectToSiteOrigin(customerSiteOrigin, '/');
+                          } else {
+                            Navigator.of(context).pushNamed(customerRoute('/'));
+                          }
+                        },
+                        icon: const Icon(Icons.public, size: 18),
+                        label: const Text('Live site'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _previewDraft,
+                        icon: const Icon(Icons.visibility_outlined, size: 18),
+                        label: const Text('Preview draft'),
+                      ),
+                      AntdSecondaryButton(
+                        label: _dirty ? 'Save draft *' : 'Save draft',
+                        onPressed: _saving || _publishing ? null : _saveDraft,
+                      ),
+                      AntdPrimaryButton(
+                        label: 'Publish',
+                        loading: _publishing,
+                        onPressed: _saving || _publishing ? null : _publish,
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -858,7 +866,7 @@ class _GalleryEditor extends StatelessWidget {
             },
           ),
           const SizedBox(height: 16),
-          _sectionTitle('Categories (drag to rearrange)'),
+          _sectionTitle('Categories (long-press to rearrange)'),
           ReorderableListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -879,21 +887,13 @@ class _GalleryEditor extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.drag_handle),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _CmsTextField(
-                              label: 'Category label',
-                              value: cat.label,
-                              onChanged: (v) {
-                                cat.label = v;
-                                onChanged();
-                              },
-                            ),
-                          ),
-                        ],
+                      _CmsTextField(
+                        label: 'Category label',
+                        value: cat.label,
+                        onChanged: (v) {
+                          cat.label = v;
+                          onChanged();
+                        },
                       ),
                       const SizedBox(height: 8),
                       Text(
@@ -904,25 +904,21 @@ class _GalleryEditor extends StatelessWidget {
                       Align(
                         alignment: Alignment.centerLeft,
                         child: AntdSecondaryButton(
-                          label: 'Add images from library',
+                          label: 'Add images',
                           onPressed: () async {
-                            final picked = await showWebsiteMediaPicker(context);
-                            if (picked == null) return;
-                            var b64 = picked.dataBase64 ?? '';
-                            if (b64.isEmpty) {
-                              b64 =
-                                  (await WebsiteContentStore.instance
-                                      .resolveMediaId(picked.id)) ??
-                                  '';
+                            final picked =
+                                await showCompletedEventGalleryPicker(context);
+                            if (picked == null || picked.isEmpty) return;
+                            for (final b64 in picked) {
+                              cat.images.add(
+                                GalleryImageData(
+                                  id:
+                                      'img_${DateTime.now().microsecondsSinceEpoch}_${cat.images.length}',
+                                  imageBase64: b64,
+                                  tags: List.from(cat.defaultTagsForUpload),
+                                ),
+                              );
                             }
-                            cat.images.add(
-                              GalleryImageData(
-                                id: 'img_${picked.id}',
-                                mediaId: picked.id,
-                                imageBase64: b64,
-                                tags: List.from(cat.defaultTagsForUpload),
-                              ),
-                            );
                             w.touch();
                             onChanged();
                           },
@@ -1167,8 +1163,6 @@ class _NavigationEditor extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.drag_handle),
-                          const SizedBox(width: 8),
                           Expanded(
                             child: TextFormField(
                               initialValue: item.label,

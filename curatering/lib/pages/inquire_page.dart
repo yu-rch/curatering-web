@@ -1812,14 +1812,22 @@ class _InquirePageState extends State<InquirePage> {
                       ),
                       const SizedBox(height: 10),
                       Expanded(
-                        child: GridView.count(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
-                          childAspectRatio: 1.15,
-                          children: List.generate(_locationPackages.length, (
-                            index,
-                          ) {
+                        child: LayoutBuilder(
+                          builder: (context, gridConstraints) {
+                            final cols =
+                                gridConstraints.maxWidth >= 900
+                                    ? 4
+                                    : gridConstraints.maxWidth >= 560
+                                    ? 2
+                                    : 1;
+                            return GridView.count(
+                              crossAxisCount: cols,
+                              crossAxisSpacing: 10,
+                              mainAxisSpacing: 10,
+                              childAspectRatio: cols >= 4 ? 0.95 : 1.15,
+                              children: List.generate(_locationPackages.length, (
+                                index,
+                              ) {
                             final pkg = _locationPackages[index];
                             final selected = _selectedPackageIndex == index;
                             return Material(
@@ -1878,6 +1886,8 @@ class _InquirePageState extends State<InquirePage> {
                               ),
                             );
                           }),
+                            );
+                          },
                         ),
                       ),
                       const SizedBox(height: 12),

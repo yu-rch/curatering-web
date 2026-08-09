@@ -157,6 +157,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
           Expanded(
             child: CenteredViewportScroll(
               padding: websitePagePadding(context, vertical: 12),
+              mainAxisAlignment: MainAxisAlignment.start,
               child:
                   isDesktop(context)
                       ? Row(

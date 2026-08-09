@@ -11,6 +11,8 @@ import '../auth/roles.dart';
 import '../services/dashboard_api.dart';
 import '../utils/order_calculations.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/antd_buttons.dart';
+import '../widgets/antd_dialog.dart';
 import '../widgets/antd_tokens.dart';
 
 class Dashboard extends StatefulWidget {
@@ -1735,254 +1737,10 @@ class _DashboardState extends State<Dashboard> {
         : available.first;
   }
 
-  Widget _pinnedAlertsStrip() {
-    final alerts = _insight?.alerts ?? const <DashboardInsightAlert>[];
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        side: const BorderSide(color: AntdTokens.borderSubtle),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(
-                  Icons.notifications_active_outlined,
-                  color: AntdTokens.error,
-                ),
-                SizedBox(width: 8),
-                Text(
-                  'Alerts',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: AntdTokens.valueDark,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            if (alerts.isEmpty)
-              const Text(
-                'No alerts.',
-                style: TextStyle(color: AntdTokens.labelMuted),
-              )
-            else
-              Column(children: alerts.map(_alertCard).toList()),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _dashboardSectionGrid() {
-    final available = _availableDashboardSections;
-    final selected = _effectiveDashboardSection;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final crossAxisCount = width >= 900 ? 4 : (width >= 560 ? 2 : 1);
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: available.length,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: crossAxisCount == 1 ? 4.2 : 2.4,
-          ),
-          itemBuilder: (context, index) {
-            final section = available[index];
-            final isSelected = section == selected;
-            return Material(
-              color: isSelected
-                  ? AntdTokens.blue.withValues(alpha: 0.10)
-                  : Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: BorderSide(
-                  color: isSelected
-                      ? AntdTokens.blue
-                      : AntdTokens.borderSubtle,
-                  width: isSelected ? 1.6 : 1,
-                ),
-              ),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () => setState(() => _selectedDashboardSection = section),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        section.icon,
-                        color: isSelected
-                            ? AntdTokens.blue
-                            : AntdTokens.labelMuted,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          section.label,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: isSelected
-                                ? AntdTokens.valueDark
-                                : AntdTokens.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = _summary;
-    final isSuperAdmin = AuthSession.instance.currentRole == Role.superAdmin;
-
-    return AppScaffold(
-      showSearch: true,
-      searchController: _searchController,
-      searchHint: 'Search manager dashboard',
-      onSearchChanged:
-          (value) =>
-              setState(() => _dashboardSearch = value.trim().toLowerCase()),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Material(
-            elevation: 1,
-            color: Colors.white,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Manager Dashboard',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      Flexible(
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          alignment: WrapAlignment.end,
-                          children: [
-                            if (isSuperAdmin)
-                              OutlinedButton.icon(
-                                onPressed:
-                                    () => Navigator.of(context)
-                                        .pushReplacementNamed(
-                                          '/super-admin-dashboard',
-                                        ),
-                                icon: const Icon(
-                                  Icons.admin_panel_settings_outlined,
-                                ),
-                                label: const Text('Super Admin Dashboard'),
-                              ),
-                            OutlinedButton.icon(
-                              onPressed:
-                                  _isPrintingPdf || s == null
-                                      ? null
-                                      : () => _printDashboardPdf(s),
-                              icon:
-                                  _isPrintingPdf
-                                      ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                      : const Icon(Icons.picture_as_pdf),
-                              label: Text(
-                                _isPrintingPdf
-                                    ? 'Preparing PDF'
-                                    : 'Preview / Print',
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Refresh',
-                              onPressed:
-                                  _isLoading
-                                      ? null
-                                      : () => _refreshDashboard(force: true),
-                              icon: const Icon(Icons.refresh),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _filterBar(),
-                ],
-              ),
-            ),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_errorMessage != null)
-                    Card(
-                      color: Colors.red.shade50,
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                _errorMessage!,
-                                style: TextStyle(color: Colors.red.shade800),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            OutlinedButton.icon(
-                              onPressed: () => _refreshDashboard(force: true),
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('Reload'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  if (_isLoading)
-                    const Padding(
-                      padding: EdgeInsets.all(48),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (s != null) ...[
-                    _pinnedAlertsStrip(),
-                    const SizedBox(height: 16),
-                    _dashboardSectionGrid(),
-                    const SizedBox(height: 16),
+  Widget _buildSelectedSectionBody(DashboardSummary s) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
                     if (_effectiveDashboardSection ==
                         _DashboardSection.aiInsights) ...[
                       _aiInsightsPanel(),
@@ -2698,6 +2456,289 @@ class _DashboardState extends State<Dashboard> {
                         ),
                       ),
                     ],
+      ],
+    );
+  }
+
+  Future<void> _openDashboardSectionPopup(_DashboardSection section) async {
+    final s = _summary;
+    if (s == null) return;
+    setState(() => _selectedDashboardSection = section);
+    final height = MediaQuery.sizeOf(context).height * 0.72;
+    await showAntdModal<void>(
+      context: context,
+      title: section.label,
+      maxWidth: 1080,
+      body: SizedBox(
+        height: height,
+        child: SingleChildScrollView(
+          child: _buildSelectedSectionBody(s),
+        ),
+      ),
+      actions: [
+        AntdPrimaryButton(
+          label: 'Close',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
+    );
+  }
+
+  Widget _pinnedAlertsStrip() {
+    final alerts = _insight?.alerts ?? const <DashboardInsightAlert>[];
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: AntdTokens.borderSubtle),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.notifications_active_outlined,
+                  color: AntdTokens.error,
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'Alerts',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: AntdTokens.valueDark,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (alerts.isEmpty)
+              const Text(
+                'No alerts.',
+                style: TextStyle(color: AntdTokens.labelMuted),
+              )
+            else
+              Column(children: alerts.map(_alertCard).toList()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dashboardSectionGrid() {
+    final available = _availableDashboardSections;
+    final selected = _effectiveDashboardSection;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final crossAxisCount = width >= 900 ? 4 : (width >= 560 ? 2 : 1);
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: available.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: crossAxisCount == 1 ? 4.2 : 2.4,
+          ),
+          itemBuilder: (context, index) {
+            final section = available[index];
+            final isSelected = section == selected;
+            return Material(
+              color: isSelected
+                  ? AntdTokens.blue.withValues(alpha: 0.10)
+                  : Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(
+                  color: isSelected
+                      ? AntdTokens.blue
+                      : AntdTokens.borderSubtle,
+                  width: isSelected ? 1.6 : 1,
+                ),
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => _openDashboardSectionPopup(section),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        section.icon,
+                        color: isSelected
+                            ? AntdTokens.blue
+                            : AntdTokens.labelMuted,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          section.label,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: isSelected
+                                ? AntdTokens.valueDark
+                                : AntdTokens.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = _summary;
+    final isSuperAdmin = AuthSession.instance.currentRole == Role.superAdmin;
+
+    return AppScaffold(
+      showSearch: true,
+      searchController: _searchController,
+      searchHint: 'Search manager dashboard',
+      onSearchChanged:
+          (value) =>
+              setState(() => _dashboardSearch = value.trim().toLowerCase()),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            elevation: 1,
+            color: Colors.white,
+            child: SizedBox(
+              width: double.infinity,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Manager Dashboard',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        Flexible(
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            alignment: WrapAlignment.end,
+                            children: [
+                              if (isSuperAdmin)
+                                OutlinedButton.icon(
+                                  onPressed:
+                                      () => Navigator.of(context)
+                                          .pushReplacementNamed(
+                                            '/super-admin-dashboard',
+                                          ),
+                                  icon: const Icon(
+                                    Icons.admin_panel_settings_outlined,
+                                  ),
+                                  label: const Text('Super Admin Dashboard'),
+                                ),
+                              OutlinedButton.icon(
+                                onPressed:
+                                    _isPrintingPdf || s == null
+                                        ? null
+                                        : () => _printDashboardPdf(s),
+                                icon:
+                                    _isPrintingPdf
+                                        ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                        : const Icon(Icons.picture_as_pdf),
+                                label: Text(
+                                  _isPrintingPdf
+                                      ? 'Preparing PDF'
+                                      : 'Preview / Print',
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Refresh',
+                                onPressed:
+                                    _isLoading
+                                        ? null
+                                        : () => _refreshDashboard(force: true),
+                                icon: const Icon(Icons.refresh),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _filterBar(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_errorMessage != null)
+                    Card(
+                      color: Colors.red.shade50,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _errorMessage!,
+                                style: TextStyle(color: Colors.red.shade800),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            OutlinedButton.icon(
+                              onPressed: () => _refreshDashboard(force: true),
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Reload'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  if (_isLoading)
+                    const Padding(
+                      padding: EdgeInsets.all(48),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (s != null) ...[
+                    _pinnedAlertsStrip(),
+                    const SizedBox(height: 16),
+                    _dashboardSectionGrid(),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Select a section tile to open its details.',
+                      style: TextStyle(color: AntdTokens.labelMuted),
+                    ),
                   ],
                 ],
               ),

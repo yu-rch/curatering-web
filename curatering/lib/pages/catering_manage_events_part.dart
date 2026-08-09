@@ -57,7 +57,9 @@ extension _ManageEventsTableExt on _ManageEventsState {
   String _formatOrderSchedule(EventOrderDto dto) {
     if (dto.scheduleSlots.isEmpty) return '—';
     final s = dto.scheduleSlots.first;
-    return '${s.date} ${s.startTime}';
+    final end = s.endTime.trim();
+    if (end.isEmpty) return '${s.date} ${s.startTime}';
+    return '${s.date} ${s.startTime}–$end';
   }
 
   String _orderTypeColumnLabel(EventOrderDto dto) {
@@ -152,6 +154,28 @@ extension _ManageEventsTableExt on _ManageEventsState {
       } catch (_) {
         return const Center(child: Icon(Icons.broken_image));
       }
+    }
+
+    // Supervisor: final design output only (no step/edit UI).
+    if (_isSupervisor) {
+      return _detailSection(
+        'Event theme design',
+        child: imageUrl.isNotEmpty
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  height: 220,
+                  width: double.infinity,
+                  child: imageFromSource(imageUrl, fit: BoxFit.contain),
+                ),
+              )
+            : Text(
+                picks.isNotEmpty
+                    ? 'Design output not ready yet.'
+                    : 'No design image submitted.',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+      );
     }
 
     Widget stepBlock(String title, Widget child) {
@@ -341,6 +365,9 @@ extension _ManageEventsTableExt on _ManageEventsState {
         label: 'Address',
         value: dto.address.isEmpty ? '—' : dto.address,
         span: cols >= 2 ? 2 : 1,
+        onValueTap: dto.address.trim().isEmpty
+            ? null
+            : () => showVenueMapDialog(context, dto.address),
       ),
       AntdDescriptionItem(
         label: 'Menu',
@@ -1157,7 +1184,19 @@ extension _ManageEventsTableExt on _ManageEventsState {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'View on map',
+                            onPressed: () => showVenueMapDialog(
+                              context,
+                              addressController.text,
+                            ),
+                            icon: const Icon(
+                              Icons.map_outlined,
+                              color: Color(0xFFFFC024),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
                           Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -1677,6 +1716,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
     required String emptyMessage,
     List<Widget> Function(EventOrderDto dto)? actionCells,
     bool showGuestsAndTotal = true,
+    bool showSchedule = false,
   }) {
     final filtered = _filterEventOrdersByTableFilters(orders);
     return _buildManageEventsSplitShell(
@@ -1686,6 +1726,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
       columns: [
         const DataColumn(label: Text('Service type')),
         const DataColumn(label: Text('Event / inquiry')),
+        if (showSchedule) const DataColumn(label: Text('Schedule')),
         if (showGuestsAndTotal) const DataColumn(label: Text('Guests')),
         if (showGuestsAndTotal) const DataColumn(label: Text('Total')),
       ],
@@ -1697,6 +1738,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
           cells: [
             DataCell(Text(_orderTypeColumnLabel(dto))),
             DataCell(_mergedInquiryColumnCell(dto)),
+            if (showSchedule) DataCell(Text(_formatOrderSchedule(dto))),
             if (showGuestsAndTotal) DataCell(Text('${dto.guestCount}')),
             if (showGuestsAndTotal)
               DataCell(
@@ -2126,6 +2168,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
       orders: _ongoingOrders,
       emptyMessage: 'No ongoing events.',
       showGuestsAndTotal: !_isSupervisor,
+      showSchedule: true,
     );
   }
 

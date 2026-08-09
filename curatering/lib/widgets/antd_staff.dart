@@ -21,6 +21,7 @@ class AntdPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       color: AntdTokens.pageBg,
       child: Padding(
         padding: padding,
@@ -51,41 +52,49 @@ class AntdPageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      alignment: WrapAlignment.spaceBetween,
-      children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: AntdTokens.valueDark,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
-                const SizedBox(height: 4),
+    return SizedBox(
+      width: double.infinity,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  subtitle!,
+                  title,
                   style: const TextStyle(
-                    color: AntdTokens.textSecondary,
-                    fontSize: 13,
+                    color: AntdTokens.valueDark,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
+                if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle!,
+                    style: const TextStyle(
+                      color: AntdTokens.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
-        if (actions.isNotEmpty)
-          Wrap(spacing: 8, runSpacing: 8, children: actions),
-      ],
+          if (actions.isNotEmpty) ...[
+            const SizedBox(width: 12),
+            Flexible(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.end,
+                children: actions,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

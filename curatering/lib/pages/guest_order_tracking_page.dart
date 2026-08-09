@@ -263,15 +263,12 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
               controller: _orderNoCtrl,
               textCapitalization: TextCapitalization.characters,
               decoration: const InputDecoration(
-                labelText: 'Order number',
+                labelText: 'Order number (optional)',
                 hintText: 'e.g. ORD-000123',
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'Required';
-                return null;
-              },
+              validator: (v) => null,
             ),
             const SizedBox(height: 12),
             TextFormField(
