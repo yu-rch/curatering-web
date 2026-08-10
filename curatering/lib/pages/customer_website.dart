@@ -2336,20 +2336,54 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     return HomeEtdSampler(compact: compact);
   }
 
-  Widget _buildHomeSidePanel(WebsiteContentStore w) {
-    final popular =
-        _salesPopularDishes.isNotEmpty
-            ? _salesPopularDishes.take(3).toList()
-            : _fallbackPopularDishes()
-                .take(3)
-                .map(
-                  (d) => <String, dynamic>{
-                    'name': d.name,
-                    'imageBase64': d.imageBase64,
-                  },
-                )
-                .toList();
+  List<MenuDish> _restaurantActiveDishes() {
+    return MenuStore.instance.activeDishes
+        .where((d) => d.category.trim().toLowerCase() == 'restaurant')
+        .toList();
+  }
 
+  Widget _buildKitchenDishSlideshow() {
+    return ListenableBuilder(
+      listenable: MenuStore.instance,
+      builder: (context, _) {
+        final dishes = _restaurantActiveDishes();
+        if (dishes.isEmpty) {
+          return Container(
+            height: 140,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade800,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              'Restaurant dishes coming soon',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+          );
+        }
+        return _HomeKitchenDishCarousel(dishes: dishes);
+      },
+    );
+  }
+
+  Widget _buildOwnerBlurb(WebsiteContentStore w) {
+    final blurb = w.ownerBlurb.trim();
+    if (blurb.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: WebsiteRichText(
+        value: blurb,
+        style: TextStyle(
+          fontSize: 13,
+          height: 1.45,
+          color: Colors.grey.shade800,
+          fontStyle: FontStyle.italic,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHomeSidePanel(WebsiteContentStore w) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -2374,54 +2408,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             style: TextStyle(color: Colors.white70, fontSize: 12),
           ),
           const SizedBox(height: 10),
-          SizedBox(
-            height: 72,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: popular.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final row = popular[index];
-                final name = (row['name'] ?? 'Dish').toString();
-                final image = (row['imageBase64'] ?? '').toString();
-                return SizedBox(
-                  width: 120,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child:
-                              image.trim().isNotEmpty
-                                  ? CachedBase64Image(
-                                    base64String: image,
-                                    fit: BoxFit.cover,
-                                    width: 120,
-                                    height: 48,
-                                    placeholder: Container(
-                                      color: Colors.grey.shade700,
-                                    ),
-                                  )
-                                  : Container(color: Colors.grey.shade700),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
+          _buildKitchenDishSlideshow(),
           const SizedBox(height: 10),
           OutlinedButton(
             onPressed:
@@ -2451,6 +2438,22 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           ),
           const SizedBox(height: 10),
           _buildEtdAdvertCard(compact: true),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed:
+                () => Navigator.pushReplacementNamed(
+                  context,
+                  customerRoute('/inquire'),
+                ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFFFC024),
+              side: const BorderSide(color: Color(0xFFFFC024)),
+            ),
+            child: const Text(
+              'Inquire Now',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
         ],
       ),
     );
@@ -2502,7 +2505,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       style: const TextStyle(fontSize: 14, height: 1.45),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  _buildOwnerBlurb(w),
                   Stack(
                     children: [
                       _buildLatestEventCollage(w),
@@ -2523,6 +2527,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       }),
                     ],
                   ),
+                  const SizedBox(height: 24),
+                  _buildPopularDishesCarousel(w),
                 ],
               ),
             ),
@@ -2585,7 +2591,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       ],
                       _buildLatestEventSection(w),
                       const SizedBox(height: 40),
-                      _popularAndDesigns(w),
+                      _eventDesignsSection(w),
                       CmsSectionsView(
                         sections: w.pageExtraSections['home'] ?? const [],
                       ),
@@ -2638,7 +2644,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     return MenuStore.instance.activeDishes.take(5).toList();
   }
 
-  Widget _popularAndDesigns(WebsiteContentStore w) {
+  Widget _buildPopularDishesCarousel(WebsiteContentStore w) {
     return ListenableBuilder(
       listenable: MenuStore.instance,
       builder: (context, _) {
@@ -2652,16 +2658,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       (row['name'] ?? '').toString().trim().isNotEmpty,
                 )
                 .toList();
-        final cmsEventImages =
-            w.eventDesignImageBase64
-                .asMap()
-                .entries
-                .where((e) => e.value.trim().isNotEmpty)
-                .toList();
-        final salesEventDesigns = _salesEventDesigns;
-        final useSalesPopular = !widget.contentEditable && salesPopular.isNotEmpty;
-        final useSalesDesigns =
-            !widget.contentEditable && salesEventDesigns.isNotEmpty;
+        final useSalesPopular =
+            !widget.contentEditable && salesPopular.isNotEmpty;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2769,7 +2767,29 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         ),
               ),
             ),
-            const SizedBox(height: 28),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _eventDesignsSection(WebsiteContentStore w) {
+    return ListenableBuilder(
+      listenable: MenuStore.instance,
+      builder: (context, _) {
+        final cmsEventImages =
+            w.eventDesignImageBase64
+                .asMap()
+                .entries
+                .where((e) => e.value.trim().isNotEmpty)
+                .toList();
+        final salesEventDesigns = _salesEventDesigns;
+        final useSalesDesigns =
+            !widget.contentEditable && salesEventDesigns.isNotEmpty;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             _homeSectionTag(w.eventDesignsSectionLabel),
             const SizedBox(height: 8),
             WebsiteRichText(
@@ -3858,8 +3878,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       880.0,
     );
     final mobile = isMobileWidth(context);
+    final tablet = isTabletWidth(context);
     final screenW = MediaQuery.sizeOf(context).width;
-    final gridCrossAxisCount = mobile ? (screenW < 400 ? 1 : 2) : 5;
+    // Dish cards: 4-column grid on desktop; fewer on smaller screens.
+    final gridCrossAxisCount =
+        mobile ? (screenW < 400 ? 1 : 2) : tablet ? 3 : 4;
 
     final menuPanel = ConstrainedBox(
       constraints: BoxConstraints(maxHeight: mobile ? double.infinity : panelH),
@@ -4017,7 +4040,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         crossAxisCount: gridCrossAxisCount,
                         crossAxisSpacing: 10,
                         mainAxisSpacing: 10,
-                        childAspectRatio: mobile ? 0.75 : 0.70,
+                        childAspectRatio: mobile ? 0.78 : 0.82,
                       ),
                       itemCount: dishes.length,
                       itemBuilder: (ctx, i) {
@@ -5001,6 +5024,160 @@ class _SampleEventThemeTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _HomeKitchenDishCarousel extends StatefulWidget {
+  const _HomeKitchenDishCarousel({required this.dishes});
+
+  final List<MenuDish> dishes;
+
+  @override
+  State<_HomeKitchenDishCarousel> createState() =>
+      _HomeKitchenDishCarouselState();
+}
+
+class _HomeKitchenDishCarouselState extends State<_HomeKitchenDishCarousel> {
+  late final PageController _controller;
+  Timer? _timer;
+  int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController();
+    _restartTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HomeKitchenDishCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.dishes.length != widget.dishes.length) {
+      _page = 0;
+      if (_controller.hasClients) {
+        _controller.jumpToPage(0);
+      }
+      _restartTimer();
+    }
+  }
+
+  void _restartTimer() {
+    _timer?.cancel();
+    if (widget.dishes.length <= 1) return;
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_controller.hasClients) return;
+      final next = (_page + 1) % widget.dishes.length;
+      _controller.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dishes = widget.dishes;
+    return Column(
+      children: [
+        SizedBox(
+          height: 148,
+          child: PageView.builder(
+            controller: _controller,
+            itemCount: dishes.length,
+            onPageChanged: (i) => setState(() => _page = i),
+            itemBuilder: (context, index) {
+              final dish = dishes[index];
+              final image = dish.imageBase64?.trim() ?? '';
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    image.isNotEmpty
+                        ? CachedBase64Image(
+                          base64String: image,
+                          fit: BoxFit.cover,
+                          placeholder: Container(color: Colors.grey.shade700),
+                        )
+                        : Container(
+                          color: Colors.grey.shade700,
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.restaurant,
+                            color: Colors.white38,
+                            size: 40,
+                          ),
+                        ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.75),
+                            ],
+                          ),
+                        ),
+                        child: Text(
+                          dish.name.trim().isNotEmpty
+                              ? dish.name.trim()
+                              : 'Dish',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        if (dishes.length > 1) ...[
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(dishes.length, (i) {
+              final on = i == _page;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: on ? 14 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: on
+                      ? const Color(0xFFFFC024)
+                      : Colors.white.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              );
+            }),
+          ),
+        ],
+      ],
     );
   }
 }

@@ -135,10 +135,10 @@ extension _ManageEventsDetailExt on _ManageEventsState {
     final isCancelled = stage == 'cancelled' || order.status == 'cancelled';
     final isReadOnlyStage =
         isCancelled || stage == 'completed' || stage == 'for_full_payment';
+    // Theme design editing is exclusive to online_inquiries; otherwise view-only.
     final canEditTheme = _isManager &&
         !isCancelled &&
-        stage != 'for_full_payment' &&
-        stage != 'completed' &&
+        (order.status == 'online_inquiries' || stage == 'online_inquiries') &&
         (order.orderType == 'catering_event' ||
             order.orderType.contains('event') ||
             order.includeMinimalEventStyling == true);
@@ -441,9 +441,10 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                               ),
                               child: const Text('Order Summary after Down Payment'),
                             ),
-                          if (stage == 'for_down_payment' ||
-                              stage == 'on_going' ||
-                              stage == 'for_full_payment')
+                          if ((stage == 'for_down_payment' ||
+                                  stage == 'on_going' ||
+                                  stage == 'for_full_payment') &&
+                              _additionalCostsTotal(order) > 0)
                             OutlinedButton(
                               onPressed: () => _generateOrderSummaryPdf(
                                 order,
@@ -546,6 +547,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
     final rows = List<Map<String, dynamic>>.from(_taskRowsFromOrder(order));
     final size = MediaQuery.sizeOf(context);
     final modalHeight = (size.height * 0.58).clamp(320.0, 520.0);
+    var isEditingTasks = false;
     await showAntdModal<void>(
       context: context,
       title: 'Task assignment — ${order.transactionNo}',
@@ -554,6 +556,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
       body: StatefulBuilder(
           builder: (ctx, setModal) {
             Future<void> editRowDialog(int index) async {
+              if (!isEditingTasks) return;
               final row = rows[index];
               final employee = TextEditingController(text: '${row['employee'] ?? ''}');
               final task = TextEditingController(text: '${row['tasks'] ?? ''}');
@@ -656,23 +659,29 @@ extension _ManageEventsDetailExt on _ManageEventsState {
               Map<String, dynamic> row, {
               double width = 150,
             }) {
+              final value = '${row[key] ?? ''}';
               return DataCell(
                 SizedBox(
                   width: width,
-                  child: TextFormField(
-                    initialValue: '${row[key] ?? ''}',
-                    style: const TextStyle(fontSize: 13),
-                    decoration: InputDecoration(
-                      hintText: label,
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 6,
-                      ),
-                    ),
-                    onChanged: (v) => row[key] = v,
-                  ),
+                  child: isEditingTasks
+                      ? TextFormField(
+                          initialValue: value,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: InputDecoration(
+                            hintText: label,
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
+                            ),
+                          ),
+                          onChanged: (v) => row[key] = v,
+                        )
+                      : Text(
+                          value.isEmpty ? '—' : value,
+                          style: const TextStyle(fontSize: 13),
+                        ),
                 ),
               );
             }
@@ -691,23 +700,41 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                 maxTableHeight: constraints.maxHeight,
                                 forceVerticalScroll: true,
                                 fullWidth: true,
+                                minTableWidth: 860,
                                 enablePrint: false,
                                 toolbarActions: [
-                                  AntdSecondaryButton(
-                                    onPressed: () {
-                                      setModal(() {
-                                        rows.add({
-                                          'employee': '',
-                                          'tasks': '',
-                                          'schedule_of_tasks': '',
-                                          'budget': '',
-                                          'status': 'not done',
+                                  if (!isEditingTasks)
+                                    AntdSecondaryButton(
+                                      onPressed: () => setModal(
+                                        () => isEditingTasks = true,
+                                      ),
+                                      icon: Icons.edit_outlined,
+                                      label: 'Edit',
+                                    ),
+                                  if (isEditingTasks) ...[
+                                    AntdSecondaryButton(
+                                      onPressed: () => setModal(
+                                        () => isEditingTasks = false,
+                                      ),
+                                      icon: Icons.visibility_outlined,
+                                      label: 'View only',
+                                    ),
+                                    AntdSecondaryButton(
+                                      onPressed: () {
+                                        setModal(() {
+                                          rows.add({
+                                            'employee': '',
+                                            'tasks': '',
+                                            'schedule_of_tasks': '',
+                                            'budget': '',
+                                            'status': 'not done',
+                                          });
                                         });
-                                      });
-                                    },
-                                    icon: Icons.add,
-                                    label: 'Add row',
-                                  ),
+                                      },
+                                      icon: Icons.add,
+                                      label: 'Add row',
+                                    ),
+                                  ],
                                 ],
                                 columnSpacing: 8,
                                 horizontalMargin: 6,
@@ -760,7 +787,8 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                       DataCell(
                                         SizedBox(
                                           width: 110,
-                                          child: DropdownButtonFormField<String>(
+                                          child: isEditingTasks
+                                              ? DropdownButtonFormField<String>(
                                             value: '${row['status'] ?? 'not done'}',
                                             isExpanded: true,
                                             decoration: const InputDecoration(
@@ -786,11 +814,16 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                                 setModal(() => row['status'] = v);
                                               }
                                             },
+                                          )
+                                              : Text(
+                                            '${row['status'] ?? 'not done'}',
+                                            style: const TextStyle(fontSize: 13),
                                           ),
                                         ),
                                       ),
                                       DataCell(
-                                        Row(
+                                        isEditingTasks
+                                            ? Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             IconButton(
@@ -806,7 +839,8 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                               icon: const Icon(Icons.delete_outline),
                                             ),
                                           ],
-                                        ),
+                                        )
+                                            : const SizedBox.shrink(),
                                       ),
                                     ],
                                   );
@@ -884,6 +918,14 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                               }
                               if (ctx.mounted) Navigator.pop(ctx);
                               await _selectManageEventsOrder(order);
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Task assignment saved.'),
+                                    backgroundColor: Color(0xFF1DB954),
+                                  ),
+                                );
+                              }
                             } catch (e) {
                               if (loaderCtx != null &&
                                   Navigator.of(loaderCtx!).canPop()) {

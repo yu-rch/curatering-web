@@ -278,6 +278,9 @@ export async function ensureAuthSchemaQuick() {
     await pool.query(
       `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_lng DECIMAL(10,8)`,
     );
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_addresses JSONB NOT NULL DEFAULT '[]'::jsonb`,
+    );
   } catch (err) {
     console.warn('Auth schema customer_accounts delivery columns:', err.message);
   }
@@ -1062,6 +1065,9 @@ export async function initDb() {
     );
     await pool.query(
       `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_lng DECIMAL(10,8)`,
+    );
+    await pool.query(
+      `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_addresses JSONB NOT NULL DEFAULT '[]'::jsonb`,
     );
   } catch (err) {
     console.log('Migration check for customer_accounts delivery columns:', err.message);

@@ -78,18 +78,36 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _updateUnderline());
   }
 
+  bool _isTrackOrderRoute(String route) {
+    return route == customerRoute('/track-order') ||
+        route.endsWith('/track-order');
+  }
+
   void _updateUnderline() {
     if (!mounted) return;
     final items = _navItems;
     _ensureNavKeys(items.length);
     if (items.isEmpty) return;
     final route = _currentRoute(context);
-    var activeIndex = 0;
+    // On track-order, only the shipping icon is highlighted — hide nav underline.
+    if (_isTrackOrderRoute(route)) {
+      if (_underlineReady) {
+        setState(() => _underlineReady = false);
+      }
+      return;
+    }
+    int? activeIndex;
     for (var i = 0; i < items.length; i++) {
       if (_isNavActive(items[i], route)) {
         activeIndex = i;
         break;
       }
+    }
+    if (activeIndex == null) {
+      if (_underlineReady) {
+        setState(() => _underlineReady = false);
+      }
+      return;
     }
     if (activeIndex >= _navItemKeys.length) return;
     final itemCtx = _navItemKeys[activeIndex].currentContext;
@@ -180,6 +198,8 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
 
   bool _isNavActive(CmsNavItem item, String currentRoute) {
     if (item.targetType == CmsNavTargetType.url) return false;
+    // Track-order page highlights only the shipping icon, never nav tabs.
+    if (_isTrackOrderRoute(currentRoute)) return false;
     return currentRoute == customerRoute(_navRouteFor(item));
   }
 

@@ -2485,47 +2485,142 @@ class _DashboardState extends State<Dashboard> {
   }
 
   Widget _pinnedAlertsStrip() {
+    final s = _summary;
     final alerts = _insight?.alerts ?? const <DashboardInsightAlert>[];
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        side: const BorderSide(color: AntdTokens.borderSubtle),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(
-                  Icons.notifications_active_outlined,
-                  color: AntdTokens.error,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 900;
+        final colWidth =
+            wide ? (constraints.maxWidth - 24) / 3 : constraints.maxWidth;
+
+        Widget panel({
+          required String title,
+          required IconData icon,
+          required Color iconColor,
+          required Widget body,
+        }) {
+          return SizedBox(
+            width: colWidth,
+            child: Card(
+              elevation: 0,
+              color: Colors.white,
+              shape: RoundedRectangleBorder(
+                side: const BorderSide(color: AntdTokens.borderSubtle),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(icon, color: iconColor),
+                        const SizedBox(width: 8),
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: AntdTokens.valueDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    body,
+                  ],
                 ),
-                SizedBox(width: 8),
-                Text(
-                  'Alerts',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: AntdTokens.valueDark,
-                  ),
-                ),
-              ],
+              ),
             ),
-            const SizedBox(height: 10),
-            if (alerts.isEmpty)
-              const Text(
-                'No alerts.',
-                style: TextStyle(color: AntdTokens.labelMuted),
-              )
-            else
-              Column(children: alerts.map(_alertCard).toList()),
+          );
+        }
+
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.start,
+          children: [
+            panel(
+              title: 'ALERTS',
+              icon: Icons.notifications_active_outlined,
+              iconColor: AntdTokens.error,
+              body: alerts.isEmpty
+                  ? const Text(
+                      'No alerts.',
+                      style: TextStyle(color: AntdTokens.labelMuted),
+                    )
+                  : Column(children: alerts.map(_alertCard).toList()),
+            ),
+            panel(
+              title: 'CATERING',
+              icon: Icons.celebration_outlined,
+              iconColor: AntdTokens.brandPrimary,
+              body: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    formatPhp(s?.catering.salesToday ?? 0),
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: AntdTokens.valueDark,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Sales today',
+                    style: TextStyle(color: AntdTokens.labelMuted, fontSize: 12),
+                  ),
+                  if (s != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      '${s.catering.ongoing} ongoing · ${s.catering.inquiriesThisMonth} inquiries this month',
+                      style: const TextStyle(
+                        color: AntdTokens.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            panel(
+              title: 'RESTAURANT',
+              icon: Icons.restaurant,
+              iconColor: AntdTokens.brandPrimary,
+              body: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    formatPhp(s?.restaurant.salesToday ?? 0),
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: AntdTokens.valueDark,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Sales today',
+                    style: TextStyle(color: AntdTokens.labelMuted, fontSize: 12),
+                  ),
+                  if (s != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      '${s.restaurant.pendingConfirmations} pending · ${s.restaurant.delivered} delivered',
+                      style: const TextStyle(
+                        color: AntdTokens.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 

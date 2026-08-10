@@ -270,10 +270,10 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                                 SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount:
                                       isMobile(context)
-                                          ? 1
-                                          : isTablet(context)
                                           ? 2
-                                          : 3,
+                                          : isTablet(context)
+                                          ? 3
+                                          : 4,
                                   crossAxisSpacing: 16,
                                   mainAxisSpacing: 16,
                                   childAspectRatio: 0.8,

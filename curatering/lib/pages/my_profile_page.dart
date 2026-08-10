@@ -23,7 +23,6 @@ class MyProfilePage extends StatefulWidget {
 class _MyProfilePageState extends State<MyProfilePage> {
   final _fullNameController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _addressController = TextEditingController();
   final _currentPasswordController = TextEditingController();
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
@@ -36,8 +35,7 @@ class _MyProfilePageState extends State<MyProfilePage> {
   bool _obscureNewPassword = true;
   bool _obscureConfirmPassword = true;
   String? _error;
-  double? _deliveryLat;
-  double? _deliveryLng;
+  List<_SavedAddress> _addresses = [];
 
   String get _apiBaseUrl => apiBaseUrl;
 
@@ -51,11 +49,42 @@ class _MyProfilePageState extends State<MyProfilePage> {
   void dispose() {
     _fullNameController.dispose();
     _phoneController.dispose();
-    _addressController.dispose();
     _currentPasswordController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  List<_SavedAddress> _parseAddresses(Map<String, dynamic> data) {
+    final raw = data['deliveryAddresses'];
+    final list = <_SavedAddress>[];
+    if (raw is List) {
+      for (var i = 0; i < raw.length; i++) {
+        final e = raw[i];
+        if (e is! Map) continue;
+        final addr = _SavedAddress.fromJson(Map<String, dynamic>.from(e), i);
+        if (addr.address.trim().isNotEmpty) list.add(addr);
+      }
+    }
+    if (list.isEmpty) {
+      final single = (data['deliveryAddress'] ?? '').toString().trim();
+      if (single.isNotEmpty) {
+        list.add(
+          _SavedAddress(
+            id: 'legacy_default',
+            label: 'Default',
+            address: single,
+            lat: (data['deliveryLat'] as num?)?.toDouble(),
+            lng: (data['deliveryLng'] as num?)?.toDouble(),
+            isDefault: true,
+          ),
+        );
+      }
+    }
+    if (list.isNotEmpty && !list.any((a) => a.isDefault)) {
+      list[0] = list[0].copyWith(isDefault: true);
+    }
+    return list;
   }
 
   Future<void> _loadProfile() async {
@@ -93,16 +122,18 @@ class _MyProfilePageState extends State<MyProfilePage> {
 
       final data = jsonDecode(response.body);
       if (mounted) {
+        final map =
+            data is Map
+                ? Map<String, dynamic>.from(data)
+                : <String, dynamic>{};
         setState(() {
-          _profileData = data;
-          _fullNameController.text = data['fullName'] ?? '';
+          _profileData = map;
+          _fullNameController.text = map['fullName'] ?? '';
           final phoneDigits =
-              (data['phone'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
+              (map['phone'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
           _phoneController.text =
               phoneDigits.length > 11 ? phoneDigits.substring(0, 11) : phoneDigits;
-          _addressController.text = data['deliveryAddress'] ?? '';
-          _deliveryLat = data['deliveryLat']?.toDouble();
-          _deliveryLng = data['deliveryLng']?.toDouble();
+          _addresses = _parseAddresses(map);
           _isLoading = false;
         });
       }
@@ -176,10 +207,7 @@ class _MyProfilePageState extends State<MyProfilePage> {
         body: jsonEncode({
           'fullName': fullName,
           'phone': phoneDigits.isEmpty ? null : phoneDigits,
-          'deliveryAddress':
-              _addressController.text.isEmpty ? null : _addressController.text,
-          'deliveryLat': _deliveryLat,
-          'deliveryLng': _deliveryLng,
+          'deliveryAddresses': _addresses.map((a) => a.toJson()).toList(),
         }),
       );
 
@@ -596,22 +624,154 @@ class _MyProfilePageState extends State<MyProfilePage> {
     );
   }
 
-  Future<void> _showMapPicker() async {
-    final result = await showMapPicker(
+  Future<void> _editAddress({_SavedAddress? existing, int? index}) async {
+    final labelCtrl = TextEditingController(text: existing?.label ?? '');
+    final addressCtrl = TextEditingController(text: existing?.address ?? '');
+    double? lat = existing?.lat;
+    double? lng = existing?.lng;
+    var isDefault = existing?.isDefault ?? _addresses.isEmpty;
+
+    final saved = await showDialog<bool>(
       context: context,
-      initialLatitude: _deliveryLat,
-      initialLongitude: _deliveryLng,
-      initialAddress:
-          _addressController.text.isNotEmpty ? _addressController.text : null,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: Text(existing == null ? 'Add address' : 'Edit address'),
+              content: SizedBox(
+                width: 420,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: labelCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Label (e.g. Home, Office)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: addressCtrl,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                          labelText: 'Delivery address',
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.map),
+                            tooltip: 'Pick from map',
+                            onPressed: () async {
+                              final result = await showMapPicker(
+                                context: context,
+                                initialLatitude: lat,
+                                initialLongitude: lng,
+                                initialAddress:
+                                    addressCtrl.text.isNotEmpty
+                                        ? addressCtrl.text
+                                        : null,
+                              );
+                              if (result != null) {
+                                setDialogState(() {
+                                  addressCtrl.text = result.address;
+                                  lat = result.latitude;
+                                  lng = result.longitude;
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                      if (lat != null && lng != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Pin: ${lat!.toStringAsFixed(5)}, ${lng!.toStringAsFixed(5)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        value: isDefault,
+                        onChanged: (v) =>
+                            setDialogState(() => isDefault = v ?? false),
+                        title: const Text('Set as default'),
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    if (addressCtrl.text.trim().isEmpty) return;
+                    Navigator.pop(ctx, true);
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
 
-    if (result != null) {
-      setState(() {
-        _addressController.text = result.address;
-        _deliveryLat = result.latitude;
-        _deliveryLng = result.longitude;
-      });
-    }
+    final label = labelCtrl.text.trim();
+    final address = addressCtrl.text.trim();
+    labelCtrl.dispose();
+    addressCtrl.dispose();
+    if (saved != true || address.isEmpty) return;
+
+    setState(() {
+      final entry = _SavedAddress(
+        id: existing?.id ?? 'addr_${DateTime.now().millisecondsSinceEpoch}',
+        label: label.isEmpty ? 'Address' : label,
+        address: address,
+        lat: lat,
+        lng: lng,
+        isDefault: isDefault,
+      );
+      var next = List<_SavedAddress>.from(_addresses);
+      if (index != null && index >= 0 && index < next.length) {
+        next[index] = entry;
+      } else {
+        next.add(entry);
+      }
+      if (entry.isDefault) {
+        next = next
+            .map((a) => a.id == entry.id ? a : a.copyWith(isDefault: false))
+            .toList();
+      } else if (!next.any((a) => a.isDefault) && next.isNotEmpty) {
+        next[0] = next[0].copyWith(isDefault: true);
+      }
+      _addresses = next;
+    });
+  }
+
+  void _removeAddress(int index) {
+    setState(() {
+      final next = List<_SavedAddress>.from(_addresses)..removeAt(index);
+      if (next.isNotEmpty && !next.any((a) => a.isDefault)) {
+        next[0] = next[0].copyWith(isDefault: true);
+      }
+      _addresses = next;
+    });
+  }
+
+  void _setDefaultAddress(int index) {
+    setState(() {
+      _addresses = [
+        for (var i = 0; i < _addresses.length; i++)
+          _addresses[i].copyWith(isDefault: i == index),
+      ];
+    });
   }
 
   @override
@@ -668,7 +828,10 @@ class _MyProfilePageState extends State<MyProfilePage> {
                     )
                     : SingleChildScrollView(
                       padding: const EdgeInsets.all(16),
-                      child: Column(
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 760),
+                          child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Profile Header with Loyalty Points
@@ -894,39 +1057,177 @@ class _MyProfilePageState extends State<MyProfilePage> {
                           ),
                           const SizedBox(height: 24),
 
-                          // Delivery Address Section
-                          Text(
-                            'Default Delivery Address',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _addressController,
-                            maxLines: 3,
-                            decoration: InputDecoration(
-                              labelText: 'Delivery Address',
-                              border: const OutlineInputBorder(),
-                              prefixIcon: const Icon(Icons.location_on),
-                              suffixIcon: IconButton(
-                                icon: const Icon(Icons.map),
-                                onPressed: _showMapPicker,
-                                tooltip: 'Pick from map',
+                          // Delivery Addresses Section
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Delivery Addresses',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                          if (_deliveryLat != null && _deliveryLng != null) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              'Coordinates: ${_deliveryLat!.toStringAsFixed(6)}, ${_deliveryLng!.toStringAsFixed(6)}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
+                              TextButton.icon(
+                                onPressed: () => _editAddress(),
+                                icon: const Icon(Icons.add, size: 18),
+                                label: const Text('Add'),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          if (_addresses.isEmpty)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: Text(
+                                'No saved addresses yet. Add one for faster checkout.',
+                                style: TextStyle(color: Colors.grey.shade700),
+                              ),
+                            )
+                          else
+                            ...List.generate(_addresses.length, (index) {
+                              final addr = _addresses[index];
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  side: BorderSide(
+                                    color: addr.isDefault
+                                        ? const Color(0xFFFFC024)
+                                        : Colors.grey.shade300,
+                                    width: addr.isDefault ? 1.5 : 1,
+                                  ),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    12,
+                                    10,
+                                    4,
+                                    10,
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        Icons.location_on,
+                                        color: addr.isDefault
+                                            ? const Color(0xFFF4511E)
+                                            : Colors.grey.shade600,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Flexible(
+                                                  child: Text(
+                                                    addr.label,
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                ),
+                                                if (addr.isDefault) ...[
+                                                  const SizedBox(width: 8),
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 2,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(
+                                                        0xFFFFC024,
+                                                      ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                        10,
+                                                      ),
+                                                    ),
+                                                    child: const Text(
+                                                      'Default',
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              addr.address,
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                color: Colors.grey.shade800,
+                                              ),
+                                            ),
+                                            if (addr.lat != null &&
+                                                addr.lng != null)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                  top: 4,
+                                                ),
+                                                child: Text(
+                                                  'Pin: ${addr.lat!.toStringAsFixed(5)}, ${addr.lng!.toStringAsFixed(5)}',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors.grey.shade600,
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      PopupMenuButton<String>(
+                                        onSelected: (value) {
+                                          if (value == 'edit') {
+                                            _editAddress(
+                                              existing: addr,
+                                              index: index,
+                                            );
+                                          } else if (value == 'default') {
+                                            _setDefaultAddress(index);
+                                          } else if (value == 'remove') {
+                                            _removeAddress(index);
+                                          }
+                                        },
+                                        itemBuilder: (context) => [
+                                          const PopupMenuItem(
+                                            value: 'edit',
+                                            child: Text('Edit'),
+                                          ),
+                                          if (!addr.isDefault)
+                                            const PopupMenuItem(
+                                              value: 'default',
+                                              child: Text('Set as default'),
+                                            ),
+                                          const PopupMenuItem(
+                                            value: 'remove',
+                                            child: Text('Remove'),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }),
                           const SizedBox(height: 24),
 
                           // Save Profile Button
@@ -1019,6 +1320,8 @@ class _MyProfilePageState extends State<MyProfilePage> {
                             ),
                           ),
                         ],
+                          ),
+                        ),
                       ),
                     ),
           ),
@@ -1136,5 +1439,67 @@ class _MyProfilePageState extends State<MyProfilePage> {
     } catch (_) {
       return dateStr;
     }
+  }
+}
+
+class _SavedAddress {
+  const _SavedAddress({
+    required this.id,
+    required this.label,
+    required this.address,
+    this.lat,
+    this.lng,
+    this.isDefault = false,
+  });
+
+  final String id;
+  final String label;
+  final String address;
+  final double? lat;
+  final double? lng;
+  final bool isDefault;
+
+  _SavedAddress copyWith({
+    String? id,
+    String? label,
+    String? address,
+    double? lat,
+    double? lng,
+    bool? isDefault,
+  }) {
+    return _SavedAddress(
+      id: id ?? this.id,
+      label: label ?? this.label,
+      address: address ?? this.address,
+      lat: lat ?? this.lat,
+      lng: lng ?? this.lng,
+      isDefault: isDefault ?? this.isDefault,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'label': label,
+    'address': address,
+    'lat': lat,
+    'lng': lng,
+    'isDefault': isDefault,
+  };
+
+  factory _SavedAddress.fromJson(Map<String, dynamic> m, int index) {
+    double? asDouble(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      return double.tryParse('$v');
+    }
+
+    return _SavedAddress(
+      id: (m['id'] ?? 'addr_$index').toString(),
+      label: (m['label'] ?? m['name'] ?? 'Address ${index + 1}').toString(),
+      address: (m['address'] ?? m['deliveryAddress'] ?? '').toString(),
+      lat: asDouble(m['lat'] ?? m['deliveryLat']),
+      lng: asDouble(m['lng'] ?? m['deliveryLng']),
+      isDefault: m['isDefault'] == true,
+    );
   }
 }

@@ -39,6 +39,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
   bool _showValidation = false;
   Map<String, dynamic>? _customerData;
   int _currentPoints = 0;
+  List<_CheckoutSavedAddress> _savedAddresses = [];
+  String? _selectedAddressId;
 
   // Delivery time selection
   // - ASAP (internal 'NOW'): send no delivery_time
@@ -139,9 +141,18 @@ class _CheckoutPageState extends State<CheckoutPage> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final points = _restaurantLoyaltyPointsFromMap(data);
+        final addresses = _parseSavedAddresses(data);
         setState(() {
           _currentPoints = points;
-          if (data['deliveryAddress'] != null &&
+          _savedAddresses = addresses;
+          if (addresses.isNotEmpty) {
+            final def =
+                addresses.firstWhere(
+                  (a) => a.isDefault,
+                  orElse: () => addresses.first,
+                );
+            _applySavedAddress(def);
+          } else if (data['deliveryAddress'] != null &&
               (data['deliveryAddress'] as String).isNotEmpty) {
             _addressController.text = data['deliveryAddress'] as String;
             _deliveryLat =
@@ -150,6 +161,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
             _deliveryLng =
                 _parseCoord(data['deliveryLng']) ??
                 _parseCoord(data['delivery_lng']);
+            _selectedAddressId = null;
           }
         });
         // Keep local customer_data in sync so checkout banner stays accurate.
@@ -177,6 +189,55 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
+  List<_CheckoutSavedAddress> _parseSavedAddresses(Map<String, dynamic> data) {
+    final raw = data['deliveryAddresses'];
+    final list = <_CheckoutSavedAddress>[];
+    if (raw is List) {
+      for (var i = 0; i < raw.length; i++) {
+        final e = raw[i];
+        if (e is! Map) continue;
+        final m = Map<String, dynamic>.from(e);
+        final address = (m['address'] ?? m['deliveryAddress'] ?? '')
+            .toString()
+            .trim();
+        if (address.isEmpty) continue;
+        list.add(
+          _CheckoutSavedAddress(
+            id: (m['id'] ?? 'addr_$i').toString(),
+            label: (m['label'] ?? m['name'] ?? 'Address ${i + 1}').toString(),
+            address: address,
+            lat: _parseCoord(m['lat'] ?? m['deliveryLat']),
+            lng: _parseCoord(m['lng'] ?? m['deliveryLng']),
+            isDefault: m['isDefault'] == true,
+          ),
+        );
+      }
+    }
+    if (list.isEmpty) {
+      final single = (data['deliveryAddress'] ?? '').toString().trim();
+      if (single.isNotEmpty) {
+        list.add(
+          _CheckoutSavedAddress(
+            id: 'legacy_default',
+            label: 'Saved address',
+            address: single,
+            lat: _parseCoord(data['deliveryLat'] ?? data['delivery_lat']),
+            lng: _parseCoord(data['deliveryLng'] ?? data['delivery_lng']),
+            isDefault: true,
+          ),
+        );
+      }
+    }
+    return list;
+  }
+
+  void _applySavedAddress(_CheckoutSavedAddress addr) {
+    _selectedAddressId = addr.id;
+    _addressController.text = addr.address;
+    _deliveryLat = addr.lat;
+    _deliveryLng = addr.lng;
+  }
+
   Future<void> _saveAddressToProfile() async {
     if (!_saveAddress) return;
 
@@ -186,17 +247,47 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
       if (token == null || token.isEmpty) return;
 
+      final addressText = _addressController.text.trim();
+      if (addressText.isEmpty) return;
+
+      // Merge into existing list (update selected or append).
+      final next = List<_CheckoutSavedAddress>.from(_savedAddresses);
+      final idx = next.indexWhere((a) => a.id == _selectedAddressId);
+      final entry = _CheckoutSavedAddress(
+        id: idx >= 0
+            ? next[idx].id
+            : 'addr_${DateTime.now().millisecondsSinceEpoch}',
+        label: idx >= 0 ? next[idx].label : 'Saved from checkout',
+        address: addressText,
+        lat: _deliveryLat,
+        lng: _deliveryLng,
+        isDefault: true,
+      );
+      if (idx >= 0) {
+        next[idx] = entry;
+      } else {
+        next.add(entry);
+      }
+      final payload = next
+          .map(
+            (a) => {
+              'id': a.id,
+              'label': a.label,
+              'address': a.address,
+              'lat': a.lat,
+              'lng': a.lng,
+              'isDefault': a.id == entry.id,
+            },
+          )
+          .toList();
+
       await http.put(
         Uri.parse('${apiBaseUrl}/api/customer/profile'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({
-          'deliveryAddress': _addressController.text,
-          'deliveryLat': _deliveryLat,
-          'deliveryLng': _deliveryLng,
-        }),
+        body: jsonEncode({'deliveryAddresses': payload}),
       );
     } catch (e) {
       debugPrint('Error saving address: $e');
@@ -217,6 +308,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
         _addressController.text = result.address;
         _deliveryLat = result.latitude;
         _deliveryLng = result.longitude;
+        // Custom pin — deselect saved chips unless text still matches one.
+        final match = _savedAddresses.where(
+          (a) =>
+              a.address.trim().toLowerCase() ==
+              result.address.trim().toLowerCase(),
+        );
+        _selectedAddressId = match.isEmpty ? null : match.first.id;
       });
     }
   }
@@ -976,7 +1074,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
       maxLines: 3,
       style: const TextStyle(fontSize: 12),
       onChanged: (_) {
-        if (_showValidation) setState(() {});
+        setState(() {
+          _selectedAddressId = null;
+          if (_showValidation) {}
+        });
       },
       decoration: InputDecoration(
         isDense: true,
@@ -1001,6 +1102,52 @@ class _CheckoutPageState extends State<CheckoutPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (_savedAddresses.isNotEmpty) ...[
+          Text(
+            'SAVED ADDRESSES',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final addr in _savedAddresses)
+                ChoiceChip(
+                  selected: _selectedAddressId == addr.id,
+                  label: Text(
+                    addr.label,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  onSelected: (_) {
+                    setState(() => _applySavedAddress(addr));
+                  },
+                ),
+              ActionChip(
+                avatar: const Icon(Icons.add_location_alt_outlined, size: 16),
+                label: const Text('New pin', style: TextStyle(fontSize: 12)),
+                onPressed: _showMapPicker,
+              ),
+            ],
+          ),
+          if (_selectedAddressId != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              _savedAddresses
+                  .firstWhere(
+                    (a) => a.id == _selectedAddressId,
+                    orElse: () => _savedAddresses.first,
+                  )
+                  .address,
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+            ),
+          ],
+          const SizedBox(height: 12),
+        ],
         if (mobile)
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1713,4 +1860,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
           ),
     );
   }
+}
+
+class _CheckoutSavedAddress {
+  const _CheckoutSavedAddress({
+    required this.id,
+    required this.label,
+    required this.address,
+    this.lat,
+    this.lng,
+    this.isDefault = false,
+  });
+
+  final String id;
+  final String label;
+  final String address;
+  final double? lat;
+  final double? lng;
+  final bool isDefault;
 }

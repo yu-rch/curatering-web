@@ -1,6 +1,46 @@
 part of 'catering.dart';
 
 extension _ManageEventsTableExt on _ManageEventsState {
+  void _openZoomableImageDialog(Widget image) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        backgroundColor: Colors.black,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 5,
+                child: Center(child: image),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                icon: const Icon(Icons.close, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _zoomableThemeImage(Widget thumbnail, Widget zoomChild) {
+    return GestureDetector(
+      onTap: () => _openZoomableImageDialog(zoomChild),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: thumbnail,
+      ),
+    );
+  }
+
   bool _canEventAction(String permissionKey) {
     final user = AuthSession.instance.currentUser.value;
     return actionAllowed(
@@ -161,13 +201,16 @@ extension _ManageEventsTableExt on _ManageEventsState {
       return _detailSection(
         'Event theme design',
         child: imageUrl.isNotEmpty
-            ? ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  height: 220,
-                  width: double.infinity,
-                  child: imageFromSource(imageUrl, fit: BoxFit.contain),
+            ? _zoomableThemeImage(
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(
+                    height: 220,
+                    width: double.infinity,
+                    child: imageFromSource(imageUrl, fit: BoxFit.contain),
+                  ),
                 ),
+                imageFromSource(imageUrl, fit: BoxFit.contain),
               )
             : Text(
                 picks.isNotEmpty
@@ -231,13 +274,16 @@ extension _ManageEventsTableExt on _ManageEventsState {
                     style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
                   ),
                   const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: SizedBox(
-                      height: 170,
-                      width: double.infinity,
-                      child: imageFromSource(imageUrl, fit: BoxFit.contain),
+                  _zoomableThemeImage(
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: SizedBox(
+                        height: 170,
+                        width: double.infinity,
+                        child: imageFromSource(imageUrl, fit: BoxFit.contain),
+                      ),
                     ),
+                    imageFromSource(imageUrl, fit: BoxFit.contain),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -257,12 +303,15 @@ extension _ManageEventsTableExt on _ManageEventsState {
                       itemCount: picks.length,
                       separatorBuilder: (_, __) => const SizedBox(width: 8),
                       itemBuilder: (context, index) {
-                        return ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: SizedBox(
-                            width: 90,
-                            child: imageFromSource(picks[index]),
+                        return _zoomableThemeImage(
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: SizedBox(
+                              width: 90,
+                              child: imageFromSource(picks[index]),
+                            ),
                           ),
+                          imageFromSource(picks[index], fit: BoxFit.contain),
                         );
                       },
                     ),
@@ -1829,8 +1878,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
                                 child: PagedDataTable(
                                   title: title.trim(),
                                   fullWidth: true,
-                                  columnSpacing: 12,
-                                  horizontalMargin: 8,
+                                  minTableWidth: 680,
+                                  columnSpacing: 8,
+                                  horizontalMargin: 6,
+                                  dataRowMinHeight: 40,
+                                  dataRowMaxHeight: 56,
+                                  headingRowHeight: 40,
                                   maxTableHeight: tableConstraints.maxHeight,
                                   filters: filters,
                                   headingRowColor: WidgetStateProperty.all(

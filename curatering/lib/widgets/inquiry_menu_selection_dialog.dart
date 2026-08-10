@@ -7,6 +7,7 @@ import '../services/set_menu_store.dart';
 import 'antd_buttons.dart';
 import 'antd_dialog.dart';
 import 'antd_tokens.dart';
+import 'catering_dish_info_dialog.dart';
 
 /// Menu picker modes for online inquiry / staff new-event food selection.
 enum InquiryMenuPickerMode {
@@ -106,6 +107,8 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
   final Set<String> _selectedSetDishIds = {};
   String _customFilter = '';
   String? _localError;
+  OverlayEntry? _dishHoverOverlay;
+  String? _hoverDishId;
 
   /// Single-pick legacy
   String? _pickDishId;
@@ -212,9 +215,111 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
 
   @override
   void dispose() {
+    _hideDishHover();
     _tabController?.removeListener(_onModalTabChanged);
     _tabController?.dispose();
     super.dispose();
+  }
+
+  void _hideDishHover() {
+    _dishHoverOverlay?.remove();
+    _dishHoverOverlay = null;
+    _hoverDishId = null;
+  }
+
+  void _showDishHover(BuildContext context, MenuDish dish) {
+    if (_hoverDishId == dish.id && _dishHoverOverlay != null) return;
+    _hideDishHover();
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final origin = box.localToGlobal(Offset.zero);
+    final size = box.size;
+    final media = MediaQuery.sizeOf(context);
+    const cardW = 280.0;
+    final left = (origin.dx + size.width + 8)
+        .clamp(8.0, media.width - cardW - 8);
+    final top = origin.dy.clamp(8.0, media.height - 220.0);
+
+    final desc = dish.publicDescription.trim();
+    final allergens = dish.allergens.trim();
+    _hoverDishId = dish.id;
+    _dishHoverOverlay = OverlayEntry(
+      builder: (_) => Positioned(
+        left: left,
+        top: top,
+        width: cardW,
+        child: Material(
+          elevation: 8,
+          borderRadius: BorderRadius.circular(10),
+          color: Colors.white,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  dish.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  desc.isEmpty ? 'No description yet.' : desc,
+                  maxLines: 5,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+                if (allergens.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Allergens: $allergens',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(_dishHoverOverlay!);
+  }
+
+  void _openDishDetail(MenuDish dish) {
+    _hideDishHover();
+    showCateringDishInfoDialog(context, dish);
+  }
+
+  Widget _dishInfoTarget({
+    required MenuDish dish,
+    required Widget child,
+  }) {
+    return Builder(
+      builder: (itemContext) {
+        return MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => _showDishHover(itemContext, dish),
+          onExit: (_) => _hideDishHover(),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _openDishDetail(dish),
+            child: child,
+          ),
+        );
+      },
+    );
   }
 
   Map<String, String> get _dishNameById => {
@@ -403,7 +508,10 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
               final checked = _customIds.contains(d.id);
               return CheckboxListTile(
                 dense: true,
-                secondary: _dishThumb(d),
+                secondary: _dishInfoTarget(
+                  dish: d,
+                  child: _dishThumb(d),
+                ),
                 value: checked,
                 onChanged: (v) {
                   setState(() {
@@ -422,7 +530,10 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
                   });
                   _emitSelection();
                 },
-                title: Text(d.name),
+                title: _dishInfoTarget(
+                  dish: d,
+                  child: Text(d.name),
+                ),
               );
             },
             ),
@@ -522,7 +633,19 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
 
   Widget _buildSetDishCustomizer() {
     final selected = _selectedSet;
-    if (selected == null) return const SizedBox.shrink();
+    if (selected == null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Text(
+          'Select set menu to modify',
+          style: TextStyle(
+            color: Colors.grey.shade600,
+            fontSize: 13,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      );
+    }
     final originalIds = _visibleSetDishIds(selected).toSet();
     final addedCount =
         _selectedSetDishIds.where((id) => !originalIds.contains(id)).length;
@@ -559,9 +682,15 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
           })())
             CheckboxListTile(
               dense: true,
-              secondary: _dishThumb(d),
+              secondary: _dishInfoTarget(
+                dish: d,
+                child: _dishThumb(d),
+              ),
               value: _selectedSetDishIds.contains(d.id),
-              title: Text(d.name),
+              title: _dishInfoTarget(
+                dish: d,
+                child: Text(d.name),
+              ),
               subtitle: () {
                 if (!_selectedSetDishIds.contains(d.id)) return null;
                 final originalIds = _visibleSetDishIds(selected).toSet();

@@ -18,7 +18,10 @@ import '../widgets/antd_tokens.dart';
 import '../widgets/confirm_logout_dialog.dart';
 
 class CashierPosShell extends StatefulWidget {
-  const CashierPosShell({super.key});
+  const CashierPosShell({super.key, this.appBarTrailing});
+
+  /// Optional trailing AppBar control (e.g. manager/POS mode switcher).
+  final Widget? appBarTrailing;
 
   @override
   State<CashierPosShell> createState() => _CashierPosShellState();
@@ -1258,6 +1261,16 @@ class _CashierPosShellState extends State<CashierPosShell> {
           ],
         ),
         actions: [
+          if (widget.appBarTrailing != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: widget.appBarTrailing!,
+                ),
+              ),
+            ),
           if (_selectedTab == 0 && _trayItemCount > 0)
             Padding(
               padding: const EdgeInsets.only(right: 8),
@@ -1375,6 +1388,11 @@ class _CashierPosShellState extends State<CashierPosShell> {
           _sidebarAction(Icons.refresh, 'Refresh', Colors.white60, () {
             if (inDrawer) _posScaffoldKey.currentState?.closeDrawer();
             _refreshAll();
+          }),
+          const SizedBox(height: 4),
+          _sidebarAction(Icons.settings_outlined, 'Settings', Colors.white60, () {
+            if (inDrawer) _posScaffoldKey.currentState?.closeDrawer();
+            Navigator.of(context).pushNamed('/settings');
           }),
           if (AuthSession.instance.currentRole == Role.cashier) ...[
             const SizedBox(height: 4),
@@ -2916,18 +2934,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
                     fontWeight: FontWeight.w800,
                     fontSize: 15)),
             const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius:
-                  BorderRadius.circular(8),
-              child: RepaintBoundary(
-                child: Image.memory(
-                  base64Decode(proofB64),
-                  height: 200,
-                  fit: BoxFit.contain,
-                  gaplessPlayback: true,
-                ),
-              ),
-            ),
+            buildPaymentProofPreview(proofB64, height: 200),
           ],
 
           const Divider(height: 24),

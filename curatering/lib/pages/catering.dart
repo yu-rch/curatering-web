@@ -2035,12 +2035,55 @@ class _ManageEventsState extends State<ManageEvents>
               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
             ),
             const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox(
-                height: 160,
-                width: double.infinity,
-                child: previewWidget(generatedUrl, fit: BoxFit.contain),
+            GestureDetector(
+              onTap: () {
+                showDialog<void>(
+                  context: context,
+                  barrierColor: Colors.black87,
+                  builder: (dialogContext) {
+                    return Dialog(
+                      insetPadding: const EdgeInsets.all(16),
+                      backgroundColor: Colors.black,
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: InteractiveViewer(
+                              minScale: 0.5,
+                              maxScale: 5,
+                              child: Center(
+                                child: previewWidget(
+                                  generatedUrl,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: IconButton(
+                              tooltip: 'Close preview',
+                              onPressed: () =>
+                                  Navigator.of(dialogContext).pop(),
+                              icon: const Icon(Icons.close, color: Colors.white),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(
+                    height: 160,
+                    width: double.infinity,
+                    child: previewWidget(generatedUrl, fit: BoxFit.contain),
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -4521,6 +4564,9 @@ class _ManageEventsState extends State<ManageEvents>
     final newItemController = TextEditingController();
     int? duplicateHighlightIndex;
     var showNewItemRow = false;
+    var isEditingChecklist = false;
+    final canEnterChecklistEdit =
+        canMutateChecklist || canToggleChecklistStatus;
     try {
     final dialogSize = MediaQuery.sizeOf(context);
     final modalHeight = (dialogSize.height * 0.58).clamp(320.0, 520.0);
@@ -4691,23 +4737,45 @@ class _ManageEventsState extends State<ManageEvents>
                         builder: (context, tableConstraints) {
                           return PagedDataTable(
                         title: 'Event Checklist',
-                        key: ValueKey(editableItems.length),
+                        key: ValueKey(
+                          '${editableItems.length}_$isEditingChecklist',
+                        ),
                         maxTableHeight: tableConstraints.maxHeight,
                         forceVerticalScroll: true,
                         fullWidth: true,
+                        minTableWidth: 820,
                         enablePrint: false,
                         toolbarActions:
-                            canMutateChecklist
+                            canEnterChecklistEdit
                                 ? [
-                                  AntdSecondaryButton(
-                                    onPressed: () => dialogSetState(() {
-                                      showNewItemRow = true;
-                                      duplicateHighlightIndex = null;
-                                      newItemController.clear();
-                                    }),
-                                    icon: Icons.add_circle_outline,
-                                    label: 'Add item',
-                                  ),
+                                  if (!isEditingChecklist)
+                                    AntdSecondaryButton(
+                                      onPressed: () => dialogSetState(
+                                        () => isEditingChecklist = true,
+                                      ),
+                                      icon: Icons.edit_outlined,
+                                      label: 'Edit',
+                                    ),
+                                  if (isEditingChecklist) ...[
+                                    AntdSecondaryButton(
+                                      onPressed: () => dialogSetState(() {
+                                        isEditingChecklist = false;
+                                        showNewItemRow = false;
+                                      }),
+                                      icon: Icons.visibility_outlined,
+                                      label: 'View only',
+                                    ),
+                                    if (canMutateChecklist)
+                                      AntdSecondaryButton(
+                                        onPressed: () => dialogSetState(() {
+                                          showNewItemRow = true;
+                                          duplicateHighlightIndex = null;
+                                          newItemController.clear();
+                                        }),
+                                        icon: Icons.add_circle_outline,
+                                        label: 'Add item',
+                                      ),
+                                  ],
                                 ]
                                 : const [],
                         columnSpacing: 8,
@@ -4763,6 +4831,10 @@ class _ManageEventsState extends State<ManageEvents>
                               final item = entry.value;
                               final isDuplicateRow =
                                   duplicateHighlightIndex == index;
+                              final fieldsEditable =
+                                  isEditingChecklist && canMutateChecklist;
+                              final statusEditable =
+                                  isEditingChecklist && canToggleChecklistStatus;
                               return DataRow(
                                 color:
                                     isDuplicateRow
@@ -4774,7 +4846,7 @@ class _ManageEventsState extends State<ManageEvents>
                                   DataCell(
                                     SizedBox(
                                       width: 162,
-                                      child: canMutateChecklist
+                                      child: fieldsEditable
                                           ? TextFormField(
                                               initialValue: item.item,
                                               style: const TextStyle(fontSize: 13),
@@ -4828,7 +4900,7 @@ class _ManageEventsState extends State<ManageEvents>
                                   DataCell(
                                     SizedBox(
                                       width: 192,
-                                      child: canMutateChecklist
+                                      child: fieldsEditable
                                           ? TextFormField(
                                           initialValue: item.description,
                                           decoration: const InputDecoration(
@@ -4856,7 +4928,7 @@ class _ManageEventsState extends State<ManageEvents>
                                   DataCell(
                                     SizedBox(
                                       width: 72,
-                                      child: canMutateChecklist
+                                      child: fieldsEditable
                                           ? TextFormField(
                                           initialValue:
                                               item.quantity.toString(),
@@ -4891,7 +4963,8 @@ class _ManageEventsState extends State<ManageEvents>
                                     DataCell(
                                       SizedBox(
                                         width: 92,
-                                        child: TextFormField(
+                                        child: fieldsEditable
+                                            ? TextFormField(
                                         initialValue: item.cost.toStringAsFixed(
                                           2,
                                         ),
@@ -4920,7 +4993,10 @@ class _ManageEventsState extends State<ManageEvents>
                                                 );
                                           });
                                         },
-                                      ),
+                                      )
+                                            : Text(
+                                              'PHP ${item.cost.toStringAsFixed(2)}',
+                                            ),
                                       ),
                                     ),
                                     DataCell(
@@ -4942,7 +5018,7 @@ class _ManageEventsState extends State<ManageEvents>
                                   DataCell(
                                     SizedBox(
                                       width: 112,
-                                      child: canToggleChecklistStatus
+                                      child: statusEditable
                                           ? Container(
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 8,
@@ -5037,7 +5113,8 @@ class _ManageEventsState extends State<ManageEvents>
                                     DataCell(
                                       SizedBox(
                                         width: 104,
-                                        child: Row(
+                                        child: isEditingChecklist
+                                            ? Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             IconButton(
@@ -5066,14 +5143,17 @@ class _ManageEventsState extends State<ManageEvents>
                                               ),
                                             ),
                                           ],
-                                        ),
+                                        )
+                                            : const SizedBox.shrink(),
                                       ),
                                     ),
                                   ],
                                 ],
                               );
                             }),
-                          if (canMutateChecklist && showNewItemRow)
+                          if (canMutateChecklist &&
+                              isEditingChecklist &&
+                              showNewItemRow)
                             DataRow(
                               color: WidgetStateProperty.all(
                                 Colors.blue.shade50,
@@ -5493,11 +5573,53 @@ class _ManageEventsState extends State<ManageEvents>
                             ),
                         itemCount: previewSources.length,
                         itemBuilder: (context, index) {
-                          return ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: previewWidget(
-                              previewSources[index],
-                              fit: BoxFit.cover,
+                          return GestureDetector(
+                            onTap: () {
+                              showDialog<void>(
+                                context: context,
+                                barrierColor: Colors.black87,
+                                builder: (dialogContext) {
+                                  return Dialog(
+                                    insetPadding: const EdgeInsets.all(16),
+                                    backgroundColor: Colors.black,
+                                    child: Stack(
+                                      children: [
+                                        Positioned.fill(
+                                          child: InteractiveViewer(
+                                            minScale: 0.5,
+                                            maxScale: 5,
+                                            child: Center(
+                                              child: previewWidget(
+                                                previewSources[index],
+                                                fit: BoxFit.contain,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Positioned(
+                                          top: 8,
+                                          right: 8,
+                                          child: IconButton(
+                                            onPressed: () =>
+                                                Navigator.of(dialogContext).pop(),
+                                            icon: const Icon(
+                                              Icons.close,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: previewWidget(
+                                previewSources[index],
+                                fit: BoxFit.cover,
+                              ),
                             ),
                           );
                         },

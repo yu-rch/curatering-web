@@ -311,6 +311,7 @@ class _AppScaffoldState extends State<AppScaffold> {
         final profileItems = <AntdProfileMenuItem>[
           AntdProfileMenuItem.header(userName),
           if (role == Role.superAdmin ||
+              role == Role.cashier ||
               pageRouteAllowed(PagePermissionRoutes.settings, perms))
             AntdProfileMenuItem.action(
               id: 'settings',
@@ -461,7 +462,7 @@ class _AppScaffoldState extends State<AppScaffold> {
                           ),
                         ),
                       Image.asset(
-                        'lib/assets/main-2.png',
+                        'lib/assets/main.png',
                         height: 32,
                         fit: BoxFit.contain,
                       ),

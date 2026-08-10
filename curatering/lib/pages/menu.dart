@@ -728,6 +728,23 @@ class _MenuState extends State<Menu> {
                         initialSerialized: _allergensController.text,
                         onChanged: (s) => _allergensController.text = s,
                       ),
+                      if (category == 'catering') ...[
+                        const SizedBox(height: 12),
+                        if (dish != null)
+                          OutlinedButton.icon(
+                            onPressed: () => _showIngredientsDialog(dish),
+                            icon: const Icon(Icons.list_alt, size: 18),
+                            label: const Text('Manage ingredients'),
+                          )
+                        else
+                          Text(
+                            'Save this dish first, then use Ingredients to add checklist items.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                      ],
                       const SizedBox(height: 8),
                       if (formError != null) ...[
                         Container(
@@ -2206,9 +2223,37 @@ class _MenuState extends State<Menu> {
     return [...selected, ...rest];
   }
 
+  /// Dishes belonging to the currently selected set menu (by dishIds).
+  List<MenuDish> _dishesForSelectedSetMenu(List<MenuDish> cateringDishes) {
+    if (_selectedSetMenuId == null) return const [];
+    final setMenus = SetMenuStore.instance.activeSetMenus;
+    SetMenu? setMenu;
+    for (final s in setMenus) {
+      if (s.id == _selectedSetMenuId) {
+        setMenu = s;
+        break;
+      }
+    }
+    if (setMenu == null) return const [];
+    final byId = {for (final d in cateringDishes) d.id: d};
+    final fromIds = <MenuDish>[];
+    for (final id in setMenu.dishIds) {
+      final dish = byId[id] ?? MenuStore.instance.findDishById(id);
+      if (dish != null) fromIds.add(dish);
+    }
+    if (fromIds.isNotEmpty) return fromIds;
+    // Fallback for legacy dishes that still carry setMenus names.
+    return MenuStore.instance.getDishesBySet(setMenu.name);
+  }
+
   Widget _buildSetMenuTab(List<MenuDish> cateringDishes) {
     final setMenus = SetMenuStore.instance.activeSetMenus;
     final sortedCateringDishes = _sortedCateringDishesForSet(cateringDishes);
+    final selectedSetDishes = _dishesForSelectedSetMenu(cateringDishes);
+    final isModifyingSelectedSet =
+        _selectedSetMenuId != null &&
+        (_selectedSetDishIds.isNotEmpty ||
+            _setMenuNameController.text.trim().isNotEmpty);
     final selectedSetName =
         _selectedSetMenuId != null
             ? setMenus
@@ -2454,7 +2499,7 @@ class _MenuState extends State<Menu> {
                                   child: DropdownButton<String>(
                                     isExpanded: true,
                                     value: _selectedSetMenuId,
-                                    hint: const Text('Select a set menu'),
+                                    hint: const Text('Select set menu'),
                                     items:
                                         setMenus.map((setMenu) {
                                           return DropdownMenuItem(
@@ -2501,7 +2546,17 @@ class _MenuState extends State<Menu> {
                             selectedSetName == null
                                 ? Center(
                                   child: Text(
-                                    'Select a set menu to view dishes',
+                                    'select set menu to modify',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade400,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                )
+                                : selectedSetDishes.isEmpty
+                                ? Center(
+                                  child: Text(
+                                    'No dishes in this set menu',
                                     style: TextStyle(
                                       color: Colors.grey.shade400,
                                     ),
@@ -2509,26 +2564,25 @@ class _MenuState extends State<Menu> {
                                 )
                                 : ListView.builder(
                                   padding: const EdgeInsets.all(12),
-                                  itemCount:
-                                      MenuStore.instance
-                                          .getDishesBySet(selectedSetName)
-                                          .length,
+                                  itemCount: selectedSetDishes.length,
                                   itemBuilder: (context, index) {
-                                    final dishes = MenuStore.instance
-                                        .getDishesBySet(selectedSetName);
-                                    final dish = dishes[index];
+                                    final dish = selectedSetDishes[index];
                                     final isInCurrentSelection =
                                         _selectedSetDishIds.contains(dish.id);
                                     return _buildSetMenuDishCard(
                                       dish,
-                                      isInSet: isInCurrentSelection,
+                                      isInSet: isModifyingSelectedSet
+                                          ? isInCurrentSelection
+                                          : true,
                                       onAddToMenu:
-                                          isInCurrentSelection
-                                              ? null
-                                              : () =>
-                                                  _addDishToCurrentSet(dish.id),
+                                          isModifyingSelectedSet &&
+                                                  !isInCurrentSelection
+                                              ? () =>
+                                                  _addDishToCurrentSet(dish.id)
+                                              : null,
                                       onRemove:
-                                          isInCurrentSelection
+                                          isModifyingSelectedSet &&
+                                                  isInCurrentSelection
                                               ? () =>
                                                   _removeDishFromSet(dish.id)
                                               : null,

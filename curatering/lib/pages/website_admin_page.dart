@@ -14,6 +14,7 @@ import '../widgets/antd_tokens.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/cms_sections.dart';
 import '../widgets/completed_event_gallery_picker.dart';
+import '../widgets/mobile_ui_cms_editor.dart';
 import '../widgets/paginated_data_table.dart';
 import '../widgets/website_media_picker.dart';
 import '../widgets/website_rich_text.dart';
@@ -28,6 +29,7 @@ class WebsiteAdminPage extends StatefulWidget {
 
 enum _CmsSection {
   home,
+  brand,
   catering,
   restaurant,
   inquiry,
@@ -35,6 +37,7 @@ enum _CmsSection {
   contact,
   navigation,
   pages,
+  mobileApp,
   media,
   revisions,
 }
@@ -166,6 +169,8 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
     switch (_section) {
       case _CmsSection.home:
         return 'Homepage';
+      case _CmsSection.brand:
+        return 'Brand';
       case _CmsSection.catering:
         return 'Catering page';
       case _CmsSection.restaurant:
@@ -180,6 +185,8 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
         return 'Navigation';
       case _CmsSection.pages:
         return 'Custom pages';
+      case _CmsSection.mobileApp:
+        return 'Mobile App';
       case _CmsSection.media:
         return 'Media library';
       case _CmsSection.revisions:
@@ -329,6 +336,8 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
                 switch (_section) {
                   case _CmsSection.home:
                     return _HomepageEditor(onChanged: _markDirty);
+                  case _CmsSection.brand:
+                    return _BrandEditor(onChanged: _markDirty);
                   case _CmsSection.catering:
                     return _SimplePageEditor(
                       pageKey: 'catering',
@@ -373,6 +382,10 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
                     return _NavigationEditor(onChanged: _markDirty);
                   case _CmsSection.pages:
                     return _CustomPagesEditor(onChanged: _markDirty);
+                  case _CmsSection.mobileApp:
+                    return _cmsPad(
+                      child: MobileUiCmsEditor(onChanged: _markDirty),
+                    );
                   case _CmsSection.media:
                     return const _MediaLibraryPanel();
                   case _CmsSection.revisions:
@@ -412,6 +425,7 @@ class _CmsSideNav extends StatelessWidget {
 
   static const _items = <(_CmsSection, String, IconData)>[
     (_CmsSection.home, 'Homepage', Icons.home_outlined),
+    (_CmsSection.brand, 'Brand', Icons.palette_outlined),
     (_CmsSection.catering, 'Catering', Icons.ramen_dining_outlined),
     (_CmsSection.restaurant, 'Restaurant', Icons.restaurant_outlined),
     (_CmsSection.inquiry, 'Inquiry', Icons.mail_outline),
@@ -419,6 +433,7 @@ class _CmsSideNav extends StatelessWidget {
     (_CmsSection.contact, 'Contact & footer', Icons.contact_page_outlined),
     (_CmsSection.navigation, 'Navigation', Icons.menu_outlined),
     (_CmsSection.pages, 'Pages', Icons.article_outlined),
+    (_CmsSection.mobileApp, 'Mobile App', Icons.phone_android_outlined),
     (_CmsSection.media, 'Media', Icons.perm_media_outlined),
     (_CmsSection.revisions, 'Revisions', Icons.history),
   ];
@@ -940,6 +955,307 @@ class _GalleryEditor extends StatelessWidget {
   }
 }
 
+class _BrandEditor extends StatelessWidget {
+  const _BrandEditor({required this.onChanged});
+  final VoidCallback onChanged;
+
+  Future<void> _pickLogo(
+    BuildContext context, {
+    required void Function(String b64) apply,
+  }) async {
+    final w = WebsiteContentStore.instance;
+    final picked = await showWebsiteMediaPicker(context);
+    if (picked == null) return;
+    var b64 = picked.dataBase64 ?? '';
+    if (b64.isEmpty) b64 = (await w.resolveMediaId(picked.id)) ?? '';
+    if (b64.isEmpty) return;
+    apply(b64);
+    w.touch();
+    onChanged();
+  }
+
+  Color? _parseHex(String raw) {
+    var hex = raw.trim();
+    if (hex.startsWith('#')) hex = hex.substring(1);
+    if (hex.length == 6) hex = 'FF$hex';
+    if (hex.length != 8) return null;
+    final n = int.tryParse(hex, radix: 16);
+    return n == null ? null : Color(n);
+  }
+
+  Widget _colorField({
+    required String label,
+    required String value,
+    required ValueChanged<String> onHex,
+  }) {
+    final color = _parseHex(value);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color ?? Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.grey.shade400),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _CmsTextField(
+            label: label,
+            value: value,
+            onChanged: onHex,
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final w = WebsiteContentStore.instance;
+    return _cmsPad(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _sectionTitle('Logos'),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Header logo',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    const SizedBox(height: 6),
+                    websiteBase64Thumbnail(w.headerLogoBase64, height: 88),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        AntdSecondaryButton(
+                          label: 'Upload header logo',
+                          onPressed: () => _pickLogo(
+                            context,
+                            apply: (b64) => w.headerLogoBase64 = b64,
+                          ),
+                        ),
+                        if ((w.headerLogoBase64 ?? '').isNotEmpty)
+                          TextButton(
+                            onPressed: () {
+                              w.headerLogoBase64 = null;
+                              w.touch();
+                              onChanged();
+                            },
+                            child: const Text('Clear'),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Login logo',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    const SizedBox(height: 6),
+                    websiteBase64Thumbnail(w.loginLogoBase64, height: 88),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        AntdSecondaryButton(
+                          label: 'Upload login logo',
+                          onPressed: () => _pickLogo(
+                            context,
+                            apply: (b64) => w.loginLogoBase64 = b64,
+                          ),
+                        ),
+                        if ((w.loginLogoBase64 ?? '').isNotEmpty)
+                          TextButton(
+                            onPressed: () {
+                              w.loginLogoBase64 = null;
+                              w.touch();
+                              onChanged();
+                            },
+                            child: const Text('Clear'),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _sectionTitle('Site colors'),
+          _colorField(
+            label: 'Primary color',
+            value: w.sitePrimaryColor,
+            onHex: (v) {
+              w.sitePrimaryColor = v.trim().isEmpty ? '#1E1E1E' : v.trim();
+              onChanged();
+            },
+          ),
+          const SizedBox(height: 8),
+          _colorField(
+            label: 'Accent color',
+            value: w.siteAccentColor,
+            onHex: (v) {
+              w.siteAccentColor = v.trim().isEmpty ? '#FFC024' : v.trim();
+              onChanged();
+            },
+          ),
+          const SizedBox(height: 20),
+          _sectionTitle('Owner blurb'),
+          AntdFieldShell(
+            label: 'About the business (rich text)',
+            child: InkWell(
+              onTap: () async {
+                final next = await showWebsiteRichTextEditor(
+                  context: context,
+                  title: 'Owner blurb',
+                  initialValue: w.ownerBlurb,
+                );
+                if (next == null) return;
+                w.ownerBlurb = next;
+                w.touch();
+                onChanged();
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  w.ownerBlurb.replaceAll(RegExp(r'<[^>]+>'), ' ').trim(),
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _CmsTextField(
+            label: 'Nav brand label',
+            value: w.navBrandLabel,
+            onChanged: (v) {
+              w.navBrandLabel = v;
+              onChanged();
+            },
+          ),
+          const SizedBox(height: 20),
+          _FaqEditor(onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+class _FaqEditor extends StatelessWidget {
+  const _FaqEditor({required this.onChanged});
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = WebsiteContentStore.instance;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _sectionTitle('FAQ')),
+            TextButton.icon(
+              onPressed: () {
+                w.faqItems.add(
+                  CmsFaqItem(
+                    question: 'New question',
+                    answer: 'Answer goes here.',
+                  ),
+                );
+                w.touch();
+                onChanged();
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Add FAQ'),
+            ),
+          ],
+        ),
+        if (w.faqItems.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text(
+              'No FAQ items yet.',
+              style: TextStyle(color: AntdTokens.labelMuted),
+            ),
+          ),
+        for (var i = 0; i < w.faqItems.length; i++)
+          Card(
+            key: ValueKey('faq_$i'),
+            margin: const EdgeInsets.only(bottom: 10),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'FAQ ${i + 1}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Remove',
+                        onPressed: () {
+                          w.faqItems.removeAt(i);
+                          w.touch();
+                          onChanged();
+                        },
+                        icon: const Icon(Icons.delete_outline),
+                      ),
+                    ],
+                  ),
+                  _CmsTextField(
+                    label: 'Question',
+                    value: w.faqItems[i].question,
+                    onChanged: (v) {
+                      w.faqItems[i].question = v;
+                      onChanged();
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  _CmsTextField(
+                    label: 'Answer',
+                    value: w.faqItems[i].answer,
+                    maxLines: 3,
+                    onChanged: (v) {
+                      w.faqItems[i].answer = v;
+                      onChanged();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _ContactEditor extends StatelessWidget {
   const _ContactEditor({required this.onChanged});
   final VoidCallback onChanged;
@@ -1059,6 +1375,8 @@ class _ContactEditor extends StatelessWidget {
               onChanged();
             },
           ),
+          const SizedBox(height: 16),
+          _FaqEditor(onChanged: onChanged),
           const SizedBox(height: 16),
           _sectionTitle('Footer'),
           _CmsTextField(

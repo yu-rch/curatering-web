@@ -150,8 +150,8 @@ class _LoginState extends State<Login> {
                       const SizedBox(height: 12),
                       Center(
                         child: Image.asset(
-                          'lib/assets/main-2.png',
-                          height: 56,
+                          'lib/assets/login-2.png',
+                          height: 64,
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -206,7 +206,8 @@ class _LoginState extends State<Login> {
                         child: ElevatedButton(
                           onPressed: _isLoading ? null : _onLogin,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFF4511E),
+                            backgroundColor: const Color(0xFFFFC024),
+                            foregroundColor: const Color(0xFF1E1E1E),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
@@ -217,6 +218,7 @@ class _LoginState extends State<Login> {
                                   height: 20,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
+                                    color: Color(0xFF1E1E1E),
                                   ),
                                 )
                               : const Text(
@@ -260,7 +262,7 @@ class _LoginState extends State<Login> {
                         child: const Text(
                           'View customer website',
                           style: TextStyle(
-                            color: Colors.black87,
+                            color: Color(0xFF7ED4E5),
                             decoration: TextDecoration.underline,
                           ),
                         ),

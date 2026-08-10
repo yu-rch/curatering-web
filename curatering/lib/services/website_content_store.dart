@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_client.dart';
+import 'mobile_ui_cms.dart';
 import '../utils/api_cache.dart';
 
 /// Image that is either inline base64 (legacy) or a media-library id.
@@ -369,6 +370,44 @@ class WebsiteRevisionItem {
   }
 }
 
+/// FAQ entry for the customer contact / brand CMS.
+class CmsFaqItem {
+  String question;
+  String answer;
+
+  CmsFaqItem({required this.question, required this.answer});
+
+  Map<String, dynamic> toJson() => {
+    'question': question,
+    'answer': answer,
+  };
+
+  factory CmsFaqItem.fromJson(Map<String, dynamic> m) {
+    return CmsFaqItem(
+      question: (m['question'] ?? '').toString(),
+      answer: (m['answer'] ?? '').toString(),
+    );
+  }
+}
+
+List<CmsFaqItem> _defaultFaqItems() => [
+  CmsFaqItem(
+    question: 'Do you cater outside Metro Manila?',
+    answer:
+        'Yes — we cater Luzon-wide. Share your event date and location in an inquiry and we\'ll confirm availability.',
+  ),
+  CmsFaqItem(
+    question: 'How far in advance should I book?',
+    answer:
+        'We recommend booking at least 2–4 weeks ahead for most events. Peak weekends fill up faster, so inquire early when you can.',
+  ),
+  CmsFaqItem(
+    question: 'Can I customize a catering package?',
+    answer:
+        'Absolutely. Tell us your guest count, menu preferences, and event style — we\'ll help tailor a package that fits your celebration.',
+  ),
+];
+
 class WebsiteContentStore extends ChangeNotifier {
   WebsiteContentStore._();
   static final WebsiteContentStore instance = WebsiteContentStore._();
@@ -460,6 +499,23 @@ class WebsiteContentStore extends ChangeNotifier {
       '<p>We\'d love to hear from you. Send us a message and we\'ll respond as soon as possible.</p>';
   String footerCopyright =
       'COPYRIGHT © 2026 MACRINA\'S KITCHEN AND CATERING. POWERED BY CURATERING.';
+
+  /// Short owner / business blurb for brand surfaces.
+  String ownerBlurb =
+      'Macrina\'s Kitchen and Catering has been serving celebrations across Luzon for more than two decades — from intimate birthdays to company events — with warm hospitality and unforgettable food.';
+
+  /// Site brand colors (hex, e.g. `#1E1E1E`).
+  String sitePrimaryColor = '#1E1E1E';
+  String siteAccentColor = '#FFC024';
+
+  /// Optional header / login logos as raw or data-URL base64.
+  String? headerLogoBase64;
+  String? loginLogoBase64;
+
+  final List<CmsFaqItem> faqItems = _defaultFaqItems();
+
+  /// Mobile app layout config (customer Flutter app consumes published JSON).
+  MobileUiConfig mobileUi = defaultMobileUiConfig();
 
   bool _loaded = false;
   bool _hydratedFromLocalCache = false;
@@ -789,6 +845,9 @@ class WebsiteContentStore extends ChangeNotifier {
       eventDesignMediaIds,
     );
     slim.remove('imageAlignments');
+    // Logos can be large base64 blobs — keep refs empty in local meta cache.
+    slim['headerLogoBase64'] = '';
+    slim['loginLogoBase64'] = '';
     final cats = slim['galleryCategories'];
     if (cats is List) {
       slim['galleryCategories'] =
@@ -939,6 +998,35 @@ class WebsiteContentStore extends ChangeNotifier {
     contactPageIntro = map['contactPageIntro'] as String? ?? contactPageIntro;
     footerCopyright = map['footerCopyright'] as String? ?? footerCopyright;
 
+    ownerBlurb = map['ownerBlurb'] as String? ?? ownerBlurb;
+    sitePrimaryColor =
+        map['sitePrimaryColor'] as String? ?? sitePrimaryColor;
+    siteAccentColor = map['siteAccentColor'] as String? ?? siteAccentColor;
+    if (map.containsKey('headerLogoBase64')) {
+      final v = map['headerLogoBase64'];
+      headerLogoBase64 =
+          (v == null || (v is String && v.isEmpty)) ? null : v.toString();
+    }
+    if (map.containsKey('loginLogoBase64')) {
+      final v = map['loginLogoBase64'];
+      loginLogoBase64 =
+          (v == null || (v is String && v.isEmpty)) ? null : v.toString();
+    }
+
+    final faqRaw = map['faqItems'];
+    if (faqRaw is List) {
+      faqItems
+        ..clear()
+        ..addAll(
+          faqRaw
+              .whereType<Map>()
+              .map((e) => CmsFaqItem.fromJson(Map<String, dynamic>.from(e))),
+        );
+    }
+    if (faqItems.isEmpty) {
+      faqItems.addAll(_defaultFaqItems());
+    }
+
     _applyImageList(
       map['latestEventCollageBase64'],
       latestEventCollageBase64,
@@ -1030,6 +1118,15 @@ class WebsiteContentStore extends ChangeNotifier {
         }
       }
     }
+
+    if (map.containsKey('mobileUi')) {
+      mobileUi = MobileUiConfig.fromJson(map['mobileUi']);
+      if (!mobileUi.hasAnyBlocks) {
+        mobileUi = defaultMobileUiConfig();
+      }
+    } else {
+      mobileUi = defaultMobileUiConfig();
+    }
   }
 
   void _seedDefaultNav() {
@@ -1107,6 +1204,13 @@ class WebsiteContentStore extends ChangeNotifier {
       'contactEmail': contactEmail,
       'contactPageIntro': contactPageIntro,
       'footerCopyright': footerCopyright,
+      'ownerBlurb': ownerBlurb,
+      'sitePrimaryColor': sitePrimaryColor,
+      'siteAccentColor': siteAccentColor,
+      'headerLogoBase64': headerLogoBase64 ?? '',
+      'loginLogoBase64': loginLogoBase64 ?? '',
+      'faqItems': faqItems.map((e) => e.toJson()).toList(),
+      'mobileUi': mobileUi.toJson(),
     };
   }
 }

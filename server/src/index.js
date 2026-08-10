@@ -9854,36 +9854,44 @@ async function registerRoutesAfterDbInit() {
           );
         };
 
-        let order = null;
+        const stripRestaurantProofs = (serialized) => {
+          delete serialized.payment_proof;
+          delete serialized.payment_proof_initial;
+          delete serialized.payment_proof_balance;
+          delete serialized.supplemental_payment_proof;
+          return serialized;
+        };
 
-        if (orderNo) {
-          const lookup = await restaurantOrderWhereClause(orderNo, 1);
-          if (!lookup) {
-            return res.status(400).json({ error: 'Invalid order number' });
-          }
-
-          const result = await pool.query(
-            `SELECT * FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
-            [lookup.value],
+        const serializeRestaurant = (order) => {
+          const parsedItems = parseRestaurantOrderTrayItems(order);
+          return stripRestaurantProofs(
+            serializeRestaurantOrderRow(order, parsedItems),
           );
-          if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'Order not found' });
-          }
+        };
 
-          order = result.rows[0];
-          const orderEmail = String(order.user_email || '')
-            .trim()
-            .toLowerCase();
-          const matchedEmail = Boolean(email && orderEmail && email === orderEmail);
-          const matchedPhone = phoneMatches(order.contact_number);
+        const isOngoingRestaurant = (order) => {
+          const status = String(
+            order.order_status || order.status || '',
+          ).toLowerCase();
+          return (
+            status &&
+            !status.includes('deliver') &&
+            !status.includes('complete') &&
+            !status.includes('cancel')
+          );
+        };
 
-          if (!matchedEmail && !matchedPhone) {
-            return res.status(403).json({
-              error: 'Email or phone does not match this order',
-            });
-          }
-        } else {
-          // Order number omitted: find the latest restaurant order for email/phone.
+        const isOngoingInquiry = (row) => {
+          const status = String(row.status || '').toLowerCase();
+          return (
+            status &&
+            status !== 'completed' &&
+            status !== 'cancelled' &&
+            status !== 'canceled'
+          );
+        };
+
+        const restaurantContactWhere = async () => {
           const roCols = await ensureRestaurantOrdersCanonicalColumns();
           const whereParts = [];
           const params = [];
@@ -9894,9 +9902,7 @@ async function registerRoutesAfterDbInit() {
               `lower(trim(COALESCE(user_email::text, ''))) = $${params.length}`,
             );
           }
-
           if (phoneDigits && roCols.has('contact_number')) {
-            // Compare last 10 digits when both sides are long enough.
             params.push(phoneDigits);
             const p = `$${params.length}`;
             whereParts.push(
@@ -9911,35 +9917,222 @@ async function registerRoutesAfterDbInit() {
               )`,
             );
           }
+          return { whereParts, params, roCols };
+        };
 
-          if (whereParts.length === 0) {
-            return res.status(400).json({
-              error: 'Email or phone used at checkout is required',
+        const fetchInquiriesByContact = async () => {
+          if (!email && !phoneDigits) return [];
+          await ensureOrderCateringIdColumns().catch(() => {});
+          await ensureCateringEventOrdersCanonicalColumns().catch(() => {});
+          const eventCols = await getTableColumnNames('event_orders');
+          const cateringCols = await getTableColumnNames('catering_orders');
+
+          const phoneSql = (cols, paramRef) => {
+            if (!phoneDigits || !cols.has('contact_number')) return null;
+            return `(
+              regexp_replace(COALESCE(contact_number::text, ''), '\\D', '', 'g') = ${paramRef}
+              OR (
+                length(regexp_replace(COALESCE(contact_number::text, ''), '\\D', '', 'g')) >= 10
+                AND length(${paramRef}) >= 10
+                AND right(regexp_replace(COALESCE(contact_number::text, ''), '\\D', '', 'g'), 10)
+                  = right(${paramRef}, 10)
+              )
+            )`;
+          };
+
+          const buildPart = (table, cols, orderType) => {
+            const where = [];
+            const params = [];
+            if (email && cols.has('email_address')) {
+              params.push(email);
+              where.push(
+                `lower(trim(COALESCE(email_address::text, ''))) = $${params.length}`,
+              );
+            }
+            const pSql = phoneSql(cols, `$${params.length + 1}`);
+            if (pSql) {
+              params.push(phoneDigits);
+              where.push(pSql);
+            }
+            if (where.length === 0) return null;
+            const eventTitle = cols.has('event_title')
+              ? 'event_title'
+              : "NULL::text";
+            const totalCost = cols.has('total_cost') ? 'total_cost' : '0';
+            const cateringId = cols.has('catering_id')
+              ? 'catering_id'
+              : 'NULL::text';
+            return {
+              sql: `SELECT id::text AS id, ${cateringId} AS catering_id, ${eventTitle} AS event_title,
+                           status, ${totalCost} AS total_cost, created_at,
+                           '${orderType}'::text AS order_type,
+                           ${cols.has('address') ? 'address' : "NULL::text AS address"}
+                    FROM ${table}
+                    WHERE (${where.join(' OR ')})`,
+              params,
+            };
+          };
+
+          const parts = [
+            buildPart('event_orders', eventCols, 'event'),
+            buildPart('catering_orders', cateringCols, 'catering'),
+          ].filter(Boolean);
+
+          if (parts.length === 0) return [];
+
+          // Normalize params: each part may have different param lists; run separately.
+          const rows = [];
+          for (const part of parts) {
+            try {
+              const result = await pool.query(
+                `${part.sql} ORDER BY created_at DESC NULLS LAST LIMIT 50`,
+                part.params,
+              );
+              rows.push(...result.rows);
+            } catch (err) {
+              console.warn('Guest track inquiry lookup:', err?.message || err);
+            }
+          }
+
+          return rows
+            .filter(isOngoingInquiry)
+            .sort(
+              (a, b) =>
+                new Date(b.created_at || 0) - new Date(a.created_at || 0),
+            )
+            .map((row) => ({
+              id: row.id,
+              cateringId: row.catering_id || null,
+              eventTitle: row.event_title || null,
+              status: row.status,
+              totalCost: row.total_cost != null ? Number(row.total_cost) : 0,
+              createdAt:
+                row.created_at instanceof Date
+                  ? row.created_at.toISOString()
+                  : row.created_at,
+              orderType: row.order_type,
+              address: row.address || null,
+              kind: 'inquiry',
+            }));
+        };
+
+        // Specific order number: resolve restaurant (or inquiry) and verify contact.
+        if (orderNo) {
+          const lookup = await restaurantOrderWhereClause(orderNo, 1);
+          let restaurantOrders = [];
+          let inquiries = [];
+
+          if (lookup) {
+            const result = await pool.query(
+              `SELECT * FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
+              [lookup.value],
+            );
+            if (result.rowCount > 0) {
+              const order = result.rows[0];
+              const orderEmail = String(order.user_email || '')
+                .trim()
+                .toLowerCase();
+              const matchedEmail = Boolean(
+                email && orderEmail && email === orderEmail,
+              );
+              const matchedPhone = phoneMatches(order.contact_number);
+              if (!matchedEmail && !matchedPhone) {
+                return res.status(403).json({
+                  error: 'Email or phone does not match this order',
+                });
+              }
+              const serialized = serializeRestaurant(order);
+              restaurantOrders = [serialized];
+              return res.json({
+                order: serialized,
+                restaurantOrders,
+                inquiries,
+              });
+            }
+          }
+
+          // Fall through: try catering / event inquiry by id or catering_id.
+          const inquiryResult = await pool
+            .query(
+              `SELECT id::text AS id, catering_id, event_title, status, total_cost, created_at,
+                      address, email_address, contact_number, 'event'::text AS order_type
+               FROM event_orders
+               WHERE id::text = $1 OR catering_id::text = $1
+               UNION ALL
+               SELECT id::text AS id, catering_id, NULL::text AS event_title, status, total_cost, created_at,
+                      address, email_address, contact_number, 'catering'::text AS order_type
+               FROM catering_orders
+               WHERE id::text = $1 OR catering_id::text = $1
+               LIMIT 1`,
+              [orderNo],
+            )
+            .catch(() => ({ rows: [] }));
+
+          if (inquiryResult.rowCount > 0) {
+            const row = inquiryResult.rows[0];
+            const rowEmail = String(row.email_address || '')
+              .trim()
+              .toLowerCase();
+            const matchedEmail = Boolean(email && rowEmail && email === rowEmail);
+            const matchedPhone = phoneMatches(row.contact_number);
+            if (!matchedEmail && !matchedPhone) {
+              return res.status(403).json({
+                error: 'Email or phone does not match this order',
+              });
+            }
+            const inquiry = {
+              id: row.id,
+              cateringId: row.catering_id || null,
+              eventTitle: row.event_title || null,
+              status: row.status,
+              totalCost: row.total_cost != null ? Number(row.total_cost) : 0,
+              createdAt:
+                row.created_at instanceof Date
+                  ? row.created_at.toISOString()
+                  : row.created_at,
+              orderType: row.order_type,
+              address: row.address || null,
+              kind: 'inquiry',
+            };
+            inquiries = [inquiry];
+            return res.json({
+              order: null,
+              restaurantOrders,
+              inquiries,
             });
           }
 
+          return res.status(404).json({ error: 'Order not found' });
+        }
+
+        // Email/phone only: return ALL ongoing restaurant orders + inquiries.
+        const { whereParts, params } = await restaurantContactWhere();
+        let restaurantOrders = [];
+        if (whereParts.length > 0) {
           const result = await pool.query(
             `SELECT * FROM restaurant_orders
              WHERE (${whereParts.join(' OR ')})
              ORDER BY created_at DESC NULLS LAST
-             LIMIT 1`,
+             LIMIT 50`,
             params,
           );
-          if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'Order not found' });
-          }
-          order = result.rows[0];
+          restaurantOrders = result.rows
+            .filter(isOngoingRestaurant)
+            .map(serializeRestaurant);
         }
 
-        const parsedItems = parseRestaurantOrderTrayItems(order);
-        // Public guest payload: omit large payment proof blobs.
-        const serialized = serializeRestaurantOrderRow(order, parsedItems);
-        delete serialized.payment_proof;
-        delete serialized.payment_proof_initial;
-        delete serialized.payment_proof_balance;
-        delete serialized.supplemental_payment_proof;
+        const inquiries = await fetchInquiriesByContact();
 
-        return res.json({ order: serialized });
+        if (restaurantOrders.length === 0 && inquiries.length === 0) {
+          return res.status(404).json({ error: 'No matching ongoing orders found' });
+        }
+
+        return res.json({
+          // Backward compat: first restaurant order when present.
+          order: restaurantOrders[0] || null,
+          restaurantOrders,
+          inquiries,
+        });
       } catch (error) {
         console.error('Guest track order failed:', error);
         return res.status(500).json({ error: 'Failed to look up order' });
@@ -12143,6 +12336,13 @@ async function registerRoutesAfterDbInit() {
       try {
         const customerId = req.customer.id;
 
+        // Ensure multi-address column exists (idempotent).
+        try {
+          await pool.query(
+            `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_addresses JSONB NOT NULL DEFAULT '[]'::jsonb`,
+          );
+        } catch (_) {}
+
         const accountResult = await pool.query(
           `SELECT * FROM customer_accounts WHERE id = $1`,
           [customerId],
@@ -12156,6 +12356,72 @@ async function registerRoutesAfterDbInit() {
         const restaurantPoints = Number(account.restaurant_loyalty_points ?? 0);
         const cateringPoints = Number(account.catering_loyalty_points ?? 0);
 
+        const parseDeliveryAddresses = (raw) => {
+          let list = [];
+          if (Array.isArray(raw)) list = raw;
+          else if (typeof raw === 'string' && raw.trim()) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) list = parsed;
+            } catch (_) {}
+          }
+          return list
+            .filter((e) => e && typeof e === 'object')
+            .map((e, idx) => ({
+              id: String(e.id || `addr_${idx}`),
+              label: String(e.label || e.name || `Address ${idx + 1}`).trim() || `Address ${idx + 1}`,
+              address: String(e.address || e.deliveryAddress || '').trim(),
+              lat:
+                e.lat != null
+                  ? Number(e.lat)
+                  : e.deliveryLat != null
+                    ? Number(e.deliveryLat)
+                    : null,
+              lng:
+                e.lng != null
+                  ? Number(e.lng)
+                  : e.deliveryLng != null
+                    ? Number(e.deliveryLng)
+                    : null,
+              isDefault: Boolean(e.isDefault),
+            }))
+            .filter((e) => e.address);
+        };
+
+        let deliveryAddresses = parseDeliveryAddresses(account.delivery_addresses);
+        // Backward compat: synthesize list from single delivery_address.
+        if (
+          deliveryAddresses.length === 0 &&
+          account.delivery_address &&
+          String(account.delivery_address).trim()
+        ) {
+          deliveryAddresses = [
+            {
+              id: 'legacy_default',
+              label: 'Default',
+              address: String(account.delivery_address).trim(),
+              lat:
+                account.delivery_lat != null
+                  ? Number(account.delivery_lat)
+                  : null,
+              lng:
+                account.delivery_lng != null
+                  ? Number(account.delivery_lng)
+                  : null,
+              isDefault: true,
+            },
+          ];
+        }
+        if (
+          deliveryAddresses.length > 0 &&
+          !deliveryAddresses.some((a) => a.isDefault)
+        ) {
+          deliveryAddresses[0].isDefault = true;
+        }
+
+        const defaultAddr =
+          deliveryAddresses.find((a) => a.isDefault) || deliveryAddresses[0] || null;
+
         res.json({
           id: account.id != null ? String(account.id) : account.id,
           email: account.email,
@@ -12168,11 +12434,21 @@ async function registerRoutesAfterDbInit() {
           loyaltyPoints: restaurantPoints + cateringPoints,
           restaurantLoyaltyPoints: restaurantPoints,
           cateringLoyaltyPoints: cateringPoints,
-          deliveryAddress: account.delivery_address || null,
+          deliveryAddress:
+            (defaultAddr && defaultAddr.address) ||
+            account.delivery_address ||
+            null,
           deliveryLat:
-            account.delivery_lat != null ? Number(account.delivery_lat) : null,
+            (defaultAddr && defaultAddr.lat != null
+              ? Number(defaultAddr.lat)
+              : null) ??
+            (account.delivery_lat != null ? Number(account.delivery_lat) : null),
           deliveryLng:
-            account.delivery_lng != null ? Number(account.delivery_lng) : null,
+            (defaultAddr && defaultAddr.lng != null
+              ? Number(defaultAddr.lng)
+              : null) ??
+            (account.delivery_lng != null ? Number(account.delivery_lng) : null),
+          deliveryAddresses,
         });
       } catch (error) {
         console.error('Error fetching customer profile:', error);
@@ -12184,7 +12460,20 @@ async function registerRoutesAfterDbInit() {
     app.put('/api/customer/profile', customerAuthRequired, async (req, res) => {
       try {
         const customerId = req.customer.id;
-        const { fullName, phone, deliveryAddress, deliveryLat, deliveryLng } = req.body || {};
+        const {
+          fullName,
+          phone,
+          deliveryAddress,
+          deliveryLat,
+          deliveryLng,
+          deliveryAddresses,
+        } = req.body || {};
+
+        try {
+          await pool.query(
+            `ALTER TABLE customer_accounts ADD COLUMN IF NOT EXISTS delivery_addresses JSONB NOT NULL DEFAULT '[]'::jsonb`,
+          );
+        } catch (_) {}
 
         // Update customer_accounts
         if (fullName || phone) {
@@ -12217,15 +12506,79 @@ async function registerRoutesAfterDbInit() {
           );
         }
 
-        if (
+        const normalizeAddressList = (raw) => {
+          if (!Array.isArray(raw)) return null;
+          return raw
+            .filter((e) => e && typeof e === 'object')
+            .map((e, idx) => ({
+              id: String(e.id || `addr_${Date.now()}_${idx}`),
+              label:
+                String(e.label || e.name || `Address ${idx + 1}`).trim() ||
+                `Address ${idx + 1}`,
+              address: String(e.address || e.deliveryAddress || '').trim(),
+              lat:
+                e.lat != null && e.lat !== ''
+                  ? Number(e.lat)
+                  : e.deliveryLat != null
+                    ? Number(e.deliveryLat)
+                    : null,
+              lng:
+                e.lng != null && e.lng !== ''
+                  ? Number(e.lng)
+                  : e.deliveryLng != null
+                    ? Number(e.deliveryLng)
+                    : null,
+              isDefault: Boolean(e.isDefault),
+            }))
+            .filter((e) => e.address);
+        };
+
+        let normalizedList = null;
+        if (deliveryAddresses !== undefined) {
+          normalizedList = normalizeAddressList(deliveryAddresses) || [];
+          if (
+            normalizedList.length > 0 &&
+            !normalizedList.some((a) => a.isDefault)
+          ) {
+            normalizedList[0].isDefault = true;
+          }
+          // Only one default.
+          let sawDefault = false;
+          normalizedList = normalizedList.map((a) => {
+            if (a.isDefault && !sawDefault) {
+              sawDefault = true;
+              return a;
+            }
+            return { ...a, isDefault: false };
+          });
+        }
+
+        const deliveryUpdates = [];
+        const deliveryValues = [];
+        let p = 0;
+
+        if (normalizedList !== null) {
+          p += 1;
+          deliveryUpdates.push(`delivery_addresses = $${p}::jsonb`);
+          deliveryValues.push(JSON.stringify(normalizedList));
+
+          const def =
+            normalizedList.find((a) => a.isDefault) || normalizedList[0] || null;
+          p += 1;
+          deliveryUpdates.push(`delivery_address = $${p}`);
+          deliveryValues.push(def ? def.address : null);
+          p += 1;
+          deliveryUpdates.push(`delivery_lat = $${p}`);
+          deliveryValues.push(def && def.lat != null ? def.lat : null);
+          p += 1;
+          deliveryUpdates.push(`delivery_lng = $${p}`);
+          deliveryValues.push(def && def.lng != null ? def.lng : null);
+        } else if (
           deliveryAddress !== undefined ||
           deliveryLat !== undefined ||
           deliveryLng !== undefined
         ) {
-          const deliveryUpdates = [];
-          const deliveryValues = [];
-          let p = 0;
-
+          // Legacy single-address update: also merge into delivery_addresses.
           if (deliveryAddress !== undefined) {
             p += 1;
             deliveryUpdates.push(`delivery_address = $${p}`);
@@ -12242,6 +12595,67 @@ async function registerRoutesAfterDbInit() {
             deliveryValues.push(deliveryLng);
           }
 
+          // Read existing list and upsert default entry.
+          const existing = await pool.query(
+            `SELECT delivery_addresses, delivery_address, delivery_lat, delivery_lng
+             FROM customer_accounts WHERE id = $1`,
+            [customerId],
+          );
+          let list = [];
+          const row = existing.rows[0] || {};
+          const raw = row.delivery_addresses;
+          if (Array.isArray(raw)) list = raw;
+          else if (typeof raw === 'string' && raw.trim()) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) list = parsed;
+            } catch (_) {}
+          }
+          list = list
+            .filter((e) => e && typeof e === 'object')
+            .map((e, idx) => ({
+              id: String(e.id || `addr_${idx}`),
+              label: String(e.label || `Address ${idx + 1}`),
+              address: String(e.address || '').trim(),
+              lat: e.lat != null ? Number(e.lat) : null,
+              lng: e.lng != null ? Number(e.lng) : null,
+              isDefault: Boolean(e.isDefault),
+            }))
+            .filter((e) => e.address);
+
+          const nextAddress =
+            deliveryAddress !== undefined
+              ? deliveryAddress
+              : row.delivery_address;
+          const nextLat =
+            deliveryLat !== undefined ? deliveryLat : row.delivery_lat;
+          const nextLng =
+            deliveryLng !== undefined ? deliveryLng : row.delivery_lng;
+
+          if (nextAddress && String(nextAddress).trim()) {
+            const defIdx = list.findIndex((a) => a.isDefault);
+            const entry = {
+              id: defIdx >= 0 ? list[defIdx].id : `addr_${Date.now()}`,
+              label: defIdx >= 0 ? list[defIdx].label : 'Default',
+              address: String(nextAddress).trim(),
+              lat: nextLat != null ? Number(nextLat) : null,
+              lng: nextLng != null ? Number(nextLng) : null,
+              isDefault: true,
+            };
+            if (defIdx >= 0) {
+              list = list.map((a, i) =>
+                i === defIdx ? entry : { ...a, isDefault: false },
+              );
+            } else {
+              list = [{ ...entry }, ...list.map((a) => ({ ...a, isDefault: false }))];
+            }
+            p += 1;
+            deliveryUpdates.push(`delivery_addresses = $${p}::jsonb`);
+            deliveryValues.push(JSON.stringify(list));
+          }
+        }
+
+        if (deliveryUpdates.length > 0) {
           deliveryUpdates.push('updated_at = now()');
           p += 1;
           deliveryValues.push(customerId);

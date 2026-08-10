@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../config/site_routes.dart';
 import '../services/runpod_service.dart';
 
 /// Compact interactive Event Theme Design sampler for the homepage Catering panel.
@@ -205,10 +204,6 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
     } finally {
       if (mounted) setState(() => _generating = false);
     }
-  }
-
-  void _goInquire() {
-    Navigator.pushReplacementNamed(context, customerRoute('/inquire'));
   }
 
   Widget _chipRow({
@@ -417,18 +412,6 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
               backgroundColor: _accentYellow,
               foregroundColor: const Color(0xFF1E1E1E),
               disabledBackgroundColor: _accentYellow.withValues(alpha: 0.6),
-            ),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: _goInquire,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _accentYellow,
-              side: const BorderSide(color: _accentYellow),
-            ),
-            child: const Text(
-              'Inquire Now',
-              style: TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
           if (_generating) ...[

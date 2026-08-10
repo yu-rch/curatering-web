@@ -307,6 +307,13 @@ const _editorFontFamilies = <String>[
   'Roboto',
   'Playfair Display',
   'Lato',
+  'Open Sans',
+  'Montserrat',
+  'Merriweather',
+  'Poppins',
+  'Raleway',
+  'Nunito',
+  'Source Sans 3',
 ];
 
 const _editorFontSizes = <double>[12, 14, 16, 18, 20, 24, 32, 42];
@@ -361,10 +368,16 @@ class _WebsiteRichTextEditorDialogState
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: widget.initialValue);
+    _ctrl.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _ctrl.removeListener(_onTextChanged);
     _ctrl.dispose();
     super.dispose();
   }
@@ -379,9 +392,11 @@ class _WebsiteRichTextEditorDialogState
     final selected = start < end ? text.substring(start, end) : '';
     final replaced =
         '${text.substring(0, start)}$open$selected$close${text.substring(end)}';
-    _ctrl.text = replaced;
-    _ctrl.selection = TextSelection.collapsed(
-      offset: start + open.length + selected.length + close.length,
+    _ctrl.value = TextEditingValue(
+      text: replaced,
+      selection: TextSelection.collapsed(
+        offset: start + open.length + selected.length + close.length,
+      ),
     );
   }
 
@@ -415,146 +430,288 @@ class _WebsiteRichTextEditorDialogState
     );
     urlCtrl.dispose();
     if (url == null || url.isEmpty) return;
-    final safe = url.contains(' ') ? url : url;
-    _wrap('<a href="$safe">', '</a>');
+    _wrap('<a href="$url">', '</a>');
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      title: Text(widget.title),
-      content: SizedBox(
-        width: 760,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget _toolbarButton({
+    required String tooltip,
+    required VoidCallback onPressed,
+    Widget? child,
+    IconData? icon,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(6),
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            alignment: Alignment.center,
+            child:
+                child ??
+                Icon(icon, size: 18, color: const Color(0xFF1E1E1E)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _toolbarDivider() {
+    return Container(
+      width: 1,
+      height: 22,
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      color: Colors.grey.shade300,
+    );
+  }
+
+  Widget _buildToolbar() {
+    return Material(
+      color: Colors.grey.shade50,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: Colors.grey.shade300),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Wrap(
+          spacing: 2,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                OutlinedButton(
-                  onPressed: () => _wrap('<strong>', '</strong>'),
-                  child: const Text('Bold'),
-                ),
-                OutlinedButton(
-                  onPressed: () => _wrap('<em>', '</em>'),
-                  child: const Text('Italic'),
-                ),
-                OutlinedButton(
-                  onPressed: () => _wrap('<u>', '</u>'),
-                  child: const Text('Underline'),
-                ),
-                OutlinedButton(
-                  onPressed: () => _wrap('<p>', '</p>'),
-                  child: const Text('Paragraph'),
-                ),
-                OutlinedButton(
-                  onPressed: () => _wrap('<ul><li>', '</li></ul>'),
-                  child: const Text('Bullet list'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _addLink,
-                  icon: const Icon(Icons.link, size: 16),
-                  label: const Text('Link'),
-                ),
-                DropdownButton<double>(
-                  value: _previewSize,
-                  hint: const Text('Size'),
-                  items: [
-                    for (final s in _editorFontSizes)
-                      DropdownMenuItem(value: s, child: Text('${s.toInt()}px')),
+            _toolbarButton(
+              tooltip: 'Bold',
+              icon: Icons.format_bold,
+              onPressed: () => _wrap('<strong>', '</strong>'),
+            ),
+            _toolbarButton(
+              tooltip: 'Italic',
+              icon: Icons.format_italic,
+              onPressed: () => _wrap('<em>', '</em>'),
+            ),
+            _toolbarButton(
+              tooltip: 'Underline',
+              icon: Icons.format_underlined,
+              onPressed: () => _wrap('<u>', '</u>'),
+            ),
+            _toolbarDivider(),
+            _toolbarButton(
+              tooltip: 'Paragraph',
+              icon: Icons.notes,
+              onPressed: () => _wrap('<p>', '</p>'),
+            ),
+            _toolbarButton(
+              tooltip: 'Bullet list',
+              icon: Icons.format_list_bulleted,
+              onPressed: () => _wrap('<ul><li>', '</li></ul>'),
+            ),
+            _toolbarButton(
+              tooltip: 'Insert link',
+              icon: Icons.link,
+              onPressed: _addLink,
+            ),
+            _toolbarDivider(),
+            DropdownButtonHideUnderline(
+              child: DropdownButton<double>(
+                value: _previewSize,
+                isDense: true,
+                hint: const Text('Size', style: TextStyle(fontSize: 13)),
+                style: const TextStyle(fontSize: 13, color: Color(0xFF1E1E1E)),
+                items: [
+                  for (final s in _editorFontSizes)
+                    DropdownMenuItem(
+                      value: s,
+                      child: Text('${s.toInt()}px'),
+                    ),
+                ],
+                onChanged: (s) {
+                  if (s == null) return;
+                  setState(() => _previewSize = s);
+                  _wrap(
+                    '<span style="font-size:${s.toInt()}px">',
+                    '</span>',
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 4),
+            DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _previewFont,
+                isDense: true,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF1E1E1E)),
+                items: [
+                  for (final f in _editorFontFamilies)
+                    DropdownMenuItem(value: f, child: Text(f)),
+                ],
+                onChanged: (f) {
+                  if (f == null) return;
+                  setState(() => _previewFont = f);
+                  if (f == 'Default') return;
+                  _wrap('<span style="font-family:$f">', '</span>');
+                },
+              ),
+            ),
+            PopupMenuButton<Color>(
+              tooltip: 'Text color',
+              padding: EdgeInsets.zero,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.palette_outlined, size: 18, color: Colors.grey.shade800),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Color',
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+                    ),
                   ],
-                  onChanged: (s) {
-                    if (s == null) return;
-                    setState(() => _previewSize = s);
-                    _wrap('<span style="font-size:${s.toInt()}px">', '</span>');
-                  },
                 ),
-                DropdownButton<String>(
-                  value: _previewFont,
-                  items: [
-                    for (final f in _editorFontFamilies)
-                      DropdownMenuItem(value: f, child: Text(f)),
-                  ],
-                  onChanged: (f) {
-                    if (f == null) return;
-                    setState(() => _previewFont = f);
-                    if (f == 'Default') return;
-                    _wrap('<span style="font-family:$f">', '</span>');
-                  },
-                ),
-                PopupMenuButton<Color>(
-                  tooltip: 'Text color',
-                  child: const Chip(
-                    avatar: Icon(Icons.palette, size: 16),
-                    label: Text('Color'),
-                  ),
-                  itemBuilder:
-                      (ctx) => [
-                        for (final c in _editorColors)
-                          PopupMenuItem(
-                            value: c,
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 18,
-                                  height: 18,
-                                  decoration: BoxDecoration(
-                                    color: c,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.grey),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              ],
+              ),
+              itemBuilder:
+                  (ctx) => [
+                    for (final c in _editorColors)
+                      PopupMenuItem(
+                        value: c,
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 18,
+                              height: 18,
+                              decoration: BoxDecoration(
+                                color: c,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.grey),
+                              ),
                             ),
-                          ),
-                      ],
-                  onSelected: (c) {
-                    final hex =
-                        '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
-                    _wrap('<span style="color:$hex">', '</span>');
-                  },
-                ),
-              ],
+                            const SizedBox(width: 8),
+                            Text(
+                              '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+              onSelected: (c) {
+                final hex =
+                    '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
+                _wrap('<span style="color:$hex">', '</span>');
+              },
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _ctrl,
-              maxLines: 10,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'HTML content',
-                hintText:
-                    '<p>Select text, then use toolbar for formatting.</p>',
-              ),
-              onChanged: (_) => setState(() {}),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEditorPane() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'HTML',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 12,
+            color: Colors.grey.shade700,
+            letterSpacing: 0.4,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Expanded(
+          child: TextField(
+            controller: _ctrl,
+            maxLines: null,
+            expands: true,
+            textAlignVertical: TextAlignVertical.top,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              hintText: '<p>Select text, then use the toolbar to format.</p>',
+              contentPadding: EdgeInsets.all(12),
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'HTML preview',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPreviewPane() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Live preview',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 12,
+            color: Colors.grey.shade700,
+            letterSpacing: 0.4,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade300),
             ),
-            const SizedBox(height: 4),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
+            child: SingleChildScrollView(
               child: WebsiteRichText(
                 value: _ctrl.text,
                 style: websiteHeaderStyle(fontSize: 16),
               ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenW = MediaQuery.sizeOf(context).width;
+    final sideBySide = screenW >= 820;
+    final dialogW = sideBySide ? 980.0 : (screenW < 560 ? screenW - 32 : 560.0);
+    final contentH = sideBySide ? 420.0 : 520.0;
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      title: Text(widget.title),
+      content: SizedBox(
+        width: dialogW,
+        height: contentH + 56,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildToolbar(),
+            const SizedBox(height: 12),
+            Expanded(
+              child:
+                  sideBySide
+                      ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(child: _buildEditorPane()),
+                          const SizedBox(width: 12),
+                          Expanded(child: _buildPreviewPane()),
+                        ],
+                      )
+                      : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(flex: 3, child: _buildEditorPane()),
+                          const SizedBox(height: 12),
+                          Expanded(flex: 2, child: _buildPreviewPane()),
+                        ],
+                      ),
             ),
           ],
         ),

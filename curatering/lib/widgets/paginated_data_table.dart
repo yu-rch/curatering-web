@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -248,9 +249,16 @@ class _PagedDataTableState extends State<PagedDataTable> {
 
     Widget horizontalTable = LayoutBuilder(
       builder: (context, constraints) {
-        final minTableWidth = widget.fullWidth && constraints.maxWidth.isFinite
+        // Prefer stretching to the panel when there is room, but never drop
+        // below [minTableWidth] so narrow monitors get horizontal scroll
+        // instead of column overflow.
+        final preferredMin = widget.minTableWidth ?? 720.0;
+        final available = constraints.maxWidth.isFinite
             ? constraints.maxWidth
-            : (widget.minTableWidth ?? 720);
+            : preferredMin;
+        final minTableWidth = widget.fullWidth
+            ? math.max(available, preferredMin)
+            : preferredMin;
         return SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: ConstrainedBox(

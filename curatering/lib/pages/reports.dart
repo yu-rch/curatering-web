@@ -190,49 +190,63 @@ class _ReportsState extends State<Reports> {
           children: [
             Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),
-            Table(
-              columnWidths: const {
-                0: FlexColumnWidth(2),
-                1: FlexColumnWidth(3),
-              },
-              border: TableBorder.all(color: AntdTokens.borderSubtle),
-              children: [
-                const TableRow(
-                  decoration: BoxDecoration(color: Color(0xFFF5F7F9)),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final table = Table(
+                  columnWidths: const {
+                    0: FlexColumnWidth(2),
+                    1: FlexColumnWidth(3),
+                  },
+                  border: TableBorder.all(color: AntdTokens.borderSubtle),
                   children: [
-                    Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Text(
-                        'Metric',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                    Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Text(
-                        'Value',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ],
-                ),
-                for (final row in rows)
-                  TableRow(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Text(row.label),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Text(
-                          row.value,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+                    const TableRow(
+                      decoration: BoxDecoration(color: Color(0xFFF5F7F9)),
+                      children: [
+                        Padding(
+                          padding: EdgeInsets.all(8),
+                          child: Text(
+                            'Metric',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
                         ),
+                        Padding(
+                          padding: EdgeInsets.all(8),
+                          child: Text(
+                            'Value',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                    for (final row in rows)
+                      TableRow(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Text(row.label),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Text(
+                              row.value,
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-              ],
+                  ],
+                );
+                if (constraints.maxWidth < 360) {
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 360),
+                      child: table,
+                    ),
+                  );
+                }
+                return table;
+              },
             ),
           ],
         ),
@@ -263,35 +277,55 @@ class _ReportsState extends State<Reports> {
                 style: TextStyle(color: Colors.grey.shade600),
               )
             else
-              for (final item in filtered)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final labelWidth =
+                      constraints.maxWidth < 420 ? 96.0 : 160.0;
+                  return Column(
                     children: [
-                      SizedBox(
-                        width: 160,
-                        child: Text(
-                          item.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
-                            minHeight: 10,
-                            value: item.count / max,
-                            backgroundColor: Colors.grey.shade200,
-                            color: AntdTokens.blue,
+                      for (final item in filtered)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: labelWidth,
+                                child: Text(
+                                  item.name,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(999),
+                                  child: LinearProgressIndicator(
+                                    minHeight: 10,
+                                    value: item.count / max,
+                                    backgroundColor: Colors.grey.shade200,
+                                    color: AntdTokens.blue,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 36,
+                                child: Text(
+                                  '${item.count}',
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text('${item.count}'),
                     ],
-                  ),
-                ),
+                  );
+                },
+              ),
           ],
         ),
       ),
@@ -311,6 +345,7 @@ class _ReportsState extends State<Reports> {
       child: AntdPage(
         title: 'Reports',
         subtitle: "Macrina's Kitchen and Catering — operations reports.",
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
         actions: [
           AntdPrimaryButton(
             label: 'Preview / Print PDF',
@@ -324,294 +359,331 @@ class _ReportsState extends State<Reports> {
             onPressed: _isLoading ? null : _load,
           ),
         ],
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            AntdToolbar(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final narrow = constraints.maxWidth < 720;
+            final selectWidth = narrow ? 140.0 : 180.0;
+            final searchWidth = narrow
+                ? constraints.maxWidth.clamp(180.0, 320.0)
+                : 280.0;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                ChoiceChip(
-                  label: const Text('Monthly'),
-                  selected: !_annualMode,
-                  onSelected: (_) {
-                    setState(() => _annualMode = false);
-                    _load();
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text('Annual'),
-                  selected: _annualMode,
-                  onSelected: (_) {
-                    setState(() => _annualMode = true);
-                    _load();
-                  },
-                ),
-                if (_annualMode)
-                  AntdSelect<int>(
-                    label: 'Year',
-                    value: _selectedYear,
-                    items: List.generate(6, (i) {
-                      final y = DateTime.now().year - i;
-                      return DropdownMenuItem(value: y, child: Text('$y'));
-                    }),
-                    onChanged: (y) {
-                      if (y == null) return;
-                      setState(() => _selectedYear = y);
-                      _load();
-                    },
-                  )
-                else ...[
-                  AntdSelect<int>(
-                    label: 'Year',
-                    value: _selectedMonth.year,
-                    items: List.generate(6, (i) {
-                      final y = DateTime.now().year - i;
-                      return DropdownMenuItem(value: y, child: Text('$y'));
-                    }),
-                    onChanged: (y) {
-                      if (y == null) return;
-                      setState(() {
-                        _selectedMonth = DateTime(y, _selectedMonth.month, 1);
-                      });
-                      _load();
-                    },
+                AntdToolbar(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: narrow ? 10 : 12,
+                    vertical: 12,
                   ),
-                  AntdSelect<int>(
-                    label: 'Month',
-                    value: _selectedMonth.month,
-                    items: List.generate(12, (i) {
-                      final m = i + 1;
-                      return DropdownMenuItem(
-                        value: m,
-                        child: Text(m.toString().padLeft(2, '0')),
-                      );
-                    }),
-                    onChanged: (m) {
-                      if (m == null) return;
-                      setState(() {
-                        _selectedMonth = DateTime(_selectedMonth.year, m, 1);
-                      });
-                      _load();
-                    },
-                  ),
-                ],
-                AntdSelect<_ReportScope>(
-                  label: 'Scope',
-                  value: _scope,
-                  items: const [
-                    DropdownMenuItem(
-                      value: _ReportScope.combined,
-                      child: Text('All'),
-                    ),
-                    DropdownMenuItem(
-                      value: _ReportScope.catering,
-                      child: Text('Catering'),
-                    ),
-                    DropdownMenuItem(
-                      value: _ReportScope.cateringEvents,
-                      child: Text('Catering + Events'),
-                    ),
-                    DropdownMenuItem(
-                      value: _ReportScope.restaurant,
-                      child: Text('Restaurant'),
-                    ),
-                  ],
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setState(() => _scope = v);
-                  },
-                ),
-                AntdSearchInput(
-                  controller: _searchController,
-                  hintText: 'Search report tables',
-                  onChanged:
-                      (v) =>
-                          setState(() => _searchQuery = v.trim().toLowerCase()),
-                  onClear: () {
-                    _searchController.clear();
-                    setState(() => _searchQuery = '');
-                  },
-                ),
-                AntdStatusTag(label: periodLabel, color: AntdTokens.blue),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (_isLoading)
-              const Expanded(child: Center(child: CircularProgressIndicator()))
-            else if (_errorMessage != null)
-              Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(_errorMessage!),
-                      const SizedBox(height: 12),
-                      AntdPrimaryButton(label: 'Retry', onPressed: _load),
-                    ],
-                  ),
-                ),
-              )
-            else if (data == null)
-              const Expanded(child: Center(child: Text('No report data.')))
-            else
-              Expanded(
-                child: ListView(
                   children: [
-                    if (_scope == _ReportScope.combined ||
-                        _scope == _ReportScope.catering) ...[
-                      const Text(
-                        'Catering',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
+                    ChoiceChip(
+                      label: const Text('Monthly'),
+                      selected: !_annualMode,
+                      onSelected: (_) {
+                        setState(() => _annualMode = false);
+                        _load();
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('Annual'),
+                      selected: _annualMode,
+                      onSelected: (_) {
+                        setState(() => _annualMode = true);
+                        _load();
+                      },
+                    ),
+                    if (_annualMode)
+                      AntdSelect<int>(
+                        label: 'Year',
+                        width: selectWidth,
+                        value: _selectedYear,
+                        items: List.generate(6, (i) {
+                          final y = DateTime.now().year - i;
+                          return DropdownMenuItem(value: y, child: Text('$y'));
+                        }),
+                        onChanged: (y) {
+                          if (y == null) return;
+                          setState(() => _selectedYear = y);
+                          _load();
+                        },
+                      )
+                    else ...[
+                      AntdSelect<int>(
+                        label: 'Year',
+                        width: selectWidth,
+                        value: _selectedMonth.year,
+                        items: List.generate(6, (i) {
+                          final y = DateTime.now().year - i;
+                          return DropdownMenuItem(value: y, child: Text('$y'));
+                        }),
+                        onChanged: (y) {
+                          if (y == null) return;
+                          setState(() {
+                            _selectedMonth =
+                                DateTime(y, _selectedMonth.month, 1);
+                          });
+                          _load();
+                        },
                       ),
-                      const SizedBox(height: 8),
-                      _summaryTable('Catering Summary', [
-                        _DetailRow(
-                          'Completed orders',
-                          '${data.catering.orderCount}',
-                        ),
-                        _DetailRow(
-                          'Total sales',
-                          formatPhp(data.catering.totalSales),
-                        ),
-                        _DetailRow(
-                          'Average guest count',
-                          data.catering.averageGuestCount.toStringAsFixed(1),
-                        ),
-                        _DetailRow(
-                          'Catering feedback complaints',
-                          '${data.catering.feedback.complaintCount}',
-                        ),
-                        _DetailRow(
-                          'Orders with complaints',
-                          '${data.catering.feedback.count}',
-                        ),
-                      ]),
-                      _rankChart(
-                        'Top requested dishes chart',
-                        data.catering.topDishes,
-                      ),
-                      _rankTable(
-                        'Top requested dishes',
-                        data.catering.topDishes,
+                      AntdSelect<int>(
+                        label: 'Month',
+                        width: narrow ? 110.0 : 140.0,
+                        value: _selectedMonth.month,
+                        items: List.generate(12, (i) {
+                          final m = i + 1;
+                          return DropdownMenuItem(
+                            value: m,
+                            child: Text(m.toString().padLeft(2, '0')),
+                          );
+                        }),
+                        onChanged: (m) {
+                          if (m == null) return;
+                          setState(() {
+                            _selectedMonth =
+                                DateTime(_selectedMonth.year, m, 1);
+                          });
+                          _load();
+                        },
                       ),
                     ],
-                    if (_scope == _ReportScope.combined ||
-                        _scope == _ReportScope.cateringEvents) ...[
-                      const Text(
-                        'Catering + Events',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                    AntdSelect<_ReportScope>(
+                      label: 'Scope',
+                      width: narrow ? 160.0 : 200.0,
+                      value: _scope,
+                      items: const [
+                        DropdownMenuItem(
+                          value: _ReportScope.combined,
+                          child: Text('All'),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      _summaryTable('Catering + Events Summary', [
-                        _DetailRow(
-                          'Completed orders',
-                          '${data.cateringEvents.orderCount}',
+                        DropdownMenuItem(
+                          value: _ReportScope.catering,
+                          child: Text('Catering'),
                         ),
-                        _DetailRow(
-                          'Total sales',
-                          formatPhp(data.cateringEvents.totalSales),
+                        DropdownMenuItem(
+                          value: _ReportScope.cateringEvents,
+                          child: Text('Catering + Events'),
                         ),
-                        _DetailRow(
-                          'Average guest count',
-                          data.cateringEvents.averageGuestCount.toStringAsFixed(
-                            1,
+                        DropdownMenuItem(
+                          value: _ReportScope.restaurant,
+                          child: Text('Restaurant'),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setState(() => _scope = v);
+                      },
+                    ),
+                    AntdSearchInput(
+                      controller: _searchController,
+                      width: searchWidth,
+                      hintText: 'Search report tables',
+                      onChanged:
+                          (v) => setState(
+                            () => _searchQuery = v.trim().toLowerCase(),
                           ),
-                        ),
-                        _DetailRow(
-                          'Feedback complaints',
-                          '${data.cateringEvents.feedback.complaintCount}',
-                        ),
-                        _DetailRow(
-                          'Events with complaints',
-                          '${data.cateringEvents.feedback.count}',
-                        ),
-                      ]),
-                      _rankChart(
-                        'Event type chart',
-                        data.cateringEvents.topEventTypes,
-                      ),
-                      _rankTable(
-                        'Most frequent event type',
-                        data.cateringEvents.topEventTypes,
-                      ),
-                      _rankChart(
-                        'Top requested dishes chart',
-                        data.cateringEvents.topDishes,
-                      ),
-                      _rankTable(
-                        'Top requested dishes',
-                        data.cateringEvents.topDishes,
-                      ),
-                    ],
-                    if (_scope == _ReportScope.combined ||
-                        _scope == _ReportScope.restaurant) ...[
-                      const Text(
-                        'Restaurant',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _summaryTable('Restaurant Summary', [
-                        _DetailRow('Orders', '${data.restaurant.orderCount}'),
-                        _DetailRow(
-                          'Total sales',
-                          formatPhp(data.restaurant.totalSales),
-                        ),
-                        _DetailRow(
-                          'Avg. orders per day',
-                          data.restaurant.averageOrdersPerDay.toStringAsFixed(
-                            2,
-                          ),
-                        ),
-                        _DetailRow(
-                          'Web page views',
-                          '${data.restaurant.webPageViews}',
-                        ),
-                        _DetailRow(
-                          'Mobile page views',
-                          '${data.restaurant.mobilePageViews}',
-                        ),
-                        _DetailRow(
-                          'Customer accounts (web)',
-                          '${data.restaurant.customerAccountsWeb}',
-                        ),
-                        _DetailRow(
-                          'Customer accounts (mobile)',
-                          '${data.restaurant.customerAccountsMobile}',
-                        ),
-                        _DetailRow(
-                          'Feedback submissions',
-                          '${data.restaurant.feedback.count}',
-                        ),
-                        _DetailRow(
-                          'Average feedback rating',
-                          '${data.restaurant.feedback.averageStars.toStringAsFixed(1)} / 5',
-                        ),
-                        _DetailRow(
-                          'Positive / Neutral / Negative',
-                          '${data.restaurant.feedback.positiveCount} / ${data.restaurant.feedback.neutralCount} / ${data.restaurant.feedback.negativeCount}',
-                        ),
-                      ]),
-                      _rankChart(
-                        'Most ordered dishes chart',
-                        data.restaurant.topDishes,
-                      ),
-                      _rankTable(
-                        'Most ordered dishes',
-                        data.restaurant.topDishes,
-                      ),
-                    ],
+                      onClear: () {
+                        _searchController.clear();
+                        setState(() => _searchQuery = '');
+                      },
+                    ),
+                    AntdStatusTag(label: periodLabel, color: AntdTokens.blue),
                   ],
                 ),
-              ),
-          ],
+                const SizedBox(height: 16),
+                if (_isLoading)
+                  const Expanded(
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_errorMessage != null)
+                  Expanded(
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _errorMessage!,
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 12),
+                            AntdPrimaryButton(label: 'Retry', onPressed: _load),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                else if (data == null)
+                  const Expanded(
+                    child: Center(child: Text('No report data.')),
+                  )
+                else
+                  Expanded(
+                    child: ListView(
+                      padding: EdgeInsets.only(bottom: narrow ? 8 : 16),
+                      children: [
+                        if (_scope == _ReportScope.combined ||
+                            _scope == _ReportScope.catering) ...[
+                          const Text(
+                            'Catering',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _summaryTable('Catering Summary', [
+                            _DetailRow(
+                              'Completed orders',
+                              '${data.catering.orderCount}',
+                            ),
+                            _DetailRow(
+                              'Total sales',
+                              formatPhp(data.catering.totalSales),
+                            ),
+                            _DetailRow(
+                              'Average guest count',
+                              data.catering.averageGuestCount
+                                  .toStringAsFixed(1),
+                            ),
+                            _DetailRow(
+                              'Catering feedback complaints',
+                              '${data.catering.feedback.complaintCount}',
+                            ),
+                            _DetailRow(
+                              'Orders with complaints',
+                              '${data.catering.feedback.count}',
+                            ),
+                          ]),
+                          _rankChart(
+                            'Top requested dishes chart',
+                            data.catering.topDishes,
+                          ),
+                          _rankTable(
+                            'Top requested dishes',
+                            data.catering.topDishes,
+                          ),
+                        ],
+                        if (_scope == _ReportScope.combined ||
+                            _scope == _ReportScope.cateringEvents) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Catering + Events',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _summaryTable('Catering + Events Summary', [
+                            _DetailRow(
+                              'Completed orders',
+                              '${data.cateringEvents.orderCount}',
+                            ),
+                            _DetailRow(
+                              'Total sales',
+                              formatPhp(data.cateringEvents.totalSales),
+                            ),
+                            _DetailRow(
+                              'Average guest count',
+                              data.cateringEvents.averageGuestCount
+                                  .toStringAsFixed(1),
+                            ),
+                            _DetailRow(
+                              'Feedback complaints',
+                              '${data.cateringEvents.feedback.complaintCount}',
+                            ),
+                            _DetailRow(
+                              'Events with complaints',
+                              '${data.cateringEvents.feedback.count}',
+                            ),
+                          ]),
+                          _rankChart(
+                            'Event type chart',
+                            data.cateringEvents.topEventTypes,
+                          ),
+                          _rankTable(
+                            'Most frequent event type',
+                            data.cateringEvents.topEventTypes,
+                          ),
+                          _rankChart(
+                            'Top requested dishes chart',
+                            data.cateringEvents.topDishes,
+                          ),
+                          _rankTable(
+                            'Top requested dishes',
+                            data.cateringEvents.topDishes,
+                          ),
+                        ],
+                        if (_scope == _ReportScope.combined ||
+                            _scope == _ReportScope.restaurant) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Restaurant',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _summaryTable('Restaurant Summary', [
+                            _DetailRow(
+                              'Orders',
+                              '${data.restaurant.orderCount}',
+                            ),
+                            _DetailRow(
+                              'Total sales',
+                              formatPhp(data.restaurant.totalSales),
+                            ),
+                            _DetailRow(
+                              'Avg. orders per day',
+                              data.restaurant.averageOrdersPerDay
+                                  .toStringAsFixed(2),
+                            ),
+                            _DetailRow(
+                              'Web page views',
+                              '${data.restaurant.webPageViews}',
+                            ),
+                            _DetailRow(
+                              'Mobile page views',
+                              '${data.restaurant.mobilePageViews}',
+                            ),
+                            _DetailRow(
+                              'Customer accounts (web)',
+                              '${data.restaurant.customerAccountsWeb}',
+                            ),
+                            _DetailRow(
+                              'Customer accounts (mobile)',
+                              '${data.restaurant.customerAccountsMobile}',
+                            ),
+                            _DetailRow(
+                              'Feedback submissions',
+                              '${data.restaurant.feedback.count}',
+                            ),
+                            _DetailRow(
+                              'Average feedback rating',
+                              '${data.restaurant.feedback.averageStars.toStringAsFixed(1)} / 5',
+                            ),
+                            _DetailRow(
+                              'Positive / Neutral / Negative',
+                              '${data.restaurant.feedback.positiveCount} / ${data.restaurant.feedback.neutralCount} / ${data.restaurant.feedback.negativeCount}',
+                            ),
+                          ]),
+                          _rankChart(
+                            'Most ordered dishes chart',
+                            data.restaurant.topDishes,
+                          ),
+                          _rankTable(
+                            'Most ordered dishes',
+                            data.restaurant.topDishes,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );

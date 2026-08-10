@@ -2721,62 +2721,69 @@ class _InquirePageState extends State<InquirePage> {
               controlAffinity: ListTileControlAffinity.leading,
             ),
             const SizedBox(height: 8),
-            AntdFieldShell(
-              label: 'Formality level',
-              child: SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'casual', label: Text('Casual')),
-                  ButtonSegment(value: 'semiformal', label: Text('Semiformal')),
-                  ButtonSegment(value: 'formal', label: Text('Formal')),
-                ],
-                selected: {_formalityLevel},
-                onSelectionChanged: (s) =>
-                    setState(() => _formalityLevel = s.first),
+            _responsiveTwoCol(
+              context,
+              AntdFieldShell(
+                label: 'Contact person',
+                required: true,
+                errorText:
+                    _attemptedSubmit && _contactPerson.text.trim().isEmpty
+                        ? 'Required'
+                        : null,
+                child: AntdOutlineInput(
+                  controller: _contactPerson,
+                  hintText: 'Contact person',
+                  onChanged: (_) => setState(() {}),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            AntdFieldShell(
-              label: 'Contact person',
-              required: true,
-              errorText:
-                  _attemptedSubmit && _contactPerson.text.trim().isEmpty
-                      ? 'Required'
-                      : null,
-              child: AntdOutlineInput(
-                controller: _contactPerson,
-                hintText: 'Contact person',
-                onChanged: (_) => setState(() {}),
-              ),
-            ),
-            const SizedBox(height: 8),
-            AntdFieldShell(
-              label: 'Contact number',
-              required: true,
-              errorText: _attemptedSubmit && _contactNumberInvalid
-                  ? 'Required'
-                  : null,
-              child: AntdOutlineInput(
-                controller: _contactNumber,
-                hintText: '09XXXXXXXXX',
-                keyboardType: TextInputType.phone,
-                maxLength: 11,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(11),
-                ],
-                onChanged: (_) => setState(() {}),
+              AntdFieldShell(
+                label: 'Contact number',
+                required: true,
+                errorText: _attemptedSubmit && _contactNumberInvalid
+                    ? 'Required'
+                    : null,
+                child: AntdOutlineInput(
+                  controller: _contactNumber,
+                  hintText: '09XXXXXXXXX',
+                  keyboardType: TextInputType.phone,
+                  maxLength: 11,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(11),
+                  ],
+                  onChanged: (_) => setState(() {}),
+                ),
               ),
             ),
             const SizedBox(height: 8),
-            AntdFieldShell(
-              label: 'Email address',
-              required: true,
-              errorText: _attemptedSubmit && _emailInvalid ? 'Required' : null,
-              child: AntdOutlineInput(
-                controller: _inquiryEmail,
-                hintText: 'name@example.com',
-                keyboardType: TextInputType.emailAddress,
-                onChanged: (_) => setState(() {}),
+            _responsiveTwoCol(
+              context,
+              AntdFieldShell(
+                label: 'Email address',
+                required: true,
+                errorText: _attemptedSubmit && _emailInvalid ? 'Required' : null,
+                child: AntdOutlineInput(
+                  controller: _inquiryEmail,
+                  hintText: 'name@example.com',
+                  keyboardType: TextInputType.emailAddress,
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              AntdFieldShell(
+                label: 'Formality level',
+                child: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'casual', label: Text('Casual')),
+                    ButtonSegment(
+                      value: 'semiformal',
+                      label: Text('Semiformal'),
+                    ),
+                    ButtonSegment(value: 'formal', label: Text('Formal')),
+                  ],
+                  selected: {_formalityLevel},
+                  onSelectionChanged: (s) =>
+                      setState(() => _formalityLevel = s.first),
+                ),
               ),
             ),
 
@@ -3079,72 +3086,81 @@ class _InquirePageState extends State<InquirePage> {
 
             // Guests
             const SizedBox(height: 8),
-            TextField(
-              controller: _guestCount,
-              decoration: _requiredDecoration(
-                label: 'Number of guests',
-                invalid: _guestCountInvalid,
+            _responsiveTwoCol(
+              context,
+              TextField(
+                controller: _guestCount,
+                decoration: _requiredDecoration(
+                  label: 'Number of guests',
+                  invalid: _guestCountInvalid,
+                ),
+                keyboardType: TextInputType.number,
+                onChanged: (_) => setState(() {}),
               ),
-              keyboardType: TextInputType.number,
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _paxBuffer,
-              decoration: InputDecoration(
-                labelText: 'Pax Buffer (optional)',
-                helperText:
-                    'Additional pax for estimate only (₱${kPesosPerPax.toStringAsFixed(0)} per pax)',
-                border: const OutlineInputBorder(),
+              TextField(
+                controller: _paxBuffer,
+                decoration: InputDecoration(
+                  labelText: 'Pax Buffer (optional)',
+                  helperText:
+                      'Additional pax for estimate only (₱${kPesosPerPax.toStringAsFixed(0)} per pax)',
+                  border: const OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+                onChanged: (_) => setState(() {}),
               ),
-              keyboardType: TextInputType.number,
-              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _note,
               decoration: const InputDecoration(
-                labelText: 'Order notes (add other inclusions here)',
+                labelText: 'Order notes',
+                helperText:
+                    'If you have any custom requests, add it to your notes',
                 border: OutlineInputBorder(),
               ),
               maxLines: 3,
             ),
 
-            // Service
-            const SizedBox(height: 8),
-            Text(
-              'Service',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: RadioListTile<String>(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('With service'),
-                    value: 'yes',
-                    groupValue: _serviceIncluded,
-                    onChanged: (v) =>
-                        setState(() => _serviceIncluded = v ?? 'yes'),
+            // Service — hidden when guest count >= 50
+            if (() {
+              final g = int.tryParse(_guestCount.text.trim());
+              return g == null || g < 50;
+            }()) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Service',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: RadioListTile<String>(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('With service'),
+                      value: 'yes',
+                      groupValue: _serviceIncluded,
+                      onChanged: (v) =>
+                          setState(() => _serviceIncluded = v ?? 'yes'),
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: RadioListTile<String>(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Without service'),
-                    value: 'no',
-                    groupValue: _serviceIncluded,
-                    onChanged: (v) =>
-                        setState(() => _serviceIncluded = v ?? 'no'),
+                  Expanded(
+                    child: RadioListTile<String>(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Without service'),
+                      value: 'no',
+                      groupValue: _serviceIncluded,
+                      onChanged: (v) =>
+                          setState(() => _serviceIncluded = v ?? 'no'),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
 
             // Food tasting
             CheckboxListTile(
@@ -3504,11 +3520,9 @@ class _InquirePageState extends State<InquirePage> {
                   SizedBox(height: 6),
                   Text('• Basic table styling and centerpiece arrangement'),
                   Text('• Coordinated dinnerware / place setting layout'),
-                  Text('• Soft ambient décor accents matched to your theme'),
-                  Text('• On-site styling setup for the booked event window'),
                   SizedBox(height: 8),
                   Text(
-                    'Other inclusions (extra décor, specialty rentals, etc.) should be added in Order notes.',
+                    'If you have any custom requests, add it to your notes',
                     style: TextStyle(fontSize: 12, height: 1.35),
                   ),
                 ],
@@ -3558,7 +3572,7 @@ class _InquirePageState extends State<InquirePage> {
                 controller: _themeNotesController,
                 maxLines: 4,
                 decoration: const InputDecoration(
-                  labelText: 'Theme / styling notes (other inclusions → Order notes)',
+                  labelText: 'Theme / styling notes',
                   hintText:
                       'Describe preferred look, colors, motif, and styling notes',
                   border: OutlineInputBorder(),

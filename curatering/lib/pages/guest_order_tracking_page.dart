@@ -33,7 +33,8 @@ class GuestOrderTrackingPage extends StatefulWidget {
   State<GuestOrderTrackingPage> createState() => _GuestOrderTrackingPageState();
 }
 
-class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
+class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _orderNoCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
@@ -42,17 +43,21 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
   bool _loading = false;
   bool _loggedIn = false;
   String? _error;
-  Map<String, dynamic>? _order;
+  List<Map<String, dynamic>> _restaurantOrders = [];
+  List<Map<String, dynamic>> _inquiries = [];
+  late final TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _hydrateFromQuery();
     _refreshAuth();
   }
 
   @override
   void dispose() {
+    _tabController.dispose();
     _orderNoCtrl.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
@@ -115,12 +120,33 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
     await _refreshAuth();
   }
 
+  List<Map<String, dynamic>> _asMapList(dynamic raw) {
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  void _selectDefaultTab() {
+    if (_inquiries.isNotEmpty && _restaurantOrders.isEmpty) {
+      _tabController.index = 0;
+    } else if (_restaurantOrders.isNotEmpty && _inquiries.isEmpty) {
+      _tabController.index = 1;
+    } else if (_inquiries.isNotEmpty) {
+      _tabController.index = 0;
+    } else {
+      _tabController.index = 1;
+    }
+  }
+
   Future<void> _lookup() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
       _loading = true;
       _error = null;
-      _order = null;
+      _restaurantOrders = [];
+      _inquiries = [];
     });
     try {
       final body = <String, dynamic>{};
@@ -147,13 +173,27 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
                 : 'Order not found';
         throw Exception(msg);
       }
-      if (decoded is! Map || decoded['order'] is! Map) {
+      if (decoded is! Map) {
         throw Exception('Invalid response from server');
       }
+
+      var restaurant = _asMapList(decoded['restaurantOrders']);
+      var inquiries = _asMapList(decoded['inquiries']);
+
+      // Backward compat: single `order` payload.
+      if (restaurant.isEmpty &&
+          decoded['order'] is Map &&
+          inquiries.isEmpty) {
+        restaurant = [Map<String, dynamic>.from(decoded['order'] as Map)];
+      }
+
       if (!mounted) return;
       setState(() {
-        _order = Map<String, dynamic>.from(decoded['order'] as Map);
+        _restaurantOrders = restaurant;
+        _inquiries = inquiries;
       });
+      _selectDefaultTab();
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('guest_track_order_no', orderNo);
       if (email.isNotEmpty) {
@@ -169,6 +209,9 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  bool get _hasResults =>
+      _restaurantOrders.isNotEmpty || _inquiries.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -199,7 +242,7 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Enter the email or phone used at checkout. Order number is optional.',
+                        'Enter the email or phone used at checkout. Order number is optional — without it, we list all matching ongoing orders.',
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey.shade700,
@@ -226,13 +269,9 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
                           ),
                         ),
                       ],
-                      if (_order != null) ...[
+                      if (_hasResults) ...[
                         const SizedBox(height: 24),
-                        _GuestOrderResultCard(
-                          order: _order!,
-                          loggedIn: _loggedIn,
-                          onSignUp: _openSignup,
-                        ),
+                        _buildResultsTabs(),
                       ],
                       const SizedBox(height: 32),
                     ],
@@ -243,6 +282,75 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildResultsTabs() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: TabBar(
+            controller: _tabController,
+            labelColor: const Color(0xFF1E1E1E),
+            unselectedLabelColor: Colors.grey.shade600,
+            indicatorColor: const Color(0xFFFFC024),
+            indicatorWeight: 3,
+            tabs: [
+              Tab(text: 'Inquiries (${_inquiries.length})'),
+              Tab(text: 'Restaurant (${_restaurantOrders.length})'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        AnimatedBuilder(
+          animation: _tabController,
+          builder: (context, _) {
+            final isInquiries = _tabController.index == 0;
+            final items = isInquiries ? _inquiries : _restaurantOrders;
+            if (items.isEmpty) {
+              return Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Text(
+                  isInquiries
+                      ? 'No ongoing catering inquiries found for this contact.'
+                      : 'No ongoing restaurant orders found for this contact.',
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+              );
+            }
+            return Column(
+              children: [
+                for (final item in items) ...[
+                  if (isInquiries)
+                    _GuestInquiryResultCard(
+                      inquiry: item,
+                      loggedIn: _loggedIn,
+                      onSignUp: _openSignup,
+                    )
+                  else
+                    _GuestOrderResultCard(
+                      order: item,
+                      loggedIn: _loggedIn,
+                      onSignUp: _openSignup,
+                    ),
+                  const SizedBox(height: 12),
+                ],
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -295,7 +403,7 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Provide email or phone used at checkout. Order number is optional.',
+              'Provide email or phone used at checkout. Leave order number blank to see all ongoing matches.',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
             const SizedBox(height: 16),
@@ -388,6 +496,98 @@ class _SignupRewardsBanner extends StatelessWidget {
   }
 }
 
+class _GuestInquiryResultCard extends StatelessWidget {
+  const _GuestInquiryResultCard({
+    required this.inquiry,
+    required this.loggedIn,
+    required this.onSignUp,
+  });
+
+  final Map<String, dynamic> inquiry;
+  final bool loggedIn;
+  final VoidCallback onSignUp;
+
+  @override
+  Widget build(BuildContext context) {
+    final id =
+        '${inquiry['cateringId'] ?? inquiry['catering_id'] ?? inquiry['id'] ?? '—'}';
+    final title =
+        '${inquiry['eventTitle'] ?? inquiry['event_title'] ?? 'Catering inquiry'}';
+    final status = '${inquiry['status'] ?? '—'}';
+    final address = '${inquiry['address'] ?? '—'}';
+    final total = inquiry['totalCost'] ?? inquiry['total_cost'] ?? 0;
+    final orderType = '${inquiry['orderType'] ?? inquiry['order_type'] ?? ''}';
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title.toUpperCase(),
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'REF. $id${orderType.isNotEmpty ? ' · ${orderType.toUpperCase()}' : ''}',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 12),
+          _infoRow('Status', status.replaceAll('_', ' ').toUpperCase()),
+          _infoRow('Venue / address', address),
+          _infoRow('Total', 'PHP ${NumberFormatHelper.pesos(total)}'),
+          if (!loggedIn) ...[
+            const SizedBox(height: 12),
+            _SignupRewardsBanner(onSignUp: onSignUp),
+          ],
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pushNamedAndRemoveUntil(
+                customerRoute('/'),
+                (_) => false,
+              );
+            },
+            child: const Text('Back to home'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 130,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _GuestOrderResultCard extends StatelessWidget {
   const _GuestOrderResultCard({
     required this.order,
@@ -412,7 +612,8 @@ class _GuestOrderResultCard extends StatelessWidget {
     final trackingUrl =
         '${order['delivery_tracking_url'] ?? order['deliveryTrackingUrl'] ?? ''}'
             .trim();
-    final address = '${order['delivery_address'] ?? order['deliveryAddress'] ?? '—'}';
+    final address =
+        '${order['delivery_address'] ?? order['deliveryAddress'] ?? '—'}';
     final total =
         order['total_cost'] ?? order['total_amount'] ?? order['totalAmount'] ?? 0;
 

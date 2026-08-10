@@ -187,7 +187,11 @@ class _ContactUsPageState extends State<ContactUsPage> {
                                   ),
                                 ),
                                 const SizedBox(height: 12),
+                                _buildEmailUsHero(w),
+                                const SizedBox(height: 12),
                                 _buildFeedbackModule(),
+                                const SizedBox(height: 20),
+                                _buildFaqSection(w),
                               ],
                             ),
                           ),
@@ -217,15 +221,153 @@ class _ContactUsPageState extends State<ContactUsPage> {
                             ),
                           ),
                           const SizedBox(height: 12),
+                          _buildEmailUsHero(w),
+                          const SizedBox(height: 12),
                           _buildFeedbackModule(),
                           const SizedBox(height: 16),
                           _buildContactInfo(w),
+                          const SizedBox(height: 20),
+                          _buildFaqSection(w),
                         ],
                       ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildEmailUsHero(WebsiteContentStore w) {
+    return Material(
+      color: const Color(0xFF1E1E1E),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: () => _launchEmail(w.contactEmail),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFC024),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: const Icon(
+                  Icons.email_outlined,
+                  color: Color(0xFF1E1E1E),
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Email us',
+                      style: GoogleFonts.getFont(
+                        _primaryFont,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      w.contactEmail,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFFFFC024),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Best way to reach us — we typically reply within one business day.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.75),
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.arrow_forward, color: Color(0xFFFFC024)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFaqSection(WebsiteContentStore w) {
+    final items = w.faqItems;
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Frequently asked questions',
+          style: GoogleFonts.getFont(
+            _primaryFont,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: const Color(0xFF1E1E1E),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Quick answers — editable from the website CMS.',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade600,
+          ),
+        ),
+        const SizedBox(height: 10),
+        ...items.map((item) {
+          final q = item.question.trim();
+          final a = item.answer.trim();
+          if (q.isEmpty && a.isEmpty) return const SizedBox.shrink();
+          return Card(
+            elevation: 0,
+            margin: const EdgeInsets.only(bottom: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: Colors.grey.shade300),
+            ),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+              childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              title: Text(
+                q.isEmpty ? 'Question' : q,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1E1E1E),
+                ),
+              ),
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    a.isEmpty ? '—' : a,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade700,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
     );
   }
 
@@ -447,8 +589,9 @@ class _ContactUsPageState extends State<ContactUsPage> {
         const SizedBox(height: 8),
         _ContactCard(
           icon: Icons.email,
-          title: 'Email',
+          title: 'Email us',
           subtitle: w.contactEmail,
+          emphasize: true,
           onTap: () => _launchEmail(w.contactEmail),
         ),
         const SizedBox(height: 8),
@@ -481,34 +624,50 @@ class _ContactCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.onTap,
+    this.emphasize = false,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback? onTap;
+  final bool emphasize;
 
   @override
   Widget build(BuildContext context) {
+    final accent = emphasize ? const Color(0xFFFFC024) : const Color(0xFF1E1E1E);
     return Card(
-      elevation: 1,
+      elevation: emphasize ? 2 : 1,
       margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      color: emphasize ? const Color(0xFFFFF8E6) : null,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: emphasize
+            ? const BorderSide(color: Color(0xFFFFC024), width: 1.5)
+            : BorderSide.none,
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: emphasize ? 12 : 8,
+          ),
           child: Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: emphasize ? 40 : 32,
+                height: emphasize ? 40 : 32,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E1E1E).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(16),
+                  color: accent.withValues(alpha: emphasize ? 0.35 : 0.1),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                child: Icon(icon, color: const Color(0xFF1E1E1E), size: 16),
+                child: Icon(
+                  icon,
+                  color: const Color(0xFF1E1E1E),
+                  size: emphasize ? 20 : 16,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -517,18 +676,20 @@ class _ContactCard extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        fontSize: 12,
+                      style: TextStyle(
+                        fontSize: emphasize ? 14 : 12,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF1E1E1E),
+                        color: const Color(0xFF1E1E1E),
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
+                        fontSize: emphasize ? 13 : 12,
+                        fontWeight:
+                            emphasize ? FontWeight.w600 : FontWeight.normal,
+                        color: Colors.grey.shade700,
                       ),
                     ),
                   ],
@@ -537,8 +698,8 @@ class _ContactCard extends StatelessWidget {
               if (onTap != null)
                 Icon(
                   Icons.arrow_forward_ios,
-                  size: 12,
-                  color: Colors.grey.shade400,
+                  size: emphasize ? 14 : 12,
+                  color: Colors.grey.shade500,
                 ),
             ],
           ),

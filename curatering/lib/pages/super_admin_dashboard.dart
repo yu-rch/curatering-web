@@ -32,6 +32,12 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
   String _dashboardSearch = '';
   String _rangeFilter = '30d';
   String _sectionFilter = 'all';
+  final Map<String, bool> _sectionExpanded = {
+    'analytics': true,
+    'users': true,
+    'sales': true,
+    'todos': true,
+  };
 
   @override
   void initState() {
@@ -371,13 +377,46 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
     );
   }
 
-  Widget _section(String title, String subtitle, List<Widget> children) {
+  Widget _section(
+    String key,
+    String title,
+    String subtitle,
+    List<Widget> children,
+  ) {
+    final expanded = _sectionExpanded[key] ?? true;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AntdPageHeader(title: title, subtitle: subtitle),
-        const SizedBox(height: 12),
-        ...children,
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => setState(() {
+              _sectionExpanded[key] = !expanded;
+            }),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: AntdPageHeader(title: title, subtitle: subtitle),
+                  ),
+                  Icon(
+                    expanded
+                        ? Icons.expand_less
+                        : Icons.expand_more,
+                    color: AntdTokens.textSecondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (expanded) ...[
+          const SizedBox(height: 12),
+          ...children,
+        ],
         const SizedBox(height: 24),
       ],
     );
@@ -743,6 +782,13 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
                     children: [
                       _filterToolbar(),
                       const SizedBox(height: 16),
+                      if (showTodos)
+                        _section(
+                          'todos',
+                          'To-do list',
+                          'Track admin follow-ups and open tasks.',
+                          [_todoCard()],
+                        ),
                       if (!showAnalytics &&
                           !showUsers &&
                           !showSales &&
@@ -753,6 +799,7 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
                         ),
                       if (showAnalytics)
                         _section(
+                          'analytics',
                           'Analytics section',
                           'Website, feedback, help request, and activity analytics.',
                           [
@@ -828,6 +875,7 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
                         ),
                       if (showUsers)
                         _section(
+                          'users',
                           'User Management section',
                           'Staff and customer account status at a glance.',
                           [
@@ -906,6 +954,7 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
                         ),
                       if (showSales)
                         _section(
+                          'sales',
                           'Sales section',
                           'Restaurant, catering, event, and combined financial figures.',
                           [
@@ -964,7 +1013,6 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
                             ]),
                           ],
                         ),
-                      if (showTodos) _todoCard(),
                     ],
                   ),
                 ),

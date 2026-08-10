@@ -23,16 +23,31 @@ class AntdPage extends StatelessWidget {
     return Container(
       width: double.infinity,
       color: AntdTokens.pageBg,
-      child: Padding(
-        padding: padding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            AntdPageHeader(title: title, subtitle: subtitle, actions: actions),
-            const SizedBox(height: 16),
-            Expanded(child: child),
-          ],
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: Colors.white,
+            elevation: 0,
+            child: SizedBox(
+              width: double.infinity,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+                child: AntdPageHeader(
+                  title: title,
+                  subtitle: subtitle,
+                  actions: actions,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: padding,
+              child: child,
+            ),
+          ),
+        ],
       ),
     );
   }
