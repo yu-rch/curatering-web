@@ -10,7 +10,6 @@ import '../services/website_content_store.dart';
 import '../utils/gallery_search.dart';
 import '../utils/image_cache.dart';
 import '../utils/website_image_utils.dart';
-import '../widgets/centered_viewport_scroll.dart';
 import '../widgets/customer_website_topbar.dart';
 import '../widgets/customer_site_footer.dart';
 import '../widgets/image_focus_dialog.dart';
@@ -150,31 +149,31 @@ class _GalleryPageState extends State<GalleryPage> {
             CustomerWebsiteTopBar(
               showCartAndCustomerAuth: !widget.contentEditable,
             ),
-          Expanded(
-            child: Column(
-              children: [
-                Expanded(
-                  child: CenteredViewportScroll(
-                    padding: websitePagePadding(context),
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    child: ListenableBuilder(
-                      listenable: w,
-                      builder: (context, _) => _buildGalleryDetail(w, cat),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 48),
-                ListenableBuilder(
-                  listenable: w,
-                  builder:
-                      (context, _) => CustomerSiteFooter(
-                        store: w,
-                        contentEditable: widget.contentEditable,
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: websitePagePadding(context),
+                      child: ListenableBuilder(
+                        listenable: w,
+                        builder: (context, _) => _buildGalleryDetail(w, cat),
                       ),
+                    ),
+                    const SizedBox(height: 48),
+                    ListenableBuilder(
+                      listenable: w,
+                      builder:
+                          (context, _) => CustomerSiteFooter(
+                            store: w,
+                            contentEditable: widget.contentEditable,
+                          ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
           ],
         ),
       );
@@ -189,28 +188,28 @@ class _GalleryPageState extends State<GalleryPage> {
             showCartAndCustomerAuth: !widget.contentEditable,
           ),
           Expanded(
-            child: Column(
-              children: [
-                Expanded(
-                  child: CenteredViewportScroll(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
                     padding: websitePagePadding(context),
-                    mainAxisAlignment: MainAxisAlignment.start,
                     child: ListenableBuilder(
                       listenable: w,
                       builder: (context, _) => _buildGallery(w),
                     ),
                   ),
-                ),
-                const SizedBox(height: 48),
-                ListenableBuilder(
-                  listenable: w,
-                  builder:
-                      (context, _) => CustomerSiteFooter(
-                        store: w,
-                        contentEditable: widget.contentEditable,
-                      ),
-                ),
-              ],
+                  const SizedBox(height: 48),
+                  ListenableBuilder(
+                    listenable: w,
+                    builder:
+                        (context, _) => CustomerSiteFooter(
+                          store: w,
+                          contentEditable: widget.contentEditable,
+                        ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

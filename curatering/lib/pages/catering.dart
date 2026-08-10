@@ -4523,11 +4523,12 @@ class _ManageEventsState extends State<ManageEvents>
     var showNewItemRow = false;
     try {
     final dialogSize = MediaQuery.sizeOf(context);
-    final modalHeight = (dialogSize.height * 0.62).clamp(360.0, 560.0);
+    final modalHeight = (dialogSize.height * 0.58).clamp(320.0, 520.0);
     await showAntdModal<void>(
       context: context,
       title: 'Checklist for ${sourceOrder.eventTitle}',
       maxWidth: 1040,
+      scrollBody: false,
       body: StatefulBuilder(
           builder: (context, dialogSetState) {
             void addChecklistByName(
@@ -4688,17 +4689,13 @@ class _ManageEventsState extends State<ManageEvents>
                     Expanded(
                       child: LayoutBuilder(
                         builder: (context, tableConstraints) {
-                          return Align(
-                            alignment: Alignment.topLeft,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: tableConstraints.maxWidth,
-                              ),
-                              child: PagedDataTable(
+                          return PagedDataTable(
                         title: 'Event Checklist',
                         key: ValueKey(editableItems.length),
                         maxTableHeight: tableConstraints.maxHeight,
                         forceVerticalScroll: true,
+                        fullWidth: true,
+                        enablePrint: false,
                         toolbarActions:
                             canMutateChecklist
                                 ? [
@@ -4713,10 +4710,11 @@ class _ManageEventsState extends State<ManageEvents>
                                   ),
                                 ]
                                 : const [],
-                        columnSpacing: 12,
-                        horizontalMargin: 8,
-                        dataRowMinHeight: 52,
-                        dataRowMaxHeight: 96,
+                        columnSpacing: 8,
+                        horizontalMargin: 6,
+                        dataRowMinHeight: 40,
+                        dataRowMaxHeight: 52,
+                        headingRowHeight: 40,
                         headingRowColor: WidgetStateProperty.all(
                           Colors.grey.shade200,
                         ),
@@ -4776,67 +4774,55 @@ class _ManageEventsState extends State<ManageEvents>
                                   DataCell(
                                     SizedBox(
                                       width: 162,
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          canMutateChecklist
-                                              ? TextFormField(
-                                                initialValue: item.item,
-                                                decoration: InputDecoration(
-                                                  border: OutlineInputBorder(
-                                                    borderSide: BorderSide(
-                                                      color:
-                                                          isDuplicateRow
-                                                              ? const Color(
-                                                                0xFFFFC107,
-                                                              )
-                                                              : Colors.grey,
-                                                    ),
+                                      child: canMutateChecklist
+                                          ? TextFormField(
+                                              initialValue: item.item,
+                                              style: const TextStyle(fontSize: 13),
+                                              decoration: InputDecoration(
+                                                border: OutlineInputBorder(
+                                                  borderSide: BorderSide(
+                                                    color: isDuplicateRow
+                                                        ? const Color(0xFFFFC107)
+                                                        : Colors.grey,
                                                   ),
-                                                  contentPadding:
-                                                      const EdgeInsets.all(8),
-                                                  isDense: true,
                                                 ),
-                                                onChanged: (value) {
-                                                  dialogSetState(() {
-                                                    if (duplicateHighlightIndex ==
-                                                        index) {
-                                                      duplicateHighlightIndex =
-                                                          null;
-                                                    }
-                                                    editableItems[index] =
-                                                        ChecklistItem(
-                                                          item: value,
-                                                          description:
-                                                              item.description,
-                                                          quantity:
-                                                              item.quantity,
-                                                          cost: item.cost,
-                                                          isCompleted:
-                                                              item.isCompleted,
-                                                          inventoryId:
-                                                              item.inventoryId,
-                                                        );
-                                                  });
-                                                },
-                                              )
-                                              : Text(item.item),
-                                          if (isDuplicateRow)
-                                            const Padding(
-                                              padding: EdgeInsets.only(top: 4),
-                                              child: Text(
-                                                'Item already exists',
-                                                style: TextStyle(
-                                                  color: Color(0xFFB8860B),
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w700,
+                                                contentPadding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 6,
+                                                    ),
+                                                isDense: true,
+                                                errorText: isDuplicateRow
+                                                    ? 'Already exists'
+                                                    : null,
+                                                errorStyle: const TextStyle(
+                                                  fontSize: 10,
+                                                  height: 0.9,
                                                 ),
                                               ),
-                                            ),
-                                        ],
-                                      ),
+                                              onChanged: (value) {
+                                                dialogSetState(() {
+                                                  if (duplicateHighlightIndex ==
+                                                      index) {
+                                                    duplicateHighlightIndex =
+                                                        null;
+                                                  }
+                                                  editableItems[index] =
+                                                      ChecklistItem(
+                                                        item: value,
+                                                        description:
+                                                            item.description,
+                                                        quantity: item.quantity,
+                                                        cost: item.cost,
+                                                        isCompleted:
+                                                            item.isCompleted,
+                                                        inventoryId:
+                                                            item.inventoryId,
+                                                      );
+                                                });
+                                              },
+                                            )
+                                          : Text(item.item),
                                     ),
                                   ),
                                   DataCell(
@@ -4847,7 +4833,7 @@ class _ManageEventsState extends State<ManageEvents>
                                           initialValue: item.description,
                                           decoration: const InputDecoration(
                                             border: OutlineInputBorder(),
-                                            contentPadding: EdgeInsets.all(8),
+                                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                             isDense: true,
                                           ),
                                           onChanged: (value) {
@@ -4876,7 +4862,7 @@ class _ManageEventsState extends State<ManageEvents>
                                               item.quantity.toString(),
                                           decoration: const InputDecoration(
                                             border: OutlineInputBorder(),
-                                            contentPadding: EdgeInsets.all(8),
+                                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                             isDense: true,
                                           ),
                                           keyboardType: TextInputType.number,
@@ -4911,7 +4897,10 @@ class _ManageEventsState extends State<ManageEvents>
                                         ),
                                         decoration: const InputDecoration(
                                           border: OutlineInputBorder(),
-                                          contentPadding: EdgeInsets.all(8),
+                                          contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 6,
+                                          ),
                                           isDense: true,
                                           prefixText: 'PHP ',
                                         ),
@@ -5186,9 +5175,7 @@ class _ManageEventsState extends State<ManageEvents>
                               ],
                             ),
                         ],
-                              ),
-                            ),
-                          );
+                              );
                         },
                       ),
                     ),
@@ -5197,24 +5184,6 @@ class _ManageEventsState extends State<ManageEvents>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        // Generate PDF button (outline style)
-                        OutlinedButton(
-                          onPressed:
-                              () => _exportChecklistToPDF(sourceOrder, editableItems),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.black87,
-                            side: BorderSide(color: Colors.grey.shade400),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                          ),
-                          child: const Text('generate PDF'),
-                        ),
-                        const SizedBox(width: 12),
                         if (canToggleChecklistStatus)
                           OutlinedButton(
                             onPressed: () => _saveChecklist(
@@ -5235,7 +5204,7 @@ class _ManageEventsState extends State<ManageEvents>
                             ),
                             child: const Text('save'),
                           ),
-                        const SizedBox(width: 12),
+                        if (canToggleChecklistStatus) const SizedBox(width: 12),
                         // Close button (red outline)
                         OutlinedButton(
                           onPressed: () => Navigator.of(context).pop(),

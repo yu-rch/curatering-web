@@ -9837,51 +9837,98 @@ async function registerRoutesAfterDbInit() {
         const phoneDigits = String(req.body?.phone ?? req.body?.contactNumber ?? '')
           .replace(/\D/g, '');
 
-        if (!orderNo) {
-          return res.status(400).json({ error: 'Order number is required' });
-        }
         if (!email && !phoneDigits) {
           return res.status(400).json({
             error: 'Email or phone used at checkout is required',
           });
         }
 
-        const lookup = await restaurantOrderWhereClause(orderNo, 1);
-        if (!lookup) {
-          return res.status(400).json({ error: 'Invalid order number' });
-        }
-
-        const result = await pool.query(
-          `SELECT * FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
-          [lookup.value],
-        );
-        if (result.rowCount === 0) {
-          return res.status(404).json({ error: 'Order not found' });
-        }
-
-        const order = result.rows[0];
-        const orderEmail = String(order.user_email || '')
-          .trim()
-          .toLowerCase();
-        const orderPhone = String(order.contact_number || '').replace(/\D/g, '');
-
-        let matched = false;
-        if (email && orderEmail && email === orderEmail) matched = true;
-        if (
-          phoneDigits &&
-          orderPhone &&
-          (phoneDigits === orderPhone ||
+        const phoneMatches = (orderPhoneRaw) => {
+          const orderPhone = String(orderPhoneRaw || '').replace(/\D/g, '');
+          if (!phoneDigits || !orderPhone) return false;
+          return (
+            phoneDigits === orderPhone ||
             (phoneDigits.length >= 10 &&
               orderPhone.length >= 10 &&
-              phoneDigits.slice(-10) === orderPhone.slice(-10)))
-        ) {
-          matched = true;
-        }
+              phoneDigits.slice(-10) === orderPhone.slice(-10))
+          );
+        };
 
-        if (!matched) {
-          return res.status(403).json({
-            error: 'Email or phone does not match this order',
-          });
+        let order = null;
+
+        if (orderNo) {
+          const lookup = await restaurantOrderWhereClause(orderNo, 1);
+          if (!lookup) {
+            return res.status(400).json({ error: 'Invalid order number' });
+          }
+
+          const result = await pool.query(
+            `SELECT * FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
+            [lookup.value],
+          );
+          if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+          }
+
+          order = result.rows[0];
+          const orderEmail = String(order.user_email || '')
+            .trim()
+            .toLowerCase();
+          const matchedEmail = Boolean(email && orderEmail && email === orderEmail);
+          const matchedPhone = phoneMatches(order.contact_number);
+
+          if (!matchedEmail && !matchedPhone) {
+            return res.status(403).json({
+              error: 'Email or phone does not match this order',
+            });
+          }
+        } else {
+          // Order number omitted: find the latest restaurant order for email/phone.
+          const roCols = await ensureRestaurantOrdersCanonicalColumns();
+          const whereParts = [];
+          const params = [];
+
+          if (email && roCols.has('user_email')) {
+            params.push(email);
+            whereParts.push(
+              `lower(trim(COALESCE(user_email::text, ''))) = $${params.length}`,
+            );
+          }
+
+          if (phoneDigits && roCols.has('contact_number')) {
+            // Compare last 10 digits when both sides are long enough.
+            params.push(phoneDigits);
+            const p = `$${params.length}`;
+            whereParts.push(
+              `(
+                regexp_replace(COALESCE(contact_number::text, ''), '\\D', '', 'g') = ${p}
+                OR (
+                  length(regexp_replace(COALESCE(contact_number::text, ''), '\\D', '', 'g')) >= 10
+                  AND length(${p}) >= 10
+                  AND right(regexp_replace(COALESCE(contact_number::text, ''), '\\D', '', 'g'), 10)
+                    = right(${p}, 10)
+                )
+              )`,
+            );
+          }
+
+          if (whereParts.length === 0) {
+            return res.status(400).json({
+              error: 'Email or phone used at checkout is required',
+            });
+          }
+
+          const result = await pool.query(
+            `SELECT * FROM restaurant_orders
+             WHERE (${whereParts.join(' OR ')})
+             ORDER BY created_at DESC NULLS LAST
+             LIMIT 1`,
+            params,
+          );
+          if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+          }
+          order = result.rows[0];
         }
 
         const parsedItems = parseRestaurantOrderTrayItems(order);

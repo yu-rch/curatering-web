@@ -3282,7 +3282,6 @@ class _InquirePageState extends State<InquirePage> {
               label: 'Food allergens to avoid',
               child: AllergenSelectorField(
                 initialSerialized: _allergensSerialized,
-                dropdownMode: true,
                 onChanged: (s) {
                   setState(() {
                     _allergensSerialized = s;
@@ -3293,42 +3292,61 @@ class _InquirePageState extends State<InquirePage> {
             ),
 
             const SizedBox(height: 20),
-            DropdownButtonFormField<String>(
-              value:
-                  !_menuChoicePicked
-                      ? null
-                      : (_curateOwn ? 'curate' : 'suggest'),
-              decoration: const InputDecoration(
-                labelText: 'Menu selection',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(
-                  value: 'curate',
-                  child: Text('Yes, curate my own menu'),
+            const Text(
+              'Menu selection',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('Yes, curate my own menu'),
+                  selected: _menuChoicePicked && _curateOwn,
+                  selectedColor: _accentYellow,
+                  labelStyle: TextStyle(
+                    color: _menuChoicePicked && _curateOwn
+                        ? _darkHeader
+                        : Colors.black87,
+                    fontWeight: _menuChoicePicked && _curateOwn
+                        ? FontWeight.w700
+                        : FontWeight.normal,
+                  ),
+                  onSelected: (_) {
+                    setState(() {
+                      _menuChoicePicked = true;
+                      _curateOwn = true;
+                      _menuSuggestionNote = '';
+                      _selectedSetMenu = 'All Dishes';
+                      _selectedDishIds.clear();
+                      _menuSelections.clear();
+                    });
+                  },
                 ),
-                DropdownMenuItem(
-                  value: 'suggest',
-                  child: Text('No, suggest a menu'),
+                ChoiceChip(
+                  label: const Text('No, suggest a menu'),
+                  selected: _menuChoicePicked && !_curateOwn,
+                  selectedColor: _accentYellow,
+                  labelStyle: TextStyle(
+                    color: _menuChoicePicked && !_curateOwn
+                        ? _darkHeader
+                        : Colors.black87,
+                    fontWeight: _menuChoicePicked && !_curateOwn
+                        ? FontWeight.w700
+                        : FontWeight.normal,
+                  ),
+                  onSelected: (_) {
+                    setState(() {
+                      _menuChoicePicked = true;
+                      _curateOwn = false;
+                      _selectedDishIds.clear();
+                      _menuSelections.clear();
+                      _menuSuggestionNote = 'No, suggest me a menu instead.';
+                    });
+                  },
                 ),
               ],
-              onChanged: (v) {
-                if (v == null) return;
-                setState(() {
-                  _menuChoicePicked = true;
-                  _curateOwn = v == 'curate';
-                  if (_curateOwn) {
-                    _menuSuggestionNote = '';
-                    _selectedSetMenu = 'All Dishes';
-                    _selectedDishIds.clear();
-                    _menuSelections.clear();
-                  } else {
-                    _selectedDishIds.clear();
-                    _menuSelections.clear();
-                    _menuSuggestionNote = 'No, suggest me a menu instead.';
-                  }
-                });
-              },
             ),
             if (_attemptedSubmit && !_menuChoicePicked)
               Padding(
@@ -3339,27 +3357,45 @@ class _InquirePageState extends State<InquirePage> {
                 ),
               ),
             if (_menuChoicePicked && _curateOwn) ...[
-              const SizedBox(height: 12),
-              DropdownButtonFormField<int>(
-                value: _menuPrefTabIndex,
-                decoration: const InputDecoration(
-                  labelText: 'How would you like to build your menu?',
-                  border: OutlineInputBorder(),
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 0,
-                    child: Text('I want to make my own menu'),
+              const SizedBox(height: 16),
+              const Text(
+                'Menu preference',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('I want to make my own menu'),
+                    selected: _menuPrefTabIndex == 0,
+                    selectedColor: _accentYellow,
+                    labelStyle: TextStyle(
+                      color: _menuPrefTabIndex == 0
+                          ? _darkHeader
+                          : Colors.black87,
+                      fontWeight: _menuPrefTabIndex == 0
+                          ? FontWeight.w700
+                          : FontWeight.normal,
+                    ),
+                    onSelected: (_) => _switchMenuPrefTab(0),
                   ),
-                  DropdownMenuItem(
-                    value: 1,
-                    child: Text('Choose from Set Menu'),
+                  ChoiceChip(
+                    label: const Text('Choose from Set Menu'),
+                    selected: _menuPrefTabIndex == 1,
+                    selectedColor: _accentYellow,
+                    labelStyle: TextStyle(
+                      color: _menuPrefTabIndex == 1
+                          ? _darkHeader
+                          : Colors.black87,
+                      fontWeight: _menuPrefTabIndex == 1
+                          ? FontWeight.w700
+                          : FontWeight.normal,
+                    ),
+                    onSelected: (_) => _switchMenuPrefTab(1),
                   ),
                 ],
-                onChanged: (v) {
-                  if (v == null) return;
-                  _switchMenuPrefTab(v);
-                },
               ),
               const SizedBox(height: 12),
               ListenableBuilder(

@@ -37,6 +37,7 @@ import '../widgets/image_focus_dialog.dart';
 import '../widgets/cms_sections.dart';
 import '../widgets/customer_site_footer.dart';
 import '../widgets/customer_website_topbar.dart';
+import '../widgets/home_etd_sampler.dart';
 import '../theme/website_header_font.dart';
 import '../constants/catering_meal_types.dart';
 import '../constants/home_default_assets.dart';
@@ -2332,92 +2333,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   }
 
   Widget _buildEtdAdvertCard({required bool compact}) {
-    Map<String, dynamic>? first;
-    for (final row in _salesEventDesigns) {
-      if ((row['imageBase64'] ?? '').toString().trim().isNotEmpty) {
-        first = row;
-        break;
-      }
-    }
-    final imageB64 = (first?['imageBase64'] ?? '').toString();
-    final label =
-        (first?['label'] ?? 'Event Theme Design').toString().trim();
-
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(compact ? 12 : 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2A2A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (imageB64.isNotEmpty)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: AspectRatio(
-                aspectRatio: compact ? 16 / 9 : 4 / 3,
-                child: CachedBase64Image(
-                  base64String: imageB64,
-                  fit: BoxFit.cover,
-                  placeholder: Container(
-                    color: Colors.grey.shade800,
-                    child: const Icon(
-                      Icons.celebration_outlined,
-                      color: Colors.white54,
-                    ),
-                  ),
-                ),
-              ),
-            )
-          else
-            Container(
-              height: compact ? 100 : 140,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade800,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
-                Icons.celebration_outlined,
-                color: Colors.white54,
-                size: 40,
-              ),
-            ),
-          const SizedBox(height: 10),
-          Text(
-            label.isNotEmpty ? label : 'Event Theme Design',
-            style: const TextStyle(
-              color: Color(0xFFFFC024),
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Custom décor and table settings for your celebration.',
-            style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.35),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed:
-                () => Navigator.pushReplacementNamed(
-                  context,
-                  customerRoute('/inquire'),
-                ),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFFFC024),
-              foregroundColor: const Color(0xFF1E1E1E),
-            ),
-            child: const Text(
-              'Inquire Now',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
+    return HomeEtdSampler(compact: compact);
   }
 
   Widget _buildHomeSidePanel(WebsiteContentStore w) {

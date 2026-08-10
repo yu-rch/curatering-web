@@ -545,11 +545,12 @@ extension _ManageEventsDetailExt on _ManageEventsState {
   Future<void> _showTaskAssignmentEditor(EventOrderDto order) async {
     final rows = List<Map<String, dynamic>>.from(_taskRowsFromOrder(order));
     final size = MediaQuery.sizeOf(context);
-    final modalHeight = (size.height * 0.62).clamp(360.0, 560.0);
+    final modalHeight = (size.height * 0.58).clamp(320.0, 520.0);
     await showAntdModal<void>(
       context: context,
       title: 'Task assignment — ${order.transactionNo}',
       maxWidth: 1000,
+      scrollBody: false,
       body: StatefulBuilder(
           builder: (ctx, setModal) {
             Future<void> editRowDialog(int index) async {
@@ -660,11 +661,15 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                   width: width,
                   child: TextFormField(
                     initialValue: '${row[key] ?? ''}',
+                    style: const TextStyle(fontSize: 13),
                     decoration: InputDecoration(
-                      labelText: label,
+                      hintText: label,
                       border: const OutlineInputBorder(),
                       isDense: true,
-                      contentPadding: const EdgeInsets.all(8),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
                     ),
                     onChanged: (v) => row[key] = v,
                   ),
@@ -681,16 +686,12 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                     Expanded(
                       child: LayoutBuilder(
                         builder: (context, constraints) {
-                          return Align(
-                            alignment: Alignment.topLeft,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: constraints.maxWidth,
-                              ),
-                              child: PagedDataTable(
+                          return PagedDataTable(
                                 title: 'Task assignment',
                                 maxTableHeight: constraints.maxHeight,
                                 forceVerticalScroll: true,
+                                fullWidth: true,
+                                enablePrint: false,
                                 toolbarActions: [
                                   AntdSecondaryButton(
                                     onPressed: () {
@@ -708,10 +709,11 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                     label: 'Add row',
                                   ),
                                 ],
-                                columnSpacing: 12,
-                                horizontalMargin: 8,
-                                dataRowMinHeight: 52,
-                                dataRowMaxHeight: 76,
+                                columnSpacing: 8,
+                                horizontalMargin: 6,
+                                dataRowMinHeight: 40,
+                                dataRowMaxHeight: 48,
+                                headingRowHeight: 40,
                                 headingRowColor: WidgetStateProperty.all(
                                   Colors.grey.shade200,
                                 ),
@@ -764,7 +766,10 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                             decoration: const InputDecoration(
                                               border: OutlineInputBorder(),
                                               isDense: true,
-                                              contentPadding: EdgeInsets.all(8),
+                                              contentPadding: EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 6,
+                                              ),
                                             ),
                                             items: const [
                                               DropdownMenuItem(
@@ -806,9 +811,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                     ],
                                   );
                                 }).toList(),
-                              ),
-                            ),
-                          );
+                              );
                         },
                       ),
                     ),

@@ -41,6 +41,8 @@ Future<T?> showAntdModal<T>({
   bool barrierDismissible = true,
   double maxWidth = 560,
   String? guardKey,
+  /// When false, [body] is not wrapped in a scroll view (use for Expanded tables).
+  bool scrollBody = true,
 }) {
   final key = guardKey ?? 'antd-modal:${title.hashCode}';
   return DialogOpenGuard.runOnce<T>(
@@ -48,6 +50,18 @@ Future<T?> showAntdModal<T>({
       context: context,
       barrierDismissible: barrierDismissible,
       builder: (ctx) {
+        final maxBodyHeight = MediaQuery.sizeOf(ctx).height * 0.65;
+        final paddedBody = Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: DefaultTextStyle(
+            style: const TextStyle(
+              color: AntdTokens.valueDark,
+              fontSize: 14,
+              height: 1.45,
+            ),
+            child: body,
+          ),
+        );
         return Dialog(
           backgroundColor: Colors.transparent,
           insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
@@ -87,20 +101,10 @@ Future<T?> showAntdModal<T>({
                     ),
                   ),
                   ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: MediaQuery.sizeOf(ctx).height * 0.65,
-                    ),
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-                      child: DefaultTextStyle(
-                        style: const TextStyle(
-                          color: AntdTokens.valueDark,
-                          fontSize: 14,
-                          height: 1.45,
-                        ),
-                        child: body,
-                      ),
-                    ),
+                    constraints: BoxConstraints(maxHeight: maxBodyHeight),
+                    child: scrollBody
+                        ? SingleChildScrollView(child: paddedBody)
+                        : paddedBody,
                   ),
                   if (actions.isNotEmpty)
                     Container(

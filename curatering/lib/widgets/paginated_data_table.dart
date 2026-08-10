@@ -246,7 +246,7 @@ class _PagedDataTableState extends State<PagedDataTable> {
       ),
     );
 
-    Widget tableScroll = LayoutBuilder(
+    Widget horizontalTable = LayoutBuilder(
       builder: (context, constraints) {
         final minTableWidth = widget.fullWidth && constraints.maxWidth.isFinite
             ? constraints.maxWidth
@@ -263,25 +263,40 @@ class _PagedDataTableState extends State<PagedDataTable> {
       },
     );
 
-    if (widget.showVerticalScrollbar &&
-        (widget.forceVerticalScroll || pageRows.length > 12)) {
-      tableScroll = Scrollbar(
-        thumbVisibility: true,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: widget.maxTableHeight),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.vertical,
-            child: tableScroll,
-          ),
-        ),
-      );
-    }
+    return LayoutBuilder(
+      builder: (context, outerConstraints) {
+        final boundedHeight =
+            widget.forceVerticalScroll && outerConstraints.maxHeight.isFinite;
+        final useVerticalScroll =
+            widget.showVerticalScrollbar &&
+            (widget.forceVerticalScroll || pageRows.length > 12);
 
-    return AntdCard(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+        Widget tableScroll;
+        if (boundedHeight) {
+          // Fill remaining modal space; scroll inside (don't overflow chrome).
+          tableScroll = Scrollbar(
+            thumbVisibility: true,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.vertical,
+              child: horizontalTable,
+            ),
+          );
+        } else if (useVerticalScroll) {
+          tableScroll = Scrollbar(
+            thumbVisibility: true,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: widget.maxTableHeight),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.vertical,
+                child: horizontalTable,
+              ),
+            ),
+          );
+        } else {
+          tableScroll = horizontalTable;
+        }
+
+        final columnChildren = <Widget>[
           _TableTitleBar(
             title: widget.title,
             pagination: TablePaginationBar(
@@ -311,18 +326,45 @@ class _PagedDataTableState extends State<PagedDataTable> {
               onCsv: () => _exportCsv(filteredRows),
               extraActions: widget.toolbarActions,
             ),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AntdTokens.radiusMd),
-            child: tableScroll,
-          ),
+          if (boundedHeight)
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AntdTokens.radiusMd),
+                child: tableScroll,
+              ),
+            )
+          else
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AntdTokens.radiusMd),
+              child: tableScroll,
+            ),
           TablePaginationBar(
             currentPage: _page,
             totalItems: filteredRows.length,
             pageSize: widget.pageSize,
             onPageChanged: (p) => setState(() => _page = p),
           ),
-        ],
-      ),
+        ];
+
+        final cardChild = boundedHeight
+            ? SizedBox(
+                height: outerConstraints.maxHeight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: columnChildren,
+                ),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: columnChildren,
+              );
+
+        return AntdCard(
+          padding: EdgeInsets.all(boundedHeight ? 8 : 12),
+          child: cardChild,
+        );
+      },
     );
   }
 

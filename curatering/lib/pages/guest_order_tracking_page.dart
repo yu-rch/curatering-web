@@ -14,7 +14,7 @@ import 'customer_login.dart';
 import 'order_tracking_page.dart';
 
 /// Public order tracking for guests (no login required).
-/// Lookup by order number + email (or phone).
+/// Lookup by email or phone (order number optional).
 class GuestOrderTrackingPage extends StatefulWidget {
   const GuestOrderTrackingPage({
     super.key,
@@ -76,9 +76,9 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
     if (orderNo.isNotEmpty) _orderNoCtrl.text = orderNo;
     if (email.isNotEmpty) _emailCtrl.text = email;
     if (phone.isNotEmpty) _phoneCtrl.text = phone;
+    // Order number is optional; email or phone is enough to look up.
     final shouldLookup =
-        widget.autoLookup ||
-        (orderNo.isNotEmpty && (email.isNotEmpty || phone.isNotEmpty));
+        widget.autoLookup || (email.isNotEmpty || phone.isNotEmpty);
     if (shouldLookup) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_lookup());
@@ -123,11 +123,11 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
       _order = null;
     });
     try {
-      final body = <String, dynamic>{
-        'orderNo': _orderNoCtrl.text.trim(),
-      };
+      final body = <String, dynamic>{};
+      final orderNo = _orderNoCtrl.text.trim();
       final email = _emailCtrl.text.trim();
       final phone = _phoneCtrl.text.replaceAll(RegExp(r'\D'), '');
+      if (orderNo.isNotEmpty) body['orderNo'] = orderNo;
       if (email.isNotEmpty) body['email'] = email;
       if (phone.isNotEmpty) body['phone'] = phone;
 
@@ -155,7 +155,7 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
         _order = Map<String, dynamic>.from(decoded['order'] as Map);
       });
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('guest_track_order_no', _orderNoCtrl.text.trim());
+      await prefs.setString('guest_track_order_no', orderNo);
       if (email.isNotEmpty) {
         await prefs.setString('guest_track_email', email);
       }
@@ -199,7 +199,7 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Enter your order number and the email or phone used at checkout.',
+                        'Enter the email or phone used at checkout. Order number is optional.',
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey.shade700,
@@ -295,7 +295,7 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Provide at least email or phone matching the order.',
+              'Provide email or phone used at checkout. Order number is optional.',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
             const SizedBox(height: 16),
