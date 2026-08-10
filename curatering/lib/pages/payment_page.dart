@@ -196,6 +196,42 @@ class _PaymentPageState extends State<PaymentPage> {
     return null;
   }
 
+  Widget _paymentPanel({
+    required bool mobile,
+    required EdgeInsets desktopMargin,
+    required Widget child,
+    bool addBottomGap = false,
+  }) {
+    final box = Container(
+      width: mobile ? double.infinity : null,
+      margin: mobile
+          ? EdgeInsets.only(bottom: addBottomGap ? 16 : 0)
+          : desktopMargin,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: child,
+    );
+    if (mobile) return box;
+    return Expanded(child: box);
+  }
+
+  Widget _sectionHeader(String title) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
+          letterSpacing: 1,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final totalAmount =
@@ -203,6 +239,9 @@ class _PaymentPageState extends State<PaymentPage> {
         widget.orderData['total_amount'] ??
         '0.00';
     final displayOrderNo = formatRestaurantOrderNo(widget.orderData);
+    final mobile = MediaQuery.sizeOf(context).width < 900;
+    final qrSize = mobile ? 160.0 : 200.0;
+    final qrHeight = mobile ? 220.0 : 280.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -220,18 +259,20 @@ class _PaymentPageState extends State<PaymentPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Payment title
                 Center(
                   child: Text(
                     'Payment',
                     style: websiteHeaderStyle(
-                      fontSize: 42,
+                      fontSize: responsiveValue(
+                        context,
+                        mobile: 28.0,
+                        desktop: 42.0,
+                      ),
                       color: Colors.red.shade400,
                     ),
                   ),
                 ),
                 const SizedBox(height: 24),
-                // Order No badge
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24,
@@ -250,269 +291,272 @@ class _PaymentPageState extends State<PaymentPage> {
                   ),
                 ),
                 const SizedBox(height: 32),
-                // Three columns layout
-                Row(
+                Flex(
+                  direction: mobile ? Axis.vertical : Axis.horizontal,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // DELIVERY INFORMATION
-                    Expanded(
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Column(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              child: const Text(
-                                'DELIVERY INFORMATION',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                  letterSpacing: 1,
+                    _paymentPanel(
+                      mobile: mobile,
+                      desktopMargin: const EdgeInsets.only(right: 12),
+                      addBottomGap: true,
+                      child: Column(
+                        children: [
+                          _sectionHeader('DELIVERY INFORMATION'),
+                          Divider(color: Colors.grey.shade200, height: 1),
+                          Container(
+                            padding: EdgeInsets.all(mobile ? 16 : 20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildLabelAndValue(
+                                  'NAME',
+                                  widget.orderData['full_name'] ??
+                                      widget.orderData['fullName'] ??
+                                      '',
                                 ),
-                              ),
-                            ),
-                            Divider(color: Colors.grey.shade200, height: 1),
-                            Container(
-                              padding: const EdgeInsets.all(20),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _buildLabelAndValue(
-                                    'NAME',
-                                    widget.orderData['full_name'] ??
-                                        widget.orderData['fullName'] ??
-                                        '',
-                                  ),
-                                  const SizedBox(height: 16),
-                                  _buildLabelAndValue(
-                                    'CONTACT NUMBER',
-                                    widget.orderData['contact_number'] ??
-                                        widget.orderData['phone'] ??
-                                        '',
-                                  ),
-                                  const SizedBox(height: 16),
-                                  _buildLabelAndValue(
-                                    'DELIVERY ADDRESS',
-                                    widget.orderData['delivery_address'] ?? '',
-                                  ),
-                                  const SizedBox(height: 24),
-                                  _buildLabelAndValue(
-                                    'TIME OF DELIVERY',
-                                    'NOW',
-                                  ),
-                                  const SizedBox(height: 16),
-                                  _buildLabelAndValue(
-                                    'MODE OF PAYMENT',
-                                    'GCASH ONLY',
-                                  ),
-                                  const SizedBox(height: 32),
-                                  // YOUR ORDER section
-                                  const Center(
-                                    child: Text(
-                                      'YOUR ORDER',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14,
-                                        letterSpacing: 1,
-                                      ),
+                                const SizedBox(height: 16),
+                                _buildLabelAndValue(
+                                  'CONTACT NUMBER',
+                                  widget.orderData['contact_number'] ??
+                                      widget.orderData['phone'] ??
+                                      '',
+                                ),
+                                const SizedBox(height: 16),
+                                _buildLabelAndValue(
+                                  'DELIVERY ADDRESS',
+                                  widget.orderData['delivery_address'] ?? '',
+                                ),
+                                const SizedBox(height: 24),
+                                _buildLabelAndValue(
+                                  'TIME OF DELIVERY',
+                                  'NOW',
+                                ),
+                                const SizedBox(height: 16),
+                                _buildLabelAndValue(
+                                  'MODE OF PAYMENT',
+                                  'GCASH ONLY',
+                                ),
+                                const SizedBox(height: 32),
+                                const Center(
+                                  child: Text(
+                                    'YOUR ORDER',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                      letterSpacing: 1,
                                     ),
                                   ),
-                                  const SizedBox(height: 16),
-                                  // Order items
-                                  if ((widget.orderData['tray_items'] ??
-                                          widget.orderData['items']) !=
-                                      null)
-                                    ...((widget.orderData['tray_items'] ??
-                                                widget.orderData['items'])
-                                            as List)
-                                        .map((item) {
-                                          return Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 12,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Container(
-                                                  width: 40,
-                                                  height: 40,
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.grey.shade200,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          4,
-                                                        ),
-                                                  ),
-                                                  child: const Icon(
-                                                    Icons.fastfood,
-                                                    size: 16,
-                                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                if ((widget.orderData['tray_items'] ??
+                                        widget.orderData['items']) !=
+                                    null)
+                                  ...((widget.orderData['tray_items'] ??
+                                              widget.orderData['items'])
+                                          as List)
+                                      .map((item) {
+                                        return Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 12,
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                width: 40,
+                                                height: 40,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.grey.shade200,
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
                                                 ),
-                                                const SizedBox(width: 10),
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Text(
-                                                        item['name']
-                                                                ?.toString()
-                                                                .toUpperCase() ??
-                                                            '',
-                                                        style: const TextStyle(
-                                                          fontSize: 10,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                      if (item['sauces'] !=
-                                                              null &&
-                                                          (item['sauces']
-                                                                  as List)
-                                                              .isNotEmpty)
-                                                        Text(
-                                                          (item['sauces']
-                                                                  as List)
-                                                              .first
-                                                              .toString()
-                                                              .toUpperCase(),
-                                                          style: TextStyle(
-                                                            fontSize: 8,
-                                                            color:
-                                                                Colors
-                                                                    .grey
-                                                                    .shade600,
-                                                          ),
-                                                        ),
-                                                    ],
-                                                  ),
+                                                child: const Icon(
+                                                  Icons.fastfood,
+                                                  size: 16,
                                                 ),
-                                                Column(
+                                              ),
+                                              const SizedBox(width: 10),
+                                              Expanded(
+                                                child: Column(
                                                   crossAxisAlignment:
-                                                      CrossAxisAlignment.end,
+                                                      CrossAxisAlignment.start,
                                                   children: [
                                                     Text(
-                                                      'x${item['quantity'] ?? 1}',
+                                                      item['name']
+                                                              ?.toString()
+                                                              .toUpperCase() ??
+                                                          '',
                                                       style: const TextStyle(
-                                                        fontSize: 9,
-                                                      ),
-                                                    ),
-                                                    Text(
-                                                      '₱${item['price'] ?? 0}',
-                                                      style: const TextStyle(
-                                                        fontSize: 9,
+                                                        fontSize: 10,
                                                         fontWeight:
-                                                            FontWeight.bold,
+                                                            FontWeight.w600,
                                                       ),
                                                     ),
+                                                    if (item['sauces'] !=
+                                                            null &&
+                                                        (item['sauces'] as List)
+                                                            .isNotEmpty)
+                                                      Text(
+                                                        (item['sauces'] as List)
+                                                            .first
+                                                            .toString()
+                                                            .toUpperCase(),
+                                                        style: TextStyle(
+                                                          fontSize: 8,
+                                                          color: Colors
+                                                              .grey.shade600,
+                                                        ),
+                                                      ),
                                                   ],
                                                 ),
-                                              ],
-                                            ),
-                                          );
-                                        })
-                                        .toList(),
-                                  const SizedBox(height: 16),
-                                  Divider(color: Colors.grey.shade200),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      const Text(
-                                        'TOTAL',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                              ),
+                                              Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.end,
+                                                children: [
+                                                  Text(
+                                                    'x${item['quantity'] ?? 1}',
+                                                    style: const TextStyle(
+                                                      fontSize: 9,
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    '₱${item['price'] ?? 0}',
+                                                    style: const TextStyle(
+                                                      fontSize: 9,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }),
+                                const SizedBox(height: 16),
+                                Divider(color: Colors.grey.shade200),
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'TOTAL',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
                                       ),
-                                      Text(
-                                        '₱${totalAmount.toString()}',
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    '₱${totalAmount.toString()}',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.amber.shade800,
                                     ),
+                                    Text(
+                                      '₱${totalAmount.toString()}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '₱${totalAmount.toString()}',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.amber.shade800,
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
-                    // PAYMENT
-                    Expanded(
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Column(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              child: const Text(
-                                'PAYMENT',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                  letterSpacing: 1,
+                    _paymentPanel(
+                      mobile: mobile,
+                      desktopMargin:
+                          const EdgeInsets.symmetric(horizontal: 12),
+                      addBottomGap: true,
+                      child: Column(
+                        children: [
+                          _sectionHeader('PAYMENT'),
+                          Divider(color: Colors.grey.shade200, height: 1),
+                          Container(
+                            padding: EdgeInsets.all(mobile ? 16 : 20),
+                            child: Column(
+                              children: [
+                                Text(
+                                  'PLEASE SCAN THIS QR CODE TO PAY.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                  ),
                                 ),
-                              ),
-                            ),
-                            Divider(color: Colors.grey.shade200, height: 1),
-                            Container(
-                              padding: const EdgeInsets.all(20),
-                              child: Column(
-                                children: [
-                                  Text(
-                                    'PLEASE SCAN THIS QR CODE TO PAY.',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700,
-                                    ),
+                                const SizedBox(height: 24),
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
-                                  const SizedBox(height: 24),
-                                  Container(
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Image.asset(
-                                      'lib/assets/gcash_qr.jpg',
-                                      width: 200,
-                                      height: 280,
-                                      fit: BoxFit.contain,
-                                    ),
+                                  child: Image.asset(
+                                    'lib/assets/gcash_qr.jpg',
+                                    width: qrSize,
+                                    height: qrHeight,
+                                    fit: BoxFit.contain,
                                   ),
-                                  const SizedBox(height: 32),
+                                ),
+                                const SizedBox(height: 32),
+                                Text(
+                                  'ONCE PAID, PLEASE TYPE THE REFERENCE NUMBER BELOW:',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                if (mobile) ...[
                                   Text(
-                                    'ONCE PAID, PLEASE TYPE THE REFERENCE NUMBER BELOW:',
+                                    'REF NO.',
                                     style: TextStyle(
                                       fontSize: 10,
                                       color: Colors.grey.shade700,
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 6),
+                                  TextField(
+                                    controller: _referenceController,
+                                    keyboardType: TextInputType.number,
+                                    maxLength: 13,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                      LengthLimitingTextInputFormatter(13),
+                                    ],
+                                    style: const TextStyle(fontSize: 12),
+                                    onChanged: (_) {
+                                      if (_showValidation) setState(() {});
+                                    },
+                                    decoration: InputDecoration(
+                                      isDense: true,
+                                      errorText: _showValidation
+                                          ? _referenceError
+                                          : null,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                        borderSide: BorderSide(
+                                          color: Colors.grey.shade300,
+                                        ),
+                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                      counterText: '',
+                                    ),
+                                  ),
+                                ] else
                                   Row(
                                     children: [
                                       SizedBox(
@@ -533,18 +577,21 @@ class _PaymentPageState extends State<PaymentPage> {
                                           inputFormatters: [
                                             FilteringTextInputFormatter
                                                 .digitsOnly,
+                                            LengthLimitingTextInputFormatter(
+                                              13,
+                                            ),
                                           ],
                                           style: const TextStyle(fontSize: 12),
                                           onChanged: (_) {
-                                            if (_showValidation)
+                                            if (_showValidation) {
                                               setState(() {});
+                                            }
                                           },
                                           decoration: InputDecoration(
                                             isDense: true,
-                                            errorText:
-                                                _showValidation
-                                                    ? _referenceError
-                                                    : null,
+                                            errorText: _showValidation
+                                                ? _referenceError
+                                                : null,
                                             border: OutlineInputBorder(
                                               borderRadius:
                                                   BorderRadius.circular(6),
@@ -563,12 +610,13 @@ class _PaymentPageState extends State<PaymentPage> {
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 40),
-                                  ElevatedButton(
-                                    onPressed:
-                                        _isLoading
-                                            ? null
-                                            : _handleConfirmPayment,
+                                const SizedBox(height: 40),
+                                SizedBox(
+                                  width: mobile ? double.infinity : null,
+                                  child: ElevatedButton(
+                                    onPressed: _isLoading
+                                        ? null
+                                        : _handleConfirmPayment,
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: const Color(0xFFFFC024),
                                       foregroundColor: Colors.black,
@@ -577,110 +625,94 @@ class _PaymentPageState extends State<PaymentPage> {
                                         vertical: 12,
                                       ),
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(20),
+                                        borderRadius:
+                                            BorderRadius.circular(20),
                                       ),
                                     ),
-                                    child:
-                                        _isLoading
-                                            ? const SizedBox(
-                                              width: 20,
-                                              height: 20,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                              ),
-                                            )
-                                            : const Text(
-                                              'CONFIRM',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.bold,
-                                              ),
+                                    child: _isLoading
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
                                             ),
+                                          )
+                                        : const Text(
+                                            'CONFIRM',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
-                    // NOTES
-                    Expanded(
-                      child: Container(
-                        margin: const EdgeInsets.only(left: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Column(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              child: const Text(
-                                'NOTES',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                  letterSpacing: 1,
+                    _paymentPanel(
+                      mobile: mobile,
+                      desktopMargin: const EdgeInsets.only(left: 12),
+                      child: Column(
+                        children: [
+                          _sectionHeader('NOTES'),
+                          Divider(color: Colors.grey.shade200, height: 1),
+                          Container(
+                            padding: EdgeInsets.all(mobile ? 16 : 20),
+                            width: double.infinity,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'PLEASE PREPARE YOUR GCASH APP TO SCAN OUR QR CODE FOR PAYMENT.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                    height: 1.5,
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'PLEASE SEND THE EXACT AMOUNT OF YOUR TOTAL COST ONLY.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                    height: 1.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'ORDERS WITH INSUFFICIENT PAYMENT WILL NOT BE CONFIRMED.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                    height: 1.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'ONCE ORDER IS PAID, PLEASE WAIT FOR YOUR ORDER TO BE PROCESSED AND DELIVERED.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                    height: 1.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'THANK YOU!',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
-                            Divider(color: Colors.grey.shade200, height: 1),
-                            Container(
-                              padding: const EdgeInsets.all(20),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'PLEASE PREPARE YOUR GCASH APP TO SCAN OUR QR CODE FOR PAYMENT.',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700,
-                                      height: 1.5,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'PLEASE SEND THE EXACT AMOUNT OF YOUR TOTAL COST ONLY.',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700,
-                                      height: 1.5,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'ORDERS WITH INSUFFICIENT PAYMENT WILL NOT BE CONFIRMED.',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700,
-                                      height: 1.5,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'ONCE ORDER IS PAID, PLEASE WAIT FOR YOUR ORDER TO BE PROCESSED AND DELIVERED.',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700,
-                                      height: 1.5,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'THANK YOU!',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -694,36 +726,45 @@ class _PaymentPageState extends State<PaymentPage> {
   }
 
   Widget _buildLabelAndValue(String label, String value) {
+    final mobile = isMobileWidth(context);
+    final labelWidget = Text(
+      label,
+      style: TextStyle(
+        fontSize: 10,
+        color: Colors.grey.shade700,
+        fontWeight: FontWeight.w500,
+      ),
+    );
+    final valueWidget = Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        value.isEmpty ? '' : value,
+        style: TextStyle(
+          fontSize: 11,
+          color: value.isEmpty ? Colors.grey.shade400 : Colors.black,
+        ),
+      ),
+    );
+    if (mobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          labelWidget,
+          const SizedBox(height: 6),
+          valueWidget,
+        ],
+      );
+    }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 100,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              color: Colors.grey.shade700,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              value.isEmpty ? '' : value,
-              style: TextStyle(
-                fontSize: 11,
-                color: value.isEmpty ? Colors.grey.shade400 : Colors.black,
-              ),
-            ),
-          ),
-        ),
+        SizedBox(width: 100, child: labelWidget),
+        Expanded(child: valueWidget),
       ],
     );
   }

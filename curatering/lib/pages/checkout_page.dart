@@ -81,6 +81,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
+  String _digitsMax11(String raw) {
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    return digits.length > 11 ? digits.substring(0, 11) : digits;
+  }
+
   Future<void> _loadCustomerData() async {
     try {
       await LoyaltyRewardsStore.instance.ensureLoaded();
@@ -92,7 +97,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
           setState(() {
             _customerData = Map<String, dynamic>.from(decoded);
             _nameController.text = _customerData?['fullName']?.toString() ?? '';
-            _phoneController.text = _customerData?['phone']?.toString() ?? '';
+            _phoneController.text = _digitsMax11(
+              _customerData?['phone']?.toString() ?? '',
+            );
             _currentPoints = _restaurantLoyaltyPointsFromMap(_customerData);
           });
         }
@@ -237,7 +244,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
 
     final isGuest = _customerData == null;
-    final phoneDigits = _phoneController.text.replaceAll(RegExp(r'\D'), '');
+    final phoneDigits = _digitsMax11(_phoneController.text);
 
     if (_deliveryLat == null || _deliveryLng == null) {
       _notify('Please pin your delivery location on the map.', error: true);
@@ -383,7 +390,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   String? get _phoneError {
-    final digits = _phoneController.text.replaceAll(RegExp(r'\D'), '');
+    final digits = _digitsMax11(_phoneController.text);
     if (digits.isEmpty) return 'Contact number is required';
     if (digits.length != 11 || !digits.startsWith('09')) {
       return 'Use an 11-digit PH mobile number, e.g. 09123456789';
@@ -752,12 +759,24 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     'CONTACT NUMBER',
                                     '',
                                     controller: _phoneController,
-                                    keyboardType: TextInputType.number,
+                                    keyboardType: TextInputType.phone,
                                     maxLength: 11,
                                     digitsOnly: true,
                                     hintText: '09123456789',
                                     errorText:
                                         _showValidation ? _phoneError : null,
+                                    onChanged: (value) {
+                                      final clipped = _digitsMax11(value);
+                                      if (clipped != value) {
+                                        _phoneController.value = TextEditingValue(
+                                          text: clipped,
+                                          selection: TextSelection.collapsed(
+                                            offset: clipped.length,
+                                          ),
+                                        );
+                                      }
+                                      if (_showValidation) setState(() {});
+                                    },
                                   ),
                                   if (_customerData == null) ...[
                                     const SizedBox(height: 16),
@@ -1120,6 +1139,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     bool lettersOnly = false,
     String? hintText,
     String? errorText,
+    ValueChanged<String>? onChanged,
   }) {
     final mobile = isMobileWidth(context);
     final labelWidget = Text(
@@ -1156,8 +1176,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                       ]
                       : null,
               style: const TextStyle(fontSize: 12),
-              onChanged: (_) {
-                if (_showValidation) setState(() {});
+              onChanged: (v) {
+                onChanged?.call(v);
+                if (onChanged == null && _showValidation) setState(() {});
               },
               decoration: InputDecoration(
                 isDense: true,
