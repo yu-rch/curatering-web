@@ -50,6 +50,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
   String? _pendingEmail;
   String? _resetEmail;
   String? _errorMessage;
+  bool _errorIsSuccess = false;
 
   @override
   void dispose() {
@@ -64,9 +65,21 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
     super.dispose();
   }
 
+  void _setError(String? message, {bool success = false}) {
+    setState(() {
+      _errorMessage = message;
+      _errorIsSuccess = success;
+    });
+  }
+
   Future<void> _handleForgotPassword() async {
-    if (_emailController.text.isEmpty || !_emailController.text.contains('@')) {
-      setState(() => _errorMessage = 'Please enter a valid email');
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      _setError('Email address is required');
+      return;
+    }
+    if (!email.contains('@')) {
+      _setError('Please enter valid email address');
       return;
     }
 
@@ -77,7 +90,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
           .post(
             _apiUri('/api/customer/forgot-password'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'email': _emailController.text.trim()}),
+            body: jsonEncode({'email': email}),
           )
           .timeout(_requestTimeout);
 
@@ -85,37 +98,40 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
       if (response.statusCode == 200) {
         setState(() {
-          _resetEmail = _emailController.text.trim();
+          _resetEmail = email;
           _showForgotPassword = false;
           _showResetPassword = true;
-          _errorMessage = null;
+          _isLoading = false;
         });
+        _setError('OTP sent!', success: true);
       } else {
-        setState(
-          () =>
-              _errorMessage =
-                  data['error']?.toString() ??
-                  data['message']?.toString() ??
-                  data['detail']?.toString() ??
-                  'Failed to send reset code (${response.statusCode})',
+        setState(() => _isLoading = false);
+        _setError(
+          data['error']?.toString() ??
+              data['message']?.toString() ??
+              data['detail']?.toString() ??
+              'Failed to send reset code (${response.statusCode})',
         );
       }
     } catch (e) {
-      setState(() => _errorMessage = 'Error: $e');
-    } finally {
       setState(() => _isLoading = false);
+      _setError('Error: $e');
     }
   }
 
   Future<void> _handleResetPassword() async {
-    if (_resetCodeController.text.isEmpty ||
-        _resetCodeController.text.length != 6) {
-      setState(() => _errorMessage = 'Please enter a valid 6-digit reset code');
+    final code = _resetCodeController.text.trim();
+    if (code.isEmpty) {
+      _setError('Please enter the 6-digit code sent to your email');
+      return;
+    }
+    if (code.length != 6 || !RegExp(r'^\d{6}$').hasMatch(code)) {
+      _setError('This OTP is invalid');
       return;
     }
     if (_newPasswordController.text.isEmpty ||
         _newPasswordController.text.length < 6) {
-      setState(() => _errorMessage = 'Password must be at least 6 characters');
+      _setError('Password must be at least 6 characters');
       return;
     }
 
@@ -128,7 +144,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'email': _resetEmail,
-              'resetCode': _resetCodeController.text.trim(),
+              'resetCode': code,
               'newPassword': _newPasswordController.text,
             }),
           )
@@ -147,34 +163,54 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
           _resetCodeController.clear();
           _newPasswordController.clear();
           _passwordController.clear();
-          _errorMessage = null;
+          _isLoading = false;
         });
+        _setError(null);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Password reset successful. Please log in.')),
+          await showDialog<void>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Success'),
+              content: const Text('Password reset successful. Please log in.'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
           );
         }
       } else {
-        setState(
-          () =>
-              _errorMessage =
-                  data['error']?.toString() ??
-                  data['message']?.toString() ??
-                  data['detail']?.toString() ??
-                  'Failed to reset password (${response.statusCode})',
+        setState(() => _isLoading = false);
+        _setError(
+          data['error']?.toString() ??
+              data['message']?.toString() ??
+              data['detail']?.toString() ??
+              'Failed to reset password (${response.statusCode})',
         );
       }
     } catch (e) {
-      setState(() => _errorMessage = 'Error: $e');
-    } finally {
       setState(() => _isLoading = false);
+      _setError('Error: $e');
     }
   }
 
   Future<void> _handleLogin() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (email.isEmpty || password.isEmpty) {
+      _setError('Email and Password is required');
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
     try {
       final response = await http
@@ -182,8 +218,8 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
             _apiUri('/api/customer/login'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
-              'email': _emailController.text.trim(),
-              'password': _passwordController.text,
+              'email': email,
+              'password': password,
             }),
           )
           .timeout(_requestTimeout);
@@ -191,7 +227,6 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        // Save token — do not block login success on cart sync failures.
         final prefs = await SharedPreferences.getInstance();
         final token = data['token'] as String?;
         await prefs.setString('customer_token', token ?? '');
@@ -205,35 +240,70 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
           debugPrint('Cart sync after login failed: $e');
         }
 
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Success'),
+            content: const Text('login successful'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
         if (mounted) {
           Navigator.of(context).pop(data);
         }
+      } else if (response.statusCode == 429 ||
+          data['code'] == 'login_locked') {
+        setState(() => _isLoading = false);
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Too many attempts'),
+            content: Text(
+              data['error']?.toString() ??
+                  data['message']?.toString() ??
+                  'You have reached the limit for failed login attempts. Try again after 15 minutes.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
       } else if (response.statusCode == 403 &&
           data['requiresVerification'] == true) {
         setState(() {
           _showOtpField = true;
-          _pendingEmail = _emailController.text.trim();
+          _pendingEmail = email;
+          _isLoading = false;
           _errorMessage = null;
         });
       } else {
-        setState(
-          () =>
-              _errorMessage =
-                  data['error']?.toString() ??
-                  data['message']?.toString() ??
-                  'Login failed (${response.statusCode})',
+        setState(() => _isLoading = false);
+        _setError(
+          data['error']?.toString() ??
+              data['message']?.toString() ??
+              'Invalid credentials. Please try again.',
         );
       }
     } on TimeoutException {
-      setState(
-        () =>
-            _errorMessage =
-                'Login timed out. Please check your connection and try again.',
+      setState(() => _isLoading = false);
+      _setError(
+        'Login timed out. Please check your connection and try again.',
       );
     } catch (e) {
-      setState(() => _errorMessage = 'Error: $e');
-    } finally {
       setState(() => _isLoading = false);
+      _setError('Error: $e');
     }
   }
 
@@ -368,15 +438,25 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.red.shade50,
+                  color: _errorIsSuccess
+                      ? Colors.green.shade50
+                      : Colors.red.shade50,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
+                  border: Border.all(
+                    color: _errorIsSuccess
+                        ? Colors.green.shade200
+                        : Colors.red.shade200,
+                  ),
                 ),
                 child: Row(
                   children: [
                     Icon(
-                      Icons.error_outline,
-                      color: Colors.red.shade700,
+                      _errorIsSuccess
+                          ? Icons.check_circle_outline
+                          : Icons.error_outline,
+                      color: _errorIsSuccess
+                          ? Colors.green.shade700
+                          : Colors.red.shade700,
                       size: 16,
                     ),
                     const SizedBox(width: 8),
@@ -385,7 +465,9 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                         _errorMessage!,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.red.shade700,
+                          color: _errorIsSuccess
+                              ? Colors.green.shade700
+                              : Colors.red.shade700,
                         ),
                       ),
                     ),
@@ -578,7 +660,45 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                           ),
                         ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: _isLoading
+                    ? null
+                    : () async {
+                        if ((_resetEmail ?? '').isEmpty) {
+                          _setError('Please enter valid email address');
+                          return;
+                        }
+                        setState(() => _isLoading = true);
+                        try {
+                          final response = await http
+                              .post(
+                                _apiUri('/api/customer/forgot-password'),
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                },
+                                body: jsonEncode({'email': _resetEmail}),
+                              )
+                              .timeout(_requestTimeout);
+                          final data = jsonDecode(response.body);
+                          setState(() => _isLoading = false);
+                          if (response.statusCode == 200) {
+                            _setError('OTP sent!', success: true);
+                          } else {
+                            _setError(
+                              data['error']?.toString() ??
+                                  data['message']?.toString() ??
+                                  'Failed to resend OTP',
+                            );
+                          }
+                        } catch (e) {
+                          setState(() => _isLoading = false);
+                          _setError('Error: $e');
+                        }
+                      },
+                child: const Text('Resend OTP'),
+              ),
+              const SizedBox(height: 8),
               GestureDetector(
                 onTap:
                     () => setState(() {

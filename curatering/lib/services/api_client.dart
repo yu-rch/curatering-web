@@ -199,7 +199,9 @@ class ApiClient {
         final message =
             decoded is Map && decoded['message'] is String
                 ? decoded['message'] as String
-                : 'Request failed';
+                : (decoded is Map && decoded['error'] is String
+                    ? decoded['error'] as String
+                    : 'Request failed');
         final code =
             decoded is Map && decoded['code'] is String
                 ? decoded['code'] as String

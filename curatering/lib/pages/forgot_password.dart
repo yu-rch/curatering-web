@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'dart:math';
+import '../services/api_client.dart';
+import '../services/auth_api.dart';
 
 class ForgotPassword extends StatefulWidget {
   const ForgotPassword({super.key});
@@ -9,28 +10,22 @@ class ForgotPassword extends StatefulWidget {
 }
 
 class _ForgotPasswordState extends State<ForgotPassword> {
-  int _currentStep = 1; // Step 1, 2, or 3
+  int _currentStep = 1;
   final _emailController = TextEditingController();
   final _otpController = TextEditingController();
   final _passwordController = TextEditingController();
   final List<TextEditingController> _otpFields =
       List.generate(6, (_) => TextEditingController());
-  final List<FocusNode> _otpFocusNodes =
-      List.generate(6, (_) => FocusNode());
+  final List<FocusNode> _otpFocusNodes = List.generate(6, (_) => FocusNode());
 
   String _maskedEmail = '';
+  String _verifiedOtp = '';
   bool _isLoading = false;
-  String _generatedOtp = '';
+  String? _alertMessage;
+  bool _alertSuccess = false;
 
-  // Countdown timer for resend
   int _resendCountdown = 0;
-  late final Duration _resendDelay = const Duration(seconds: 30);
-
-  // Generate 6-digit random code
-  String _generateOtp() {
-    final random = Random();
-    return List.generate(6, (_) => random.nextInt(10)).join();
-  }
+  static const _resendDelay = Duration(seconds: 30);
 
   @override
   void dispose() {
@@ -46,117 +41,124 @@ class _ForgotPasswordState extends State<ForgotPassword> {
     super.dispose();
   }
 
-  // Step 1: Verify email and send OTP
+  void _setAlert(String message, {bool success = false}) {
+    setState(() {
+      _alertMessage = message;
+      _alertSuccess = success;
+    });
+  }
+
+  String _maskEmail(String email) {
+    if (!email.contains('@')) return email;
+    final parts = email.split('@');
+    final username = parts[0];
+    final domain = parts[1];
+    if (username.length > 2) {
+      return '${username.substring(0, 2)}***@$domain';
+    }
+    return '${username.substring(0, 1)}***@$domain';
+  }
+
   Future<void> _verifyEmail() async {
-    if (_emailController.text.isEmpty) {
-      _showErrorSnackbar('Please enter your email');
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      _setAlert('Email address is required');
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _alertMessage = null;
+    });
 
     try {
-      await Future.delayed(const Duration(seconds: 2));
-
-      // Generate 6-digit random code
-      _generatedOtp = _generateOtp();
-      
-      // Mask email for display
-      final email = _emailController.text;
-      String maskedEmail = '';
-      if (email.contains('@')) {
-        final parts = email.split('@');
-        final username = parts[0];
-        final domain = parts[1];
-        if (username.length > 2) {
-          maskedEmail = '${username.substring(0, 2)}***@${domain}';
-        } else {
-          maskedEmail = '${username.substring(0, 1)}***@${domain}';
-        }
-      } else {
-        maskedEmail = email;
-      }
-
+      await AuthApi.instance.forgotPassword(email: email);
+      if (!mounted) return;
       setState(() {
-        _maskedEmail = maskedEmail;
+        _maskedEmail = _maskEmail(email);
         _currentStep = 2;
         _isLoading = false;
-        _startResendCountdown();
       });
-
-      if (mounted) {
-        _showSuccessSnackbar('6-digit code sent to $maskedEmail');
-        print('Generated OTP: $_generatedOtp'); // For debugging
-      }
+      _setAlert('OTP sent!', success: true);
+      _startResendCountdown();
+    } on ApiError catch (e) {
+      if (!mounted) return;
+      _setAlert(e.message);
+      setState(() => _isLoading = false);
     } catch (e) {
-      if (mounted) {
-        _showErrorSnackbar('Error: ${e.toString()}');
-      }
+      if (!mounted) return;
+      _setAlert('Error: $e');
       setState(() => _isLoading = false);
     }
   }
 
-  // Step 2: Verify OTP code
   Future<void> _verifyOtp() async {
     final otp = _otpFields.map((c) => c.text).join();
     _otpController.text = otp;
 
-    if (otp.isEmpty || otp.length < 6) {
-      _showErrorSnackbar('Please enter a valid 6-digit code');
+    if (otp.isEmpty) {
+      _setAlert('Please enter the 6-digit code sent to your email');
+      return;
+    }
+    if (otp.length != 6 || !RegExp(r'^\d{6}$').hasMatch(otp)) {
+      _setAlert('This OTP is invalid');
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _alertMessage = null;
+    });
 
     try {
-      await Future.delayed(const Duration(seconds: 2));
-
-      // Verify against the generated OTP
-      if (otp != _generatedOtp) {
-        throw Exception('Invalid code');
-      }
-
+      await AuthApi.instance.verifyResetOtp(
+        email: _emailController.text.trim(),
+        otp: otp,
+      );
+      if (!mounted) return;
       setState(() {
+        _verifiedOtp = otp;
         _currentStep = 3;
         _isLoading = false;
+        _alertMessage = null;
       });
-
-      if (mounted) {
-        _showSuccessSnackbar('Code verified successfully');
-      }
+    } on ApiError catch (e) {
+      if (!mounted) return;
+      _setAlert(e.message);
+      setState(() => _isLoading = false);
     } catch (e) {
-      if (mounted) {
-        _showErrorSnackbar('Invalid code. Please try again.');
-      }
+      if (!mounted) return;
+      _setAlert('This OTP is invalid');
       setState(() => _isLoading = false);
     }
   }
 
-  // Step 2: Resend OTP code
   Future<void> _resendOtp() async {
     if (_resendCountdown > 0) return;
 
     setState(() {
       _isLoading = true;
-      _startResendCountdown();
+      _alertMessage = null;
     });
 
     try {
-      await Future.delayed(const Duration(seconds: 2));
-
-      // Generate new OTP
-      _generatedOtp = _generateOtp();
-
+      await AuthApi.instance.forgotPassword(
+        email: _emailController.text.trim(),
+      );
+      if (!mounted) return;
+      for (final c in _otpFields) {
+        c.clear();
+      }
+      _setAlert('OTP sent!', success: true);
+      _startResendCountdown();
       setState(() => _isLoading = false);
-
-      if (mounted) {
-        _showSuccessSnackbar('6-digit code resent to $_maskedEmail');
-        print('New Generated OTP: $_generatedOtp'); // remove after debugging
-      }
+    } on ApiError catch (e) {
+      if (!mounted) return;
+      _setAlert(e.message);
+      setState(() => _isLoading = false);
     } catch (e) {
-      if (mounted) {
-        _showErrorSnackbar('Error resending code: ${e.toString()}');
-      }
+      if (!mounted) return;
+      _setAlert('Error resending code: $e');
       setState(() => _isLoading = false);
     }
   }
@@ -165,6 +167,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
     setState(() => _resendCountdown = _resendDelay.inSeconds);
     Future.doWhile(() async {
       await Future.delayed(const Duration(seconds: 1));
+      if (!mounted) return false;
       if (_resendCountdown > 0) {
         setState(() => _resendCountdown--);
         return true;
@@ -173,52 +176,66 @@ class _ForgotPasswordState extends State<ForgotPassword> {
     });
   }
 
-  /// Step 3: Reset password
   Future<void> _resetPassword() async {
     if (_passwordController.text.isEmpty) {
-      _showErrorSnackbar('Please enter a new password');
+      _setAlert('Please enter a new password');
       return;
     }
-
     if (_passwordController.text.length < 6) {
-      _showErrorSnackbar('Password must be at least 6 characters');
+      _setAlert('Password must be at least 6 characters');
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _alertMessage = null;
+    });
 
     try {
-      await Future.delayed(const Duration(seconds: 2));
-
-      if (mounted) {
-        _showSuccessSnackbar('Password reset successfully');
-        await Future.delayed(const Duration(milliseconds: 500));
-        Navigator.of(context).pop();
-      }
+      await AuthApi.instance.resetPassword(
+        email: _emailController.text.trim(),
+        otp: _verifiedOtp.isNotEmpty
+            ? _verifiedOtp
+            : _otpFields.map((c) => c.text).join(),
+        newPassword: _passwordController.text,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Success'),
+          content: const Text('Password reset successfully'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      if (mounted) Navigator.of(context).pop();
+    } on ApiError catch (e) {
+      if (!mounted) return;
+      _setAlert(e.message);
+      setState(() => _isLoading = false);
     } catch (e) {
-      if (mounted) {
-        _showErrorSnackbar('Error resetting password: ${e.toString()}');
-      }
+      if (!mounted) return;
+      _setAlert('Error resetting password: $e');
       setState(() => _isLoading = false);
     }
   }
 
-  void _showErrorSnackbar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
-  void _showSuccessSnackbar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 2),
+  Widget? _alertBanner() {
+    if (_alertMessage == null || _alertMessage!.isEmpty) return null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text(
+        _alertMessage!,
+        style: TextStyle(
+          color: _alertSuccess ? Colors.green.shade700 : Colors.red.shade700,
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
+        ),
       ),
     );
   }
@@ -242,7 +259,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
-                padding: const EdgeInsets.only(bottom: 20.0),
+                padding: const EdgeInsets.only(bottom: 12),
                 child: Align(
                   alignment: Alignment.topRight,
                   child: Text(
@@ -255,12 +272,16 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                   ),
                 ),
               ),
+              if (_alertBanner() != null) _alertBanner()!,
               if (_currentStep == 1) ...[
-                const Text('Enter your email',
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black87)),
+                const Text(
+                  'Enter your email',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.black87,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _emailController,
@@ -269,23 +290,31 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                   ),
                   keyboardType: TextInputType.emailAddress,
+                  onChanged: (_) {
+                    if (_alertMessage != null) {
+                      setState(() => _alertMessage = null);
+                    }
+                  },
                 ),
               ],
               if (_currentStep == 2) ...[
                 Text(
                   "We've sent a 6-digit code to your email\n$_maskedEmail",
                   style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.black87,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Please enter the code we\'ve sent',
+                  "Please enter the code we've sent",
                   style: TextStyle(fontSize: 13, color: Colors.black54),
                 ),
                 const SizedBox(height: 12),
@@ -301,7 +330,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                         keyboardType: TextInputType.number,
                         maxLength: 1,
                         decoration: InputDecoration(
-                          counterText: "",
+                          counterText: '',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
@@ -309,13 +338,9 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                         onChanged: (value) {
                           final otp = _otpFields.map((c) => c.text).join();
                           _otpController.text = otp;
-                          
-                          // Auto-focus next field when digit entered
                           if (value.isNotEmpty && index < 5) {
                             _otpFocusNodes[index + 1].requestFocus();
                           }
-                          
-                          // Auto-verify when all 6 digits entered
                           if (otp.length == 6) {
                             _verifyOtp();
                           }
@@ -329,16 +354,20 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                 const Text(
                   'We need to reset your password for stronger security!',
                   style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.black87,
+                  ),
                 ),
                 const SizedBox(height: 16),
-                const Text('New Password',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black87)),
+                const Text(
+                  'New Password',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.black87,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _passwordController,
@@ -347,8 +376,10 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                   ),
                   obscureText: true,
                 ),

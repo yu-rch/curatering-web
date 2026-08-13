@@ -23,22 +23,26 @@ class _LoginState extends State<Login> {
   Future<void> _onLogin() async {
     if (_isLoading) return;
 
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (email.isEmpty || password.isEmpty) {
+      setState(() => _errorMessage = 'Email and Password is required');
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      final email = _emailController.text.trim();
-      final password = _passwordController.text;
-
       final resp = await AuthApi.instance.login(
         email: email,
         password: password,
       );
 
       if (!mounted) return;
-
 
       // Check if user is verified
       if (resp.user.isVerified == false) {
@@ -73,16 +77,53 @@ class _LoginState extends State<Login> {
         Role.manager => '/manage-events',
         Role.cashier => '/restaurant-orders',
       };
-      
-      if (!mounted) {
-        return;
-      }
-      
+
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Success'),
+          content: const Text('login successful'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+
+      if (!mounted) return;
       Navigator.of(context).pushReplacementNamed(targetRoute);
     } on ApiError catch (e) {
-      if (e.message.contains("not verified")) {
-        if (!mounted) return;
+      if (!mounted) return;
 
+      if (e.statusCode == 429 ||
+          e.message.contains('reached the limit for failed login')) {
+        setState(() => _errorMessage = null);
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Too many attempts'),
+            content: Text(
+              e.message.contains('15 minutes')
+                  ? e.message
+                  : 'You have reached the limit for failed login attempts. Try again after 15 minutes.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      if (e.message.contains("not verified")) {
         final verified = await showStaffVerifyOtpDialog(
           context,
           email: _emailController.text.trim(),
@@ -96,7 +137,12 @@ class _LoginState extends State<Login> {
         return;
       }
 
-      setState(() => _errorMessage = e.message);
+      setState(
+        () => _errorMessage =
+            e.message.trim().isEmpty
+                ? 'Invalid credentials. Please try again.'
+                : e.message,
+      );
     } catch (e) {
       setState(() => _errorMessage = 'Login failed. Please try again.');
     } finally {

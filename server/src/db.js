@@ -210,9 +210,18 @@ export async function ensureAuthSchemaQuick() {
       archived BOOLEAN NOT NULL DEFAULT FALSE,
       is_verified BOOLEAN DEFAULT FALSE,
       page_permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
+      reset_code VARCHAR(6),
+      reset_code_expires TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  await pool.query(
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code VARCHAR(6)`,
+  );
+  await pool.query(
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code_expires TIMESTAMPTZ`,
+  );
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS id_counters (

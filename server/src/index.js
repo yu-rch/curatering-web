@@ -3298,6 +3298,53 @@ function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+/** In-memory failed-login tracker: 3 failures → 15 minute lockout. */
+const LOGIN_MAX_ATTEMPTS = 3;
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000;
+const loginAttemptState = new Map();
+
+function loginAttemptKey(scope, email) {
+  return `${scope}:${String(email || "").trim().toLowerCase()}`;
+}
+
+function getLoginLockRemainingMs(scope, email) {
+  const key = loginAttemptKey(scope, email);
+  const entry = loginAttemptState.get(key);
+  if (!entry?.lockedUntil) return 0;
+  const remaining = entry.lockedUntil - Date.now();
+  if (remaining <= 0) {
+    loginAttemptState.delete(key);
+    return 0;
+  }
+  return remaining;
+}
+
+function recordFailedLogin(scope, email) {
+  const key = loginAttemptKey(scope, email);
+  const entry = loginAttemptState.get(key) || { count: 0, lockedUntil: null };
+  if (entry.lockedUntil && entry.lockedUntil > Date.now()) {
+    return { locked: true, remainingMs: entry.lockedUntil - Date.now() };
+  }
+  entry.count += 1;
+  if (entry.count >= LOGIN_MAX_ATTEMPTS) {
+    entry.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
+    entry.count = 0;
+    loginAttemptState.set(key, entry);
+    return { locked: true, remainingMs: LOGIN_LOCKOUT_MS };
+  }
+  loginAttemptState.set(key, entry);
+  return { locked: false, remainingMs: 0, attempts: entry.count };
+}
+
+function clearFailedLogins(scope, email) {
+  loginAttemptState.delete(loginAttemptKey(scope, email));
+}
+
+const LOGIN_LOCK_MESSAGE =
+  "You have reached the limit for failed login attempts. Try again after 15 minutes.";
+const STAFF_INVALID_CREDENTIALS = "Invalid credentials. Please try again.";
+
+
 function assertResendEmailConfigured() {
   if (!isEmailConfigured()) {
     throw new Error("Email not configured: set RESEND_API_KEY and RESEND_FROM");
@@ -3582,10 +3629,20 @@ function registerCustomerAuthRoutes(app, dbGate) {
       const { email, password } = req.body || {};
 
       if (!email || !password) {
-        return res.status(400).json({ error: "Email and password are required" });
+        return res.status(400).json({ error: "Email and Password is required" });
       }
 
       const emailNorm = String(email).trim().toLowerCase();
+      const lockRemaining = getLoginLockRemainingMs("customer", emailNorm);
+      if (lockRemaining > 0) {
+        return res.status(429).json({
+          error: LOGIN_LOCK_MESSAGE,
+          message: LOGIN_LOCK_MESSAGE,
+          code: "login_locked",
+          retryAfterSeconds: Math.ceil(lockRemaining / 1000),
+        });
+      }
+
       const caCols = await getTableColumnNames("customer_accounts");
       const archivedSelect = caCols.has("archived")
         ? "COALESCE(archived, FALSE) AS archived"
@@ -3613,8 +3670,24 @@ function registerCustomerAuthRoutes(app, dbGate) {
         [emailNorm],
       );
 
+      const failLogin = () => {
+        const fail = recordFailedLogin("customer", emailNorm);
+        if (fail.locked) {
+          return res.status(429).json({
+            error: LOGIN_LOCK_MESSAGE,
+            message: LOGIN_LOCK_MESSAGE,
+            code: "login_locked",
+            retryAfterSeconds: Math.ceil(fail.remainingMs / 1000),
+          });
+        }
+        return res.status(401).json({
+          error: STAFF_INVALID_CREDENTIALS,
+          message: STAFF_INVALID_CREDENTIALS,
+        });
+      };
+
       if (result.rows.length === 0) {
-        return res.status(401).json({ error: "Invalid email or password" });
+        return failLogin();
       }
 
       const customer = result.rows[0];
@@ -3626,7 +3699,7 @@ function registerCustomerAuthRoutes(app, dbGate) {
 
       if (!customer.password_hash) {
         console.error("customer login: missing password_hash for", emailNorm);
-        return res.status(401).json({ error: "Invalid email or password" });
+        return failLogin();
       }
 
       let isValidPassword = false;
@@ -3637,11 +3710,11 @@ function registerCustomerAuthRoutes(app, dbGate) {
         );
       } catch (hashErr) {
         console.error("customer login bcrypt error:", hashErr?.message || hashErr);
-        return res.status(401).json({ error: "Invalid email or password" });
+        return failLogin();
       }
 
       if (!isValidPassword) {
-        return res.status(401).json({ error: "Invalid email or password" });
+        return failLogin();
       }
 
       if (!customer.is_verified) {
@@ -3671,6 +3744,7 @@ function registerCustomerAuthRoutes(app, dbGate) {
         });
       }
 
+      clearFailedLogins("customer", emailNorm);
       const token = jwt.sign(
         { customerId: customer.id, role: "customer" },
         JWT_SECRET,
@@ -3726,20 +3800,27 @@ function registerCustomerAuthRoutes(app, dbGate) {
       await ensureCustomerAccountsColumns();
       const { email } = req.body || {};
 
-      if (!email) {
-        return res.status(400).json({ error: "Email is required" });
+      if (!email || !String(email).trim()) {
+        return res.status(400).json({ error: "Email address is required" });
       }
 
       const emailNorm = String(email).trim().toLowerCase();
+      if (!emailNorm.includes("@")) {
+        return res
+          .status(400)
+          .json({ error: "Please enter valid email address" });
+      }
+
       const customerResult = await pool.query(
         `SELECT id, email, full_name, archived FROM customer_accounts
          WHERE lower(trim(email::text)) = $1`,
         [emailNorm],
       );
 
-      // Always return a generic success to avoid email enumeration.
       if (customerResult.rows.length === 0 || customerResult.rows[0].archived === true) {
-        return res.json({ message: "If an account exists, a reset code will be sent" });
+        return res
+          .status(404)
+          .json({ error: "Please enter valid email address" });
       }
 
       const customer = customerResult.rows[0];
@@ -3760,7 +3841,7 @@ function registerCustomerAuthRoutes(app, dbGate) {
         },
       );
 
-      res.json({ message: "Reset code sent to your email" });
+      res.json({ message: "OTP sent!" });
     } catch (error) {
       console.error("Error in forgot password:", error);
       res.status(500).json({
@@ -3779,6 +3860,16 @@ function registerCustomerAuthRoutes(app, dbGate) {
         return res.status(400).json({ error: "Email, reset code, and new password are required" });
       }
 
+      if (!String(resetCode).trim()) {
+        return res.status(400).json({
+          error: "Please enter the 6-digit code sent to your email",
+        });
+      }
+
+      if (!/^\d{6}$/.test(String(resetCode).trim())) {
+        return res.status(400).json({ error: "This OTP is invalid" });
+      }
+
       if (String(newPassword).length < 6) {
         return res.status(400).json({ error: "Password must be at least 6 characters" });
       }
@@ -3795,7 +3886,7 @@ function registerCustomerAuthRoutes(app, dbGate) {
       );
 
       if (customerResult.rows.length === 0) {
-        return res.status(400).json({ error: "Invalid or expired reset code" });
+        return res.status(400).json({ error: "This OTP is invalid" });
       }
 
       const customer = customerResult.rows[0];
@@ -3986,10 +4077,19 @@ app.post("/api/auth/login", async (req, res) => {
     if (!email || !password) {
       return res
         .status(400)
-        .json({ message: "email and password are required" });
+        .json({ message: "Email and Password is required" });
     }
 
     const emailNorm = String(email).trim().toLowerCase();
+    const lockRemaining = getLoginLockRemainingMs("staff", emailNorm);
+    if (lockRemaining > 0) {
+      return res.status(429).json({
+        message: LOGIN_LOCK_MESSAGE,
+        code: "login_locked",
+        retryAfterSeconds: Math.ceil(lockRemaining / 1000),
+      });
+    }
+
     const userCols = await getTableColumnNames("users");
     const archivedSelect = userCols.has("archived")
       ? "archived"
@@ -4011,7 +4111,15 @@ app.post("/api/auth/login", async (req, res) => {
     );
 
     if (result.rowCount === 0) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      const fail = recordFailedLogin("staff", emailNorm);
+      if (fail.locked) {
+        return res.status(429).json({
+          message: LOGIN_LOCK_MESSAGE,
+          code: "login_locked",
+          retryAfterSeconds: Math.ceil(fail.remainingMs / 1000),
+        });
+      }
+      return res.status(401).json({ message: STAFF_INVALID_CREDENTIALS });
     }
 
     const user = result.rows[0];
@@ -4022,7 +4130,15 @@ app.post("/api/auth/login", async (req, res) => {
 
     if (!user.password_hash) {
       console.error("staff login: missing password_hash for", emailNorm);
-      return res.status(401).json({ message: "Invalid credentials" });
+      const fail = recordFailedLogin("staff", emailNorm);
+      if (fail.locked) {
+        return res.status(429).json({
+          message: LOGIN_LOCK_MESSAGE,
+          code: "login_locked",
+          retryAfterSeconds: Math.ceil(fail.remainingMs / 1000),
+        });
+      }
+      return res.status(401).json({ message: STAFF_INVALID_CREDENTIALS });
     }
 
     let ok = false;
@@ -4030,13 +4146,30 @@ app.post("/api/auth/login", async (req, res) => {
       ok = await bcrypt.compare(password, String(user.password_hash));
     } catch (hashErr) {
       console.error("staff login bcrypt error:", hashErr?.message || hashErr);
-      return res.status(401).json({ message: "Invalid credentials" });
+      const fail = recordFailedLogin("staff", emailNorm);
+      if (fail.locked) {
+        return res.status(429).json({
+          message: LOGIN_LOCK_MESSAGE,
+          code: "login_locked",
+          retryAfterSeconds: Math.ceil(fail.remainingMs / 1000),
+        });
+      }
+      return res.status(401).json({ message: STAFF_INVALID_CREDENTIALS });
     }
 
     if (!ok) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      const fail = recordFailedLogin("staff", emailNorm);
+      if (fail.locked) {
+        return res.status(429).json({
+          message: LOGIN_LOCK_MESSAGE,
+          code: "login_locked",
+          retryAfterSeconds: Math.ceil(fail.remainingMs / 1000),
+        });
+      }
+      return res.status(401).json({ message: STAFF_INVALID_CREDENTIALS });
     }
 
+    clearFailedLogins("staff", emailNorm);
     const token = signToken({ userId: user.id, role: user.role });
 
     return res.json({
@@ -4057,6 +4190,143 @@ app.post("/api/auth/login", async (req, res) => {
       message: "Login failed",
       detail: process.env.NODE_ENV === "production" ? undefined : String(e?.message || e),
     });
+  }
+});
+
+async function ensureUsersResetColumns() {
+  await pool.query(
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code VARCHAR(6)`,
+  );
+  await pool.query(
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code_expires TIMESTAMPTZ`,
+  );
+}
+
+app.post("/api/auth/forgot-password", async (req, res) => {
+  try {
+    await ensureUsersResetColumns();
+    const { email } = req.body || {};
+    if (!email || !String(email).trim()) {
+      return res.status(400).json({ message: "Email address is required" });
+    }
+    const emailNorm = String(email).trim().toLowerCase();
+    const result = await pool.query(
+      `SELECT id, email, full_name, archived FROM users
+       WHERE lower(trim(email::text)) = $1
+       LIMIT 1`,
+      [emailNorm],
+    );
+    if (result.rowCount === 0 || result.rows[0].archived) {
+      return res
+        .status(404)
+        .json({ message: "This email address does not exist" });
+    }
+    const user = result.rows[0];
+    const resetCode = generateOTP();
+    await pool.query(
+      `UPDATE users
+       SET reset_code = $1,
+           reset_code_expires = NOW() + INTERVAL '30 minutes'
+       WHERE id = $2`,
+      [resetCode, user.id],
+    );
+    try {
+      await sendPasswordResetEmail(user.email, resetCode, user.full_name);
+    } catch (emailErr) {
+      console.error("Staff forgot-password email failed:", emailErr?.message || emailErr);
+      return res.status(500).json({
+        message:
+          "Could not send OTP email. Check email configuration on the server.",
+      });
+    }
+    return res.json({ message: "OTP sent!" });
+  } catch (e) {
+    console.error("Staff forgot-password error:", e);
+    return res.status(500).json({ message: "Failed to process request" });
+  }
+});
+
+app.post("/api/auth/verify-reset-otp", async (req, res) => {
+  try {
+    await ensureUsersResetColumns();
+    const { email, otp } = req.body || {};
+    if (!email || !String(email).trim()) {
+      return res.status(400).json({ message: "Email address is required" });
+    }
+    if (!otp || !String(otp).trim()) {
+      return res.status(400).json({
+        message: "Please enter the 6-digit code sent to your email",
+      });
+    }
+    const emailNorm = String(email).trim().toLowerCase();
+    const codeNorm = String(otp).trim();
+    if (!/^\d{6}$/.test(codeNorm)) {
+      return res.status(400).json({ message: "This OTP is invalid" });
+    }
+    const result = await pool.query(
+      `SELECT id FROM users
+       WHERE lower(trim(email::text)) = $1
+         AND trim(COALESCE(reset_code::text, '')) = $2
+         AND reset_code_expires IS NOT NULL
+         AND reset_code_expires > NOW()
+       LIMIT 1`,
+      [emailNorm, codeNorm],
+    );
+    if (result.rowCount === 0) {
+      return res.status(400).json({ message: "This OTP is invalid" });
+    }
+    return res.json({ message: "OTP verified" });
+  } catch (e) {
+    console.error("Staff verify-reset-otp error:", e);
+    return res.status(500).json({ message: "Failed to verify OTP" });
+  }
+});
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  try {
+    await ensureUsersResetColumns();
+    const { email, otp, newPassword } = req.body || {};
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        message: "Email, OTP, and new password are required",
+      });
+    }
+    if (String(newPassword).length < 6) {
+      return res
+        .status(400)
+        .json({ message: "Password must be at least 6 characters" });
+    }
+    const emailNorm = String(email).trim().toLowerCase();
+    const codeNorm = String(otp).trim();
+    const result = await pool.query(
+      `SELECT id, email, full_name FROM users
+       WHERE lower(trim(email::text)) = $1
+         AND trim(COALESCE(reset_code::text, '')) = $2
+         AND reset_code_expires IS NOT NULL
+         AND reset_code_expires > NOW()
+       LIMIT 1`,
+      [emailNorm, codeNorm],
+    );
+    if (result.rowCount === 0) {
+      return res.status(400).json({ message: "This OTP is invalid" });
+    }
+    const user = result.rows[0];
+    const hashedPassword = await bcrypt.hash(String(newPassword), 10);
+    await pool.query(
+      `UPDATE users
+       SET password_hash = $1,
+           reset_code = NULL,
+           reset_code_expires = NULL
+       WHERE id = $2`,
+      [hashedPassword, user.id],
+    );
+    void sendPasswordChangedEmail(user.email, user.full_name).catch((err) => {
+      console.error("Staff password-changed email failed:", err?.message || err);
+    });
+    return res.json({ message: "Password reset successfully" });
+  } catch (e) {
+    console.error("Staff reset-password error:", e);
+    return res.status(500).json({ message: "Failed to reset password" });
   }
 });
 

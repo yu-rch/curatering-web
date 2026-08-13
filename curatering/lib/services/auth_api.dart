@@ -86,4 +86,36 @@ class AuthApi {
       body: {'email': email, 'otp': otp},
     );
   }
+
+  Future<void> forgotPassword({required String email}) async {
+    await ApiClient.instance.postJson(
+      '/api/auth/forgot-password',
+      body: {'email': email},
+    );
+  }
+
+  Future<void> verifyResetOtp({
+    required String email,
+    required String otp,
+  }) async {
+    await ApiClient.instance.postJson(
+      '/api/auth/verify-reset-otp',
+      body: {'email': email, 'otp': otp},
+    );
+  }
+
+  Future<void> resetPassword({
+    required String email,
+    required String otp,
+    required String newPassword,
+  }) async {
+    await ApiClient.instance.postJson(
+      '/api/auth/reset-password',
+      body: {
+        'email': email,
+        'otp': otp,
+        'newPassword': newPassword,
+      },
+    );
+  }
 }
